@@ -48,68 +48,93 @@ function capForClaudeBlock(block) {
 // isLast = block belongs to the current user turn (picks the explanatory placeholder).
 function filterBlocks(blocks, capOf, caps, removed, isLast) {
   const out = [];
+  let changed = false;
   for (const block of blocks) {
     const cap = capOf(block);
-    if (cap && caps[cap] === false) { removed.add(cap); continue; }
+    if (cap && caps[cap] === false) {
+      removed.add(cap);
+      changed = true;
+      continue;
+    }
     out.push(block);
   }
   for (const cap of removed) out.push({ type: "text", text: ph(cap, isLast) });
-  return out;
+  return { blocks: out, changed };
 }
 
 // OpenAI / OpenAI-compatible chat messages[].content[].
 function stripOpenAI(body, caps) {
-  if (!Array.isArray(body.messages)) return;
+  if (!Array.isArray(body.messages)) return false;
   const last = body.messages.length - 1;
+  let changed = false;
   body.messages.forEach((msg, i) => {
     if (!Array.isArray(msg.content)) return;
     const removed = new Set();
-    msg.content = filterBlocks(msg.content, capForOpenAIBlock, caps, removed, i === last);
+    const result = filterBlocks(msg.content, capForOpenAIBlock, caps, removed, i === last);
+    msg.content = result.blocks;
+    changed = changed || result.changed;
   });
+  return changed;
 }
 
 // Claude messages[].content[].
 function stripClaude(body, caps) {
-  if (!Array.isArray(body.messages)) return;
+  if (!Array.isArray(body.messages)) return false;
   const last = body.messages.length - 1;
+  let changed = false;
   body.messages.forEach((msg, i) => {
     if (!Array.isArray(msg.content)) return;
     const removed = new Set();
-    msg.content = filterBlocks(msg.content, capForClaudeBlock, caps, removed, i === last);
+    const result = filterBlocks(msg.content, capForClaudeBlock, caps, removed, i === last);
+    msg.content = result.blocks;
+    changed = changed || result.changed;
   });
+  return changed;
 }
 
 // OpenAI Responses input[].content[] (input_image / input_file).
 function stripResponses(body, caps) {
-  if (!Array.isArray(body.input)) return;
+  if (!Array.isArray(body.input)) return false;
   const last = body.input.length - 1;
+  let changed = false;
   body.input.forEach((item, i) => {
     if (!Array.isArray(item.content)) return;
     const removed = new Set();
     item.content = item.content.filter((b) => {
       const cap = b?.type === "input_image" ? "vision" : b?.type === "input_file" ? "pdf" : null;
-      if (cap && caps[cap] === false) { removed.add(cap); return false; }
+      if (cap && caps[cap] === false) {
+        removed.add(cap);
+        changed = true;
+        return false;
+      }
       return true;
     });
     for (const cap of removed) item.content.push({ type: "input_text", text: ph(cap, i === last) });
   });
+  return changed;
 }
 
 // Gemini / gemini-cli contents[].parts[] (inlineData / fileData by mime).
 function stripGeminiParts(contents, caps) {
-  if (!Array.isArray(contents)) return;
+  if (!Array.isArray(contents)) return false;
   const last = contents.length - 1;
+  let changed = false;
   contents.forEach((c, i) => {
     if (!Array.isArray(c.parts)) return;
     const removed = new Set();
     c.parts = c.parts.filter((p) => {
       const mime = p?.inlineData?.mimeType || p?.fileData?.mimeType;
       const cap = capForMime(mime);
-      if (cap && caps[cap] === false) { removed.add(cap); return false; }
+      if (cap && caps[cap] === false) {
+        removed.add(cap);
+        changed = true;
+        return false;
+      }
       return true;
     });
     for (const cap of removed) c.parts.push({ text: ph(cap, i === last) });
   });
+  return changed;
 }
 
 /**
@@ -130,26 +155,20 @@ export function stripUnsupportedModalities(body, sourceFormat, caps) {
     case FORMATS.KIRO:
     case FORMATS.CURSOR:
     case FORMATS.COMMANDCODE:
-      stripOpenAI(body, caps);
-      break;
+      return stripOpenAI(body, caps);
     case FORMATS.CLAUDE:
-      stripClaude(body, caps);
-      break;
+      return stripClaude(body, caps);
     case FORMATS.OPENAI_RESPONSES:
     case FORMATS.OPENAI_RESPONSE:
     case FORMATS.CODEX:
-      stripResponses(body, caps);
-      break;
+      return stripResponses(body, caps);
     case FORMATS.GEMINI:
     case FORMATS.GEMINI_CLI:
     case FORMATS.VERTEX:
-      stripGeminiParts(body.contents, caps);
-      break;
+      return stripGeminiParts(body.contents, caps);
     case FORMATS.ANTIGRAVITY:
-      stripGeminiParts(body?.request?.contents, caps);
-      break;
+      return stripGeminiParts(body?.request?.contents, caps);
     default:
-      stripOpenAI(body, caps);
+      return stripOpenAI(body, caps);
   }
-  return true;
 }

@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+
+vi.mock("../../open-sse/translator/request/claude-to-openai.js", () => ({
+  claudeToOpenAIRequest: vi.fn((_model, body) => ({ messages: body.messages || [] })),
+}));
+
+vi.mock("../../open-sse/translator/request/openai-to-claude.js", () => ({
+  openaiToClaudeRequest: vi.fn((_model, body) => ({ messages: body.messages || [] })),
+}));
+
 import { compressWithHeadroom, formatHeadroomLog } from "../../open-sse/rtk/headroom.js";
 
 afterEach(() => {
@@ -31,6 +40,29 @@ describe("compressWithHeadroom", () => {
     expect(body.messages[0].content).toBe("short");
     expect(stats.tokens_saved).toBe(80);
     expect(global.fetch).toHaveBeenCalledWith("http://headroom:8787/v1/compress", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("preserves image_url blocks when compressing GPT-5 vision messages", async () => {
+    global.fetch = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(init.body);
+      expect(payload.model).toBe("gpt-5.5");
+      expect(payload.messages[0].content.some((block) => block.type === "image_url")).toBe(true);
+      return new Response(JSON.stringify({
+        messages: payload.messages,
+        tokens_before: 120,
+        tokens_after: 120,
+        tokens_saved: 0,
+      }), { status: 200 });
+    });
+    const body = { messages: [{ role: "user", content: [
+      { type: "text", text: "Describe this image." },
+      { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+    ] }] };
+
+    const stats = await compressWithHeadroom(body, { enabled: true, url: "http://headroom:8787", model: "gpt-5.5" });
+
+    expect(stats.tokens_saved).toBe(0);
+    expect(body.messages[0].content.some((block) => block.type === "image_url")).toBe(true);
   });
 
   it("compresses responses input in-place", async () => {

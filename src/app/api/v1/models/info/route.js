@@ -1,6 +1,19 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
-import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
-import { getModelKind } from "@/shared/constants/models";
+import {
+  AI_PROVIDERS,
+  ALIAS_TO_ID,
+  getProviderAlias,
+  isAnthropicCompatibleProvider,
+  isOpenAICompatibleProvider,
+} from "@/shared/constants/providers";
+import { getModelKind, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { getProviderConnections } from "@/lib/localDb";
+import {
+  fetchCompatibleModels,
+  inferKindFromUnknownModelId,
+  runtimeCapabilitiesForModel,
+  stripKnownModelPrefix,
+} from "../catalog.js";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -76,6 +89,75 @@ function lookup(fullId, requestedKind) {
   return null;
 }
 
+function splitFullModelId(fullId) {
+  if (!fullId || !fullId.includes("/")) return null;
+  const slash = fullId.indexOf("/");
+  return {
+    alias: fullId.slice(0, slash),
+    modelId: fullId.slice(slash + 1),
+  };
+}
+
+async function lookupCompatibleLiveModel(fullId, requestedKind) {
+  const parsed = splitFullModelId(fullId);
+  if (!parsed) return null;
+
+  let connections = [];
+  try {
+    connections = await getProviderConnections();
+  } catch {
+    return null;
+  }
+
+  for (const conn of connections) {
+    if (!conn || conn.isActive === false) continue;
+
+    const providerId = conn.provider;
+    const isCompatibleProvider =
+      isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+    if (!isCompatibleProvider) continue;
+
+    const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    const outputAlias = (
+      conn?.providerSpecificData?.prefix
+      || getProviderAlias(providerId)
+      || staticAlias
+    ).trim();
+    const aliases = [outputAlias, staticAlias, providerId].filter(Boolean);
+    if (!aliases.includes(parsed.alias)) continue;
+
+    const enabledModels = conn?.providerSpecificData?.enabledModels;
+    const hasExplicitEnabledModels = Array.isArray(enabledModels) && enabledModels.length > 0;
+    const liveModels = hasExplicitEnabledModels
+      ? enabledModels
+          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
+          .map((modelId) => ({ id: modelId.trim() }))
+      : await fetchCompatibleModels(conn);
+
+    for (const model of liveModels) {
+      const modelId = stripKnownModelPrefix(model.id, aliases);
+      if (modelId !== parsed.modelId) continue;
+
+      const kind = inferKindFromUnknownModelId(modelId);
+      if (requestedKind && requestedKind !== kind) return null;
+
+      return buildInfo({
+        alias: parsed.alias,
+        providerId,
+        model: {
+          ...model,
+          id: modelId,
+          capabilities: model.capabilities || runtimeCapabilitiesForModel(providerId, modelId),
+        },
+        kind,
+        providerInfo: AI_PROVIDERS[providerId],
+      });
+    }
+  }
+
+  return null;
+}
+
 export async function OPTIONS() {
   return new Response(null, {
     headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS" },
@@ -93,7 +175,7 @@ export async function GET(request) {
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
-  const info = lookup(id, kind);
+  const info = lookup(id, kind) || await lookupCompatibleLiveModel(id, kind);
   if (!info) {
     return Response.json(
       { error: { message: `Model not found: ${id}`, type: "not_found" } },

@@ -45,7 +45,7 @@ describe("stripUnsupportedModalities", () => {
 
   it("openai: keeps image when vision:true", () => {
     const body = { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }] };
-    stripUnsupportedModalities(body, FORMATS.OPENAI, NO_AUDIO);
+    expect(stripUnsupportedModalities(body, FORMATS.OPENAI, NO_AUDIO)).toBe(false);
     expect(body.messages[0].content.some((b) => b.type === "image_url")).toBe(true);
   });
 
@@ -103,6 +103,15 @@ describe("stripUnsupportedModalities", () => {
   it("handles missing/empty body safely", () => {
     expect(stripUnsupportedModalities(null, FORMATS.OPENAI, NO_VISION)).toBe(false);
     expect(stripUnsupportedModalities({}, FORMATS.OPENAI, null)).toBe(false);
-    expect(stripUnsupportedModalities({ messages: [] }, FORMATS.OPENAI, NO_VISION)).toBe(true);
+    expect(stripUnsupportedModalities({ messages: [] }, FORMATS.OPENAI, NO_VISION)).toBe(false);
+  });
+
+  it("does not report stripping when only unsupported non-present modalities exist", () => {
+    const body = { messages: [{ role: "user", content: [
+      { type: "text", text: "hi" },
+      { type: "image_url", image_url: { url: "https://example.com/x.png" } },
+    ] }] };
+    expect(stripUnsupportedModalities(body, FORMATS.OPENAI, NO_AUDIO)).toBe(false);
+    expect(body.messages[0].content.some((b) => b.type === "image_url")).toBe(true);
   });
 });
