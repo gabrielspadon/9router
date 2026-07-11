@@ -5,7 +5,7 @@ import {
   openaiToOpenAIResponsesRequest,
 } from "../translator/request/openai-responses.js";
 
-const DEFAULT_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 // Skip compression for oversized payloads (fail-open): proxy compress time grows
 // non-linearly with size — measured 87KB → 0.010s but 744KB → >30s, which always
