@@ -1,6 +1,8 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { CLAUDE_BLOCK } from "../translator/schema/index.js";
+import { PROVIDERS } from "../config/providers.js";
 import { canonicalEchoModel } from "../services/model.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
@@ -142,10 +144,23 @@ export function createSSEStream(options = {}) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
+              // Some Anthropic-compatible providers omit `signature` from the
+              // thinking block start. Strict Messages clients deserialize that
+              // field before later signature_delta events arrive.
+              let fieldsInjected = false;
+              if (
+                PROVIDERS[provider]?.quirks?.ensureThinkingSignature &&
+                parsed.type === "content_block_start" &&
+                parsed.content_block?.type === CLAUDE_BLOCK.THINKING &&
+                parsed.content_block.signature === undefined
+              ) {
+                parsed.content_block.signature = "";
+                fieldsInjected = true;
+              }
+
               const idFixed = fixInvalidId(parsed);
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
-              let fieldsInjected = false;
               // Echo a stable, listing-valid model name instead of the upstream
               // id. Passthrough providers (opencode free tier) echo the bare
               // resolved model with the provider prefix stripped; clients that
