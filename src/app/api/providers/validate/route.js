@@ -12,6 +12,7 @@ import {
 } from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 import { fetchWithTimeout } from "@/lib/network/fetchWithTimeout.js";
+import { validateVertexSaKey } from "open-sse/services/tokenRefresh.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -484,8 +485,15 @@ export async function POST(request) {
           // SA JSON: attempt token mint via JWT assertion
           const saJson = (() => { try { const p = JSON.parse(apiKey); return p.type === "service_account" ? p : null; } catch { return null; } })();
           if (saJson) {
-            // Validate SA JSON has required fields
+            // Required fields + RSA-2048+ private key (jose RS256 requirement)
             isValid = !!(saJson.client_email && saJson.private_key && saJson.project_id);
+            if (isValid) {
+              const keyError = validateVertexSaKey(saJson);
+              if (keyError) {
+                isValid = false;
+                error = keyError;
+              }
+            }
           } else {
             // Raw key: probe Vertex — 404 means key is valid (model just doesn't exist), 401 means invalid key
             const probeRes = await fetchWithTimeout(
@@ -500,7 +508,15 @@ export async function POST(request) {
         case "vertex-partner": {
           const saJson = (() => { try { const p = JSON.parse(apiKey); return p.type === "service_account" ? p : null; } catch { return null; } })();
           if (saJson) {
+            // Required fields + RSA-2048+ private key (jose RS256 requirement)
             isValid = !!(saJson.client_email && saJson.private_key && saJson.project_id);
+            if (isValid) {
+              const keyError = validateVertexSaKey(saJson);
+              if (keyError) {
+                isValid = false;
+                error = keyError;
+              }
+            }
           } else {
             const probeRes = await fetchWithTimeout(
               `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
