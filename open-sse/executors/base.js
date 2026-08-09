@@ -118,7 +118,7 @@ export class BaseExecutor {
   }
 
   // Override in subclass for provider-specific transformations
-  transformRequest(model, body, stream, credentials) {
+  transformRequest(model, body, stream, credentials, sourceFormat) {
     return body;
   }
 
@@ -228,7 +228,7 @@ export class BaseExecutor {
     credentials,
     signal,
     log,
-    proxyOptions = null,
+    proxyOptions = null, sourceFormat,
   }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;

@@ -704,6 +704,7 @@ export async function handleChatCore({
       signal: streamController.signal,
       log,
       proxyOptions,
+      sourceFormat,
     });
     providerResponse = result.response;
     providerUrl = result.url;
@@ -805,6 +806,7 @@ export async function handleChatCore({
             signal: streamController.signal,
             log,
             proxyOptions,
+      sourceFormat,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;

@@ -80,6 +80,16 @@ function normalizeOpenAIToolCallIds(body) {
   return body;
 }
 
+// GPT-5.6 Luna rejects function tools when reasoning is enabled on the Chat
+// Completions transport. Keep this compatibility override limited to the
+// first-party provider and to requests that declare current function tools.
+function normalizeLunaFunctionToolReasoning(model, body, sourceFormat) {
+  if (sourceFormat === "openai-responses") return;
+  if (model !== "gpt-5.6-luna") return;
+  if (!Array.isArray(body?.tools) || !body.tools.some((tool) => tool?.type === "function")) return;
+  body.reasoning_effort = "none";
+}
+
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
@@ -111,7 +121,7 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body, stream) {
+  transformRequest(model, body, stream, credentials, sourceFormat) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     // Native OpenAI chat endpoint: streaming omits usage entirely unless
@@ -124,6 +134,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (transformed && typeof transformed === "object") {
       if (this.provider === "openai") {
         normalizeOpenAIToolCallIds(transformed);
+        normalizeLunaFunctionToolReasoning(model, transformed, sourceFormat);
       }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
