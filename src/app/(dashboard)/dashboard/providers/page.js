@@ -23,6 +23,7 @@ import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
+import { getModelsByProviderId } from "@/shared/constants/models";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 
@@ -115,9 +116,20 @@ export default function ProvidersPage() {
     return () => unregisterSearch();
   }, [registerSearch, unregisterSearch]);
 
-  const matchSearch = (name) =>
-    !searchQuery.trim() ||
-    name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  // A provider card matches the header search if its display name matches OR
+  // any of its registry models (id/name/fullModel) matches. This lets users
+  // search by model, e.g. "claude" or "gpt-5" instead of only by provider name.
+  const matchSearch = (name, providerId) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    if (name.toLowerCase().includes(query)) return true;
+    const models = getModelsByProviderId(providerId);
+    return models.some((m) =>
+      (m.id || "").toLowerCase().includes(query) ||
+      (m.name || "").toLowerCase().includes(query) ||
+      `${providerId}/${m.id}`.toLowerCase().includes(query),
+    );
+  };
 
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
@@ -265,7 +277,7 @@ export default function ProvidersPage() {
       textIcon: "OC",
       apiType: node.apiType,
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter((p) => matchSearch(p.name, p.id));
 
   const anthropicCompatibleProviders = providerNodes
     .filter((node) => node.type === "anthropic-compatible")
@@ -275,7 +287,7 @@ export default function ProvidersPage() {
       color: "#D97757",
       textIcon: "AC",
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter((p) => matchSearch(p.name, p.id));
 
   // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
   // (and sometimes "api_key"). Card stats must count both so totals match detail.
@@ -296,11 +308,11 @@ export default function ProvidersPage() {
   };
 
   const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
+    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name, info.id)),
     "oauth",
   );
   const freeEntries = Object.entries(FREE_PROVIDERS)
-    .filter(([, info]) => !info.hidden && matchSearch(info.name))
+    .filter(([, info]) => !info.hidden && matchSearch(info.name, info.id))
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
   // dualAuthTypes per provider instead of a fixed "apikey" — otherwise oauth
@@ -309,7 +321,7 @@ export default function ProvidersPage() {
     .filter(
       ([, info]) =>
         !info.hidden &&
-        matchSearch(info.name) &&
+        matchSearch(info.name, info.id) &&
         (info.serviceKinds ?? ["llm"]).includes("llm"),
     )
     .sort(([ka, a], [kb, b]) => {
@@ -329,7 +341,7 @@ export default function ProvidersPage() {
       ([, info]) =>
         !info.hidden &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
-        matchSearch(info.name),
+        matchSearch(info.name, info.id),
     )
     .sort(([ka, a], [kb, b]) => {
       const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
