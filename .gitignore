@@ -86,3 +86,6 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# Local CLI build tarball
+*.tgz
