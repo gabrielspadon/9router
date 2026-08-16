@@ -32,6 +32,8 @@ const FORMAT_LEVELS = {
   hunyuan: L.base,
   step: L.base,
   ollama: L.levelMax,
+  nous: L.base,
+
 };
 
 const CODEX_GPT_5_6_LEVELS = [
