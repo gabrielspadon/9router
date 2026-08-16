@@ -75,7 +75,7 @@ export const TRANSIENT_COOLDOWN_MS = 5 * 1000;
 export const EMPTY_CONTENT_COOLDOWN_MS = 7 * 60 * 1000;
 
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
-export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+export const MAX_RATE_LIMIT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {
