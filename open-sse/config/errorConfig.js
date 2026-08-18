@@ -68,7 +68,19 @@ export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+  // Client-side request errors: request is invalid / malformed — no account can fix this, don't lock
+  { text: "invalid_request_error",    pass: true },
+  { text: "invalid_request",          pass: true },
+  { text: "improperly formed request", pass: true },
+  { text: "bad request",              pass: true },
+  { text: "unsupported parameter",    pass: true },
+  { text: "unsupported_parameter",    pass: true },
+  { text: "invalid parameter",        pass: true },
+  { text: "invalid_parameter",        pass: true },
+  { text: "maximum context length",   pass: true },
+  { text: "context_length_exceeded",  pass: true },
+  { text: "prompt is too long",       pass: true },
+  { text: "exceeds the limit",        pass: true },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
@@ -80,8 +92,10 @@ export const ERROR_RULES = [
   { text: "context_length_exceeded",  pass: true },
   { text: "prompt is too long",       pass: true },
   { text: "exceeds the limit",        pass: true },
+>>>>>>> 41a606dfe (fix(fallback): do not lock accounts or retry on client-side 400 Bad Request errors)
 
   // --- Status-based rules (fallback when text doesn't match) ---
+  { status: 400, pass: true },
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
