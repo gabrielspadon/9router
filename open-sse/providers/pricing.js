@@ -146,28 +146,28 @@ export const MODEL_PRICING = {
     input: 0.5,
     output: 1.5,
     cached: 0.25,
-    reasoning: 2.25,
+    reasoning: 1.5,
     cache_creation: 0.5,
   },
   "gpt-4": {
-    input: 2.5,
-    output: 10.0,
-    cached: 1.25,
-    reasoning: 15.0,
-    cache_creation: 2.5,
+    input: 30.0,
+    output: 60.0,
+    cached: 15.0,
+    reasoning: 60.0,
+    cache_creation: 30.0,
   },
   "gpt-4-turbo": {
     input: 10.0,
     output: 30.0,
     cached: 5.0,
-    reasoning: 45.0,
+    reasoning: 30.0,
     cache_creation: 10.0,
   },
   "gpt-4o": {
     input: 2.5,
     output: 10.0,
     cached: 1.25,
-    reasoning: 15.0,
+    reasoning: 10.0,
     cache_creation: 2.5,
   },
   "gpt-4o-2024-05-13": {
@@ -181,15 +181,15 @@ export const MODEL_PRICING = {
     input: 0.15,
     output: 0.6,
     cached: 0.075,
-    reasoning: 0.9,
+    reasoning: 0.6,
     cache_creation: 0.15,
   },
   "gpt-4.1": {
-    input: 2.5,
-    output: 10.0,
-    cached: 1.25,
-    reasoning: 15.0,
-    cache_creation: 2.5,
+    input: 2.0,
+    output: 8.0,
+    cached: 0.5,
+    reasoning: 8.0,
+    cache_creation: 2.0,
   },
   "gpt-4.1-mini": {
     input: 0.4,
@@ -208,14 +208,14 @@ export const MODEL_PRICING = {
   "gpt-5": {
     input: 1.25,
     output: 10.0,
-    cached: 0.625,
+    cached: 0.125,
     reasoning: 10.0,
     cache_creation: 1.25,
   },
   "gpt-5-mini": {
     input: 0.25,
     output: 2.0,
-    cached: 0.125,
+    cached: 0.025,
     reasoning: 2.0,
     cache_creation: 0.25,
   },
@@ -229,7 +229,7 @@ export const MODEL_PRICING = {
   "gpt-5-codex": {
     input: 1.25,
     output: 10.0,
-    cached: 0.625,
+    cached: 0.125,
     reasoning: 10.0,
     cache_creation: 1.25,
   },
@@ -243,14 +243,14 @@ export const MODEL_PRICING = {
   "gpt-5.1": {
     input: 1.25,
     output: 10.0,
-    cached: 0.625,
+    cached: 0.125,
     reasoning: 10.0,
     cache_creation: 1.25,
   },
   "gpt-5.1-codex": {
     input: 1.25,
     output: 10.0,
-    cached: 0.625,
+    cached: 0.125,
     reasoning: 10.0,
     cache_creation: 1.25,
   },
@@ -258,7 +258,7 @@ export const MODEL_PRICING = {
     input: 1.5,
     output: 6.0,
     cached: 0.75,
-    reasoning: 9.0,
+    reasoning: 6.0,
     cache_creation: 1.5,
   },
   "gpt-5.1-codex-mini-high": {
@@ -272,7 +272,7 @@ export const MODEL_PRICING = {
     input: 8.0,
     output: 32.0,
     cached: 4.0,
-    reasoning: 48.0,
+    reasoning: 32.0,
     cache_creation: 8.0,
   },
   "gpt-5.2": {
@@ -429,6 +429,14 @@ export const MODEL_PRICING = {
     reasoning: 18.0,
     cache_creation: 3.0,
   },
+  "o1": {
+    input: 15.0,
+    output: 60.0,
+    cached: 7.5,
+    reasoning: 60.0,
+    cache_creation: 15.0,
+  },
+
 
   // === Gemini ===
   "gemini-3.7-flash": {
@@ -2061,9 +2069,15 @@ export function calculateCostFromTokens(tokens, pricing) {
   const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
   cost += outputTokens * (pricing.output / 1000000);
 
-  const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
-    cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
+  // reasoning_tokens are a SUBSET of output tokens on every provider that
+  // reports them (OpenAI: output_tokens_details.reasoning_tokens ⊆ output_tokens;
+  // Anthropic/Gemini: thinking ⊆ output_tokens), so they are already priced at
+  // the output rate above. When a pricing entry carries a distinct reasoning
+  // rate, apply only the DELTA between the reasoning and output rates instead
+  // of charging the full rate again.
+  const reasoningTokens = Math.min(tokens.reasoning_tokens || 0, outputTokens);
+  if (reasoningTokens > 0 && pricing.reasoning && pricing.reasoning !== pricing.output) {
+    cost += reasoningTokens * ((pricing.reasoning - pricing.output) / 1000000);
   }
 
   if (cacheCreationTokens > 0) {
