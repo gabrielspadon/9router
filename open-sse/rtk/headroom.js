@@ -355,10 +355,25 @@ function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) 
   return true;
 }
 
+const CIRCUIT_BREAKER = new Map();
+const CB_FAILURE_THRESHOLD = 2;
+const CB_COOLDOWN_MS = 30000;
+
+export function resetHeadroomCircuitBreaker() {
+  CIRCUIT_BREAKER.clear();
+}
+
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
 async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
   const endpoint = buildCompressEndpoint(url);
   diagnostics.endpoint = maskEndpoint(endpoint);
+  const cb = CIRCUIT_BREAKER.get(endpoint);
+  if (cb && cb.failures >= CB_FAILURE_THRESHOLD && Date.now() - cb.lastFailureTime < CB_COOLDOWN_MS) {
+    const remainingSec = Math.ceil((CB_COOLDOWN_MS - (Date.now() - cb.lastFailureTime)) / 1000);
+    setDiagnostic(diagnostics, `proxy temporarily unavailable (circuit breaker active, retrying in ${remainingSec}s)`);
+    return null;
+  }
+
   // Exactly one outbound POST. Config is lossy-only. No frozen_message_count.
   const payload = { messages, model, config: { mode: "lossy_inline", ...(compressUserMessages ? { compress_user_messages: true } : {}) } };
   const headroomAuth = resolveHeadroomAuth();
@@ -371,10 +386,18 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
+    const state = cb || { failures: 0, lastFailureTime: 0 };
+    state.failures += 1;
+    state.lastFailureTime = Date.now();
+    CIRCUIT_BREAKER.set(endpoint, state);
     setDiagnostic(diagnostics, `request failed: ${describeFetchError(error)}`);
     return null;
   }
   if (!res.ok) {
+    const state = cb || { failures: 0, lastFailureTime: 0 };
+    state.failures += 1;
+    state.lastFailureTime = Date.now();
+    CIRCUIT_BREAKER.set(endpoint, state);
     if (res.status === 400 || res.status === 404) setDiagnostic(diagnostics, `proxy rejected config.mode (HTTP ${res.status})`);
     else setDiagnostic(diagnostics, `proxy returned HTTP ${res.status}`);
     return null; // no fallback retry — one call only
@@ -421,6 +444,7 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
       return null;
     }
   }
+  CIRCUIT_BREAKER.delete(endpoint);
   return data;
 }
 
