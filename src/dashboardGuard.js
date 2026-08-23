@@ -86,6 +86,7 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  "/api/headroom/status",
   "/api/token-saver/stats",
   "/api/pxpipe",
 ];
