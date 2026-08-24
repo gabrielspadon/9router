@@ -83,6 +83,10 @@ const LOCAL_ONLY_PATHS = [
   "/api/oauth/kiro/auto-import",
   "/api/auth/reset-password",
   "/api/headroom",
+  "/api/headroom/start",
+  "/api/headroom/stop",
+  "/api/headroom/proxy",
+  "/api/token-saver/stats",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
