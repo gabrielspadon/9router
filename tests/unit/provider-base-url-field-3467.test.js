@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildProviderSpecificData } from "../../src/shared/utils/providerSpecificData.js";
+import {
+  buildProviderSpecificData,
+  mergeBaseUrl,
+} from "../../src/shared/utils/providerSpecificData.js";
 import REGISTRY from "../../open-sse/providers/registry/index.js";
 
 /**
@@ -49,19 +52,27 @@ describe("registry: providers with a per-connection endpoint declare it", () => 
 describe("buildProviderSpecificData", () => {
   it("saves a trimmed baseUrl when the provider declares the field", () => {
     expect(
-      buildProviderSpecificData({ hasBaseUrlField: true, baseUrl: "  http://tts:8880 " }),
+      buildProviderSpecificData({
+        hasBaseUrlField: true,
+        baseUrl: "  http://tts:8880 ",
+      }),
     ).toEqual({ baseUrl: "http://tts:8880" });
   });
 
   it("saves nothing when the box is left empty, so the default still applies", () => {
     for (const value of ["", "   ", undefined, null]) {
-      expect(buildProviderSpecificData({ hasBaseUrlField: true, baseUrl: value })).toBeUndefined();
+      expect(
+        buildProviderSpecificData({ hasBaseUrlField: true, baseUrl: value }),
+      ).toBeUndefined();
     }
   });
 
   it("ignores a typed baseUrl for a provider that does not declare the field", () => {
     expect(
-      buildProviderSpecificData({ hasBaseUrlField: false, baseUrl: "http://nope" }),
+      buildProviderSpecificData({
+        hasBaseUrlField: false,
+        baseUrl: "http://nope",
+      }),
     ).toBeUndefined();
   });
 
@@ -86,10 +97,17 @@ describe("buildProviderSpecificData", () => {
 
   it("still builds the Cloudflare and region shapes", () => {
     expect(
-      buildProviderSpecificData({ isCloudflareAi: true, cloudflareData: { accountId: "acc" } }),
+      buildProviderSpecificData({
+        isCloudflareAi: true,
+        cloudflareData: { accountId: "acc" },
+      }),
     ).toEqual({ accountId: "acc" });
-    expect(buildProviderSpecificData({ hasRegions: true, region: "eu" })).toEqual({ region: "eu" });
-    expect(buildProviderSpecificData({ hasRegions: true, region: "" })).toBeUndefined();
+    expect(
+      buildProviderSpecificData({ hasRegions: true, region: "eu" }),
+    ).toEqual({ region: "eu" });
+    expect(
+      buildProviderSpecificData({ hasRegions: true, region: "" }),
+    ).toBeUndefined();
   });
 
   it("returns nothing for an ordinary provider", () => {

@@ -37,11 +37,16 @@ export default {
   },
   auth: {
     apiKey: {
-      text: "Set providerSpecificData.baseUrl to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",
+      text: "Set Base URL to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",
     },
   },
   models: [
-    { id: "whisper-1", name: "Whisper (self-hosted)", params: ["language", "response_format", "temperature", "prompt"], kind: "stt" },
+    {
+      id: "whisper-1",
+      name: "Whisper (self-hosted)",
+      params: ["language", "response_format", "temperature", "prompt"],
+      kind: "stt",
+    },
   ],
   serviceKinds: ["stt"],
   sttConfig: {
