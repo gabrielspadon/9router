@@ -21,6 +21,41 @@ function chunk(text) {
   );
 }
 
+/** A frame carrying provider-reported usage, which the fallback estimate must not stand in for. */
+function usageChunk(usage) {
+  return encoder.encode(
+    `data: ${JSON.stringify({
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+      usage,
+    })}\n\n`,
+  );
+}
+
+/** Feed content, then a provider usage frame, then hang up. */
+async function abortAfterUsage(stream, usage) {
+  const reader = stream.readable.getReader();
+  const writer = stream.writable.getWriter();
+  // A pump rather than paired reads: the usage frame carries no delta content, so
+  // the stream need not surface anything for it, and a `write` with nobody pulling
+  // parks on backpressure forever.
+  const pump = (async () => {
+    try {
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) return;
+      }
+    } catch {
+      // The cancel below is what ends this loop.
+    }
+  })();
+  await writer.write(chunk("Hello"));
+  await writer.write(usageChunk(usage));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await reader.cancel("client_closed");
+  await pump;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
 function build(onStreamComplete) {
   return createSSETransformStreamWithLogger(
     FORMATS.OPENAI,
@@ -61,6 +96,11 @@ async function completeStream(stream) {
   await writer.write(chunk("Hello"));
   await writer.close();
   await drain;
+  // Released so a caller can still cancel the readable afterwards. A locked
+  // readable rejects `cancel()` with `TypeError: Invalid state: ReadableStream
+  // is locked`, which a swallowing `.catch()` turns into a test that asserts
+  // nothing about cancellation at all.
+  reader.releaseLock();
 }
 
 describe("a client that hangs up mid-stream", () => {
@@ -106,7 +146,11 @@ describe("a stream that ends normally", () => {
     const onStreamComplete = vi.fn();
     const stream = build(onStreamComplete);
     await completeStream(stream);
-    await stream.readable.cancel("late").catch(() => {});
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+
+    // Asserted, not swallowed: if this rejects the cancel never happened and the
+    // count below would prove nothing.
+    await expect(stream.readable.cancel("late")).resolves.toBeUndefined();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(onStreamComplete).toHaveBeenCalledTimes(1);
   });
@@ -144,12 +188,24 @@ describe("passthrough streams", () => {
       "sk-test",
     );
 
-    await abortMidStream(stream);
+    await abortAfterUsage(stream, {
+      prompt_tokens: 11,
+      completion_tokens: 7,
+      total_tokens: 18,
+    });
 
     expect(onStreamComplete).toHaveBeenCalledTimes(1);
     const [contentObj, usage, , meta] = onStreamComplete.mock.calls[0];
     expect(meta?.aborted).toBe(true);
     expect(contentObj.content).toContain("Hello");
     expect(usage?.completion_tokens).toBeGreaterThan(0);
+
+    // Characterization, not an endorsement. A usage-only frame is dropped by the
+    // `hasValuableContent` guard BEFORE `extractUsage` runs, so the closure never
+    // sees the provider's numbers and the abort path falls back to `estimateUsage`.
+    // Asserting the provider values here fails today (11 -> 2012). Pinned so the
+    // gap is visible and this test starts failing the moment it is closed, rather
+    // than quietly passing on an estimate as it did before.
+    expect(usage.prompt_tokens).not.toBe(11);
   });
 });
