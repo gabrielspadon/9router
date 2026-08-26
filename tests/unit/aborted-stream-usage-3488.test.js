@@ -142,7 +142,10 @@ describe("a stream that ends normally", () => {
     expect(meta?.aborted ?? false).toBe(false);
   });
 
-  it("does not report a second time if the reader is cancelled afterwards", async () => {
+  // Named for what it is. `cancel()` on an already-closed readable resolves without
+  // running the underlying cancel algorithm, so this canNOT prove the exactly-once
+  // guard -- removing that guard leaves this green. It is an API smoke test.
+  it("accepts a late cancel on an already-closed readable without reporting again", async () => {
     const onStreamComplete = vi.fn();
     const stream = build(onStreamComplete);
     await completeStream(stream);
