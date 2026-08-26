@@ -82,6 +82,14 @@ export function createSSEStream(options = {}) {
   // request left no usage row, no request detail and nothing in Recent
   // Requests, even though the provider had already generated (and charged for)
   // the partial answer (#3488).
+  //
+  // RUNTIME SCOPE: the aborted path below is Node-only. Every disconnect signal
+  // in Next — and therefore `cancel` in any of its shapes — descends from `res`
+  // `'close'`, which Bun's node:http ServerResponse never emits on a client
+  // hangup. Under `start:bun` nothing cancels this stream, so `finishStream` only
+  // ever runs from `flush`, exactly as before this fix. The portable hook is `req`
+  // `'close'`; see #3559, which also covers the larger consequence that the
+  // upstream provider request is never aborted on Bun either.
   let streamFinished = false;
   const finishStream = (usage, { aborted = false } = {}) => {
     if (streamFinished) return;
