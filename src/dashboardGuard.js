@@ -236,6 +236,21 @@ export async function proxy(request) {
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
+    // Settings writes configure SSO/proxy/tunnel for the whole instance; a remote
+    // caller must never reach them just because requireLogin is off. Reads keep the
+    // requireLogin=false dashboard-read behavior (upstream PR #3499).
+    if (
+      pathname === "/api/settings" &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    ) {
+      if (
+        !(await hasValidCliToken(request)) &&
+        !(await hasValidToken(request)) &&
+        !isLocalRequest(request)
+      ) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    }
     if (isPublicApi(pathname)) return NextResponse.next();
     if ((await hasValidCliToken(request)) || (await isAuthenticated(request)))
       return NextResponse.next();
