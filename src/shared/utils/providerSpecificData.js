@@ -40,3 +40,23 @@ export function buildProviderSpecificData({
   }
   return undefined;
 }
+
+/**
+ * Merge an edited Base URL into the `providerSpecificData` an existing
+ * connection already stores (EditConnectionModal). Keys owned by other parts
+ * of the form — proxy settings, region — are carried through untouched, and
+ * clearing the field removes only `baseUrl` so the provider default applies.
+ *
+ * @param {object|null|undefined} providerSpecificData  the connection's current value
+ * @param {string} baseUrl                              the field's raw value
+ * @returns {object|undefined}                          undefined when nothing is left to store
+ */
+export function mergeBaseUrl(providerSpecificData, baseUrl) {
+  const merged = { ...(providerSpecificData || {}) };
+  const trimmed = typeof baseUrl === "string" ? baseUrl.trim() : "";
+
+  if (trimmed) merged.baseUrl = trimmed;
+  else delete merged.baseUrl;
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}

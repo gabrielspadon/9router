@@ -32,13 +32,18 @@ export default {
   },
   auth: {
     apiKey: {
-      text: "Set providerSpecificData.baseUrl to the server root, e.g. http://host:8080 — /v1/audio/speech is appended. The API key is not checked by local servers; any value works.",
+      text: "Set Base URL to the server root, e.g. http://host:8880 — /v1/audio/speech is appended. The API key is not checked by local servers; any value works.",
     },
   },
   // Voice is selected as "<model>/<voice>", the same convention the OpenAI TTS
   // adapter uses, so existing clients need no special casing.
   models: [
-    { id: "kokoro", name: "Kokoro (self-hosted)", params: ["voice", "response_format", "speed"], kind: "tts" },
+    {
+      id: "kokoro",
+      name: "Kokoro (self-hosted)",
+      params: ["voice", "response_format", "speed"],
+      kind: "tts",
+    },
   ],
   serviceKinds: ["tts"],
   ttsConfig: {

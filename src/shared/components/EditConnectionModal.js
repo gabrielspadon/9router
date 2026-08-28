@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { mergeBaseUrl } from "@/shared/utils/providerSpecificData";
 import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 
 // Per-window quota safety buffer. Pause routing for this account when a specific
@@ -67,6 +68,7 @@ QuotaPauseField.propTypes = {
   thresholds: PropTypes.object.isRequired,
   onChange: PropTypes.func.isRequired,
 };
+||||||| parent of 11ce6daac (fix(providers): add a Base URL field for self-hosted TTS/STT connections)
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -82,6 +84,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [baseUrl, setBaseUrl] = useState("");
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -108,6 +111,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      setBaseUrl(connection.providerSpecificData?.baseUrl || "");
       // Load region for providers that support it (e.g. xiaomi-tokenplan)
       const providerCfg = AI_PROVIDERS?.[connection.provider];
       if (providerCfg?.regions) {
@@ -127,6 +131,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+  const baseUrlField = connection ? (AI_PROVIDERS?.[connection.provider]?.baseUrlField || null) : null;
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -233,6 +238,14 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
+      // Endpoint override for providers that serve a user-chosen host. Merged
+      // into whatever is already stored, so proxy/region settings survive.
+      if (baseUrlField) {
+        updates.providerSpecificData = mergeBaseUrl(
+          updates.providerSpecificData || connection.providerSpecificData,
+          baseUrl,
+        );
+      }
       
       await onSave(updates);
     } finally {
@@ -263,6 +276,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+        {baseUrlField && (
+          <Input
+            label={baseUrlField.label}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={baseUrlField.placeholder}
+            hint={baseUrlField.help}
+          />
+        )}
 
         <QuotaPauseField
           thresholds={quotaPauseThresholds}
