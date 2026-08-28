@@ -9,14 +9,15 @@ const CLI_TOKEN_SALT = "9r-cli-auth";
 
 let cachedCliToken = null;
 async function getCliToken() {
-  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  if (!cachedCliToken)
+    cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
   return cachedCliToken;
 }
 
 async function hasValidCliToken(request) {
   const token = request.headers.get(CLI_TOKEN_HEADER);
   if (!token) return false;
-  return token === await getCliToken();
+  return token === (await getCliToken());
 }
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
@@ -81,9 +82,7 @@ const LOCAL_ONLY_PATHS = [
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
   "/api/auth/reset-password",
-  "/api/headroom/start",
-  "/api/headroom/stop",
-  "/api/headroom/proxy",
+  "/api/headroom",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -98,7 +97,10 @@ function isLoopbackHostname(h) {
     const end = name.indexOf("]");
     if (end === -1) return false;
     name = name.slice(1, end);
-  } else if (name.indexOf(":") !== -1 && name.indexOf(":") === name.lastIndexOf(":")) {
+  } else if (
+    name.indexOf(":") !== -1 &&
+    name.indexOf(":") === name.lastIndexOf(":")
+  ) {
     name = name.slice(0, name.indexOf(":"));
   }
   if (name.startsWith("::ffff:")) name = name.slice(7);
@@ -126,13 +128,17 @@ export function isLocalRequest(request) {
   if (origin) {
     try {
       if (!isLoopbackHostname(new URL(origin).hostname)) return false;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
   return true;
 }
 
 function isPublicLlmApi(pathname) {
-  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return PUBLIC_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 function extractApiKey(request) {
@@ -160,7 +166,7 @@ async function canAccessPublicLlmApi(request) {
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
-  if (isLocalRequest(request) && await isAuthenticated(request)) return true;
+  if (isLocalRequest(request) && (await isAuthenticated(request))) return true;
   return false;
 }
 
@@ -187,7 +193,9 @@ async function isAuthenticated(request) {
 
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
-  return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return PUBLIC_API_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 export const __test__ = {
@@ -204,26 +212,32 @@ export async function proxy(request) {
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
-      return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Local only: CLI token required" },
+        { status: 403 },
+      );
     }
   }
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (await hasValidCliToken(request) || await hasValidToken(request))
+    if ((await hasValidCliToken(request)) || (await hasValidToken(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    return NextResponse.json(
+      { error: "API key required for remote API access" },
+      { status: 401 },
+    );
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
+    if ((await hasValidCliToken(request)) || (await isAuthenticated(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -241,10 +255,19 @@ export async function proxy(request) {
 
         // Block tunnel/tailscale access if disabled (redirect to login)
         if (!tunnelDashboardAccess) {
-          const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
-          const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
-          const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
-          if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
+          const host = (request.headers.get("host") || "")
+            .split(":")[0]
+            .toLowerCase();
+          const tunnelHost = settings.tunnelUrl
+            ? new URL(settings.tunnelUrl).hostname.toLowerCase()
+            : "";
+          const tailscaleHost = settings.tailscaleUrl
+            ? new URL(settings.tailscaleUrl).hostname.toLowerCase()
+            : "";
+          if (
+            (tunnelHost && host === tunnelHost) ||
+            (tailscaleHost && host === tailscaleHost)
+          ) {
             return NextResponse.redirect(new URL("/login", request.url));
           }
         }
