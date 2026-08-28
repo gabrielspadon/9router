@@ -23,7 +23,9 @@ const INDEX = {
 
 describe("looksLikeClaudeWrappedModel", () => {
   it("detects claude- prefix (any case)", () => {
-    expect(looksLikeClaudeWrappedModel("claude-bai/deepseek-v4-flash")).toBe(true);
+    expect(looksLikeClaudeWrappedModel("claude-bai/deepseek-v4-flash")).toBe(
+      true,
+    );
     expect(looksLikeClaudeWrappedModel("Claude-sonnet-4-5")).toBe(true);
   });
 
@@ -47,47 +49,57 @@ describe("looksLikeClaudeWrappedModel", () => {
 
 describe("normalizeClaudeModelName", () => {
   it("strips prefix+suffix from derived route form", () => {
-    expect(normalizeClaudeModelName("claude-bai/deepseek-v4-flash[1m]", INDEX)).toBe(
-      "bai/deepseek-v4-flash"
-    );
+    expect(
+      normalizeClaudeModelName("claude-bai/deepseek-v4-flash[1m]", INDEX),
+    ).toBe("bai/deepseek-v4-flash");
     // case-insensitive [1m]
-    expect(normalizeClaudeModelName("claude-glm/glm-4.7[1M]", INDEX)).toBe("glm/glm-4.7");
+    expect(normalizeClaudeModelName("claude-glm/glm-4.7[1M]", INDEX)).toBe(
+      "glm/glm-4.7",
+    );
   });
 
   it("keeps official claude models untouched", () => {
-    expect(normalizeClaudeModelName("claude-sonnet-4-5", INDEX)).toBe("claude-sonnet-4-5");
+    expect(normalizeClaudeModelName("claude-sonnet-4-5", INDEX)).toBe(
+      "claude-sonnet-4-5",
+    );
     // Official model with the context suffix: [1m] must come off (the 1M
     // toggle travels via the anthropic-beta header, never in the model name),
     // but the base name stays.
-    expect(normalizeClaudeModelName("claude-opus-4-1[1m]", INDEX)).toBe("claude-opus-4-1");
+    expect(normalizeClaudeModelName("claude-opus-4-1[1m]", INDEX)).toBe(
+      "claude-opus-4-1",
+    );
   });
 
   it("maps known bare names (combos, alias keys)", () => {
     expect(normalizeClaudeModelName("claude-my-combo", INDEX)).toBe("my-combo");
-    expect(normalizeClaudeModelName("claude-fast-alias", INDEX)).toBe("fast-alias");
+    expect(normalizeClaudeModelName("claude-fast-alias", INDEX)).toBe(
+      "fast-alias",
+    );
   });
 
   it("keeps unknown claude-* names (likely official Anthropic models)", () => {
     expect(normalizeClaudeModelName("claude-haiku-4-5-20251001", INDEX)).toBe(
-      "claude-haiku-4-5-20251001"
+      "claude-haiku-4-5-20251001",
     );
   });
 
   it("handles bare claude-prefixed pair form", () => {
     // "claude-anthropic/claude-3-x" — rest contains slash, strip prefix only
     expect(normalizeClaudeModelName("claude-anthropic/claude-3-x", INDEX)).toBe(
-      "anthropic/claude-3-x"
+      "anthropic/claude-3-x",
     );
   });
 
   it("strips lone [1m] suffix without prefix", () => {
     expect(normalizeClaudeModelName("bai/deepseek-v4-flash[1m]", INDEX)).toBe(
-      "bai/deepseek-v4-flash"
+      "bai/deepseek-v4-flash",
     );
   });
 
   it("returns non-claude names unchanged after suffix strip", () => {
-    expect(normalizeClaudeModelName("openai/gpt-5", INDEX)).toBe("openai/gpt-5");
+    expect(normalizeClaudeModelName("openai/gpt-5", INDEX)).toBe(
+      "openai/gpt-5",
+    );
   });
 
   it("handles degenerate inputs", () => {
@@ -109,10 +121,18 @@ describe("readClaudeCompat", () => {
 
   it("honors explicit config and sanitizes garbage", () => {
     expect(
-      readClaudeCompat({ claudeCompat: { enabled: false, suffixMode: "keywords", keywords: ["glm", "", 42] } })
+      readClaudeCompat({
+        claudeCompat: {
+          enabled: false,
+          suffixMode: "keywords",
+          keywords: ["glm", "", 42],
+        },
+      }),
     ).toEqual({ enabled: false, suffixMode: "keywords", keywords: ["glm"] });
     // invalid suffixMode falls back
-    expect(readClaudeCompat({ claudeCompat: { suffixMode: "yolo" } }).suffixMode).toBe("auto");
+    expect(
+      readClaudeCompat({ claudeCompat: { suffixMode: "yolo" } }).suffixMode,
+    ).toBe("auto");
   });
 });
 
@@ -123,22 +143,33 @@ describe("rewriteModelsListForClaude", () => {
     const out = rewriteModelsListForClaude(
       [
         { id: "bai/deepseek-v4-flash", object: "model", owned_by: "bai" },
-        { id: "glm/glm-4.7", object: "model", owned_by: "glm", context_length: 200_000 },
-        { id: "x/big-window", object: "model", owned_by: "x", context_length: 1_048_576 },
+        {
+          id: "glm/glm-4.7",
+          object: "model",
+          owned_by: "glm",
+          context_length: 200_000,
+        },
+        {
+          id: "x/big-window",
+          object: "model",
+          owned_by: "x",
+          context_length: 1_048_576,
+        },
       ],
-      compat
+      compat,
     );
     expect(out[0].id).toBe("claude-bai/deepseek-v4-flash"); // no context_length -> no suffix in auto
     expect(out[0].display_name).toBe("bai/deepseek-v4-flash");
     expect(out[1].id).toBe("claude-glm/glm-4.7");
     expect(out[2].id).toBe("claude-x/big-window[1m]");
-    expect(out[2].display_name).toBe("x/big-window");
+    // display_name mirrors the id's suffix so the 1M window shows in the picker
+    expect(out[2].display_name).toBe("x/big-window[1m]");
   });
 
   it("does not double-suffix ids that already carry [1m]", () => {
     const out = rewriteModelsListForClaude(
       [{ id: "myalias/my-model[1m]", object: "model", owned_by: "myalias" }],
-      compat
+      compat,
     );
     expect(out[0].id).toBe("claude-myalias/my-model[1m]");
     // display_name strips the internal marker for display
@@ -146,13 +177,17 @@ describe("rewriteModelsListForClaude", () => {
   });
 
   it("keywords mode matches model part case-insensitively", () => {
-    const kw = { enabled: true, suffixMode: "keywords", keywords: ["DeepSeek"] };
+    const kw = {
+      enabled: true,
+      suffixMode: "keywords",
+      keywords: ["DeepSeek"],
+    };
     const out = rewriteModelsListForClaude(
       [
         { id: "bai/deepseek-v4-flash", object: "model" },
         { id: "glm/glm-4.7", object: "model" },
       ],
-      kw
+      kw,
     );
     expect(out[0].id.endsWith("[1m]")).toBe(true);
     expect(out[1].id.endsWith("[1m]")).toBe(false);
@@ -165,7 +200,7 @@ describe("rewriteModelsListForClaude", () => {
         { id: "my-combo", object: "model", owned_by: "combo" },
         { id: "x/huge", object: "model", context_length: 2_000_000 },
       ],
-      off
+      off,
     );
     expect(out[0].id).toBe("claude-my-combo");
     expect(out[1].id).toBe("claude-x/huge");
