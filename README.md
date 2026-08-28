@@ -23,6 +23,17 @@
 
 ---
 
+## Fork Status
+
+This repository is an **independently maintained fork** of [decolua/9router](https://github.com/decolua/9router), tracking upstream while carrying local fixes and integrations on its own schedule. The 9Router name, upstream history, license and author attribution are preserved.
+
+- **Upstream**: [decolua/9router](https://github.com/decolua/9router) (read-only reference; all development happens here)
+- **Maintenance**: this fork is not endorsed by, nor does it speak for, the upstream project
+- **Sync process**: open upstream PRs/issues are tracked under [`tracking/`](tracking/) with an idempotent sync command (`node scripts/tracking/sync-upstream.mjs`) that appends newly discovered upstream items to the open queue
+- **Baseline gate**: test regressions are judged with `node tests/__baseline__/verify-no-regression.mjs <results.json>`, not a raw pass/fail run
+
+---
+
 ## 🤔 Why 9Router?
 
 **Stop wasting money, tokens and hitting limits:**
