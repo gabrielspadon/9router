@@ -44,6 +44,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - 29 of 824 upstream open PRs processed (26 integrated, 3 adapted). 0 rejected so far; queue order is newest-first and upstream PRs are uniformly real fixes.
 - Pattern established: analyze workflow (5 parallel agents) -> implement workflow (parallel worktree agents) -> sequential merges -> full gate -> tracking close -> push.
 
+### 2026-08-28 — session 2 continued: security batch complete
+- Security PRs prioritized over queue order: #3503 adapted (residual /api/headroom gap closed in LOCAL_ONLY_PATHS), #3501 integrated (JWT_SECRET fail-fast), #3497 adapted (OIDC discovery SSRF guard at single choke point), #3502 rejected with its residual fork bug fixed (raw API key masked in usage stats aggregates), #3496 rejected (would reintroduce spoofing bypass), #3495 integrated (Anthropic Message on forced-SSE retry). Merged 821a36a1c, gate green 2019 pass / 85 fail / 0 unexpected, pushed e81ebe57f.
+- Notable: two upstream "security" PRs rejected with evidence — the fork's #3294 peer-token hardening is stronger; one PR's fix would reopen the hole it cites.
+- 35 of 824 upstream open PRs processed (29 integrated, 4 adapted, 2 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
