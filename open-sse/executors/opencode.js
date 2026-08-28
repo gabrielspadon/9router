@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
 const OPENCODE_UA = "opencode";
 const MESSAGES_MODELS = new Set();
@@ -38,6 +39,7 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
+    stripUnsupportedParams(this.provider, model, body);
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 

@@ -18,7 +18,11 @@ export function resolveUpstreamRoute({
   sourceFormat,
   credentials,
 }) {
-  const modelTargetFormat = getModelTargetFormat(alias, model);
+  // OpenCode Muse models: upstream requires the Responses API (#3509)
+  const modelTargetFormat =
+    (alias === "oc" || provider === "opencode") && /muse/i.test(model)
+      ? "openai-responses"
+      : getModelTargetFormat(alias, model);
   // Per-model guard: when a model declares supportedFormats, only use the
   // sourceFormat-matched transport if that format is declared (opencode-go models
   // differ — kimi/glm only do /chat/completions). Undeclared models keep the
