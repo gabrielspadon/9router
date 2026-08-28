@@ -228,39 +228,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3500 — fix(security): require dual auth for database import/export (GHSA-qvfm)
-
-- url: https://github.com/decolua/9router/pull/3500
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3499 — fix(security): extend PROTECTED_SETTING_KEYS to prevent mass assignment (GHSA-vmjq)
-
-- url: https://github.com/decolua/9router/pull/3499
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3498 — fix(security): require CLI token auth for MCP plugin endpoints (GHSA-63p9, GHSA-fhh6)
-
-- url: https://github.com/decolua/9router/pull/3498
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3494 — fix(token-saver): repair Headroom proxy UI and expose PXPIPE controls
 
 - url: https://github.com/decolua/9router/pull/3494

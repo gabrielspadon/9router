@@ -574,3 +574,45 @@
 - closed: 2026-08-28
 - detail: cherry-pick 013728010; 2 Vietnamese video guide cards; README only
 
+## PR #3500 — fix(security): require dual auth for database import/export (GHSA-qvfm)
+
+- url: https://github.com/decolua/9router/pull/3500
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: PR reimplemented (upstream version had missing import + non-exported helpers): /api/settings/database now requires valid CLI token or JWT AND dashboard password for GET+POST; presence-only CLI-header bypass closed; hasValidCliToken exported from dashboardGuard; 3 new tests, 28/28 focused, gate green
+
+## PR #3499 — fix(security): extend PROTECTED_SETTING_KEYS to prevent mass assignment (GHSA-vmjq)
+
+- url: https://github.com/decolua/9router/pull/3499
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: Root-cause fix instead of the 23-key deny-list (blind port would break ~10 legit dashboard flows): settings PATCH on non-GET now requires loopback peer or valid CLI token/JWT even when requireLogin=false; 4 new dashboard-guard tests; gate green
+
+## PR #3498 — fix(security): require CLI token auth for MCP plugin endpoints (GHSA-63p9, GHSA-fhh6)
+
+- url: https://github.com/decolua/9router/pull/3498
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Fork supersedes: /api/mcp/* in LOCAL_ONLY_PATHS behind deny-by-default middleware + peer-token hardening, strictly stronger than PR's per-route check; PR also imports non-exported symbol and would break local-browser MCP access
+
