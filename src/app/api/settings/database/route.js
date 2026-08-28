@@ -1,33 +1,44 @@
 import { NextResponse } from "next/server";
 import { exportDb, getSettings, importDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
-import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
+import {
+  verifyDashboardPassword,
+  verifyDashboardAuthToken,
+} from "@/lib/auth/dashboardSession";
+import { hasValidCliToken } from "@/dashboardGuard";
 
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const PASSWORD_HEADER = "x-9r-password";
 
-// CLI token requests are already trusted (local machine); skip password re-auth.
-function isCliRequest(request) {
-  return Boolean(request.headers.get(CLI_TOKEN_HEADER));
+// Gate is (valid CLI token OR valid JWT) AND dashboard password. Presence of the
+// x-9r-cli-token header alone is not sufficient (GHSA-qvfm / upstream PR #3500).
+async function isAuthorized(request, password) {
+  const jwt = request.cookies?.get?.("auth_token")?.value;
+  const identityOk =
+    (await hasValidCliToken(request)) ||
+    (jwt && (await verifyDashboardAuthToken(jwt)));
+  return Boolean(identityOk) && (await verifyDashboardPassword(password));
 }
 
 export async function GET(request) {
   try {
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
+    if (!(await isAuthorized(request, request.headers.get(PASSWORD_HEADER)))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     const payload = await exportDb();
     return NextResponse.json(payload);
   } catch (error) {
     console.log("Error exporting database:", error);
-    return NextResponse.json({ error: "Failed to export database" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to export database" },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(request) {
   try {
     const { password, ...payload } = await request.json();
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(password))) {
+    if (!(await isAuthorized(request, password))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     await importDb(payload);
@@ -37,7 +48,10 @@ export async function POST(request) {
       const settings = await getSettings();
       applyOutboundProxyEnv(settings);
     } catch (err) {
-      console.warn("[Settings][DatabaseImport] Failed to re-apply outbound proxy env:", err);
+      console.warn(
+        "[Settings][DatabaseImport] Failed to re-apply outbound proxy env:",
+        err,
+      );
     }
 
     return NextResponse.json({ success: true });
@@ -45,7 +59,7 @@ export async function POST(request) {
     console.log("Error importing database:", error);
     return NextResponse.json(
       { error: error?.message || "Failed to import database" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 }
