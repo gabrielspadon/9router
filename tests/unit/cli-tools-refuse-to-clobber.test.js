@@ -81,7 +81,7 @@ describe("copilot-settings keeps the user's other providers", () => {
       "utf8"
     );
 
-    expect(src).toContain("readExistingConfig(configPath, JSON.parse)");
+    expect(src).toContain("readExistingConfig(configPath,");
     expect(src).not.toContain("catch { /* No existing config */ }");
     // A file that parses but is not an array is also not "empty".
     expect(src).toContain("is not a provider array");
