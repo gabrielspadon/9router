@@ -308,3 +308,87 @@
 - closed: 2026-08-28
 - detail: cherry-pick 36aa66a83; usage dedupe narrowed to endpoint-less rows; 12/12 focused incl. 3 previously-known-fail db-concurrent tests now green; 3 baseline entries removed
 
+## PR #3503 — fix(security): require auth for headroom, tunnel, oauth, and reset-password endpoints (GHSA-g6g7, GHSA-x5c9, GHSA-86m2, GHSA-8gmq, GHSA-6g2f)
+
+- url: https://github.com/decolua/9router/pull/3503
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: PR supersedes 11/14 routes via fork's deny-by-default dashboardGuard (bb8680858, stronger than per-route requireAuth). Residual gap fixed: /api/headroom added to LOCAL_ONLY_PATHS, redundant /start /stop /proxy entries removed, 3 new guard tests. 45/45 guard tests, gate green 2019/85/2163, 0 unexpected
+
+## PR #3501 — fix(security): require explicit JWT_SECRET env var, remove auto-generated fallback (GHSA-jphh)
+
+- url: https://github.com/decolua/9router/pull/3501
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick b477cc59f (nitsuah, GHSA-jphh) + fork adaptation dropping dangling fs/path/DATA_DIR imports; JWT_SECRET now fail-fast at startup; behavior change documented (deployments relying on auto-generated secret must set JWT_SECRET)
+
+## PR #3497 — fix(security): add SSRF protection via URL validation and DNS pinning (GHSA-8g4w, GHSA-6mwv, GHSA-cmhj, GHSA-qj3v)
+
+- url: https://github.com/decolua/9router/pull/3497
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: Ported only the real gap: assertPublicUrl(issuerUrl) in fetchOidcDiscovery (single choke point). Skipped redundant per-route guards (fork validates at kiro service choke points) and inert open-sse DNS-pinning. 12/12 SSRF tests. Intranet IdP deployments now 400 (documented)
+
+## PR #3502 — fix(security): require auth for providers and usage endpoints, mask API keys (GHSA-vjc7)
+
+- url: https://github.com/decolua/9router/pull/3502
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Fork supersedes via dashboardGuard deny-by-default + existing maskApiKey. BUT the analysis found a real fork bug (raw API key in byApiKey stats for 7d/30d/60d/all), fixed as c613f05cd; 4 new masked-key tests
+
+## PR #3496 — fix(auth): prevent IP spoofing in brute-force protection (GHSA-32gc, GHSA-5mj8, GHSA-7cfm)
+
+- url: https://github.com/decolua/9router/pull/3496
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Fork already stronger via #3294 peer-token hardening (trustedPeer.js, custom-server.js, loginLimiter.js). PR would break 2 fork tests and its hunk 3 drops the x-9r-via-proxy check, reopening the spoofing class it cites
+
+## PR #3495 — fix(sse): return Anthropic Message when Claude client hits forceStream provider
+
+- url: https://github.com/decolua/9router/pull/3495
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 84c61d6148 (nitsuah); forced-SSE retry returns Anthropic Message to Claude clients, Codex path applied by hand around fork cacheRead lines; 12/12 focused; gate green
+
