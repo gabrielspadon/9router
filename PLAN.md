@@ -31,6 +31,13 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - xai-oauth-service 2-test flake confirmed env-dependent (passes solo), documented as non-blocking.
 - In flight: PR #3595 adaptation in isolated worktree (subagent); batch-2 analysis workflow for PRs 3589/3584/3575/3560/3558.
 
+### 2026-08-28 — session 2 continued: batch 2 complete
+- PR #3595 adapted + merged d0c8658..d0c8d6589 via worktree agent: claude-compat layer, model context windows, statistics dashboard, providers grid filters, opencode-go free-tier fixes. 4 conflicts kept fork state; PR's own test contradiction fixed; 38/38 targeted, gate green.
+- Batch 2 run as parallel worktree workflow (4 agents): PR #3558 (groq models + modelsFetcher), #3560 (combo empty-stream failover #3463, 31/31), #3584 (quota pause buffer, 13 commits squashed, 23/23), #3589 (Responses output items + fork mock adaptation). All 4 merged to master 5ca0a732e, gate green 1914 pass / 92 known-fail, pushed f138640c8.
+- Note: the 3589 worker's mock-fix commit had to be cherry-picked separately after the merge (worker left it on its branch; initial merge missed it).
+- In flight: PR #3575 adaptation (worktree agent, tool disclosure with anchorClaudeCache kept canonical), batch-3 analysis workflow for PRs 3556/3555/3552/3551/3550.
+- 12 of 824 upstream open PRs now processed (9 integrated, 1 adapted, plus session-1's 3).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
