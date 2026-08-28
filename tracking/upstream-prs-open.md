@@ -8993,5 +8993,16 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - local-ref: 
 - disposition: 
 - validation: 
-- notes: 
+- notes:
+
+## PR #1 — Usage tab + Sticky round-robin + Auth + Logger +small fixes
+
+- url: https://github.com/decolua/9router/pull/1
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
 
