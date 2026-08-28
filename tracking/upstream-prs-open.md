@@ -8621,3 +8621,14 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes:
 
+## PR #3610 — feat(kiro): update model definitions and CLI tool mappings
+
+- url: https://github.com/decolua/9router/pull/3610
+- upstream-state: open (discovered 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
