@@ -840,3 +840,59 @@
 - closed: 2026-08-28
 - detail: EditConnectionModal Base URL via fork's baseUrlField + mergeBaseUrl helper (upstream connectionBaseUrl naming dropped); TTS hint 8080->8880; 12/12 tests
 
+## PR #3509 — fix(opencode): support muse models via responses api and strip max_tokens
+
+- url: https://github.com/decolua/9router/pull/3509
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: cherry-picks c51cc78ee + d5b1829e9 + 366cf06a3: muse -> zen/v1/responses via upstreamRoute override, stripUnsupportedParams wired into opencode transformRequest, max_tokens/max_completion_tokens dropped for muse; cloudflare-ai flattenContent rule (accidentally dropped by upstream hunk) restored; 17/17 tests
+
+## PR #3507 — feat(token-saver): add truthful aggregate observability
+
+- url: https://github.com/decolua/9router/pull/3507
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-picks b53ba95f5 + 1eee7c563 (KunN-21); JSONL event store + stats API (LOCAL_ONLY) + dashboard tiles; chatCore signature merged with fork params; 47/47 tests
+
+## PR #3506 — fix(claude): normalize trailing assistant prefill for Claude targets
+
+- url: https://github.com/decolua/9router/pull/3506
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick d9c06d500; assistantPrefillPolicy concern wired into normalizeClaudePassthrough + prepareClaudeRequest (fork anchors matched spec); 10/10 tests; cache anchor re-lands after continuation turn
+
+## PR #3504 — fix(opencode): forward reasoning_effort for OpenCode zen stealth models
+
+- url: https://github.com/decolua/9router/pull/3504
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: 2 cherry-picks 9d568d5e5 + 6393c5654 (Shubham Mathur); opencode thinkingFormat enum + zen stealth caps; 7/7 + 28/28 adjacent
+
