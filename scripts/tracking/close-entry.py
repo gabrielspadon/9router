@@ -18,7 +18,9 @@ KINDS = {"PR": ("upstream-prs", "pull"), "Issue": ("upstream-issues", "issues")}
 
 def split_entries(text: str):
     """Return (preamble, list of entry strings) splitting on '## ' headings."""
-    m = re.search(r"^---\s*$", text, re.M)
+    # Preamble ends at a "---" line; tolerate it glued to the first heading
+    # ("---## PR #N") as older seeds wrote it.
+    m = re.search(r"^---(?:\s*$|(?=## (?:PR|Issue) #))", text, re.M)
     if not m:
         return text, []
     head, body = text[: m.end()], text[m.end() :]
