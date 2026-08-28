@@ -28,7 +28,11 @@ const CLAUDE_CAPABLE = [
   "qwen3.6-plus",
 ];
 // Models that also expose the OpenAI /responses endpoint
-const RESPONSES_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash"];
+const RESPONSES_CAPABLE = [
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "deepseek-v4-flash-vision-exp",
+];
 
 // Mirror of chatCore's per-model transport guard: use the sourceFormat-matched
 // transport only when the model declares support for that sourceFormat.
@@ -48,6 +52,7 @@ describe("OpenCode Go model catalog", () => {
       "kimi-k2.6",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
       "mimo-v2.5",
       "mimo-v2.5-pro",
       "minimax-m3",
