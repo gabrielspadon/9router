@@ -61,6 +61,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Batch 7: #3522 (tunnel CSPRNG), #3523 (atomic sql.js persist), #3524/#3525 (cli-tools refuse-to-clobber + sibling routes + JSONC parser), #3526/#3527 (usage stream listener cleanup; same upstream commit, PRs crossed). Merged aa6d15f5e, gate green 2124 pass / 66 known-fail / 0 unexpected, pushed 8bc0ed41a.
 - 53 of 825 upstream open PRs processed (44 integrated, 7 adapted, 2 rejected).
 
+### 2026-08-28 — session 2 continued: tick 4 complete
+- Batch 8: #3521 adapted (stream images kept, resolved against fork's delta.reasoning), #3520 (Claude stream once-guard), #3519 (tunnel health candidates), #3518 (provider error detail), #3517 (loopback proxy bypass). Merged 3f2fa7bd5, gate green 2165 pass / 66 known-fail / 0 unexpected, pushed.
+- Catch: worker for 3517 fetched a stale FETCH_HEAD carrying 3519's commit; re-fetched the actual PR head, validated, merged. Verify fetched head's title against the PR before trusting.
+- 58 of ~827 upstream open PRs processed (49 integrated, 7 adapted, 2 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
