@@ -56,6 +56,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - One upstream mock-signature fix (3534) had to be cherry-picked separately after merge; worker leaves follow-ups on branches, verify ancestry before closing.
 - 44 of 825 upstream open PRs processed (37 integrated, 5 adapted, 2 rejected).
 
+### 2026-08-28 — session 2 continued: tick 3 complete
+- Security batch 2: #3500 adapted (dual auth on database export/import, upstream PR itself broken — reimplemented), #3499 adapted (root-cause: settings PATCH gated on loopback-or-token even when requireLogin=false), #3498 rejected (superseded by LOCAL_ONLY middleware). Merged 82e943a09, pushed ce584b11b.
+- Batch 7: #3522 (tunnel CSPRNG), #3523 (atomic sql.js persist), #3524/#3525 (cli-tools refuse-to-clobber + sibling routes + JSONC parser), #3526/#3527 (usage stream listener cleanup; same upstream commit, PRs crossed). Merged aa6d15f5e, gate green 2124 pass / 66 known-fail / 0 unexpected, pushed 8bc0ed41a.
+- 53 of 825 upstream open PRs processed (44 integrated, 7 adapted, 2 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
