@@ -519,15 +519,16 @@ export async function getUsageStats(period = "all") {
         const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const apiKeyKey = apiKeyMasked || "local-no-key";
-        if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+        // Emit masked key as the object key (mirrors the 24h path); raw-key day buckets stay stored-only.
+        if (!stats.byApiKey[apiKeyKey]) {
+          stats.byApiKey[apiKeyKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
-        stats.byApiKey[akKey].requests += ak.requests || 0;
-        stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
-        stats.byApiKey[akKey].completionTokens += ak.completionTokens || 0;
-        stats.byApiKey[akKey].cachedTokens += ak.cachedTokens || 0;
-        stats.byApiKey[akKey].cost += ak.cost || 0;
-        if (dateKey > (stats.byApiKey[akKey].lastUsed || "")) stats.byApiKey[akKey].lastUsed = dateKey;
+        stats.byApiKey[apiKeyKey].requests += ak.requests || 0;
+        stats.byApiKey[apiKeyKey].promptTokens += ak.promptTokens || 0;
+        stats.byApiKey[apiKeyKey].completionTokens += ak.completionTokens || 0;
+        stats.byApiKey[apiKeyKey].cachedTokens += ak.cachedTokens || 0;
+        stats.byApiKey[apiKeyKey].cost += ak.cost || 0;
+        if (dateKey > (stats.byApiKey[apiKeyKey].lastUsed || "")) stats.byApiKey[apiKeyKey].lastUsed = dateKey;
       }
 
       for (const [epKey, ep] of Object.entries(day.byEndpoint || {})) {
@@ -565,7 +566,7 @@ export async function getUsageStats(period = "all") {
       }
 
       const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+        ? (maskApiKey(e.apiKey) || "local-no-key")
         : "local-no-key";
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
