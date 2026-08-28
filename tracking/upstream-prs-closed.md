@@ -798,3 +798,45 @@
 - closed: 2026-08-28
 - detail: Superseded: fork commit 5848735f0 (PR #3537) already fixes #3470 with createRefreshTimers; fork variant strictly stronger (ref-stable refreshAll, unconditional unmount stop); test parity confirmed (10 cases incl. both upstream mutation probes)
 
+## PR #3516 — fix(fallback): an expired per-model lock no longer masks an active account lock
+
+- url: https://github.com/decolua/9router/pull/3516
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick b82719f34; isModelLockActive judges each key on expiry (NaN = no lock); 5/5 tests
+
+## PR #3515 — fix(usage): make the observability env vars actually reach the enable check
+
+- url: https://github.com/decolua/9router/pull/3515
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick c5dd7d6b5; resolveObservabilityEnabled precedence (unset env = no opinion); 10-case test + typo fix; gate now 64 known-fails
+
+## PR #3512 — fix(providers): add a Base URL field for self-hosted TTS/STT connections
+
+- url: https://github.com/decolua/9router/pull/3512
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: EditConnectionModal Base URL via fork's baseUrlField + mergeBaseUrl helper (upstream connectionBaseUrl naming dropped); TTS hint 8080->8880; 12/12 tests
+

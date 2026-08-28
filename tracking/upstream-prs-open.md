@@ -8,39 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3516 — fix(fallback): an expired per-model lock no longer masks an active account lock
-
-- url: https://github.com/decolua/9router/pull/3516
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3515 — fix(usage): make the observability env vars actually reach the enable check
-
-- url: https://github.com/decolua/9router/pull/3515
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3512 — fix(providers): add a Base URL field for self-hosted TTS/STT connections
-
-- url: https://github.com/decolua/9router/pull/3512
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3509 — fix(opencode): support muse models via responses api and strip max_tokens
 
 - url: https://github.com/decolua/9router/pull/3509
