@@ -169,6 +169,32 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_sm_unseen ON seenModels(acknowledged)",
     ],
   },
+  // Full-history statistics source (45-day retention). Written once per
+  // request from the same detail used for requestDetails; the Statistics page
+  // reads all aggregation from this table only.
+  requestStats: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      timestamp: "TEXT NOT NULL",
+      provider: "TEXT",
+      model: "TEXT",
+      connectionId: "TEXT",
+      status: "TEXT",
+      promptTokens: "INTEGER DEFAULT 0",
+      completionTokens: "INTEGER DEFAULT 0",
+      cachedTokens: "INTEGER DEFAULT 0",
+      cacheCreationTokens: "INTEGER DEFAULT 0",
+      reasoningTokens: "INTEGER DEFAULT 0",
+      latencyTotal: "INTEGER DEFAULT 0",
+      latencyTtft: "INTEGER DEFAULT 0",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_rs_ts ON requestStats(timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_provider ON requestStats(provider)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_model ON requestStats(model)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_conn ON requestStats(connectionId)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {
