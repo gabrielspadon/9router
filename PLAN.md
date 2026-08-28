@@ -24,6 +24,13 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Full-suite gate green after every merge: 1813 pass / 90 known-fail / 0 new regressions.
 - Sync at start and end: upstream 824 PRs / 1000 issues open, 0 new.
 
+### 2026-08-28 — session 2 continued: batch integration (parallel mode)
+- PR #3601 integrated (streaming delta.reasoning passthrough), PR #3604 integrated (New Models discovery, 1 conflict resolved), PR #3592 integrated (free-model auto-discovery, 13 tests). Merged 0afeb4c47, pushed.
+- PR #3599 adapted and merged b47c238f7: cacheAnchor.js dropped (fork anchorClaudeCache supersedes), toolPruner composes with RTK, handoffStore kept opt-in default-off, tests ported node:test->vitest.
+- Tracking tooling bug root-caused and fixed: close-entry.py rebound `entry` before the `is not` identity filter, so the open-file removal never happened; residuals were cleaned every time by hand. Fixed (530ee4534), live round-trip tested, PR #1 restored to open.
+- xai-oauth-service 2-test flake confirmed env-dependent (passes solo), documented as non-blocking.
+- In flight: PR #3595 adaptation in isolated worktree (subagent); batch-2 analysis workflow for PRs 3589/3584/3575/3560/3558.
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
