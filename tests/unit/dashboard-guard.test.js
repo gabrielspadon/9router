@@ -314,6 +314,63 @@ describe("dashboard guard local-only access", () => {
     expect(response).toBe(mocks.nextResponse);
   });
 
+  it("rejects remote settings PATCH when requireLogin=false (PR 3499)", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const remoteRequest = request("/api/settings", {
+      host: "router.example.com",
+      method: "PATCH",
+    });
+    remoteRequest.method = "PATCH";
+
+    const response = await proxy(remoteRequest);
+
+    expect(response.status).toBe(401);
+  });
+
+  it("allows settings PATCH on loopback with valid JWT when requireLogin=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+
+    const loopbackRequest = localRequest("/api/settings", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+    });
+    loopbackRequest.method = "PATCH";
+    loopbackRequest.cookies.get.mockReturnValue({ value: "cookie-token" });
+
+    const response = await proxy(loopbackRequest);
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("allows remote settings PATCH with valid CLI token when requireLogin=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const cliRequest = request("/api/settings", {
+      host: "router.example.com",
+      method: "PATCH",
+      "x-9r-cli-token": "cli-token",
+    });
+
+    const response = await proxy(cliRequest);
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("keeps settings GET open when requireLogin=false (dashboard read)", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const getRequest = request("/api/settings", {
+      host: "router.example.com",
+    });
+    getRequest.method = "GET";
+
+    const response = await proxy(getRequest);
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
   it("rejects headroom routes from remote when requireLogin=false (PR 3503 gap)", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
