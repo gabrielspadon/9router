@@ -70,6 +70,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Batch 9: #3516 (lock expiry), #3515 (observability precedence) integrated; #3512 adapted (Edit-modal Base URL on fork infra); #3513/#3511 rejected as superseded (fork already fixed via 3542/3537). Merged a142fe259, gate green 2182 pass / 64 known-fail / 0 unexpected, pushed 50cbdba92.
 - 63 of ~827 upstream open PRs processed (52 integrated, 8 adapted, 3 rejected).
 
+### 2026-08-28 — session 2 continued: tick 6 complete
+- Batch 10: #3509 adapted (muse responses-api; upstream hunk had dropped the cloudflare-ai flattenContent rule — caught by test, restored), #3507 (token-saver observability), #3506 (assistant prefill policy), #3504 (opencode reasoning_effort). Merged 00ea418d5, gate green 2246 pass / 64 known-fail / 0 unexpected, pushed.
+- One workflow agent died on a provider 520 (Z.AI) mid-run after committing; worktree inspected, completed, validated manually.
+- 67 of ~827 upstream open PRs processed (56 integrated, 9 adapted, 3 rejected... recheck: 58+9=67).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
