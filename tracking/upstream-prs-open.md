@@ -8,28 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3582 — docs: add 2 Vietnamese video guides by ptit9x
-
-- url: https://github.com/decolua/9router/pull/3582
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3530 — test(golden): stop the url/header golden from pinning the machine that recorded it
-
-- url: https://github.com/decolua/9router/pull/3530
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3527 — fix(mcp): release the bridge session when an SSE client disconnects
 
 - url: https://github.com/decolua/9router/pull/3527

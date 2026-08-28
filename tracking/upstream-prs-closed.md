@@ -546,3 +546,31 @@
 - closed: 2026-08-28
 - detail: cherry-pick 12ca5efa3; both Kiro uuids normalized to <UUID>, reproducibility guards, 9/9 twice
 
+## PR #3530 — test(golden): stop the url/header golden from pinning the machine that recorded it
+
+- url: https://github.com/decolua/9router/pull/3530
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: cherry-pick 924ef8e06 (Nguyen Thanh Dat); snapshot applies cleanly to fork (portability sanitizer + regenerated snapshot + new golden-snapshot-portability guard); 128/128 golden tests, gate green fails=66
+
+## PR #3582 — docs: add 2 Vietnamese video guides by ptit9x
+
+- url: https://github.com/decolua/9router/pull/3582
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 013728010; 2 Vietnamese video guide cards; README only
+
