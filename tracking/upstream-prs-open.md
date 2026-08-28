@@ -8,17 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3595 — feat: claude-compat layer, model-context & statistics dashboard rework, ops tooling
-
-- url: https://github.com/decolua/9router/pull/3595
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3589 — fix: preserve Responses output items across provider translation
 
 - url: https://github.com/decolua/9router/pull/3589
