@@ -7,6 +7,7 @@ IDs are canonical as `Issue #N`. Never delete history; only move entries open→
 Entries marked `status: in-progress` remain in this file until the local work merges.
 
 ---
+
 ## Issue #3603 — Feature: New Models Discovery for all connected providers (incl. self-added)
 
 - url: https://github.com/decolua/9router/issues/3603
@@ -10989,17 +10990,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/issues/8
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## Issue #3606 — enhancement: Cloudflare Workers AI 有文本/图像模型但没有嵌入(embeddings)模型
-
-- url: https://github.com/decolua/9router/issues/3606
-- upstream-state: open (discovered 2026-08-28)
 - local-status: queued
 - branch: 
 - local-ref: 
