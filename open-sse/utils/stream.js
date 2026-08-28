@@ -76,6 +76,25 @@ export function createSSEStream(options = {}) {
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
 
+  // The stream finishes exactly once. `flush` runs when the upstream ends, and
+  // `cancel` when the client goes away mid-stream — the Streams spec calls one
+  // or the other, never both. Recording lived only in `flush`, so an aborted
+  // request left no usage row, no request detail and nothing in Recent
+  // Requests, even though the provider had already generated (and charged for)
+  // the partial answer (#3488).
+  let streamFinished = false;
+  const finishStream = (usage, { aborted = false } = {}) => {
+    if (streamFinished) return;
+    streamFinished = true;
+    if (!onStreamComplete) return;
+    onStreamComplete(
+      { content: accumulatedContent, thinking: accumulatedThinking },
+      usage,
+      ttftAt,
+      { aborted },
+    );
+  };
+
   return new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
@@ -380,12 +399,7 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
-          if (onStreamComplete) {
-            onStreamComplete({
-              content: accumulatedContent,
-              thinking: accumulatedThinking
-            }, usage, ttftAt);
-          }
+          finishStream(usage);
           return;
         }
 
@@ -457,14 +471,26 @@ export function createSSEStream(options = {}) {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
         
-        if (onStreamComplete) {
-          onStreamComplete({
-            content: accumulatedContent,
-            thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
-        }
+        finishStream(state?.usage);
       } catch (error) {
         console.log("Error in flush:", error);
+      }
+    },
+
+    // The client hung up. Nothing more can be written, but everything that was
+    // already generated is worth recording — with whatever usage the provider
+    // had reported by then.
+    cancel() {
+      try {
+        // TRANSLATE keeps usage on `state`, PASSTHROUGH in the closure variable
+        // — the same split the two flush paths above make.
+        let reported = state ? state.usage : usage;
+        if (!hasValidUsage(reported) && totalContentLength > 0) {
+          reported = estimateUsage(body, totalContentLength, state ? sourceFormat : FORMATS.OPENAI);
+        }
+        finishStream(reported, { aborted: true });
+      } catch (error) {
+        console.log("Error in cancel:", error);
       }
     }
   });
