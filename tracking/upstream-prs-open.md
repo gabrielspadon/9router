@@ -8,28 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3589 — fix: preserve Responses output items across provider translation
-
-- url: https://github.com/decolua/9router/pull/3589
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3584 — feat(quota): add configurable pause threshold for quota enforcement
-
-- url: https://github.com/decolua/9router/pull/3584
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3582 — docs: add 2 Vietnamese video guides by ptit9x
 
 - url: https://github.com/decolua/9router/pull/3582
@@ -44,28 +22,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3575 — feat(tool-disclosure): progressive tool disclosure — static filter + BM25 session index
 
 - url: https://github.com/decolua/9router/pull/3575
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3560 — fix(combo): fail over on empty-but-successful streams (#3463)
-
-- url: https://github.com/decolua/9router/pull/3560
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3558 — fix(groq): replace decommissioned models, add modelsFetcher
-
-- url: https://github.com/decolua/9router/pull/3558
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
