@@ -616,3 +616,87 @@
 - closed: 2026-08-28
 - detail: Fork supersedes: /api/mcp/* in LOCAL_ONLY_PATHS behind deny-by-default middleware + peer-token hardening, strictly stronger than PR's per-route check; PR also imports non-exported symbol and would break local-browser MCP access
 
+## PR #3527 — fix(mcp): release the bridge session when an SSE client disconnects
+
+- url: https://github.com/decolua/9router/pull/3527
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 1fb2b8ac4 (usage stream listener cleanup; also covers PR 3526); request.signal + idempotent cleanup(); 4/4 leak tests
+
+## PR #3526 — fix(usage): release the stats listeners when a dashboard tab disconnects
+
+- url: https://github.com/decolua/9router/pull/3526
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: same upstream commit 1fb2b8ac4 as PR 3527 (PRs crossed upstream); merged via 3527 + alternate branch 101f4eb93 to keep history
+
+## PR #3524 — fix(codex-settings): refuse to overwrite a config that could not be read
+
+- url: https://github.com/decolua/9router/pull/3524
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick d755e9006 + fork commit a226e1285 extending readExistingConfig to droid/openclaw/opencode sibling clobber sites; 7/7 tests
+
+## PR #3525 — fix(copilot-settings): keep the other providers when the config is unreadable
+
+- url: https://github.com/decolua/9router/pull/3525
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-picks bb3f7e4eb + fd5c58d24 + fork adaptation cd2cac1e9 (JSONC-tolerant parser shared GET/POST); 8/8 tests; test-file conflict with 3524 resolved taking 3525 superset
+
+## PR #3523 — fix(db): publish the sql.js database atomically
+
+- url: https://github.com/decolua/9router/pull/3523
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: upstream 1fb2b8ac4? no - cherry-pick of sql.js atomic persist + fork commit 8e9cd5d87; temp+fsync+rename; 4/4 atomic-persist tests
+
+## PR #3522 — fix(tunnel): draw the public subdomain from a CSPRNG
+
+- url: https://github.com/decolua/9router/pull/3522
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 49a6d7fdf + e31dfd698 (brittle source-reading test dropped); crypto.randomInt in tunnel generateShortId; 4/4 behavioral tests
+
