@@ -8544,3 +8544,14 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## PR #3612 — fix(fallback): parse provider-reported rate-limit reset times
+
+- url: https://github.com/decolua/9router/pull/3612
+- upstream-state: open (discovered 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
