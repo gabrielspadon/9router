@@ -49,6 +49,13 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Notable: two upstream "security" PRs rejected with evidence — the fork's #3294 peer-token hardening is stronger; one PR's fix would reopen the hole it cites.
 - 35 of 824 upstream open PRs processed (29 integrated, 4 adapted, 2 rejected).
 
+### 2026-08-28 — session 2 continued: batch 6 complete (loop tick 2)
+- Batch 5: PRs #3539-3543 integrated (selfhosted base URL, security-audit cwd fix, grok-cli 4.6, stream abort usage, oauth callback leak). Merged 87bd932c0, pushed df71d38db.
+- Batch 6: PRs #3528, #3529, #3530 (adapted), #3531, #3534, #3537, #3538, #3582 (docs). Merged 735432bc2, gate green 66 known-fails / 0 unexpected, pushed.
+- Workflow stall noted: one analysis run hung 45m with dead transcripts; killed and re-ran only the 3 missing agents fresh. Resume-from-cache blocked by affinity-injected script + guard (known friction; journal extraction used instead).
+- One upstream mock-signature fix (3534) had to be cherry-picked separately after merge; worker leaves follow-ups on branches, verify ancestry before closing.
+- 44 of 825 upstream open PRs processed (37 integrated, 5 adapted, 2 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
