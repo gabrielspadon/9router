@@ -7,16 +7,6 @@ IDs are canonical as `PR #N`. Never delete history; only move entries open→clo
 Entries marked `status: in-progress` remain in this file until the local work merges.
 
 ---
-## PR #3599 — feat(memory): modular AI memory management and context optimization pipeline
-
-- url: https://github.com/decolua/9router/pull/3599
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
 
 ## PR #3595 — feat: claude-compat layer, model-context & statistics dashboard rework, ops tooling
 
