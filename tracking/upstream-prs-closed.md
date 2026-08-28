@@ -462,3 +462,87 @@
 - closed: 2026-08-28
 - detail: cherry-pick 86eb2a69d; declarative baseUrlField in registry for selfhosted TTS/STT/embedding; buildProviderSpecificData extracted; 12/12 tests
 
+## PR #3538 — fix(transport): send the translated body to the endpoint that speaks its format (#3418, #3439)
+
+- url: https://github.com/decolua/9router/pull/3538
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 06ec1b07a; upstreamRoute.js resolves targetFormat+transport together; dead imports removed from chatCore; 12/12 upstream-route tests
+
+## PR #3529 — feat(models): report token limits on combo entries in /v1/models (#3486)
+
+- url: https://github.com/decolua/9router/pull/3529
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 0003a03c8 with fork adaptation (resolveTransport 3-arg with credentials); merge conflict with 3538 resolved taking superset; 12/12
+
+## PR #3528 — fix(chat): treat a request without a stream key as non-streaming (#3492)
+
+- url: https://github.com/decolua/9router/pull/3528
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick d8b51ef87; streamMode.js predicate, absent stream key = JSON (OpenAI default) except Gemini/Antigravity; 7/7
+
+## PR #3537 — fix(quota): give the auto-refresh countdown a single timer owner (#3470)
+
+- url: https://github.com/decolua/9router/pull/3537
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 591f432e3; createRefreshCountdownTimer extraction; 10/10
+
+## PR #3534 — fix(headroom): use execFileSync to avoid shell string with spaces
+
+- url: https://github.com/decolua/9router/pull/3534
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick a8ed492f2 + fork mock-signature fix c7ff0e7fe (upstream head fails its own suite); 5/5 detect tests
+
+## PR #3531 — test(golden): make the OpenAI → Kiro golden reproducible
+
+- url: https://github.com/decolua/9router/pull/3531
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 12ca5efa3; both Kiro uuids normalized to <UUID>, reproducibility guards, 9/9 twice
+
