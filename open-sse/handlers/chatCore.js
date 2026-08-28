@@ -20,6 +20,8 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { toolFilter } from "../utils/toolFilter.js";
+import { disclosureTools } from "../utils/toolDisclosure.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -58,7 +60,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, memorySettings }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, memorySettings, toolDisclosure }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -205,6 +207,42 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
+  // Per-request opt-out: computed early so token savers (including disclosure) can respect it.
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
+  // Progressive tool disclosure: static filter (Phase 1) + BM25 selection (Phase 2).
+  // Runs after dedupeTools, before RTK/headroom. cache_control stamping is NOT
+  // done here — anchorClaudeCache at the end of the pipeline stays the single
+  // source of truth for cache breakpoints.
+  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+    const beforeN = translatedBody.tools.length;
+    const beforeBytes = log?.debug ? JSON.stringify(translatedBody.tools).length : 0;
+
+    if (tokenSaverEnabled) {
+      if (toolDisclosure?.filterEnabled) {
+        const filtered = toolFilter(translatedBody.tools, toolDisclosure);
+        if (filtered.length < translatedBody.tools.length) {
+          log?.debug?.("TOOLDISCLOSE", `filter: ${translatedBody.tools.length}→${filtered.length} tools`);
+          translatedBody.tools = filtered;
+        }
+      }
+
+      if (toolDisclosure?.disclosureEnabled) {
+        const { tools: disclosed, stats } = disclosureTools(translatedBody.tools, body, connectionId, toolDisclosure);
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
+          translatedBody.tools = disclosed;
+        }
+      }
+    }
+
+    const afterN = translatedBody.tools.length;
+    if (log?.debug) {
+      const afterBytes = JSON.stringify(translatedBody.tools).length;
+      log.debug("TOOLDISCLOSE", `measure: ${beforeN}tools ${beforeBytes}B → ${afterN}tools ${afterBytes}B`);
+    }
+  }
+
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
@@ -235,9 +273,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
     delete translatedBody.tools;
   }
-
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
