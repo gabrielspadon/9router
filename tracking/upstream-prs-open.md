@@ -30,31 +30,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3513 — fix(usage): record streaming requests that end before their flush
-
-- url: https://github.com/decolua/9router/pull/3513
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3512 — fix(providers): add a Base URL field for self-hosted TTS/STT connections
 
 - url: https://github.com/decolua/9router/pull/3512
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3511 — fix(quota): stop the countdown from doubling after a visibility change
-
-- url: https://github.com/decolua/9router/pull/3511
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 

@@ -770,3 +770,31 @@
 - closed: 2026-08-28
 - detail: cherry-pick ee678d8d9; isLoopbackTarget guards in proxyFetch env+connection resolvers; 18/18 tests. First worker attempt fetched a stale FETCH_HEAD (3519's commit); re-fetched the real PR head and validated before merge
 
+## PR #3513 — fix(usage): record streaming requests that end before their flush
+
+- url: https://github.com/decolua/9router/pull/3513
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Superseded: fork commit 2a0354c97 (PR #3542, same upstream author) already records aborted streams via finishStream/cancel() with once-guard; upstream's withAbortRecording reworks the same flush block and would add a second parallel recording path. Residual gap noted: upstream-error mid-stream writes no partial detail row
+
+## PR #3511 — fix(quota): stop the countdown from doubling after a visibility change
+
+- url: https://github.com/decolua/9router/pull/3511
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Superseded: fork commit 5848735f0 (PR #3537) already fixes #3470 with createRefreshTimers; fork variant strictly stronger (ref-stable refreshAll, unconditional unmount stop); test parity confirmed (10 cases incl. both upstream mutation probes)
+
