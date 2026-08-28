@@ -66,6 +66,10 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Catch: worker for 3517 fetched a stale FETCH_HEAD carrying 3519's commit; re-fetched the actual PR head, validated, merged. Verify fetched head's title against the PR before trusting.
 - 58 of ~827 upstream open PRs processed (49 integrated, 7 adapted, 2 rejected).
 
+### 2026-08-28 — session 2 continued: tick 5 complete
+- Batch 9: #3516 (lock expiry), #3515 (observability precedence) integrated; #3512 adapted (Edit-modal Base URL on fork infra); #3513/#3511 rejected as superseded (fork already fixed via 3542/3537). Merged a142fe259, gate green 2182 pass / 64 known-fail / 0 unexpected, pushed 50cbdba92.
+- 63 of ~827 upstream open PRs processed (52 integrated, 8 adapted, 3 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
