@@ -61,7 +61,9 @@ def main() -> int:
         f"- closed: {__import__('datetime').date.today().isoformat()}\n"
         f"- detail: {detail}\n\n"
     )
-    new_open = head + "".join(e for e in entries if e is not entry)
+    # head may end mid-line ("---" glued to the first heading); re-join with a
+    # separating newline so the first remaining entry never re-glues.
+    new_open = head.rstrip() + "\n\n" + "".join(e for e in entries if e is not entry)
     new_closed = closed_text.rstrip() + "\n\n" + entry
 
     for path, content in ((open_f, new_open), (closed_f, new_closed)):

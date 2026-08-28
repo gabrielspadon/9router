@@ -7,28 +7,6 @@ IDs are canonical as `PR #N`. Never delete history; only move entries open→clo
 Entries marked `status: in-progress` remain in this file until the local work merges.
 
 ---
-## PR #3604 — feat: New Models Discovery for all connected providers
-
-- url: https://github.com/decolua/9router/pull/3604
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3601 — fix(stream): keep delta.reasoning chunks in streaming passthrough
-
-- url: https://github.com/decolua/9router/pull/3601
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3599 — feat(memory): modular AI memory management and context optimization pipeline
 
 - url: https://github.com/decolua/9router/pull/3599
@@ -43,17 +21,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3595 — feat: claude-compat layer, model-context & statistics dashboard rework, ops tooling
 
 - url: https://github.com/decolua/9router/pull/3595
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3592 — Feat/free model sync
-
-- url: https://github.com/decolua/9router/pull/3592
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
