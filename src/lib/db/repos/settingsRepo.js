@@ -91,6 +91,11 @@ const DEFAULT_SETTINGS = {
   // "glm-5.3" or "glm-5*"). Consumed by open-sse/providers/capabilities.js
   // via setContextWindowOverrides(); managed on /dashboard/model-context.
   contextWindowOverrides: {},
+  toolDisclosureEnabled: false,
+  toolDisclosureFilterEnabled: false,
+  toolDisclosureMaxTools: 20,
+  toolDisclosureExcludeServers: [],
+  toolDisclosureExcludeTools: [],
 };
 
 async function readRaw() {

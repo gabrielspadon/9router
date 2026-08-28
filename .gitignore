@@ -52,6 +52,8 @@ source/*
 docs/*
 !docs/ARCHITECTURE.md
 !docs/MEMORY_OPTIMIZATION.md
+!docs/design/
+!docs/design/**
 test/*
 open-sse/test/*
 RM.vn.md
