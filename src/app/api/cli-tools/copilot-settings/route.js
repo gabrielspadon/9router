@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { readExistingConfig } from "@/lib/cliTools/readExistingConfig";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -18,13 +19,15 @@ const getConfigPath = () => {
   return path.join(home, ".config", "Code", "User", "chatLanguageModels.json");
 };
 
+// Tolerate JSONC (trailing commas): VS Code writes chatLanguageModels.json as
+// JSONC, so both the GET reader and the POST merge must accept it.
+const parseJSONC = (raw) => JSON.parse(raw.replace(/,(\s*[}\]])/g, "$1"));
+
 const readConfig = async () => {
   try {
-    const content = await fs.readFile(getConfigPath(), "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
+    // Unparseable files are treated as "no config" rather than throwing a 500
+    // that the UI misreads as "tool not installed".
+    return parseJSONC(await fs.readFile(getConfigPath(), "utf-8"));
   } catch (error) {
     return null;
   }
@@ -72,13 +75,14 @@ export async function POST(request) {
     const configPath = getConfigPath();
     await fs.mkdir(path.dirname(configPath), { recursive: true });
 
-    // Read existing config array
-    let config = [];
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      const parsed = JSON.parse(existing);
-      config = Array.isArray(parsed) ? parsed : [];
-    } catch { /* No existing config */ }
+    // Read the existing provider array. A file that exists but cannot be read or
+    // parsed must NOT be treated as empty: the array is written back below, so
+    // that would drop every other model provider the user had configured.
+    const existingConfig = await readExistingConfig(configPath, parseJSONC);
+    if (existingConfig !== null && !Array.isArray(existingConfig)) {
+      throw new Error(`${configPath} is not a provider array; refusing to overwrite it`);
+    }
+    const config = existingConfig ?? [];
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
     const keyToUse = apiKey || "sk_9router";
@@ -115,7 +119,13 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error updating copilot settings:", error);
-    return NextResponse.json({ error: "Failed to update copilot settings" }, { status: 500 });
+    // Surface the one failure the user can act on — a config file of theirs that
+    // cannot be parsed — and keep everything else generic.
+    const refusedToClobber = String(error?.message || "").includes("refusing to overwrite it");
+    return NextResponse.json(
+      { error: refusedToClobber ? error.message : "Failed to update copilot settings" },
+      { status: 500 }
+    );
   }
 }
 
