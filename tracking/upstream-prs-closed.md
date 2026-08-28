@@ -224,3 +224,87 @@
 - closed: 2026-08-28
 - detail: merge b4c0b7170. Kept: toolFilter + BM25 toolDisclosure (default off) after dedupeTools, settings, UI, stats route, 46/46 tests. Dropped: PR's cache_control mid-pipeline re-stamping (fork anchorClaudeCache is sole source of truth), PR's weak CI workflow, PR design-pr doc. Signature keeps both memorySettings and toolDisclosure params. Gate green
 
+## PR #3556 — fix(stream): add TTFT watchdog to prevent hangs when upstream stalls before first byte
+
+- url: https://github.com/decolua/9router/pull/3556
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: cherry-pick 7d593ca06 (vianhanif) + adaptation ac18f7426: 30s ttft default decoupled from STREAM_FIRST_CHUNK_TIMEOUT_MS (stays 200s for combo peek + kiro repair in fork); 2 new watchdog tests, 33/33 targeted; gate green 2006 pass / 85 fail / 0 unexpected
+
+## PR #3549 — fix(commandcode): open the error chunk with the assistant role
+
+- url: https://github.com/decolua/9router/pull/3549
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 83a7a7ad8; commandcode error chunk role fix; 12/12 focused; gate green
+
+## PR #3548 — fix(tests): stop the headroom mock from breaking when an export is added
+
+- url: https://github.com/decolua/9router/pull/3548
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick d0840b97b; headroom mock widened via importOriginal; 3/3 focused; gate green
+
+## PR #3547 — fix(responses): keep one decoder for the stream and drain the last event
+
+- url: https://github.com/decolua/9router/pull/3547
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick; responses transform single decoder + flush drain; 4/4 focused; gate green
+
+## PR #3546 — fix(ollama-compat): one decoder, one terminator, no dropped tail
+
+- url: https://github.com/decolua/9router/pull/3546
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 7e5734ca4; ollama-compat NDJSON transform fix; 4/4 focused; gate green
+
+## PR #3544 — fix(usage): stop dropping requests that share a millisecond
+
+- url: https://github.com/decolua/9router/pull/3544
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 36aa66a83; usage dedupe narrowed to endpoint-less rows; 12/12 focused incl. 3 previously-known-fail db-concurrent tests now green; 3 baseline entries removed
+
