@@ -38,6 +38,12 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - In flight: PR #3575 adaptation (worktree agent, tool disclosure with anchorClaudeCache kept canonical), batch-3 analysis workflow for PRs 3556/3555/3552/3551/3550.
 - 12 of 824 upstream open PRs now processed (9 integrated, 1 adapted, plus session-1's 3).
 
+### 2026-08-28 — session 2 continued: batches 3+4 complete
+- Batch 3: PR #3550 (session LRU), #3551 (sql.js signal exit), #3552 (probe deadlines), #3555 (qoder refresh), #3575 (tool disclosure, adapted: anchorClaudeCache canonical). Merged 260b0409e, pushed fd90e3738.
+- Batch 4: PR #3544 (usage ms dedupe; 3 known-fails retired), #3546 (ollama NDJSON), #3547 (responses decoder), #3548 (headroom mock), #3549 (commandcode role), #3556 (TTFT watchdog, adapted: 30s decoupled from shared constant). Merged b866e914d, gate green 2006 pass / 85 fail / 0 unexpected.
+- 29 of 824 upstream open PRs processed (26 integrated, 3 adapted). 0 rejected so far; queue order is newest-first and upstream PRs are uniformly real fixes.
+- Pattern established: analyze workflow (5 parallel agents) -> implement workflow (parallel worktree agents) -> sequential merges -> full gate -> tracking close -> push.
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
