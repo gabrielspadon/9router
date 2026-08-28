@@ -56,7 +56,9 @@ def main() -> int:
     if "local-status: in-progress" in entry and disposition not in ("integrated", "closed", "resolved"):
         pass  # allowed: closing an in-progress entry is the normal end state
 
-    entry = entry.rstrip() + (
+    # Build the closed copy in a NEW variable: rebinding `entry` would break the
+    # `is not` identity filter below and silently leave the entry in the open file.
+    closed_entry = entry.rstrip() + (
         f"\n- final-disposition: {disposition}\n"
         f"- closed: {__import__('datetime').date.today().isoformat()}\n"
         f"- detail: {detail}\n\n"
@@ -64,7 +66,7 @@ def main() -> int:
     # head may end mid-line ("---" glued to the first heading); re-join with a
     # separating newline so the first remaining entry never re-glues.
     new_open = head.rstrip() + "\n\n" + "".join(e for e in entries if e is not entry)
-    new_closed = closed_text.rstrip() + "\n\n" + entry
+    new_closed = closed_text.rstrip() + "\n\n" + closed_entry
 
     for path, content in ((open_f, new_open), (closed_f, new_closed)):
         fd, tmp = tempfile.mkstemp(dir=str(path.parent))
