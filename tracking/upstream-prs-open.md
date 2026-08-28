@@ -8533,3 +8533,14 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## PR #3611 — fix(stream): passthrough dedup/normalization + OpenAI non-stream contract
+
+- url: https://github.com/decolua/9router/pull/3611
+- upstream-state: open (discovered 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
