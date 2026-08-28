@@ -1,5 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -186,9 +186,13 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  *
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
+ * ttftTimeoutMs is a separate first-byte watchdog, decoupled from the shared
+ * STREAM_FIRST_CHUNK_TIMEOUT_MS constant: combo.js and kiro.js use that
+ * constant (200s) as a prefill patience budget, while TTFT is fail-fast.
+ *
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, ttftTimeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, ttftTimeoutMs = 30000) {
   let stallTimer = null;
   let firstChunkTimer = null;
   let chunkCount = 0;
