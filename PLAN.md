@@ -16,6 +16,14 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - README.md: Fork Status section added
 - Baseline recorded. PR backlog processing begins next session.
 
+### 2026-08-28 — session 2: first backlog items processed
+- PR #3608 integrated: 1-line abuse-prevention backoff rule in errorConfig.js + test. Merged e063c21b3.
+- PR #3607 integrated: cherry-pick 7d669a44e (multi-protocol custom providers), clean apply (base == master tip). 33 focused tests, provider/alias baselines byte-identical. Merged bff6d21a1.
+- Issue #3606 implemented: Cloudflare Workers AI BGE embeddings (registry embeddingConfig + dedicated adapter resolving accountId from providerSpecificData). 4 new tests. Merged 6d37fe569.
+- Fixed seed-glue bug: preamble "---" was glued to first entry heading in both open files, broke close-entry.py section splitting; repaired files + hardened close-entry.py regex (536211d3e).
+- Full-suite gate green after every merge: 1813 pass / 90 known-fail / 0 new regressions.
+- Sync at start and end: upstream 824 PRs / 1000 issues open, 0 new.
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
