@@ -392,3 +392,73 @@
 - closed: 2026-08-28
 - detail: cherry-pick 84c61d6148 (nitsuah); forced-SSE retry returns Anthropic Message to Claude clients, Codex path applied by hand around fork cacheRead lines; 12/12 focused; gate green
 
+## PR #3543 — fix(oauth): stop leaking the callback server and its poll timer on failure
+
+- url: https://github.com/decolua/9router/pull/3543
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick cde39d815 (Nguyen Thanh Dat); shared waitForCallbackParams + finally-close across antigravity/codex/gemini/iflow/oauth; 4/4 tests, AUDIT-018 green; xai.js has same pattern (noted follow-up)
+
+## PR #3542 — fix(stream): record the turn when a client hangs up mid-stream (#3488)
+
+- url: https://github.com/decolua/9router/pull/3542
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: 4 commits (2a0354c97..); TransformStream cancel() + finishStream once-guard records aborted turns; 8/8 tests
+
+## PR #3541 — fix(tests): resolve security-audit sources from the repo, not the working dir
+
+- url: https://github.com/decolua/9router/pull/3541
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 5f1e22103; 13 cwd-relative security-audit reads -> REPO_ROOT via import.meta.url; 21/21 from tests/ AND repo root
+
+## PR #3540 — fix(grok-cli): forward reasoning.effort for grok-4.6 (#3514)
+
+- url: https://github.com/decolua/9router/pull/3540
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 9805bed86; grok-cli effort allowlist grok-4.5->4.6; 25/25 executor tests
+
+## PR #3539 — fix(providers): let self-hosted TTS/STT/embedding set their base URL (#3467)
+
+- url: https://github.com/decolua/9router/pull/3539
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 86eb2a69d; declarative baseUrlField in registry for selfhosted TTS/STT/embedding; buildProviderSpecificData extracted; 12/12 tests
+
