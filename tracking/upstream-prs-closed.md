@@ -700,3 +700,73 @@
 - closed: 2026-08-28
 - detail: cherry-pick 49a6d7fdf + e31dfd698 (brittle source-reading test dropped); crypto.randomInt in tunnel generateShortId; 4/4 behavioral tests
 
+## PR #3521 — fix(stream): stop dropping generated images from OpenAI-format streams
+
+- url: https://github.com/decolua/9router/pull/3521
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: cherry-pick a31a012fa resolved against fork's delta.reasoning clause (images added after reasoning); 4/4 tests, golden stream 7/7
+
+## PR #3520 — fix(translator): close an OpenAI→Claude stream once, not once per finish chunk
+
+- url: https://github.com/decolua/9router/pull/3520
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick fa9cf979d; claudeTerminalEmitted once-guard + toolArgBuffers clear; 4/4
+
+## PR #3519 — fix(tunnel): accept either URL as proof the tunnel is up
+
+- url: https://github.com/decolua/9router/pull/3519
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 47c7d6819; waitForHealth candidate URLs; 7/7
+
+## PR #3518 — fix(auth): keep the real reason instead of the bare "Provider error"
+
+- url: https://github.com/decolua/9router/pull/3518
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 4477ac5eb; describeProviderError in auth.js; 8/8
+
+## PR #3517 — fix(proxy): never send loopback requests through the outbound proxy
+
+- url: https://github.com/decolua/9router/pull/3517
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick ee678d8d9; isLoopbackTarget guards in proxyFetch env+connection resolvers; 18/18 tests. First worker attempt fetched a stale FETCH_HEAD (3519's commit); re-fetched the real PR head and validated before merge
+
