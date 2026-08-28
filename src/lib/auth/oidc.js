@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
+import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
 export const OIDC_COOKIE_NAMES = {
   state: "oidc_state",
@@ -63,7 +64,9 @@ export async function getOidcRuntimeConfig() {
 }
 
 export async function fetchOidcDiscovery(issuerUrl) {
-  const discoveryUrl = `${trimTrailingSlashes(issuerUrl)}/.well-known/openid-configuration`;
+  const trimmed = trimTrailingSlashes(issuerUrl);
+  assertPublicUrl(trimmed);
+  const discoveryUrl = `${trimmed}/.well-known/openid-configuration`;
   const res = await fetch(discoveryUrl, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to load OIDC discovery document from ${discoveryUrl}`);
