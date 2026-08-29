@@ -1050,3 +1050,45 @@
 - closed: 2026-08-28
 - detail: cherry-pick 7f5ff5ac (wolf1999h); account/provider filter persistence + hydration-gated initial fetch; coexists with hasHydratedAutoRefresh; 13/13
 
+## PR #3453 — Fly deploy
+
+- url: https://github.com/decolua/9router/pull/3453
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: External contributor's personal deployment: full Telegram bot (~3.4k lines, new deps incl. canvas/chart.js) + Fly.io stack hardcoding their app name, plus a /api/telegram PUBLIC_API_PATHS trust-boundary bypass guarded only in-module. Not a runtime fix; would add a permanent audit surface. Zero upstream reviews
+
+## PR #3451 — feat(opencode-go): add Ox Alpha free model
+
+- url: https://github.com/decolua/9router/pull/3451
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Superseded: ox-alpha-free already in fork via adapted #3483 (registry opencode-go.js:53 + OX_ALPHA_CAPABILITIES wired to all 4 aliases); fork catalog test pins exact arrays
+
+## PR #3447 — feat(opencode): add Ox Alpha free model
+
+- url: https://github.com/decolua/9router/pull/3447
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-28
+- detail: Superseded: x-preview-f-free covered richer in fork (capabilities.js:121 incl. videoInput + live-probed thinkingFormat opencode; PR's unverified openai format would regress); fork keeps opencode registry dynamic-fetcher-only by design
+
