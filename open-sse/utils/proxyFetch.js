@@ -247,8 +247,15 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   return normalizeProxyUrl(proxyUrlRaw);
 }
 
+// Connection pool limits — prevent socket exhaustion under concurrent upstream load
+const PROXY_MAX_CONNECTIONS = 64;
+const PROXY_MAX_FREE_CONNECTIONS = 32;
+const KEEP_ALIVE_TIMEOUT = 60_000;
+const CONNECTION_TIMEOUT = 30_000;
+const BODY_TIMEOUT = 300_000;
+
 /**
- * Create proxy dispatcher lazily (undici-compatible)
+ * Create proxy dispatcher lazily (undici-compatible) with connection limits
  */
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
@@ -260,7 +267,17 @@ async function getDispatcher(proxyUrl) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+    proxyDispatchers.set(normalized, new ProxyAgent({
+      uri: normalized,
+      connections: PROXY_MAX_CONNECTIONS,
+      keepAliveMaxTimeout: KEEP_ALIVE_TIMEOUT,
+      keepAliveTimeout: 4000,
+      bodyTimeout: BODY_TIMEOUT,
+      headersTimeout: 60_000,
+      connectTimeout: CONNECTION_TIMEOUT,
+      pipelining: 1,
+      maxCachedSessions: PROXY_MAX_FREE_CONNECTIONS,
+    }));
   }
 
   return proxyDispatchers.get(normalized);
