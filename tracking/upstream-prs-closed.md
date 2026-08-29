@@ -4956,3 +4956,115 @@
 - closed: 2026-08-29
 - detail: merge fca693a8d (4922a908b); customModels whitelist moved above live-catalog gate; custom-provider-model-list-3115.test.js
 
+## PR #3328 — fix(providers): add the missing Fish Audio and Alibaba Cloud brand icons
+
+- url: https://github.com/decolua/9router/pull/3328
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 667435127 (01efab706); fish-audio/alims-intl/alitp-intl brand PNGs + provider-brand-icons contract test (fork convention-path resolution, no map change)
+
+## PR #3317 — feat(cli-tools): add OpenClaude support
+
+- url: https://github.com/decolua/9router/pull/3317
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 9989d671b (3ee8f7804); openclaude cliTools card + icon + openclaude-cli-tool-1807.test.js
+
+## PR #3316 — feat(codex): hiển thị service tier thực tế trong log
+
+- url: https://github.com/decolua/9router/pull/3316
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 7da58076b (389ddd501); codex effective service_tier TIER log line, once per execute; codex-tier-log-3239.test.js
+
+## PR #3314 — fix(cli): ngăn cài SQLite native khi khởi động
+
+- url: https://github.com/decolua/9router/pull/3314
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge f30b59c81 (e4b2f0d7c); ensureSqliteRuntime installBetterSqlite=false, better-sqlite3 postinstall-only (12.6.2->12.10.1); startup never spawns npm
+
+## PR #3231 — feat: Add fallback cmodel (Cantus) for Qoder provider
+
+- url: https://github.com/decolua/9router/pull/3231
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 6358049e6 (301b608ff); qoder catalog cmodel (Cantus) fallback +41 in fetchQoderCatalogRaw; 62 qoder tests
+
+## PR #3219 — fix(auth): stop truncating upstream error text mid-reason
+
+- url: https://github.com/decolua/9router/pull/3219
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 76aeb0241 (fbe264893); ACCOUNT_ERROR_MESSAGE_MAX_CHARS=2000 in describeProviderError (fork's clip site post-3424); provider-error-detail-3424 updated
+
+## PR #3211 — feat(providers): add Novita AI provider support
+
+- url: https://github.com/decolua/9router/pull/3211
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 0bbd547c1 (e28da4e3d); novita registry p76 + models-fetch + testUtils/validate cases + baselines regenerated; novita-provider.test.js
+
+## PR #3206 — feat(server): optional API-only port
+
+- url: https://github.com/decolua/9router/pull/3206
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 02dc03530 (81175df85); optional API_PORT/API_HOSTNAME loopback-default API-only listener in custom-server.js, /v1+/v1beta+/responses+/codex gated; PR's keyPolicy/migration hunks skipped (fork divergence)
+

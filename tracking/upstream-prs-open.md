@@ -30,17 +30,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3328 — fix(providers): add the missing Fish Audio and Alibaba Cloud brand icons
-
-- url: https://github.com/decolua/9router/pull/3328
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3325 — Adaptive unsupported parameter stripper
 
 - url: https://github.com/decolua/9router/pull/3325
@@ -88,39 +77,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3318 — fix(translator): wrap array tool outputs in object for Gemini/Antigravity functionResponse
 
 - url: https://github.com/decolua/9router/pull/3318
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3317 — feat(cli-tools): add OpenClaude support
-
-- url: https://github.com/decolua/9router/pull/3317
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3316 — feat(codex): hiển thị service tier thực tế trong log
-
-- url: https://github.com/decolua/9router/pull/3316
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3314 — fix(cli): ngăn cài SQLite native khi khởi động
-
-- url: https://github.com/decolua/9router/pull/3314
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -305,17 +261,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3231 — feat: Add fallback cmodel (Cantus) for Qoder provider
-
-- url: https://github.com/decolua/9router/pull/3231
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3222 — fix(stream): synthesize a terminal when upstream drops mid-response
 
 - url: https://github.com/decolua/9router/pull/3222
@@ -349,31 +294,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3219 — fix(auth): stop truncating upstream error text mid-reason
-
-- url: https://github.com/decolua/9router/pull/3219
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3214 — fix(antigravity): harden Gemini streaming and 3.6 handling
 
 - url: https://github.com/decolua/9router/pull/3214
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3211 — feat(providers): add Novita AI provider support
-
-- url: https://github.com/decolua/9router/pull/3211
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -396,17 +319,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3208 — Fix resolve 429 resource exhausted by switching to production api endpoint and optimizing request size
 
 - url: https://github.com/decolua/9router/pull/3208
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3206 — feat(server): optional API-only port
-
-- url: https://github.com/decolua/9router/pull/3206
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
