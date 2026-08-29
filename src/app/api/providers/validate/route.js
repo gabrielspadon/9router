@@ -5,6 +5,11 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
+import {
+  createNousApiKeyProbe,
+  getNousApiKeyValidationError,
+  isNousApiKeyAccepted,
+} from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 import { fetchWithTimeout } from "@/lib/network/fetchWithTimeout.js";
 
@@ -296,6 +301,19 @@ export async function POST(request) {
           });
           isValid = openrouterRes.ok;
           break;
+
+        case "nous": {
+          // Nous exposes /models publicly, so a models request cannot validate
+          // the Portal key. Use the smallest authenticated inference instead.
+          const probe = createNousApiKeyProbe(apiKey);
+          const res = await fetchWithTimeout(probe.url, {
+            ...probe.options,
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = isNousApiKeyAccepted(res.status);
+          if (!isValid) error = getNousApiKeyValidationError(res.status);
+          break;
+        }
 
         case "glm":
         case "glm-cn":
