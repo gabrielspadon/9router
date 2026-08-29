@@ -657,39 +657,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3062 — feat(combos): add import/export with capacity adapter support
-
-- url: https://github.com/decolua/9router/pull/3062
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3058 — fix: correct AssemblyAI STT auth header
-
-- url: https://github.com/decolua/9router/pull/3058
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3057 — feat: add OpenCode Zen (PAYG) provider
-
-- url: https://github.com/decolua/9router/pull/3057
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3055 — fix(translator): prevent merging Gemini functionResponse with text turns & fix missing tool responses
 
 - url: https://github.com/decolua/9router/pull/3055
@@ -704,28 +671,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3048 — Fix/inline thinking translation
 
 - url: https://github.com/decolua/9router/pull/3048
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3047 — feat(usage): TokenRouter quota tracker via optional Management Key
-
-- url: https://github.com/decolua/9router/pull/3047
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3042 — feat(combos): add combo test runner and fallback sequence diagnostic
-
-- url: https://github.com/decolua/9router/pull/3042
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -767,17 +712,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3025 — fix: exempt OPTIONS preflight from auth on /v1/* paths (#1381)
-
-- url: https://github.com/decolua/9router/pull/3025
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3015 — feat(models): add Model Access page to gate what the endpoint serves
 
 - url: https://github.com/decolua/9router/pull/3015
@@ -803,39 +737,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2998 — feat(providers): paginate provider detail connection list
 
 - url: https://github.com/decolua/9router/pull/2998
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2997 — fix(proxyFetch): add undici connection pooling to prevent connection exhaustion
-
-- url: https://github.com/decolua/9router/pull/2997
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2972 — feat(usage-stats): change default view mode from 'costs' to 'tokens'
-
-- url: https://github.com/decolua/9router/pull/2972
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2957 — fix(tests): remove hardcoded Unix /tmp/node_modules paths for cross-platform vitest support
-
-- url: https://github.com/decolua/9router/pull/2957
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -880,17 +781,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2948 — feat(media-providers): add support for custom video provider nodes and AddCustomVideoModal
 
 - url: https://github.com/decolua/9router/pull/2948
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2946 — fix(chat): replay Envoy buffer overflow on same account
-
-- url: https://github.com/decolua/9router/pull/2946
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -979,28 +869,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2925 — fix(claude): preserve signed thinking across Responses tools
 
 - url: https://github.com/decolua/9router/pull/2925
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2922 — fix(tunnel): bypass worker self-signed TLS via TUNNEL_WORKER_INSECURE
-
-- url: https://github.com/decolua/9router/pull/2922
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2921 — fix(cli-tools): mark Amp as unsupported
-
-- url: https://github.com/decolua/9router/pull/2921
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 

@@ -5236,3 +5236,171 @@
 - closed: 2026-08-29
 - detail: merge 6756afe2a (e3ebd3be6); MAX_COMPRESS_BODY_BYTES 256KB fail-open gate + kompress opt-in (settings.headroomKompress===true); conflict kept fork !==false default in routes, lossless added
 
+## PR #3062 — feat(combos): add import/export with capacity adapter support
+
+- url: https://github.com/decolua/9router/pull/3062
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 14014df5e (4c8a62622+19a5cadc2); combos import/export routes + fork page.js hand-merged keeping free-sync/capacity-adapter UI; combos-import-export.test.js
+
+## PR #3058 — fix: correct AssemblyAI STT auth header
+
+- url: https://github.com/decolua/9router/pull/3058
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5e248fac2 (3683ff354); buildAuthHeaders authorization case + AssemblyAI form fields; assemblyai-stt.test.js
+
+## PR #3057 — feat: add OpenCode Zen (PAYG) provider
+
+- url: https://github.com/decolua/9router/pull/3057
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 19801baad (c46a3d66a); opencode-zen executor+registry p125+icon alias; 61 models; note: its catalog duplicates opencode-go ids, resolved by follow-up 01ee90dff deterministic bare-id owner
+
+## PR #3047 — feat(usage): TokenRouter quota tracker via optional Management Key
+
+- url: https://github.com/decolua/9router/pull/3047
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge a080538ea (b42967975); tokenrouter usage handler + USAGE_HANDLERS + management-key UI in fork's restructured modals; tokenrouter-usage.test.js 8/8
+
+## PR #3042 — feat(combos): add combo test runner and fallback sequence diagnostic
+
+- url: https://github.com/decolua/9router/pull/3042
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 0d02c72c2 (f5ff238f7); combo test-run routes + ComboTestModal wired into fork page; fork max_tokens:1024 probe kept (PR's 64 would regress #3010)
+
+## PR #3025 — fix: exempt OPTIONS preflight from auth on /v1/* paths (#1381)
+
+- url: https://github.com/decolua/9router/pull/3025
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge cc6219174 (5e1a10e85); OPTIONS preflight 204+ permissive CORS for PUBLIC_PREFIXES in dashboardGuard proxy()
+
+## PR #2997 — fix(proxyFetch): add undici connection pooling to prevent connection exhaustion
+
+- url: https://github.com/decolua/9router/pull/2997
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 8f1cf7673 (e068ca8af); ProxyAgent pooling opts (64 conns, keepAlive, pipelining, timeouts) onto fork's LRU dispatcher cache; PR's bypass-agent rewrite skipped (fork SNI-pinned createBypassRequest is deliberate)
+
+## PR #2972 — feat(usage-stats): change default view mode from 'costs' to 'tokens'
+
+- url: https://github.com/decolua/9router/pull/2972
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 54164ace4 (c90b463f9); UsageStats default view mode tokens; PR's SSE-merge revert + render simplification skipped (fork-divergent)
+
+## PR #2957 — fix(tests): remove hardcoded Unix /tmp/node_modules paths for cross-platform vitest support
+
+- url: https://github.com/decolua/9router/pull/2957
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge d72320662 (afd379f09); minimax-m3 test hint now cd tests && npx vitest run
+
+## PR #2946 — fix(chat): replay Envoy buffer overflow on same account
+
+- url: https://github.com/decolua/9router/pull/2946
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 41201e4f8 (641036abd); isRequestReplayBufferError 507 guard + one pinned same-account retry via preferredConnectionId; 2 new test files, 13 cases
+
+## PR #2922 — fix(tunnel): bypass worker self-signed TLS via TUNNEL_WORKER_INSECURE
+
+- url: https://github.com/decolua/9router/pull/2922
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge ed64d81b2 (7b84c4700); workerFetch rejectUnauthorized=false scoped to WORKER_URL host, opt-in TUNNEL_WORKER_INSECURE; tunnel-worker-fetch.test.js
+
+## PR #2921 — fix(cli-tools): mark Amp as unsupported
+
+- url: https://github.com/decolua/9router/pull/2921
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 1e143a476 (1601b4592); Amp marked unsupported:true + ToolSummaryCard Unsupported branch + DefaultToolCard error notes
+
