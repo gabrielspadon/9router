@@ -81,6 +81,13 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs(
   60 * 1000,
 );
 
+// Connect timeout for ollama-local: higher default because local models may need extra time
+// to load weights (especially large models). Env: OLLAMA_LOCAL_CONNECT_TIMEOUT_MS.
+export const OLLAMA_LOCAL_CONNECT_TIMEOUT_MS = envMs(
+  "OLLAMA_LOCAL_CONNECT_TIMEOUT_MS",
+  120 * 1000,
+);
+
 // Cap on the upstream error text persisted per account and echoed to clients.
 // The previous 100-char clip landed inside the upstream reason ("Upstream reques…"),
 // discarding the only diagnostic that mattered and leaving operators with nothing.

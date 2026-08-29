@@ -15,6 +15,13 @@ import {
 } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
+// Format byte count to human-readable string for debug logs
+function fmtBytes(n) {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)}MB`;
+}
+
 /**
  * BaseExecutor - Base class for provider executors
  */
@@ -293,7 +300,7 @@ export class BaseExecutor {
         const fetchT0 = Date.now();
         dbg(
           "FETCH",
-          `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`,
+          `${this.provider.toUpperCase()} → ${url} | model=${model} | body=${fmtBytes(bodyStr.length)} | connectTimeout=${timeoutMs}ms`,
         );
         const response = await proxyAwareFetch(
           url,
