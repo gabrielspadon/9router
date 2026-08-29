@@ -10997,3 +10997,14 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## Issue #3615 — unexpected status 401 Unauthorized: Missing API key, url: http://127.0.0.1:20128/v1/responses
+
+- url: https://github.com/decolua/9router/issues/3615
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+

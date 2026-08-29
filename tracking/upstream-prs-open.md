@@ -8061,3 +8061,14 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## PR #3616 — fix: all sse handler endpoints (chat, imagegeneratio... in chat.js
+
+- url: https://github.com/decolua/9router/pull/3616
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
