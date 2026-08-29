@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog } from "../../open-sse/rtk/headroom.js";
+import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, resetHeadroomCircuitBreaker } from "../../open-sse/rtk/headroom.js";
 import { parseHeadroomTimeoutMs } from "../../src/lib/headroom/detect.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetHeadroomCircuitBreaker();
   delete process.env.HEADROOM_API_KEY;
   delete process.env.HEADROOM_PROXY_TOKEN;
 });
@@ -744,9 +745,13 @@ describe("OpenAI structural validation (adversarial proxy)", () => {
   }
 
   it("dropped messages (3→1) with claimed savings → null, body untouched, one fetch", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(proxyReply([
+    // ponytail: plain assignment instead of vi.spyOn — after restoreAllMocks, spyOn
+    // records calls from the previous test's assigned vi.fn into the new spy (vitest
+    // quirk), inflating call counts. Assignment style matches the rest of this file.
+    global.fetch = vi.fn(async () => proxyReply([
       { role: "user", content: "tiny" },
     ]));
+    const fetchSpy = global.fetch;
     const body = threeMessageBody();
     const before = structuredClone(body);
     const diag = {};
