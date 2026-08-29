@@ -12,6 +12,7 @@ import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConv
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 /**
@@ -499,6 +500,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       }
     }
   }
+
+  // JSON mode: drop a ```json fence the provider added around the object
+  unfenceJsonChoices(body, translatedResponse);
 
   reqLogger.logConvertedResponse(translatedResponse);
 
