@@ -1092,3 +1092,45 @@
 - closed: 2026-08-28
 - detail: Superseded: x-preview-f-free covered richer in fork (capabilities.js:121 incl. videoInput + live-probed thinkingFormat opencode; PR's unverified openai format would regress); fork keeps opencode registry dynamic-fetcher-only by design
 
+## PR #3452 — fix(project-id): fail fast, skip needless refetch
+
+- url: https://github.com/decolua/9router/pull/3452
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 763cccd6 (S1NXIAN); done:true+empty project terminal, provider passthrough, refetch gated on stored projectId; 13/13 gemini-36 tests
+
+## PR #3457 — feat(stream): emit SSE keepalive ping during upstream silence for Claude Code (#3409)
+
+- url: https://github.com/decolua/9router/pull/3457
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: keepalive pings re-homed POST-transform (upstream injected pre-translator; translator would see pings); SSE_KEEPALIVE_MS via envMs allowZero, default 10s; cleanup on all terminal paths incl. TTFT fire; 6/6 keepalive+TTFT tests, spy proves translator input clean
+
+## PR #3460 — feat: add Devin Cloud provider
+
+- url: https://github.com/decolua/9router/pull/3460
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: 13 upstream commits (fadlee) + adaptation 965f0da4e: Devin Cloud provider (registry/executor/oauth/models/tests), alias+golden baselines regen, dead images config dropped, OAuthModal paste-gating fix (zed crash), server.js conflict kept fork OAUTH_TIMEOUT; 49 devin tests
+

@@ -8,39 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3460 — feat: add Devin Cloud provider
-
-- url: https://github.com/decolua/9router/pull/3460
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3457 — feat(stream): emit SSE keepalive ping during upstream silence for Claude Code (#3409)
-
-- url: https://github.com/decolua/9router/pull/3457
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3452 — fix(project-id): fail fast, skip needless refetch
-
-- url: https://github.com/decolua/9router/pull/3452
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3445 — fix(opencode): route Muse models through Responses API
 
 - url: https://github.com/decolua/9router/pull/3445
