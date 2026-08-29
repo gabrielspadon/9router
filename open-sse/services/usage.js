@@ -14,6 +14,7 @@ import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn
 import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getCursorUsage } from "./usage/cursor.js";
+import { getCloudflareUsage } from "./usage/cloudflare.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import {
@@ -22,6 +23,7 @@ import {
   getGlmUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
+  getOpencodeGoUsage,
 } from "./usage/misc.js";
 
 /**
@@ -56,6 +58,9 @@ const USAGE_HANDLERS = {
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   cursor: (c) => getCursorUsage(c.accessToken, c.proxyOptions),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
+  "opencode-go": (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
+  ocg: (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
+  "cloudflare-ai": (c) => getCloudflareUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {

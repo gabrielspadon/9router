@@ -11,30 +11,58 @@ const STRIP_RULES = [
   // GitHub Copilot gpt-5.4: temperature unsupported.
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
-  { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
+  {
+    provider: "github",
+    match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m),
+    drop: ["thinking", "reasoning_effort"],
+  },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
   // OpenCode Muse models: upstream rejects /chat/completions (500) and max_tokens (400),
   // requires Responses API endpoint and no max_tokens / max_completion_tokens. upstream rejects /chat/completions (500) and max_tokens (400),
   // requires Responses API endpoint and no max_tokens / max_completion_tokens.
-  { provider: "opencode", match: /muse/i, drop: ["max_tokens", "max_completion_tokens"] },
-  { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
+  {
+    provider: "opencode",
+    match: /muse/i,
+    drop: ["max_tokens", "max_completion_tokens"],
+  },
+  // VolcEngine Ark rejects GLM-5.x max_tokens above 128000 (#2428), even though
+  // GLM-5.2's advertised ceiling is 131072 — pin an explicit endpoint cap so the
+  // global GLM-5.2 caps change doesn't leak past Ark's real upstream limit.
+  // min() with the model ceiling still applies if a variant's own limit is lower.
+  {
+    provider: "volcengine-ark",
+    match: /glm-5/i,
+    maxOutputCap: 128000,
+    clampToModelMaxOutput: true,
+  },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),
   // so clampToModelMaxOutput alone leaves it uncapped and the request 400s with
   // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
   // min() with the model ceiling still applies if a variant's own limit is lower.
-  { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
+  {
+    provider: "volcengine-ark",
+    match: /kimi/i,
+    maxOutputCap: 32768,
+    clampToModelMaxOutput: true,
+  },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
 function matches(rule, model) {
   if (!rule.match) return true;
-  return typeof rule.match === "function" ? rule.match(model) : rule.match.test(model);
+  return typeof rule.match === "function"
+    ? rule.match(model)
+    : rule.match.test(model);
 }
 
 function clampNumber(body, key, ceiling) {
-  if (typeof body[key] === "number" && Number.isFinite(body[key]) && body[key] > ceiling) {
+  if (
+    typeof body[key] === "number" &&
+    Number.isFinite(body[key]) &&
+    body[key] > ceiling
+  ) {
     body[key] = ceiling;
   }
 }
@@ -42,7 +70,12 @@ function clampNumber(body, key, ceiling) {
 // Remove unsupported params from body in place; returns body.
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
-  if (provider !== "claude" && provider !== "anthropic" && !provider?.startsWith?.("anthropic-compatible") && body.context_management !== undefined) {
+  if (
+    provider !== "claude" &&
+    provider !== "anthropic" &&
+    !provider?.startsWith?.("anthropic-compatible") &&
+    body.context_management !== undefined
+  ) {
     delete body.context_management;
   }
   for (const rule of STRIP_RULES) {
@@ -56,7 +89,9 @@ export function stripUnsupportedParams(provider, model, body) {
       for (const msg of body.messages) {
         if (msg && Array.isArray(msg.content)) {
           msg.content = msg.content
-            .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
+            .map((b) =>
+              b?.type === "text" && typeof b.text === "string" ? b.text : "",
+            )
             .join("");
         }
       }
@@ -64,7 +99,11 @@ export function stripUnsupportedParams(provider, model, body) {
     if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {
       const modelCeiling = getCapabilitiesForModel(provider, model).maxOutput;
       const candidates = [];
-      if (rule.clampToModelMaxOutput && Number.isFinite(modelCeiling) && modelCeiling > 0) {
+      if (
+        rule.clampToModelMaxOutput &&
+        Number.isFinite(modelCeiling) &&
+        modelCeiling > 0
+      ) {
         candidates.push(modelCeiling);
       }
       if (Number.isFinite(rule.maxOutputCap) && rule.maxOutputCap > 0) {
