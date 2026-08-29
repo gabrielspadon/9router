@@ -124,6 +124,7 @@ import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
 import p123 from "./nous.js";
+import p124 from "./meta.js";
 
 export default [
   p0,
@@ -249,4 +250,5 @@ export default [
   p120,
   p121,
   p123,
+  p124,
 ];

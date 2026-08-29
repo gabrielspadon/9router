@@ -33,6 +33,7 @@ const FORMAT_LEVELS = {
   step: L.base,
   ollama: L.levelMax,
   nous: L.base,
+  meta: ["minimal", "low", "medium", "high", "xhigh"], // Muse Spark — no disable, no max
 
 };
 
