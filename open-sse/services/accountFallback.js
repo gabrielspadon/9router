@@ -1,5 +1,15 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
+// Envoy "request buffer limit exceeded" (HTTP 507): upstream could not buffer the
+// body for a retry — the request must be replayed on the same account, not locked.
+const REQUEST_REPLAY_BUFFER_ERROR = "exceeded request buffer limit while retrying upstream";
+
+export function isRequestReplayBufferError(status, errorText) {
+  if (Number(status) !== 507) return false;
+  const message = typeof errorText === "string" ? errorText : JSON.stringify(errorText || "");
+  return message.toLowerCase().includes(REQUEST_REPLAY_BUFFER_ERROR);
+}
+
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
  * Level 1: 2s, Level 2: 4s, Level 3: 8s... capped at 5 minutes
@@ -21,6 +31,10 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
+  if (isRequestReplayBufferError(status, errorText)) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
