@@ -1247,7 +1247,7 @@ Imagens publicadas (multiplataforma `linux/amd64` + `linux/arm64`):
 ```bash
 docker run -d \
   --name 9router \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   decolua/9router:latest
@@ -1261,7 +1261,7 @@ docker run -d \
 git clone https://github.com/decolua/9router.git
 cd 9router/app
 docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 \
+docker run -d --name 9router -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
 ```
 
