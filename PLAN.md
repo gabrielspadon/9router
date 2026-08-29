@@ -134,3 +134,12 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - 222 superseded/skip PRs closed in tracking (commit 9da3bb444), all 222 applied cleanly, sync --check OK, open=492 closed=339. 6 PRs triaged in both waves reconciled (superseded-high wins).
 - Docs batch merged (da7008643): PR 2837 Zoo Code branding, 1161 loopback docker bindings (23 files, security), 2812 video reorder. Gate v3 green (2580/63, no regression); v1/v2 reds were parallel-run flake plus one wrong-cwd rerun (ran from repo root, 66 bogus file fails).
 - Remaining open: 489 PRs (165 integrate, 254 adapt, 67 needs-full-analysis, plus float). Next: implement batches over the integrate queue; adapt queue needs per-PR fork-delta reconciliation.
+
+### 2026-08-29 — session 2 continued: tick 16 (batch 19, 20 PRs)
+
+- Batch 19 complete: all 20 integrate-queue PRs merged through 02dc03530, gate green (2659 pass / 63 known fails), pushed through c27aa61ef.
+- Tranche 1 (12): 3618 GLM caps, 3616 chat rate limit, 3342 codebuddy gate env, 3332 deepseek formats, 3331 Qoder 403/112, 3330 noauth session id, 3311 xiaomi region test, 3310 xiaomi caps + tool args, 3284 lians plugin, 3265 ZDR toggle, 3254 empty tool_calls, 3252 curated model list.
+- Tranche 2 (6): 3328 brand icons, 3317 openclaude, 3316 codex TIER log, 3314 sqlite postinstall, 3231 qoder cmodel, 3219 error detail 2000.
+- Final (2): 3211 Novita provider (baselines regenerated), 3206 loopback API-only listener.
+- Ops note: 6-agent wave limit silently truncates 10-agent parallel batches; fixed by splitting into 6+2 waves. z-ai 429s retried by the workflow runtime without loss.
+- Integrate queue: 145 remaining. Next: continue integrate batches by age.
