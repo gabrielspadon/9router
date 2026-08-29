@@ -74,7 +74,10 @@ export function resolveBareModelStaticOwner(modelStr) {
   if (owners.length === 1) return resolveProviderAlias(owners[0]);
   const byPrefix = owners.find((alias) => modelStr.startsWith(alias));
   if (byPrefix) return resolveProviderAlias(byPrefix);
-  return null;
+  // Same id shipped by several providers (e.g. opencode-go and opencode-zen
+  // share the OpenCode catalog): the first registry declaration wins so the
+  // name never falls through to blind prefix inference.
+  return resolveProviderAlias(owners[0]);
 }
 
 /**
