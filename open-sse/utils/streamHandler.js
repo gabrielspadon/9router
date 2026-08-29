@@ -1,10 +1,18 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import {
+  STREAM_STALL_TIMEOUT_MS,
+  SSE_KEEPALIVE_MS,
+} from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date().toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 /**
@@ -15,7 +23,14 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
+export function createStreamController({
+  onDisconnect,
+  onError,
+  log,
+  provider,
+  model,
+  reqTag = "",
+} = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
@@ -26,8 +41,12 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
   const logStream = (symbol, status, isError = false) => {
     const duration = Date.now() - startTime;
     const emit = isError ? log?.errorLine : log?.line;
-    if (emit) emit(reqTag, symbol, `${status} · ${provider}/${model} · ${duration}ms`);
-    else console.log(`[${getTimeString()}] ${symbol} ${provider}/${model} · ${status} · ${duration}ms`);
+    if (emit)
+      emit(reqTag, symbol, `${status} · ${provider}/${model} · ${duration}ms`);
+    else
+      console.log(
+        `[${getTimeString()}] ${symbol} ${provider}/${model} · ${status} · ${duration}ms`,
+      );
   };
 
   return {
@@ -42,7 +61,10 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       disconnected = true;
 
       logStream("⚡", `DISCONNECT: ${reason}`);
-      dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
+      dbg(
+        "CTRL",
+        `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`,
+      );
 
       // Delay abort to allow cleanup
       abortTimeout = setTimeout(() => {
@@ -78,11 +100,15 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
         return;
       }
 
-      logStream("✗", `ERROR: ${error.message}${error.stack ? `\n    ${error.stack}` : ""}`, true);
+      logStream(
+        "✗",
+        `ERROR: ${error.message}${error.stack ? `\n    ${error.stack}` : ""}`,
+        true,
+      );
       onError?.(error);
     },
 
-    abort: () => abortController.abort()
+    abort: () => abortController.abort(),
   };
 }
 
@@ -95,7 +121,11 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(
+  transformStream,
+  streamController,
+  onAbortTerminal = null,
+) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
@@ -107,7 +137,9 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     try {
       const bytes = onAbortTerminal();
       if (bytes) controller.enqueue(bytes);
-    } catch { /* best-effort terminal */ }
+    } catch {
+      /* best-effort terminal */
+    }
   };
 
   return new ReadableStream({
@@ -131,7 +163,8 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         const wasConnected = streamController.isConnected();
         // Controller already closed = downstream ended; not an upstream error, skip noisy log.
         const msg0 = error?.message || "";
-        const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
+        const isControllerClosed =
+          msg0.includes("already closed") || msg0.includes("Invalid state");
         if (!isControllerClosed) streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
@@ -160,7 +193,9 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           } else {
             controller.error(error);
           }
-        } catch (e) { /* already closed or cancelled */ }
+        } catch (e) {
+          /* already closed or cancelled */
+        }
       }
     },
 
@@ -168,7 +203,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
       streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
       writer.abort();
-    }
+    },
   });
 }
 
@@ -192,9 +227,18 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  *
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, ttftTimeoutMs = 30000) {
+export function pipeWithDisconnect(
+  providerResponse,
+  transformStream,
+  streamController,
+  onAbortTerminal = null,
+  stallTimeoutMs = STREAM_STALL_TIMEOUT_MS,
+  ttftTimeoutMs = 30000,
+  keepaliveMs = SSE_KEEPALIVE_MS,
+) {
   let stallTimer = null;
   let firstChunkTimer = null;
+  let keepaliveTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
@@ -206,26 +250,47 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   // Separate from the inter-chunk stall watchdog so slow-but-healthy streams
   // (e.g. reasoning models with long prefill) are never falsely aborted.
   const clearFirstChunk = () => {
-    if (firstChunkTimer) { clearTimeout(firstChunkTimer); firstChunkTimer = null; }
+    if (firstChunkTimer) {
+      clearTimeout(firstChunkTimer);
+      firstChunkTimer = null;
+    }
   };
   const armFirstChunk = () => {
     clearFirstChunk();
     firstChunkTimer = setTimeout(() => {
       firstChunkTimer = null;
       dbg(tag, `TTFT TIMEOUT ${ttftTimeoutMs}ms | no bytes received`);
-      streamController.handleError?.(new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`));
+      clearKeepalive();
+      streamController.handleError?.(
+        new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`),
+      );
       streamController.abort?.();
     }, ttftTimeoutMs);
   };
 
   const clearStall = () => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = null;
+    }
+  };
+  // SSE keepalive: emits ping frames downstream while the provider is silent
+  // (pre-TTFT). Mounted on the OUTBOUND side (after transformStream) so pings
+  // never enter the translator input — upstream see PR #3457's pre-tap version.
+  const clearKeepalive = () => {
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+      keepaliveTimer = null;
+    }
   };
   const armStall = () => {
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
-      dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
+      dbg(
+        tag,
+        `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`,
+      );
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
     }, stallTimeoutMs);
@@ -238,15 +303,50 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); streamController.handleDisconnect(r); },
-    abort: () => { clearFirstChunk(); clearStall(); streamController.abort(); }
+    handleComplete: () => {
+      dbg(
+        tag,
+        `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearFirstChunk();
+      clearStall();
+      clearKeepalive();
+      streamController.handleComplete();
+    },
+    handleError: (e) => {
+      dbg(
+        tag,
+        `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearFirstChunk();
+      clearStall();
+      clearKeepalive();
+      streamController.handleError(e);
+    },
+    handleDisconnect: (r) => {
+      dbg(
+        tag,
+        `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearFirstChunk();
+      clearStall();
+      clearKeepalive();
+      streamController.handleDisconnect(r);
+    },
+    abort: () => {
+      clearFirstChunk();
+      clearStall();
+      clearKeepalive();
+      streamController.abort();
+    },
   };
 
   armFirstChunk();
   armStall();
-  dbg(tag, `pipe start | ttftTimeout=${ttftTimeoutMs}ms | stallTimeout=${stallTimeoutMs}ms`);
+  dbg(
+    tag,
+    `pipe start | ttftTimeout=${ttftTimeoutMs}ms | stallTimeout=${stallTimeoutMs}ms | keepalive=${keepaliveMs}ms`,
+  );
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {
@@ -256,24 +356,64 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       const now = Date.now();
       const gap = now - lastChunkAt;
       lastChunkAt = now;
-      if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
-        dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
+      if (
+        isDebugEnabled &&
+        (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)
+      ) {
+        dbg(
+          tag,
+          `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`,
+        );
       }
       clearFirstChunk(); // first byte received — TTFT watchdog satisfied
       armStall();
       controller.enqueue(chunk);
     },
-    flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
+    flush() {
+      dbg(
+        tag,
+        `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
+      );
+      clearStall();
+      clearKeepalive();
+    },
   });
 
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+    .pipeThrough(transformStream)
+    .pipeThrough(
+      new TransformStream({
+        start(controller) {
+          if (keepaliveMs > 0) {
+            keepaliveTimer = setInterval(() => {
+              if (chunkCount === 0 && streamController.isConnected()) {
+                dbg(tag, `keepalive ping sent (silence=${Date.now() - t0}ms)`);
+                try {
+                  controller.enqueue(
+                    new TextEncoder().encode("event: ping\ndata: {}\n\n"),
+                  );
+                } catch {
+                  clearKeepalive();
+                }
+              } else {
+                clearKeepalive();
+              }
+            }, keepaliveMs);
+          }
+        },
+        cancel() {
+          clearKeepalive();
+        },
+      }),
+    );
 
   return createDisconnectAwareStream(
-    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
+    {
+      readable: transformedBody,
+      writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
+    },
     wrappedController,
-    onAbortTerminal
+    onAbortTerminal,
   );
 }
-
