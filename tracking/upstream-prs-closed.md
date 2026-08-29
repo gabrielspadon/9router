@@ -1148,3 +1148,59 @@
 - closed: 2026-08-29
 - detail: Superseded by fork's merged PR 3528: streamMode.js:23 body?.stream===true with Gemini/Antigravity carve-outs, stronger test coverage (stream-mode-default-3492 + force-stream-config); upstream one-liner is a strict subset
 
+## PR #3433 — fix(responses): preserve usage in completed events
+
+- url: https://github.com/decolua/9router/pull/3433
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: upstream 2 commits; usage-only Chat SSE chunks captured, cached/reasoning mapped to Responses shape, completed deferred to flush; 5/5
+
+## PR #3426 — fix(usage): show model and provider for single-item groups
+
+- url: https://github.com/decolua/9router/pull/3426
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 87e2a9c8d (dajinglingpake); single-item summary rows show model/provider; eslint clean
+
+## PR #3429 — feat(models): add combo-only model exposure
+
+- url: https://github.com/decolua/9router/pull/3429
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: lazy adaptation (upstream comboToEntry would drop fork enrichment): exposeComboOnly setting + post-loop early-return with owned_by=filter + profile toggle + 4 fork-mock tests
+
+## PR #3423 — feat(open-sse): Revise Qwen3.8 pricing and add Meta Muse patterns and capabilities
+
+- url: https://github.com/decolua/9router/pull/3423
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: qwen3.8 rows before *qwen*max*, step-3.7, canonical Qwen3.8 + qwen3-coder pricing, muse PATTERN_PRICING; upstream muse capability patterns skipped (fork live-verified opencode format wins); thinkingCanDisable:false added to muse-spark exact ids; 39/39
+
