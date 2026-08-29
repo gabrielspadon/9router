@@ -6,7 +6,12 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import Toggle from "@/shared/components/Toggle";
+import {
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+  AI_PROVIDERS,
+} from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 import { mergeBaseUrl } from "@/shared/utils/providerSpecificData";
 import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
@@ -22,17 +27,18 @@ function QuotaPauseField({ connection, thresholds, onChange }) {
     <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
       <h3 className="font-semibold mb-1 text-sm">Quota Safety Buffer</h3>
       <p className="text-xs text-text-muted mb-3">
-        Pause this account when a quota window&apos;s remaining % drops to/below its value.
-        Set a window to 0 to disable it.
+        Pause this account when a quota window&apos;s remaining % drops to/below
+        its value. Set a window to 0 to disable it.
       </p>
       {!info.eligible ? (
         <p className="text-xs text-text-muted">
-          Usage tracking isn&apos;t available for this account type, so the buffer can&apos;t be applied.
+          Usage tracking isn&apos;t available for this account type, so the
+          buffer can&apos;t be applied.
         </p>
       ) : windows.length === 0 ? (
         <p className="text-xs text-text-muted">
-          No quota windows known yet. Open the Quota Tracker to fetch usage first, then set
-          per-window buffers here.
+          No quota windows known yet. Open the Quota Tracker to fetch usage
+          first, then set per-window buffers here.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -40,9 +46,13 @@ function QuotaPauseField({ connection, thresholds, onChange }) {
             const value = Number(thresholds[w.key]) || 0;
             return (
               <div key={w.key} className="flex items-center gap-2">
-                <span className="flex-1 min-w-0 truncate text-sm" title={w.key}>{w.key}</span>
+                <span className="flex-1 min-w-0 truncate text-sm" title={w.key}>
+                  {w.key}
+                </span>
                 <span className="text-xs text-text-muted tabular-nums w-14 text-right">
-                  {typeof w.remainingPercentage === "number" ? `${w.remainingPercentage}%` : "—"}
+                  {typeof w.remainingPercentage === "number"
+                    ? `${w.remainingPercentage}%`
+                    : "—"}
                 </span>
                 <span className="text-xs text-text-muted">≤</span>
                 <input
@@ -50,7 +60,9 @@ function QuotaPauseField({ connection, thresholds, onChange }) {
                   min={0}
                   max={100}
                   value={value}
-                  onChange={(e) => onChange(w.key, Number.parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) =>
+                    onChange(w.key, Number.parseInt(e.target.value, 10) || 0)
+                  }
                   className="w-16 px-2 py-1 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                 />
                 <span className="text-xs text-text-muted">%</span>
@@ -68,9 +80,14 @@ QuotaPauseField.propTypes = {
   thresholds: PropTypes.object.isRequired,
   onChange: PropTypes.func.isRequired,
 };
-||||||| parent of 11ce6daac (fix(providers): add a Base URL field for self-hosted TTS/STT connections)
 
-export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
+export default function EditConnectionModal({
+  isOpen,
+  connection,
+  proxyPools,
+  onSave,
+  onClose,
+}) {
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
@@ -91,6 +108,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [zdrEnabled, setZdrEnabled] = useState(false);
 
   useEffect(() => {
     if (connection) {
@@ -103,39 +121,61 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "azure" && connection.providerSpecificData) {
         setAzureData({
           azureEndpoint: connection.providerSpecificData.azureEndpoint || "",
-          apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
+          apiVersion:
+            connection.providerSpecificData.apiVersion || "2024-10-01-preview",
           deployment: connection.providerSpecificData.deployment || "",
           organization: connection.providerSpecificData.organization || "",
         });
       }
-      if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
-        setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+      if (
+        connection.provider === "cloudflare-ai" &&
+        connection.providerSpecificData
+      ) {
+        setCloudflareData({
+          accountId: connection.providerSpecificData.accountId || "",
+        });
       }
       setBaseUrl(connection.providerSpecificData?.baseUrl || "");
       // Load region for providers that support it (e.g. xiaomi-tokenplan)
       const providerCfg = AI_PROVIDERS?.[connection.provider];
       if (providerCfg?.regions) {
-        const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
+        const savedRegion =
+          connection.providerSpecificData?.region ||
+          providerCfg.defaultRegion ||
+          providerCfg.regions[0]?.id ||
+          "";
         setRegion(savedRegion);
       }
       setTestResult(null);
       setValidationResult(null);
-      setQuotaPauseThresholds(connection.quotaPauseThresholds && typeof connection.quotaPauseThresholds === "object" ? { ...connection.quotaPauseThresholds } : {});
+      setQuotaPauseThresholds(
+        connection.quotaPauseThresholds &&
+          typeof connection.quotaPauseThresholds === "object"
+          ? { ...connection.quotaPauseThresholds }
+          : {},
+      );
     }
-  }, [connection]);
+  }, [connection, isOpen]);
 
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isCommandCode = connection?.provider === "commandcode";
   const isCompatible = connection
-    ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
+    ? isOpenAICompatibleProvider(connection.provider) ||
+      isAnthropicCompatibleProvider(connection.provider)
     : false;
-  const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
-  const baseUrlField = connection ? (AI_PROVIDERS?.[connection.provider]?.baseUrlField || null) : null;
+  const providerRegions = connection
+    ? AI_PROVIDERS?.[connection.provider]?.regions || null
+    : null;
+  const baseUrlField = connection
+    ? AI_PROVIDERS?.[connection.provider]?.baseUrlField || null
+    : null;
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
-    if (providerRegions && region) return { ...((connection?.providerSpecificData) || {}), region };
+    if (providerRegions && region)
+      return { ...(connection?.providerSpecificData || {}), region };
     return undefined;
   };
 
@@ -144,7 +184,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+      const res = await fetch(`/api/providers/${connection.id}/test`, {
+        method: "POST",
+      });
       const data = await res.json();
       setTestResult(data.valid ? "success" : "failed");
     } catch {
@@ -165,9 +207,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         body: JSON.stringify({
           provider: connection.provider,
           apiKey: formData.apiKey,
+          ...(isCommandCode ? { providerSpecificData: { zdrEnabled } } : {}),
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
-          ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
+          ...(providerRegions
+            ? { providerSpecificData: buildRegionSpecificData() }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -201,9 +246,16 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               body: JSON.stringify({
                 provider: connection.provider,
                 apiKey: formData.apiKey,
+                ...(isCommandCode
+                  ? { providerSpecificData: { zdrEnabled } }
+                  : {}),
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
-                ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
-                ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
+                ...(isCloudflareAi
+                  ? { providerSpecificData: cloudflareData }
+                  : {}),
+                ...(providerRegions
+                  ? { providerSpecificData: buildRegionSpecificData() }
+                  : {}),
               }),
             });
             const data = await res.json();
@@ -221,7 +273,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           updates.lastErrorAt = null;
         }
       }
-      
+
       // Add Azure-specific data if this is an Azure connection
       if (isAzure) {
         updates.providerSpecificData = {
@@ -233,6 +285,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isCommandCode) {
+        updates.providerSpecificData = { zdrEnabled };
       }
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
@@ -246,7 +301,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           baseUrl,
         );
       }
-      
+
       await onSave(updates);
     } finally {
       setSaving(false);
@@ -274,7 +329,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           label="Priority"
           type="number"
           value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              priority: Number.parseInt(e.target.value, 10) || 1,
+            })
+          }
         />
         {baseUrlField && (
           <Input
@@ -288,7 +348,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
         <QuotaPauseField
           thresholds={quotaPauseThresholds}
-          onChange={(key, val) => setQuotaPauseThresholds((prev) => ({ ...prev, [key]: val }))}
+          onChange={(key, val) =>
+            setQuotaPauseThresholds((prev) => ({ ...prev, [key]: val }))
+          }
           connection={connection}
         />
 
@@ -299,54 +361,81 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 label="API Key"
                 type="password"
                 value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, apiKey: e.target.value })
+                }
                 placeholder="Enter new API key"
                 hint="Leave blank to keep the current API key."
                 className="flex-1"
               />
               <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+                <Button
+                  onClick={handleValidate}
+                  disabled={!formData.apiKey || validating || saving}
+                  variant="secondary"
+                >
                   {validating ? "Checking..." : "Check"}
                 </Button>
               </div>
             </div>
             {validationResult && (
-              <Badge variant={validationResult === "success" ? "success" : "error"}>
+              <Badge
+                variant={validationResult === "success" ? "success" : "error"}
+              >
                 {validationResult === "success" ? "Valid" : "Invalid"}
               </Badge>
             )}
           </>
         )}
 
+        {isCommandCode && (
+          <Toggle
+            checked={zdrEnabled}
+            onChange={setZdrEnabled}
+            label="Require Zero Data Retention (ZDR)"
+            description="Sends x-cmd-zdr: 1 for this API key. Models without a ZDR upstream may be unavailable."
+          />
+        )}
+
         {isAzure && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
-            <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
+            <h3 className="font-semibold mb-3 text-sm">
+              Azure OpenAI Configuration
+            </h3>
             <div className="flex flex-col gap-3">
               <Input
                 label="Azure Endpoint"
                 value={azureData.azureEndpoint}
-                onChange={(e) => setAzureData({ ...azureData, azureEndpoint: e.target.value })}
+                onChange={(e) =>
+                  setAzureData({ ...azureData, azureEndpoint: e.target.value })
+                }
                 placeholder="https://your-resource.openai.azure.com"
                 hint="Your Azure OpenAI resource endpoint URL"
               />
               <Input
                 label="Deployment Name"
                 value={azureData.deployment}
-                onChange={(e) => setAzureData({ ...azureData, deployment: e.target.value })}
+                onChange={(e) =>
+                  setAzureData({ ...azureData, deployment: e.target.value })
+                }
                 placeholder="gpt-4"
                 hint="The deployment name in your Azure resource"
               />
               <Input
                 label="API Version"
                 value={azureData.apiVersion}
-                onChange={(e) => setAzureData({ ...azureData, apiVersion: e.target.value })}
+                onChange={(e) =>
+                  setAzureData({ ...azureData, apiVersion: e.target.value })
+                }
                 placeholder="2024-10-01-preview"
                 hint="Azure OpenAI API version to use"
               />
               <Input
                 label="Organization"
                 value={azureData.organization}
-                onChange={(e) => setAzureData({ ...azureData, organization: e.target.value })}
+                onChange={(e) =>
+                  setAzureData({ ...azureData, organization: e.target.value })
+                }
                 placeholder="Organization ID"
                 hint="Required for billing"
               />
@@ -359,7 +448,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             label="Region"
             value={region}
             onChange={(e) => setRegion(e.target.value)}
-            options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+            options={providerRegions.map((r) => ({
+              value: r.id,
+              label: r.label,
+            }))}
           />
         )}
 
@@ -377,8 +469,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+          <Button onClick={handleSubmit} fullWidth disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          <Button onClick={onClose} variant="ghost" fullWidth>
+            Cancel
+          </Button>
         </div>
       </div>
     </Modal>
@@ -396,11 +492,12 @@ EditConnectionModal.propTypes = {
     provider: PropTypes.string,
     providerSpecificData: PropTypes.object,
   }),
-  proxyPools: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-  })),
+  proxyPools: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string,
+      name: PropTypes.string,
+    }),
+  ),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-
