@@ -429,14 +429,13 @@ export const MODEL_PRICING = {
     reasoning: 18.0,
     cache_creation: 3.0,
   },
-  "o1": {
+  o1: {
     input: 15.0,
     output: 60.0,
     cached: 7.5,
     reasoning: 60.0,
     cache_creation: 15.0,
   },
-
 
   // === Gemini ===
   "gemini-3.7-flash": {
@@ -595,19 +594,115 @@ export const MODEL_PRICING = {
   },
 
   // === Qwen ===
+  // Qwen3.8 family — canonical provider-agnostic rates (mirror TokenRouter overrides).
   "qwen3-coder-plus": {
-    input: 1.0,
-    output: 4.0,
+    input: 0.65,
+    output: 3.25,
     cached: 0.5,
-    reasoning: 6.0,
+    reasoning: 3.25,
     cache_creation: 1.0,
   },
   "qwen3-coder-flash": {
-    input: 0.5,
-    output: 2.0,
+    input: 0.195,
+    output: 0.975,
     cached: 0.25,
-    reasoning: 3.0,
+    reasoning: 0.975,
     cache_creation: 0.5,
+  },
+  "qwen3-coder-next": {
+    input: 0.12,
+    output: 0.8,
+    cached: 0.06,
+    reasoning: 0.8,
+    cache_creation: 0.5,
+  },
+  "qwen3.8-max": {
+    input: 2.0,
+    output: 6.0,
+    cached: 0.25,
+    reasoning: 6.0,
+    cache_creation: 2.5,
+  },
+  "qwen3.8-27b": {
+    input: 0.4,
+    output: 3.0,
+    cached: 0.05,
+    reasoning: 3.0,
+  },
+  "qwen3.8-2.4t-a95b": {
+    input: 2.0,
+    output: 6.0,
+    cached: 0.25,
+    reasoning: 6.0,
+  },
+  "qwen3.7-max": {
+    input: 1.475,
+    output: 4.425,
+    cached: 0.25,
+    reasoning: 4.425,
+  },
+  "qwen3.7-plus": {
+    input: 0.32,
+    output: 1.28,
+    cached: 0.08,
+    reasoning: 1.28,
+  },
+  "qwen3.6-plus": {
+    input: 0.325,
+    output: 1.95,
+    reasoning: 1.95,
+  },
+  "qwen3.6-flash": {
+    input: 0.1875,
+    output: 1.125,
+    cached: 0.01875,
+    cache_creation: 0.2344,
+    reasoning: 1.125,
+  },
+  "qwen3.6-35b-a3b": {
+    input: 0.098,
+    output: 0.95,
+    reasoning: 0.95,
+  },
+  "qwen3.6-27b": {
+    input: 0.289,
+    output: 2.4,
+    reasoning: 2.4,
+  },
+  "qwen3.6-max-preview": {
+    input: 1.027,
+    output: 6.162,
+    reasoning: 6.162,
+  },
+  "qwen3.5-plus": {
+    input: 0.3,
+    output: 1.8,
+    reasoning: 1.8,
+  },
+  "qwen3.5-flash": {
+    input: 0.065,
+    output: 0.26,
+    reasoning: 0.26,
+  },
+  "qwen3.5-27b": {
+    input: 0.195,
+    output: 1.56,
+    reasoning: 1.56,
+  },
+  "qwen3.5-35b-a3b": {
+    input: 0.14,
+    output: 1.0,
+    reasoning: 1.0,
+  },
+  "qwen3.5-122b-a10b": {
+    input: 0.26,
+    output: 2.08,
+    reasoning: 2.08,
+  },
+  "qwen3.5-397b-a17b": {
+    input: 0.3025,
+    output: 1.925,
+    reasoning: 1.925,
   },
 
   // === Kimi ===
@@ -1968,6 +2063,50 @@ export const PATTERN_PRICING = [
       cache_creation: 0.5,
     },
   },
+
+  // --- Meta Muse (specific first, generic last) ---
+  // Muse Spark (Meta Model API): $1.25/$4.25 standard, $0.10/$0.20 contributor.
+  {
+    pattern: "*muse-spark*contributor*",
+    pricing: {
+      input: 0.1,
+      output: 0.2,
+      cached: 0.002,
+      reasoning: 0.3,
+      cache_creation: 0.1,
+    },
+  },
+  {
+    pattern: "*muse-spark*",
+    pricing: {
+      input: 1.25,
+      output: 4.25,
+      cached: 0.15,
+      reasoning: 6.375,
+      cache_creation: 1.25,
+    },
+  },
+  // Muse Glimmer (open-weight 30B): ~$0.30/$1.20 via resellers.
+  {
+    pattern: "*muse-glimmer*",
+    pricing: {
+      input: 0.3,
+      output: 1.2,
+      cached: 0.04,
+      reasoning: 1.8,
+      cache_creation: 0.3,
+    },
+  },
+  {
+    pattern: "*muse*",
+    pricing: {
+      input: 1.25,
+      output: 4.25,
+      cached: 0.15,
+      reasoning: 6.375,
+      cache_creation: 1.25,
+    },
+  },
 ];
 
 /**
@@ -2076,7 +2215,11 @@ export function calculateCostFromTokens(tokens, pricing) {
   // rate, apply only the DELTA between the reasoning and output rates instead
   // of charging the full rate again.
   const reasoningTokens = Math.min(tokens.reasoning_tokens || 0, outputTokens);
-  if (reasoningTokens > 0 && pricing.reasoning && pricing.reasoning !== pricing.output) {
+  if (
+    reasoningTokens > 0 &&
+    pricing.reasoning &&
+    pricing.reasoning !== pricing.output
+  ) {
     cost += reasoningTokens * ((pricing.reasoning - pricing.output) / 1000000);
   }
 

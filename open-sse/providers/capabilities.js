@@ -120,8 +120,8 @@ export const MODEL_CAPABILITIES = {
   // upstream vendor's (verified live: xhigh/minimal/auto rejected with 1210).
   "x-preview-f-free":  { vision: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 1000000, maxOutput: 131072 },
   "big-pickle":        { reasoning: true, thinkingFormat: "opencode", contextWindow: 200000, maxOutput: 32000 },
-  "muse-spark-1.2":    { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 1048576, maxOutput: 131072 },
-  "muse-spark-1.2-contributor-free": { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.2":    { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.2-contributor-free": { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   // MiMo v2.5 free resurface — "*mimo*" patterns are non-reasoning; this one reasons.
   "mimo-v2.5-free":    { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 200000, maxOutput: 32000 },
 
@@ -306,6 +306,11 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
+  // Qwen3.8-Max is multimodal (vision/video) but *qwen*max* is text-only (3.6/3.7-max
+  // are text-only) → 3.8 patterns must precede *qwen*max* so qwen3.8-max resolve multimodal.
+  // Qwen3.8 2.4T open model is NOT multimodal.
+  { pattern: "*qwen3.8-2.4t*",  caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
+  { pattern: "*qwen3.8*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen*max*",      caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.5*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.6*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
@@ -372,9 +377,17 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 } },
   { pattern: "*laguna*",        caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
 
+  // ── Meta Muse ────────────────────────────────────────────────────
+  // Muse Spark (Meta Model API) always reasons — rejects "none" → cannot disable.
+  // Fork live-verified opencode thinking format; upstream claims openai.
+  { pattern: "*muse-spark*",    caps: { vision: true, videoInput: true, audioInput: true, reasoning: true, search: true, thinkingFormat: "opencode", thinkingCanDisable: false, contextWindow: 1048576 } },
+  { pattern: "*muse-glimmer*",  caps: { vision: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 128000 } },
+  { pattern: "*muse*",          caps: { vision: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 128000 } },
+
   // ── Others ───────────────────────────────────────────────────────
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
+  { pattern: "*step-3.7*",      caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "step", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
