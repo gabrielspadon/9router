@@ -896,3 +896,73 @@
 - closed: 2026-08-28
 - detail: 2 cherry-picks 9d568d5e5 + 6393c5654 (Shubham Mathur); opencode thinkingFormat enum + zen stealth caps; 7/7 + 28/28 adjacent
 
+## PR #3487 — fix(models): expose combo aggregate token limits on /v1/models
+
+- url: https://github.com/decolua/9router/pull/3487
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick b61a8c4ce (fredom); combo entries gain context_length (min member) + max_completion_tokens (max maxOutput); 60/60 combo tests
+
+## PR #3482 — fix(capabilities): mark DeepSeek V4 Flash Vision as vision-capable
+
+- url: https://github.com/decolua/9router/pull/3482
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick a22ce2163 (qingyong); vision capability + commandcode image pass-through; 2 conflicts resolved (fork stealth block + catalog order); formerly-KNOWN-BUG test now passes
+
+## PR #3485 — fix(token-saver): secure management routes and honor PXPIPE opt-out
+
+- url: https://github.com/decolua/9router/pull/3485
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: hand-port of upstream 85f2d4b: pxpipe branch honors tokenSaverEnabled, /api/pxpipe added to LOCAL_ONLY_PATHS (headroom entries redundant, fork prefix covers), pxpipe opt-out tests ported; 41/41
+
+## PR #3483 — feat(opencode): support Ox Alpha image and effort
+
+- url: https://github.com/decolua/9router/pull/3483
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: OX_ALPHA caps entries via fork's opencode format (upstream's new openai-low-high-max enum skipped as duplicate of PR 3504); suffix-strip ported; thinkingCanDisable claim kept as comment (unverified enum); 38/38
+
+## PR #3494 — fix(token-saver): repair Headroom proxy UI and expose PXPIPE controls
+
+- url: https://github.com/decolua/9router/pull/3494
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: upstream 8a4d6af07 + d9f3a6e06 (KunN-21); proxy allowlist/rewrites/generic-502/Bearer injection with fork loopback-credential exception preserved; token-saver-ui tests merged (3507 + PR assertions); pxpipe-install test-env adapted for mise layout; 73/73 focused
+
