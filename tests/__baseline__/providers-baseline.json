@@ -481,6 +481,7 @@
     }
   },
   "kimi": {
+    "forceStream": true,
     "baseUrl": "https://api.kimi.com/coding/v1/messages",
     "format": "claude",
     "urlSuffix": "?beta=true",

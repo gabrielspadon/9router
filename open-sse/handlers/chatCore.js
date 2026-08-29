@@ -338,6 +338,14 @@ export async function handleChatCore({
     stripContinuityFields(translatedBody);
   }
 
+  // Sync the negotiated stream flag into the upstream body. `stream` may differ
+  // from the client's body.stream (forceStream providers, Accept-header JSON
+  // preference). Guarded: gemini-cli/antigravity passthrough bodies never carry
+  // the key, and injecting stream:true into them would change the wire format.
+  if ("stream" in translatedBody || providerRequiresStreaming) {
+    if (translatedBody.stream !== stream) translatedBody.stream = stream;
+  }
+
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
   if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
