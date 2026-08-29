@@ -8,22 +8,11 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3376 — feat: Add custom JSON/JS provider adapters plugin system
-
-- url: https://github.com/decolua/9router/pull/3376
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3361 — fix(codex): preserve typed Responses system prompts
 
 - url: https://github.com/decolua/9router/pull/3361
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3361)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -34,7 +23,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3359
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3359)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -45,7 +34,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3357
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3357)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -56,7 +45,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3352
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3352)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -67,7 +56,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3350
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3350)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -78,7 +67,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3349
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3349)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -89,7 +78,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3348
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3348)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -100,7 +89,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3347
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3347)
 - branch: 
 - local-ref: 
 - disposition: 
@@ -111,7 +100,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3346
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
+- local-status: in-progress (batch 18, branch upstream-pr-3346)
 - branch: 
 - local-ref: 
 - disposition: 

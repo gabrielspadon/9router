@@ -1498,3 +1498,17 @@
 - closed: 2026-08-29
 - detail: upstream (dungartoriaaa); Nous provider p123, thinkingFormat nous (nested enabled/effort), probe via fetchWithTimeout (fork gate), baselines re-snapshotted; 16/16
 
+## PR #3376 — feat: Add custom JSON/JS provider adapters plugin system
+
+- url: https://github.com/decolua/9router/pull/3376
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: skipped
+- closed: 2026-08-29
+- detail: fork's providerNodes system (types openai-compatible/anthropic-compatible/multi-compatible/custom-embedding, prefix-wins routing in src/sse/services/model.js post-3607) already implements the same job; PR adds a second parallel system colliding at migration 002 (fork has 002-seen-models at v2), SCHEMA_VERSION, and prefix levels. No fork demand for scripted unofficial endpoints. Analysis agent verdict: skip, medium confidence, 5/5 files checked against fork at 9e421206e
+
