@@ -54,16 +54,10 @@ export default {
       supportedFormats: ["openai"],
     },
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
-    {
-      id: "deepseek-v4-pro",
-      name: "DeepSeek V4 Pro",
-      supportedFormats: ["openai", "claude", "openai-responses"],
-    },
-    {
-      id: "deepseek-v4-flash",
-      name: "DeepSeek V4 Flash",
-      supportedFormats: ["openai", "claude", "openai-responses"],
-    },
+    // Official docs expose DeepSeek through /chat/completions only; the
+    // /messages shim rejects real Claude Code parallel tool_use history.
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai"] },
     {
       id: "deepseek-v4-flash-vision-exp",
       name: "DeepSeek V4 Flash Vision Exp",
