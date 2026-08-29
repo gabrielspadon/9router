@@ -197,6 +197,15 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
     const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
     if (fromOpenAI) {
       const finalResults = [];
+      // On flush (chunk === null) a pivot step that produced nothing must still hand the
+      // null to step 2, so terminal-event translators (e.g. openai -> openai-responses)
+      // get to emit their response.completed.
+      if (chunk === null && results.length === 0) {
+        const converted = fromOpenAI(null, state);
+        if (converted) {
+          finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
+        }
+      }
       for (const r of results) {
         const converted = fromOpenAI(r, state);
         if (converted) {
@@ -262,6 +271,7 @@ export function initState(sourceFormat) {
       funcArgsDone: {},
       funcItemDone: {},
       customToolNames: new Set(),
+      completionPending: false,
       completedSent: false
     };
   }
