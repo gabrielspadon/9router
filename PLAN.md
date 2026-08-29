@@ -150,3 +150,10 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - Notable: 3174 tool-call id normalization + luna effort=none (cherry-picks + 2 fork-shape fixes), 3179 centralized shutdown flusher registry, 3124 Meta AI registry, 3087/3066 headroom lossless + body-size gate (conflict resolution kept fork's kompress default-on), 3137 vertex RSA key validation.
 - Test fix: shutdown-flushers.test.js used path.resolve("src/...") which resolves under tests/ at runtime; fixed to ../src (e5720f3f4).
 - Integrate queue: ~133 remaining. Next batches continue by age.
+
+### 2026-08-29 — session 2 continued: tick 18 (batch 21, 12 PRs)
+
+- Batch 21: 12 integrate PRs merged through 1e143a476, gate 2731 pass / 63 known fails, pushed 9bbee1408.
+- Regression caught + fixed: PR 3057 (opencode-zen) duplicated opencode-go catalog ids, making bare deepseek-v4-flash-free ownerless (fell through to openrouter prefix rule). Fix 01ee90dff: resolveBareModelStaticOwner falls back to first registry declaration instead of null when no alias prefix matches.
+- Fork deltas kept: 3042 max_tokens:1024 probe (PR's 64 regresses #3010), 2997 bypass-agent rewrite skipped (fork SNI-pinned), 2972 one-liner only.
+- Integrate queue: ~121 remaining.
