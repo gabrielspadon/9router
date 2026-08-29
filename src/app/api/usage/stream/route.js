@@ -2,9 +2,20 @@ import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
 
 export const dynamic = "force-dynamic";
 
+const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
+
 export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const requestedPeriod = searchParams.get("period") || "today";
+  const period = VALID_PERIODS.has(requestedPeriod) ? requestedPeriod : "today";
   const encoder = new TextEncoder();
-  const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
+  const state = {
+    closed: false,
+    keepalive: null,
+    send: null,
+    sendPending: null,
+    cachedStats: null,
+  };
 
   // Idempotent: safe to call from request.signal abort, cancel(), or enqueue failure.
   const cleanup = () => {
@@ -28,14 +39,24 @@ export async function GET(request) {
         try {
           // Push lightweight update immediately so UI reflects changes fast
           if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
-            const quickStats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
+            const { activeRequests, recentRequests, errorProvider } =
+              await getActiveRequests();
+            const quickStats = {
+              ...state.cachedStats,
+              activeRequests,
+              recentRequests,
+              errorProvider,
+            };
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`),
+            );
           }
           // Then do full recalc and update cache
-          const stats = await getUsageStats();
+          const stats = await getUsageStats(period);
           state.cachedStats = stats;
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(stats)}\n\n`),
+          );
         } catch {
           cleanup();
         }
@@ -45,9 +66,17 @@ export async function GET(request) {
       state.sendPending = async () => {
         if (state.closed || !state.cachedStats) return;
         try {
-          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
-          const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
+          const { activeRequests, recentRequests, errorProvider } =
+            await getActiveRequests();
+          const stats = {
+            ...state.cachedStats,
+            activeRequests,
+            recentRequests,
+            errorProvider,
+          };
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(stats)}\n\n`),
+          );
         } catch {
           cleanup();
         }
@@ -64,7 +93,10 @@ export async function GET(request) {
       statsEmitter.on("pending", state.sendPending);
 
       state.keepalive = setInterval(() => {
-        if (state.closed) { clearInterval(state.keepalive); return; }
+        if (state.closed) {
+          clearInterval(state.keepalive);
+          return;
+        }
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
@@ -81,8 +113,9 @@ export async function GET(request) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
