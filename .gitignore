@@ -3,6 +3,7 @@
 # dependencies
 /node_modules
 /tests/node_modules
+**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -13,15 +14,18 @@
 
 # testing
 /coverage
+**/coverage
 
 # next.js
 /.next/
+**/.next/
 /.next-cli-build/
 /out/
 cli/.build-home/
 product
 # production
 /build
+**/build
 .idea/
 
 # misc
@@ -93,3 +97,6 @@ graphify-out/*
 
 # oh-my-claudecode local state
 .omc/
+
+# local tool state
+.serena/
