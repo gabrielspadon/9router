@@ -18,7 +18,7 @@ describe("shutdown flushers", () => {
   it("waits for priority groups and isolates failed flushers", async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), "9router-shutdown-"));
     const marker = path.join(directory, "flushed");
-    const shutdownUrl = pathToFileURL(path.resolve("src/lib/shutdown.js")).href;
+    const shutdownUrl = pathToFileURL(path.resolve("../src/lib/shutdown.js")).href;
     const program = `
       import { appendFile, writeFile } from "node:fs/promises";
       import { registerShutdownFlusher } from ${JSON.stringify(shutdownUrl)};
@@ -47,8 +47,8 @@ describe("shutdown flushers", () => {
   it("runs application flushers before the SQLite adapter closes", async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), "9router-shutdown-sqlite-"));
     const databaseFile = path.join(directory, "data.sqlite");
-    const adapterUrl = pathToFileURL(path.resolve("src/lib/db/adapters/nodeSqliteAdapter.js")).href;
-    const shutdownUrl = pathToFileURL(path.resolve("src/lib/shutdown.js")).href;
+    const adapterUrl = pathToFileURL(path.resolve("../src/lib/db/adapters/nodeSqliteAdapter.js")).href;
+    const shutdownUrl = pathToFileURL(path.resolve("../src/lib/shutdown.js")).href;
     const program = `
       const { createNodeSqliteAdapter } = await import(${JSON.stringify(adapterUrl)});
       const { registerShutdownFlusher } = await import(${JSON.stringify(shutdownUrl)});
@@ -74,7 +74,7 @@ describe("shutdown flushers", () => {
   it("flushes before an application-requested exit", async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), "9router-shutdown-direct-"));
     const marker = path.join(directory, "flushed");
-    const shutdownUrl = pathToFileURL(path.resolve("src/lib/shutdown.js")).href;
+    const shutdownUrl = pathToFileURL(path.resolve("../src/lib/shutdown.js")).href;
     const program = `
       import { writeFile } from "node:fs/promises";
       import { registerShutdownFlusher, shutdownProcess } from ${JSON.stringify(shutdownUrl)};
