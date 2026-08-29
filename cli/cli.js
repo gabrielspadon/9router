@@ -256,6 +256,9 @@ function killAllAppProcesses(appPort) {
       // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
       setImmediate(() => {
         try { killProxyByPidFile(); } catch {}
+        // Kill Headroom proxy by PID file — detached process that outlives the main server.
+        // Must stop before npm rename; it holds a handle on the app/ directory on Windows (#2265).
+        try { killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid")); } catch {}
         try { killTunnelByPidFile(); } catch {}
         try { killCloudflaredByAppPort(appPort); } catch {}
       });
@@ -649,6 +652,8 @@ function startServer(updatePromise) {
       } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
+      // Kill Headroom proxy (detached process, holds handle on app/ on Windows)
+      killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid"));
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
       // Kill server process directly
