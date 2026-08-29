@@ -292,6 +292,13 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
+  let settings = {};
+  try {
+    settings = await getSettings();
+  } catch (e) {
+    console.log("Could not fetch settings, using defaults");
+  }
+
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
@@ -352,6 +359,19 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
     }
     models.push(entry);
+  }
+
+  // Combo-only exposure: return the deduplicated combo entries built above.
+  // This early-return sits AFTER the combo loop (not before it, as upstream
+  // PR 3429 does) because fork combo entries carry context_length /
+  // max_completion_tokens enrichment that a bare comboToEntry would drop.
+  if (settings.exposeComboOnly) {
+    const seenComboIds = new Set();
+    return models.filter((m) => {
+      if (m?.owned_by !== "combo" || seenComboIds.has(m.id)) return false;
+      seenComboIds.add(m.id);
+      return true;
+    });
   }
 
   if (connections.length === 0) {
