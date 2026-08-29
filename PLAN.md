@@ -75,6 +75,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - One workflow agent died on a provider 520 (Z.AI) mid-run after committing; worktree inspected, completed, validated manually.
 - 67 of ~827 upstream open PRs processed (56 integrated, 9 adapted, 3 rejected... recheck: 58+9=67).
 
+### 2026-08-28 — session 2 continued: tick 7, batch 11 part A
+- #3487 (combo token limits), #3482 (DeepSeek Vision, formerly-KNOWN-BUG test flips green), #3485 (pxpipe opt-out + LOCAL_ONLY) integrated/adapted and merged 8ee0ccead. #3494 (Headroom proxy hardening + PXPIPE UI, loopback exception preserved) + #3483 (Ox Alpha caps via fork's opencode format) merged via agents, gate green 2290/64, pushed 5789e66a0.
+- Remaining in batch: #3493 (headroom hardening, heavy adapt — supersedes 3507's phantom-warn design), #3492? no. Next: 3493.
+- 72 of ~827 upstream open PRs processed (61 integrated, 11 adapted, 3 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
