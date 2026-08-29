@@ -49,7 +49,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    streamState = null
   } = options;
 
   let buffer = "";
@@ -75,6 +76,17 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+
+  // Keep streamState in sync so onStreamAbandoned can read partial usage on a
+  // disconnect or a mid-stream upstream error (flush/cancel never run when the
+  // upstream errors the readable before the client sees it).
+  const syncState = () => {
+    if (!streamState) return;
+    streamState.content = accumulatedContent;
+    streamState.thinking = accumulatedThinking;
+    streamState.ttftAt = ttftAt;
+    streamState.usage = mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage ?? null;
+  };
 
   // The stream finishes exactly once. `flush` runs when the upstream ends, and
   // `cancel` when the client goes away mid-stream — the Streams spec calls one
@@ -182,10 +194,13 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
+              syncState();
+
               const extracted = extractUsage(parsed);
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
               }
+              syncState();
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
@@ -306,6 +321,7 @@ export function createSSEStream(options = {}) {
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        syncState();
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -399,6 +415,7 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
+          syncState();
           finishStream(usage);
           return;
         }
@@ -471,6 +488,7 @@ export function createSSEStream(options = {}) {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
         
+        syncState();
         finishStream(state?.usage);
       } catch (error) {
         console.log("Error in flush:", error);
@@ -488,6 +506,7 @@ export function createSSEStream(options = {}) {
         if (!hasValidUsage(reported) && totalContentLength > 0) {
           reported = estimateUsage(body, totalContentLength, state ? sourceFormat : FORMATS.OPENAI);
         }
+        syncState();
         finishStream(reported, { aborted: true });
       } catch (error) {
         console.log("Error in cancel:", error);
@@ -496,7 +515,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, streamState = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -509,11 +528,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, streamState = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -522,6 +542,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }
