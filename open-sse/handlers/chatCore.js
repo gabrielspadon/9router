@@ -615,12 +615,21 @@ export async function handleChatCore({
     `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`,
   );
 
+  // Set once the response turns out to be streaming; finalizes the placeholder
+  // requestDetail row on disconnect or upstream mid-stream error (the SSE
+  // transform's flush()/cancel() never run on those paths).
+  let abandonStreamingDetail = null;
+
   const streamController = createStreamController({
     onDisconnect: (reason) => {
       trackPendingRequest(model, provider, connectionId, false);
+      abandonStreamingDetail?.(typeof reason?.reason === "string" ? reason.reason : "client_disconnected");
       if (onDisconnect) onDisconnect(reason);
     },
-    onError: () => trackPendingRequest(model, provider, connectionId, false),
+    onError: (err) => {
+      trackPendingRequest(model, provider, connectionId, false);
+      abandonStreamingDetail?.(err?.message === "stream stall timeout" ? "stall_timeout" : "stream_error");
+    },
     log,
     provider,
     model,
@@ -923,9 +932,9 @@ export async function handleChatCore({
   }
 
   // Streaming response
-  const { onStreamComplete, streamDetailId } = buildOnStreamComplete({
-    ...sharedCtx,
-  });
+  const { onStreamComplete, onStreamAbandoned, streamDetailId, streamState } =
+    buildOnStreamComplete({ ...sharedCtx });
+  abandonStreamingDetail = onStreamAbandoned;
   return handleStreamingResponse({
     ...sharedCtx,
     providerResponse,
@@ -938,6 +947,7 @@ export async function handleChatCore({
     streamController,
     onStreamComplete,
     streamDetailId,
+    streamState,
   });
 }
 
