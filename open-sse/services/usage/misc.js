@@ -313,3 +313,71 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
   }
 }
+
+/**
+ * OpenCode Go usage (Rolling, Weekly, Monthly limits)
+ * GET https://opencode.ai/zen/go/v1/usage
+ */
+export async function getOpencodeGoUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenCode Go API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch("https://opencode.ai/zen/go/v1/usage", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "OpenCode Go API key invalid or expired." };
+      }
+      return { message: `OpenCode Go usage error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const usage = json?.usage || {};
+    const quotas = {};
+
+    if (usage.rolling) {
+      const p = Math.min(100, Math.max(0, Number(usage.rolling.percent) || 0));
+      quotas["Rolling (5h)"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.rolling.resetsAt || null,
+        unlimited: false,
+      };
+    }
+    if (usage.weekly) {
+      const p = Math.min(100, Math.max(0, Number(usage.weekly.percent) || 0));
+      quotas["Weekly"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.weekly.resetsAt || null,
+        unlimited: false,
+      };
+    }
+    if (usage.monthly) {
+      const p = Math.min(100, Math.max(0, Number(usage.monthly.percent) || 0));
+      quotas["Monthly"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.monthly.resetsAt || null,
+        unlimited: false,
+      };
+    }
+
+    return { plan: "OpenCode Go", quotas };
+  } catch (error) {
+    return { message: `OpenCode Go error: ${error.message}` };
+  }
+}
