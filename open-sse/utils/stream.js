@@ -77,6 +77,8 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let passthroughFinishSeen = false;  // passthrough: duplicate finish chunks from upstream
+  let passthroughDoneSent = false;    // passthrough: upstream already sent [DONE]
 
   // Keep streamState in sync so onStreamAbandoned can read partial usage on a
   // disconnect or a mid-stream upstream error (flush/cancel never run when the
@@ -138,6 +140,13 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
 
+          // Dedup terminators: some upstreams (e.g. stealth/ox-alpha) send the
+          // finish chunk twice and/or their own [DONE]; clients like AI SDK
+          // treat anything after the first finish_reason as a protocol error.
+          const isDoneLine = trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]";
+          if (isDoneLine && passthroughDoneSent) continue;
+          if (isDoneLine) passthroughDoneSent = true;
+
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
@@ -191,11 +200,20 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // OpenRouter-style gateways (e.g. stealth/ox-alpha) stream reasoning
+              // under `delta.reasoning`, but OpenAI-compatible clients (Cursor,
+              // OpenCode, pi) expect `delta.reasoning_content`. Normalize so
+              // clients render reasoning instead of an empty answer.
+              const delta = parsed.choices?.[0]?.delta;
+              if (delta && typeof delta.reasoning === "string" && delta.reasoning_content === undefined) {
+                delta.reasoning_content = delta.reasoning;
+                delete delta.reasoning;
+                fieldsInjected = true; // force output from the mutated parsed
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
-
-              const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
               const reasoning = delta?.reasoning_content || delta?.reasoning;
               if (content && typeof content === "string") {
@@ -216,6 +234,13 @@ export function createSSEStream(options = {}) {
               syncState();
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              if (isFinishChunk && passthroughFinishSeen) {
+                // Duplicate finish chunk (the second usually carries only
+                // upstream-side usage) — drop it: two finish_reasons in one
+                // stream break AI SDK clients ("content after finish reason").
+                continue;
+              }
+              if (isFinishChunk) passthroughFinishSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -402,6 +427,10 @@ export function createSSEStream(options = {}) {
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
             }
+            // Ensure the trailing SSE frame ends with a newline before the
+            // [DONE] sentinel — upstreams that close without a final \n would
+            // glue "...}data: [DONE]" together and break client parsers.
+            if (!output.endsWith("\n")) output += "\n";
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
           }
@@ -422,7 +451,7 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
-          if (!streamDoneSent && !isGeminiFamily) {
+          if (!streamDoneSent && !passthroughDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
