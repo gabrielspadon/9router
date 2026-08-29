@@ -124,14 +124,26 @@ export class DefaultExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials, sourceFormat) {
     const transformed = this.applyJsonSchemaFallback(body);
 
-    // Native OpenAI chat endpoint: streaming omits usage entirely unless
-    // stream_options.include_usage is set — without it every streamed request
-    // falls back to char/4 estimates with no cache breakdown.
-    if (this.provider === "openai" && stream === true && transformed && typeof transformed === "object") {
-      transformed.stream_options = { ...transformed.stream_options, include_usage: true };
-    }
-
     if (transformed && typeof transformed === "object") {
+      // The official OpenAI transport is force-streamed even for JSON clients.
+      // Keep the actual upstream body aligned with the executor's resolved mode;
+      // the chat core still converts the SSE response back to JSON for those clients.
+      if (this.provider === "openai" && stream === true) {
+        const clientRequestedStreaming = transformed.stream === true;
+        transformed.stream = true;
+        if (!clientRequestedStreaming) {
+          transformed.stream_options = {
+            ...transformed.stream_options,
+            include_usage: true,
+          };
+        }
+      }
+      if (this.provider === "openai" && usesOpenAIMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+        if (transformed.max_completion_tokens === undefined) {
+          transformed.max_completion_tokens = transformed.max_tokens;
+        }
+        delete transformed.max_tokens;
+      }
       if (this.provider === "openai") {
         normalizeOpenAIToolCallIds(transformed);
         normalizeLunaFunctionToolReasoning(model, transformed, sourceFormat);
