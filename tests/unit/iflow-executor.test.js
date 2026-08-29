@@ -14,7 +14,7 @@ describe("IFlowExecutor authorization and header generation", () => {
 
   it("sets Authorization header fallback and signature when only accessToken is provided", () => {
     const executor = new IFlowExecutor();
-    const creds = { accessToken: "test-access-token" };
+    const creds = { accessToken: "fake-credential" };
     const headers = executor.buildHeaders(creds, false);
 
     expect(headers["Authorization"]).toBe("Bearer fake-credential");
