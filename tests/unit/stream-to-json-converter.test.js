@@ -22,7 +22,7 @@ const DONE_ITEM = {
 };
 const COMPLETED = {
   type: "response.completed",
-  response: { usage: { input_tokens: 6, output_tokens: 2, total_tokens: 8 } },
+  response: { status: "completed", usage: { input_tokens: 6, output_tokens: 2, total_tokens: 8 } },
 };
 
 describe("convertResponsesStreamToJson", () => {
