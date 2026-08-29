@@ -104,6 +104,7 @@ export async function handleChatCore({
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
+  onEmptyStream,
   onDisconnect,
   clientRawRequest,
   connectionId,
@@ -130,8 +131,6 @@ export async function handleChatCore({
   memorySettings,
   toolDisclosure,
 }) {
-||||||| parent of 33585e1f9 (fix: fallback to next combo account on empty/null content responses)
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -869,6 +868,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     apiKey,
     clientRawRequest,
     onRequestSuccess,
+    onEmptyStream,
     pxpipe: pxpipeSummary,
     reqTag,
     log,
@@ -879,11 +879,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     );
   const trackDone = () =>
     trackPendingRequest(model, provider, connectionId, false);
-||||||| parent of 33585e1f9 (fix: fallback to next combo account on empty/null content responses)
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
-  const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
-  const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
-
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({
