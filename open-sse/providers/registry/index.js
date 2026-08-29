@@ -122,6 +122,7 @@ import p117 from "./selfhosted-stt.js";
 import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
+import p125 from "./opencode-zen.js";
 import p121 from "./alitp-intl.js";
 import p123 from "./nous.js";
 import p124 from "./meta.js";
@@ -248,6 +249,7 @@ export default [
   p118,
   p119,
   p120,
+  p125,
   p121,
   p123,
   p124,
