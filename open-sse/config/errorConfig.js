@@ -5,6 +5,7 @@ export const ERROR_TYPES = {
   402: { type: "billing_error", code: "payment_required" },
   403: { type: "permission_error", code: "insufficient_quota" },
   404: { type: "invalid_request_error", code: "model_not_found" },
+  413: { type: "invalid_request_error", code: "context_length_exceeded" },
   406: { type: "invalid_request_error", code: "model_not_supported" },
   429: { type: "rate_limit_error", code: "rate_limit_exceeded" },
   500: { type: "server_error", code: "internal_server_error" },
@@ -20,6 +21,7 @@ export const DEFAULT_ERROR_MESSAGES = {
   402: "Payment required",
   403: "You exceeded your current quota",
   404: "Model not found",
+  413: "Context length exceeded",
   406: "Model not supported",
   429: "Rate limit exceeded",
   500: "Internal server error",
@@ -99,6 +101,7 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  { status: 413, pass: true },
   { status: 429, backoff: true },
 ];
 
