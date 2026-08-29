@@ -271,6 +271,7 @@ export class BaseExecutor {
         body,
         stream,
         credentials,
+        sourceFormat,
       );
       const headers = this.buildHeaders(credentials, stream, url, model);
 
