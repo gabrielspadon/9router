@@ -92,7 +92,6 @@ export const ERROR_RULES = [
   { text: "context_length_exceeded",  pass: true },
   { text: "prompt is too long",       pass: true },
   { text: "exceeds the limit",        pass: true },
->>>>>>> 41a606dfe (fix(fallback): do not lock accounts or retry on client-side 400 Bad Request errors)
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 400, pass: true },
