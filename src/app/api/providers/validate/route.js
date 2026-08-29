@@ -381,6 +381,7 @@ export async function POST(request) {
         case "cerebras":
         case "cohere":
         case "nebius":
+        case "novita":
         case "siliconflow":
         case "hyperbolic":
         case "ollama":
