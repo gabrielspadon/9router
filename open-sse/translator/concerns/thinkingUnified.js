@@ -5,7 +5,12 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
+import {
+  LEVEL_TO_BUDGET,
+  budgetToLevel,
+  effortToBudget,
+  effortToThinkingLevel,
+} from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -19,6 +24,7 @@ const FORMAT_TO_NATIVE = {
   vertex: "gemini-budget",
   antigravity: "gemini-budget",
   kiro: "kiro",
+  ollama: "ollama",
 };
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
@@ -36,11 +42,15 @@ export function parseSuffix(model) {
   if (!m) return { cleanModel: model, override: null };
   const cleanModel = m[1].trim();
   const raw = m[2].trim().toLowerCase();
-  if (raw === "none" || raw === "off") return { cleanModel, override: { mode: "none" } };
+  if (raw === "none" || raw === "off")
+    return { cleanModel, override: { mode: "none" } };
   if (raw === "auto") return { cleanModel, override: { mode: "auto" } };
-  if (raw === "ultra") return { cleanModel, override: { mode: "level", level: raw } };
-  if (/^\d+$/.test(raw)) return { cleanModel, override: { mode: "budget", budget: Number(raw) } };
-  if (LEVEL_TO_BUDGET[raw] !== undefined) return { cleanModel, override: { mode: "level", level: raw } };
+  if (raw === "ultra")
+    return { cleanModel, override: { mode: "level", level: raw } };
+  if (/^\d+$/.test(raw))
+    return { cleanModel, override: { mode: "budget", budget: Number(raw) } };
+  if (LEVEL_TO_BUDGET[raw] !== undefined)
+    return { cleanModel, override: { mode: "level", level: raw } };
   return { cleanModel, override: null };
 }
 
@@ -64,13 +74,42 @@ export function extractThinking(body) {
     if (t.type === "disabled") return { mode: "none" };
     if (t.type === "adaptive" || t.type === "enabled") {
       const budget = Number(t.budget_tokens);
-      if (Number.isFinite(budget) && budget > 0) return { mode: "budget", budget };
+      if (Number.isFinite(budget) && budget > 0)
+        return { mode: "budget", budget };
       return { mode: "auto" };
     }
   }
 
+  // Ollama shape — `think` at top level (boolean or string low/medium/high/max)
+  if (body.think !== undefined) {
+    const tv = body.think;
+    if (tv === false) return { mode: "none" };
+    if (tv === true) return { mode: "auto" };
+    if (typeof tv === "string") {
+      const e = tv.toLowerCase().trim();
+      if (e === "none" || e === "off" || e === "false") return { mode: "none" };
+      if (e === "auto" || e === "true") return { mode: "auto" };
+      if (
+        e === "minimal" ||
+        e === "low" ||
+        e === "medium" ||
+        e === "high" ||
+        e === "max" ||
+        e === "xhigh"
+      ) {
+        return { mode: "level", level: e === "xhigh" ? "max" : e };
+      }
+      if (e) return { mode: "level", level: e };
+    }
+    // Numeric or other truthy → auto, falsy → none
+    if (tv) return { mode: "auto" };
+    return { mode: "none" };
+  }
+
   // OpenAI chat / Responses shape
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  const effort =
+    body.reasoning_effort ??
+    (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   if (typeof effort === "string" && effort) {
     const e = effort.toLowerCase();
     if (e === "none" || e === "off") return { mode: "none" };
@@ -79,9 +118,13 @@ export function extractThinking(body) {
   }
 
   // Gemini shape (top-level, generationConfig, or request envelope)
-  const tc = body.thinkingConfig || body.generationConfig?.thinkingConfig || body.request?.generationConfig?.thinkingConfig;
+  const tc =
+    body.thinkingConfig ||
+    body.generationConfig?.thinkingConfig ||
+    body.request?.generationConfig?.thinkingConfig;
   if (tc && typeof tc === "object") {
-    if (typeof tc.thinkingLevel === "string") return { mode: "level", level: tc.thinkingLevel.toLowerCase() };
+    if (typeof tc.thinkingLevel === "string")
+      return { mode: "level", level: tc.thinkingLevel.toLowerCase() };
     const tb = Number(tc.thinkingBudget);
     if (Number.isFinite(tb)) {
       if (tb === 0) return { mode: "none" };
@@ -144,7 +187,7 @@ function normalizeOpenAILevel(level, supportedLevels) {
 }
 
 function toGeminiThinkingLevel(cfg) {
-  const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
+  const raw = cfg.mode === "auto" ? "high" : toLevel(cfg) || "high";
   return effortToThinkingLevel(raw);
 }
 
@@ -155,6 +198,22 @@ function toKimiReasoningEffort(cfg) {
   if (level === "xhigh") return "max";
   if (["low", "medium", "high", "max"].includes(level)) return level;
   return null;
+}
+
+function toOllamaThink(cfg, supportedLevels) {
+  if (!cfg) return null;
+  if (cfg.mode === "auto") return true;
+  const level = toLevel(cfg);
+  if (!level || level === "auto") return true;
+  if (level === "minimal") return "low";
+  if (level === "xhigh") return "max";
+  if (["low", "medium", "high", "max"].includes(level)) {
+    // gpt-oss only supports low/medium/high — clamp max→high when unsupported
+    if (level === "max" && supportedLevels && !supportedLevels.includes("max"))
+      return "high";
+    return level;
+  }
+  return "medium";
 }
 
 const GEMINI_LEVEL_OUTPUT_FLOOR = {
@@ -182,7 +241,10 @@ function geminiLevelOutputFloor(level) {
 // envelope's generationConfig when present, else the top-level one.
 function getGeminiGenerationConfig(body) {
   if (body.request && typeof body.request === "object") {
-    if (!body.request.generationConfig || typeof body.request.generationConfig !== "object") {
+    if (
+      !body.request.generationConfig ||
+      typeof body.request.generationConfig !== "object"
+    ) {
       body.request.generationConfig = {};
     }
     return body.request.generationConfig;
@@ -217,8 +279,10 @@ function stripAll(body) {
   delete body.enable_thinking;
   delete body.thinking_budget;
   delete body.output_config;
+  delete body.think;
   if (body.generationConfig) delete body.generationConfig.thinkingConfig;
-  if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
+  if (body.request?.generationConfig)
+    delete body.request.generationConfig.thinkingConfig;
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
@@ -230,13 +294,20 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
 
   switch (fmt) {
     case "openai": {
-      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      if (none && canDisable) {
+        body.reasoning_effort = "none";
+        break;
+      }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      if (level)
+        body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
       break;
     }
     case "claude-adaptive": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
+      if (none && canDisable) {
+        body.thinking = { type: "disabled" };
+        break;
+      }
       // output_config.effort alone does NOT turn thinking on: Anthropic requires
       // an explicit thinking:{type:"adaptive"} on Opus 4.6/4.7/4.8 and Sonnet 4.6
       // ("thinking is off unless you explicitly set it"), and Anthropic-compatible
@@ -248,47 +319,80 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       break;
     }
     case "claude-budget": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
+      if (none && canDisable) {
+        body.thinking = { type: "disabled" };
+        break;
+      }
       const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
+      body.thinking =
+        budget === -1
+          ? { type: "enabled" }
+          : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
     case "gemini-level": {
       const level = none ? "minimal" : toGeminiThinkingLevel(eff);
-      setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
+      setGeminiThinking(body, {
+        thinkingLevel: level,
+        includeThoughts: level !== "minimal",
+      });
       ensureGeminiOutputFloor(body, geminiLevelOutputFloor(level), caps);
       break;
     }
     case "gemini-budget": {
-      if (none && canDisable) { setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false }); break; }
+      if (none && canDisable) {
+        setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false });
+        break;
+      }
       const budget = toBudget(eff, caps.thinkingRange);
-      setGeminiThinking(body, { thinkingBudget: budget ?? -1, includeThoughts: true });
-      ensureGeminiOutputFloor(body, geminiBudgetOutputFloor(budget ?? -1), caps);
+      setGeminiThinking(body, {
+        thinkingBudget: budget ?? -1,
+        includeThoughts: true,
+      });
+      ensureGeminiOutputFloor(
+        body,
+        geminiBudgetOutputFloor(budget ?? -1),
+        caps,
+      );
       break;
     }
     case "zai": {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
-      if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
+      if (none && canDisable) {
+        body.enable_thinking = false;
+        delete body.thinking;
+        break;
+      }
       body.thinking = { type: "enabled" };
       break;
     }
     case "qwen": {
-      if (none && canDisable) { body.enable_thinking = false; break; }
+      if (none && canDisable) {
+        body.enable_thinking = false;
+        break;
+      }
       body.enable_thinking = true;
       const budget = toBudget(eff, caps.thinkingRange);
       if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
       break;
     }
     case "deepseek": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
+      if (none && canDisable) {
+        body.thinking = { type: "disabled" };
+        break;
+      }
       body.thinking = { type: "enabled" };
       // DeepSeek: low/medium→high, xhigh/max→max.
       const level = toLevel(eff);
-      body.reasoning_effort = level === "xhigh" || level === "max" ? "max" : "high";
+      body.reasoning_effort =
+        level === "xhigh" || level === "max" ? "max" : "high";
       break;
     }
     case "kimi": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
+      if (none && canDisable) {
+        body.thinking = { type: "disabled" };
+        break;
+      }
       const effort = toKimiReasoningEffort(eff);
       if (effort) body.reasoning_effort = effort;
       break;
@@ -297,12 +401,27 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // opencode zen gateway enum on OpenAI-style reasoning_effort:
       // none|low|medium|high|max. Verified live: xhigh/minimal/auto → 400
       // "[1210] Invalid API parameter"; omitted field → upstream default.
-      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      if (none && canDisable) {
+        body.reasoning_effort = "none";
+        break;
+      }
       const level = toLevel(eff);
       if (!level || level === "auto") break;
-      body.reasoning_effort = level === "xhigh" || level === "ultra" ? "max"
-        : level === "minimal" ? "low"
-        : level;
+      body.reasoning_effort =
+        level === "xhigh" || level === "ultra"
+          ? "max"
+          : level === "minimal"
+            ? "low"
+            : level;
+      break;
+    }
+    case "ollama": {
+      if (none && canDisable) {
+        body.think = false;
+        break;
+      }
+      const out = toOllamaThink(eff, supportedLevels);
+      if (out !== null && out !== undefined) body.think = out;
       break;
     }
     case "minimax": {
@@ -311,15 +430,23 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       break;
     }
     case "hunyuan": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
+      if (none && canDisable) {
+        body.thinking = { type: "disabled" };
+        break;
+      }
       const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
+      body.thinking =
+        budget === -1
+          ? { type: "enabled" }
+          : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
     case "step": {
       if (none && canDisable) break;
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
+      if (level)
+        body.reasoning_effort =
+          level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
     case "tokenrouter": {
@@ -343,7 +470,13 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
 // Mutates and returns body. No-op when model has no reasoning capability.
 // `intent` is a pre-captured config (from captureThinking on the original body);
 // falls back to extracting from the current body when omitted.
-export function applyThinking(targetFormat, model, body, provider = null, intent = undefined) {
+export function applyThinking(
+  targetFormat,
+  model,
+  body,
+  provider = null,
+  intent = undefined,
+) {
   if (!body || typeof body !== "object") return body;
 
   const { cleanModel, override } = parseSuffix(model);
