@@ -89,6 +89,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Catch: upstream PR 3465's commit chain was ALSO inside PR 3481's branch (both cherry-picked the same chain); merged 3465 first, deduped the resulting duplicate test block + a leftover ||||||| base marker.
 - 78 of ~827 upstream open PRs processed (67 integrated, 11 adapted, 3 rejected).
 
+### 2026-08-29 — session 2 continued: tick 9 complete (batch 13)
+- #3460 (Devin Cloud provider, 13 upstream commits + adaptation), #3452 (project-id fail-fast) integrated; #3457 (SSE keepalive) adapted post-transform so the translator never sees ping frames; #3453 (personal Telegram bot + Fly stack) rejected; #3451/#3447 (Ox Alpha duplicates) rejected as superseded by #3483. Merged 0d756c8de, gate green, pushed a9b63b429/f96a7b51c.
+- Stale providers baseline re-snapshotted (ollama/ollama-local/opencode thinkingFormat rows from the 3478 merge).
+- 84 of ~827 upstream open PRs processed (70 integrated, 12 adapted, 6 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
