@@ -4,7 +4,10 @@
 // User-Agent header (antigravity/<old>) and body.metadata.ideVersion are forced
 // to a known-good IDE version. Hardcoded MVP — toggle/version configurable later.
 
-const ANTIGRAVITY_IDE_VERSION = "1.23.2";
+// Single source of truth: open-sse/providers/shared.js pins the official
+// Antigravity IDE version (Antigravity IDE Desktop fingerprint). require(ESM)
+// works on Node >= 22.18 / 25, which is the Docker + host runtime floor.
+const { ANTIGRAVITY_IDE_VERSION } = require("../../open-sse/providers/shared.js");
 const ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED = true;
 
 function shouldRewriteMetadata(metadata) {
