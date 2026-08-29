@@ -7,6 +7,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { sanitizeAntigravitySystemPrompt } from "../translator/request/openai-to-gemini.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -246,13 +247,16 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from 
+    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt, Hermes Agent) to prevent Antigravity from 
     // flagging the request and immediately blocking it with a 429 Quota Exhausted response.
     if (requestWithoutTools.systemInstruction?.parts) {
       const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
       for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text === "string" && part.text.includes(oldText)) {
-          part.text = part.text.split(oldText).join("");
+        if (typeof part.text === "string") {
+          if (part.text.includes(oldText)) {
+            part.text = part.text.split(oldText).join("");
+          }
+          part.text = sanitizeAntigravitySystemPrompt(part.text);
         }
       }
     }
