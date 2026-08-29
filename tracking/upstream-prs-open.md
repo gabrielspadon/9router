@@ -7852,3 +7852,14 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## PR #3618 — Add GLM-5.3-Flash and DeepSeek V4 Vision patterns
+
+- url: https://github.com/decolua/9router/pull/3618
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
