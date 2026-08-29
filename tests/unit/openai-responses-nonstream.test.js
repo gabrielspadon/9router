@@ -196,7 +196,6 @@ describe("non-stream Responses-API upstream for a Chat/Claude client", () => {
   });
 });
 
-||||||| c44653872
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
   const sseCtx = (sourceFormat, targetFormat) => {
     const encoder = new TextEncoder();
