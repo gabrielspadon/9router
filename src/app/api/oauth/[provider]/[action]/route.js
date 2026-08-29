@@ -308,6 +308,13 @@ export async function POST(request, { params }) {
         }
         try {
           const tokenData = await exchangeTokens(provider, token, null, null, state);
+          // Never persist a tokenless "active" connection — surface the failure instead.
+          if (!tokenData?.accessToken) {
+            return NextResponse.json(
+              { error: "Token exchange returned no access token" },
+              { status: 502 }
+            );
+          }
           const connection = await createProviderConnection({
             provider,
             authType: provider === "windsurf" ? "api_key" : "oauth",
@@ -381,6 +388,14 @@ export async function POST(request, { params }) {
 
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
       const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+
+      // Never persist a tokenless "active" connection — surface the failure instead.
+      if (!tokenData?.accessToken) {
+        return NextResponse.json(
+          { error: "Token exchange returned no access token" },
+          { status: 502 }
+        );
+      }
 
       // Save to database
       const connection = await createProviderConnection({
