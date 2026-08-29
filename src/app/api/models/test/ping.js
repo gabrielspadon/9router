@@ -50,7 +50,7 @@ async function getInternalHeaders() {
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
+export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, customPrompt = null) {
   const headers = await getInternalHeaders();
   const start = Date.now();
 
@@ -58,7 +58,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, input: "test" }),
+      body: JSON.stringify({ model, input: customPrompt || "test" }),
       signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
@@ -74,14 +74,14 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!hasEmbedding) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no embedding data" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: `Embedding [${parsed.data[0].embedding.length} dims]` };
   }
 
   if (kind === "image") {
     const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, prompt: "test" }),
+      body: JSON.stringify({ model, prompt: customPrompt || "test" }),
       signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
@@ -98,7 +98,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!hasImages) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no image data for this model" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: "Image generated successfully" };
   }
 
   if (kind === "stt") {
@@ -127,9 +127,10 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!text.trim()) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: text };
   }
 
+  const promptContent = customPrompt || "hi";
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
     method: "POST",
     headers,
@@ -141,7 +142,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       // See issue #3010.
       max_tokens: 1024,
       stream: false,
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "user", content: promptContent }],
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -206,5 +207,6 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     };
   }
 
-  return { ok: true, latencyMs, error: null, status: res.status };
+  const preview = parsed?.choices?.[0]?.message?.content || parsed?.choices?.[0]?.text || null;
+  return { ok: true, latencyMs, error: null, status: res.status, preview };
 }
