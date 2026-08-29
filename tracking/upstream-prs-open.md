@@ -393,17 +393,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3191 — fix(providers): add TokenRouter connection test support
-
-- url: https://github.com/decolua/9router/pull/3191
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3190 — fix(kimi): route API-key connections to Moonshot Open Platform
 
 - url: https://github.com/decolua/9router/pull/3190
@@ -459,53 +448,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3179 — fix(runtime): coordinate graceful shutdown flushes
-
-- url: https://github.com/decolua/9router/pull/3179
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3174 — fix(openai): handle Luna function tools on Chat Completions
-
-- url: https://github.com/decolua/9router/pull/3174
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3173 — feat(federation): multi-node edge→central federation (proxy, replication, failover)
 
 - url: https://github.com/decolua/9router/pull/3173
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3172 — Fix/executors cancel sse readers
-
-- url: https://github.com/decolua/9router/pull/3172
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3171 — Fix/mimo free session affinity
-
-- url: https://github.com/decolua/9router/pull/3171
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -528,17 +473,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3169 — Fix/executors model state leak
 
 - url: https://github.com/decolua/9router/pull/3169
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3168 — fix(iflow): add accessToken authorization fallback
-
-- url: https://github.com/decolua/9router/pull/3168
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -591,17 +525,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3137 — fix(vertex): validate RSA-2048 requirement for SA private key before jose RS256 signing
-
-- url: https://github.com/decolua/9router/pull/3137
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3132 — feat(elevenlabs): full TTS panel — v3 audio tags, AI enhance, stability, language override, usage credits
 
 - url: https://github.com/decolua/9router/pull/3132
@@ -624,28 +547,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3125 — fix(combos): resolve provider-prefixed combo names to member models
-
-- url: https://github.com/decolua/9router/pull/3125
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3124 — feat(providers): add Meta AI (Muse Spark) via the Meta Model API
-
-- url: https://github.com/decolua/9router/pull/3124
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3117 — fix(translator): preserve image blocks when routing Claude -> Antigravity
 
 - url: https://github.com/decolua/9router/pull/3117
@@ -660,17 +561,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3116 — fix(nvidia): normalize tool names/IDs & restore original names in response streams
 
 - url: https://github.com/decolua/9router/pull/3116
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3114 — fix(antigravity): preserve schema-keyword property names
-
-- url: https://github.com/decolua/9router/pull/3114
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -704,17 +594,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3088 — fix(kimi): route API-key auth to platform endpoint, not Kimi Code
 
 - url: https://github.com/decolua/9router/pull/3088
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3087 — feat(headroom): add lossless mode to proxy start
-
-- url: https://github.com/decolua/9router/pull/3087
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -759,17 +638,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3069 — fix(open-sse): ESM interop fixes for plain-Node consumers
 
 - url: https://github.com/decolua/9router/pull/3069
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3066 — fix(headroom): skip compress on oversize payloads + disable kompress by default
-
-- url: https://github.com/decolua/9router/pull/3066
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 

@@ -5068,3 +5068,171 @@
 - closed: 2026-08-29
 - detail: merge 02dc03530 (81175df85); optional API_PORT/API_HOSTNAME loopback-default API-only listener in custom-server.js, /v1+/v1beta+/responses+/codex gated; PR's keyPolicy/migration hunks skipped (fork divergence)
 
+## PR #3191 — fix(providers): add TokenRouter connection test support
+
+- url: https://github.com/decolua/9router/pull/3191
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 27fa6d041 (agent/wf_e867883b-3a7-1); tokenrouter connection-test case in testUtils.js
+
+## PR #3179 — fix(runtime): coordinate graceful shutdown flushes
+
+- url: https://github.com/decolua/9router/pull/3179
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 21962d675 (agent/wf_e867883b-3a7-2); src/lib/shutdown.js priority-grouped flusher registry wired into shutdown routes + SQLite adapters; fork shutdown posture preserved; db-adapter-shutdown test updated
+
+## PR #3174 — fix(openai): handle Luna function tools on Chat Completions
+
+- url: https://github.com/decolua/9router/pull/3174
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge ef4df8536 (586696383+bd601251f+fork fixes e345c9576/f64b44034); 64-char-cap tool-call id normalization + luna reasoning_effort=none with tools skipped on responses source; force-stream sync + max_completion_tokens in DefaultExecutor
+
+## PR #3172 — Fix/executors cancel sse readers
+
+- url: https://github.com/decolua/9router/pull/3172
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5437df40d (ebc4ffb8c); reader.cancel() before releaseLock in grok-web/perplexity-web
+
+## PR #3171 — Fix/mimo free session affinity
+
+- url: https://github.com/decolua/9router/pull/3171
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 6d49c629d (agent/wf_e867883b-3a7-5); mimo-free x-session-affinity from credentials.connectionId; 29 mimo tests
+
+## PR #3168 — fix(iflow): add accessToken authorization fallback
+
+- url: https://github.com/decolua/9router/pull/3168
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge a59f4226e (479aa5622); iflow buildHeaders apiKey||accessToken fallback; iflow-executor.test.js
+
+## PR #3137 — fix(vertex): validate RSA-2048 requirement for SA private key before jose RS256 signing
+
+- url: https://github.com/decolua/9router/pull/3137
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5e49881f9 (agent/wf_2b5f748e-3d2-1); validateVertexSaKey RSA>=2048 pre-import check wired into refreshVertexToken + validate route
+
+## PR #3125 — fix(combos): resolve provider-prefixed combo names to member models
+
+- url: https://github.com/decolua/9router/pull/3125
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 383a52809 (agent/wf_2b5f748e-3d2-2); combo provider-prefixed names fall back to basename resolution; combo-slash-resolve.test.js
+
+## PR #3124 — feat(providers): add Meta AI (Muse Spark) via the Meta Model API
+
+- url: https://github.com/decolua/9router/pull/3124
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge de1804a38 (ead3a92f5); Meta AI (Muse Spark) registry p124 + capabilities/pricing/thinking wiring + icon; meta-ai.test.js 7 cases
+
+## PR #3114 — fix(antigravity): preserve schema-keyword property names
+
+- url: https://github.com/decolua/9router/pull/3114
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge dd4884db3 (bce7692c5); isSchema-aware removeUnsupportedKeywords preserves schema-keyword property names; antigravity-schema-cleaner.test.js
+
+## PR #3087 — feat(headroom): add lossless mode to proxy start
+
+- url: https://github.com/decolua/9router/pull/3087
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge fb32282a9 (agent/wf_2b5f748e-3d2-5); headroom --lossless flag + headroomLossless setting; conflict kept fork kompress default-on
+
+## PR #3066 — fix(headroom): skip compress on oversize payloads + disable kompress by default
+
+- url: https://github.com/decolua/9router/pull/3066
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 6756afe2a (e3ebd3be6); MAX_COMPRESS_BODY_BYTES 256KB fail-open gate + kompress opt-in (settings.headroomKompress===true); conflict kept fork !==false default in routes, lossless added
+
