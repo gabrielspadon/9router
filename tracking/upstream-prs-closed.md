@@ -5404,3 +5404,143 @@
 - closed: 2026-08-29
 - detail: merge 1e143a476 (1601b4592); Amp marked unsupported:true + ToolSummaryCard Unsupported branch + DefaultToolCard error notes
 
+## PR #2887 — fix(openrouter): opt into provider fallback for `openrouter/fusion` e…
+
+- url: https://github.com/decolua/9router/pull/2887
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 7efa2c387 (4e1ad34f4); OpenRouterExecutor (super openrouter) allow_fallbacks injection + parseUpstreamError Stealth 502/500 hint; resetsAtMs untouched; 11-case test
+
+## PR #2857 — fix(docker): remediate trivy HIGH/CRITICAL findings in the Docker image
+
+- url: https://github.com/decolua/9router/pull/2857
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 881fa1b21 (2819278c6+db2aef3c3); docker image strips npm/corepack/yarn, postcss ^8.5.18 + sharp ^0.35.0 overrides, GitLab PAT placeholder masked
+
+## PR #2853 — fix(codex): preserve quota window duration
+
+- url: https://github.com/decolua/9router/pull/2853
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 4358be2fd (30fb4b3f3); formatCodexWindow windowSeconds from limit_window_seconds/window_seconds; codex-usage-windows.test.js
+
+## PR #2847 — feat(models): expose runtime LLM capabilities in models info
+
+- url: https://github.com/decolua/9router/pull/2847
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge bda499c4a (98e032553); models info route runtime capability derivation (overrides + contextWindow precedence); models-info-capabilities.test.js 6 cases
+
+## PR #2824 — feat(ollama): add embedding provider adapter and endpoint support for Ollama Local
+
+- url: https://github.com/decolua/9router/pull/2824
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 78c8dc7dd (7b689956f); ollamaLocal embedding adapter + registry models/serviceKinds/embeddingConfig; 3 new embeddingsCore cases
+
+## PR #2822 — fix(logs): stop writing provider tokens to disk in request logs
+
+- url: https://github.com/decolua/9router/pull/2822
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 0d4ddde27 (e930795fd); maskSensitiveHeaders active with PR allowlist, scheme prefix + last-4 kept; logProviderResponse headers masked; fork's DISABLED comment removed (security posture override of fork's old test-time decision)
+
+## PR #2811 — Include commandcode cache reads in usage statistics
+
+- url: https://github.com/decolua/9router/pull/2811
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 9ea8bb91c (d089921c9); commandcode usage extractor surfaces cachedInputTokens as cachedTokens when >0
+
+## PR #2798 — fix(proxy-pools): increase relay test timeout to 30s and use reliable test endpoint
+
+- url: https://github.com/decolua/9router/pull/2798
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 62bc3472c (87b87b800); relay test timeout 30s + api.ipify.org target
+
+## PR #2783 — fix(translator): carry Structured Output across the Chat ⇄ Responses hop
+
+- url: https://github.com/decolua/9router/pull/2783
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge f962e255c (20e44b326+32b64ee46); jsonFence util + response_format carry across Chat<->Responses + client-JSON unfence hooks in default/openai-to-claude prompts, nonStreamingHandler, sseToJsonHandler; 14 new tests
+
+## PR #2776 — fix(db): encrypt provider connection secrets at rest (AES-256-GCM)
+
+- url: https://github.com/decolua/9router/pull/2776
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 11354418c; secretCol helper AES-256-GCM at rest (enc1: prefix, legacy plaintext fallback) wired in connectionsRepo/exportDb/importDb/importLegacyMain; DB_ENCRYPTION_KEY env; secretCol.test.js
+

@@ -965,17 +965,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2887 — fix(openrouter): opt into provider fallback for `openrouter/fusion` e…
-
-- url: https://github.com/decolua/9router/pull/2887
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2879 — feat(fallback): lock accounts for the provider's real rate-limit reset
 
 - url: https://github.com/decolua/9router/pull/2879
@@ -1009,42 +998,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2857 — fix(docker): remediate trivy HIGH/CRITICAL findings in the Docker image
-
-- url: https://github.com/decolua/9router/pull/2857
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2853 — fix(codex): preserve quota window duration
-
-- url: https://github.com/decolua/9router/pull/2853
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2848 — fix(claude): harden OAuth usage quota polling
 
 - url: https://github.com/decolua/9router/pull/2848
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2847 — feat(models): expose runtime LLM capabilities in models info
-
-- url: https://github.com/decolua/9router/pull/2847
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1075,31 +1031,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2824 — feat(ollama): add embedding provider adapter and endpoint support for Ollama Local
-
-- url: https://github.com/decolua/9router/pull/2824
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2823 — feat(zed): add Zed Hosted AI provider support
 
 - url: https://github.com/decolua/9router/pull/2823
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2822 — fix(logs): stop writing provider tokens to disk in request logs
-
-- url: https://github.com/decolua/9router/pull/2822
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1119,31 +1053,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2811 — Include commandcode cache reads in usage statistics
-
-- url: https://github.com/decolua/9router/pull/2811
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2801 — fix(ollama): preserve terminal stream message content
 
 - url: https://github.com/decolua/9router/pull/2801
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2798 — fix(proxy-pools): increase relay test timeout to 30s and use reliable test endpoint
-
-- url: https://github.com/decolua/9router/pull/2798
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1185,31 +1097,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2783 — fix(translator): carry Structured Output across the Chat ⇄ Responses hop
-
-- url: https://github.com/decolua/9router/pull/2783
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2780 — fix: support Claude Code Auto Mode through GPT fallback
 
 - url: https://github.com/decolua/9router/pull/2780
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2776 — fix(db): encrypt provider connection secrets at rest (AES-256-GCM)
-
-- url: https://github.com/decolua/9router/pull/2776
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
