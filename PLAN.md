@@ -94,6 +94,10 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Stale providers baseline re-snapshotted (ollama/ollama-local/opencode thinkingFormat rows from the 3478 merge).
 - 84 of ~827 upstream open PRs processed (70 integrated, 12 adapted, 6 rejected).
 
+### 2026-08-29 — session 2 continued: tick 10 complete (batch 14)
+- #3433 (Responses usage preservation), #3426 (usage summary details) integrated; #3429 (combo-only exposure, lazy adaptation preserving fork combo enrichment), #3423 (Qwen3.8/Muse pricing+caps, fork muse format kept) adapted; #3428 rejected (superseded by 3528 streamMode); #3445 adapted (non-routing core only — routing stays with fork's upstreamRoute regex). Merged 06893d62f, gate green 2420 pass / 64 known / 0 unexpected, pushed eb4f43060.
+- 90 of ~829 upstream open PRs processed (76 integrated, 15 adapted, 7 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
