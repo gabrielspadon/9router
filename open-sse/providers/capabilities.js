@@ -42,7 +42,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|opencode|minimax|hunyuan|step|nous
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|opencode|minimax|hunyuan|step|nous|meta
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -247,7 +247,15 @@ export const PROVIDER_CAPABILITIES = {
   // Ox Alpha Free — full id (opencode-go) + aliases (ocg/oc) so alias-routed
   // lookups resolve; opencode/x-preview-f-free already covered in
   // MODEL_CAPABILITIES with videoInput:true and the "opencode" format.
-  opencode: { "ox-alpha-free": OX_ALPHA_CAPABILITIES },
+  // Meta AI (Muse Spark) — OpenAI-compatible reasoning models. Muse Spark
+  // always reasons and rejects "none" (HTTP 400); it accepts
+  // minimal/low/medium/high/xhigh and has no "max".
+  "meta": {
+    "muse-spark-1.2-contributor": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
+    "muse-spark-1.2": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
+    "muse-spark-1.1": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
+  },
+    opencode: { "ox-alpha-free": OX_ALPHA_CAPABILITIES },
   oc: { "ox-alpha-free": OX_ALPHA_CAPABILITIES },
   "opencode-go": { "ox-alpha-free": OX_ALPHA_CAPABILITIES },
   ocg: { "ox-alpha-free": OX_ALPHA_CAPABILITIES },
