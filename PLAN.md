@@ -157,3 +157,12 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - Regression caught + fixed: PR 3057 (opencode-zen) duplicated opencode-go catalog ids, making bare deepseek-v4-flash-free ownerless (fell through to openrouter prefix rule). Fix 01ee90dff: resolveBareModelStaticOwner falls back to first registry declaration instead of null when no alias prefix matches.
 - Fork deltas kept: 3042 max_tokens:1024 probe (PR's 64 regresses #3010), 2997 bypass-agent rewrite skipped (fork SNI-pinned), 2972 one-liner only.
 - Integrate queue: ~121 remaining.
+
+### 2026-08-29 — session 2 continued: tick 19 (batches 23-24, 21 PRs)
+
+- Batch 22 (10) + batches 23-24 (21) all merged. Gate 2927 pass / 61 known fails (down from 63), no regression. Pushed 117d45562.
+- First true 6-workflow parallel run. Two ops lessons: (1) host admission leases leaked dead PIDs (all 10 /proc-verified dead after a slot wedge) — pruned; (2) z-ai 429 + 502 admission errors retried successfully in every workflow, zero work lost, but wall-clock per batch stretched to ~45 min under 12-18 concurrent agents.
+- Batch 23 (9): 2775 analytics gate, 2724 grok daily meter, 2706 minimax thinking signature, 2691 azure max_completion_tokens, 2686 combos kind filter, 2683 setup-node v7, 2658 claudeUsageToOpenAI, 2634 collapseTextParts, 2622 thinking-tag leak (supersedes 980/2190).
+- Batch 24 adapt queue (12): 3613 codex subscription expiry, 3612 extractResetsAtMs + 6h cooldown cap, 3611 passthrough dedupe (separable slice only), 3333 deepseek tool dedup (signature extended), 3329 claude-adaptive auto handling, 3325 adaptive stripper (fork hook points), 3321 opencode egress + x-real-ip, 3320 antigravity 2.5.5 single-sourced, 3318 functionResponse wrap (intent port), 3313 DNS-aware SSRF guard, 3297 responses completion usage, 3295 ollama-local timeouts.
+- Notable conflict resolutions: 3613 usage route union-merged (grok daily meter + codex entitlement coexist); 2706 stream.js conflict re-applied to fork's restructured passthrough block.
+- Remaining: ~95 integrate, ~242 adapt, ~73 needs-full-analysis. Next: continue integrate + adapt queues in parallel waves.
