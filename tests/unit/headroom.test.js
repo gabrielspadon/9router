@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog } from "../../open-sse/rtk/headroom.js";
+import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, resetHeadroomCircuitBreaker } from "../../open-sse/rtk/headroom.js";
 import { parseHeadroomTimeoutMs } from "../../src/lib/headroom/detect.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetHeadroomCircuitBreaker();
   delete process.env.HEADROOM_API_KEY;
   delete process.env.HEADROOM_PROXY_TOKEN;
 });
@@ -703,6 +704,24 @@ describe("compressWithHeadroom", () => {
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it("activates circuit breaker after consecutive failures without repeated fetch", async () => {
+    global.fetch = vi.fn(async () => { throw new Error("Connection refused"); });
+    const body = { messages: [{ role: "user", content: "long" }] };
+
+    // First failure
+    await compressWithHeadroom(body, { enabled: true, url: "http://cb-test:8787" });
+    // Second failure - trips circuit breaker
+    await compressWithHeadroom(body, { enabled: true, url: "http://cb-test:8787" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    // Third call - short-circuits via circuit breaker
+    const diagnostics = {};
+    const stats = await compressWithHeadroom(body, { enabled: true, url: "http://cb-test:8787", diagnostics });
+    expect(stats).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(diagnostics.reason).toContain("circuit breaker active");
+  });
 });
 
 describe("OpenAI structural validation (adversarial proxy)", () => {
@@ -726,9 +745,13 @@ describe("OpenAI structural validation (adversarial proxy)", () => {
   }
 
   it("dropped messages (3→1) with claimed savings → null, body untouched, one fetch", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(proxyReply([
+    // ponytail: plain assignment instead of vi.spyOn — after restoreAllMocks, spyOn
+    // records calls from the previous test's assigned vi.fn into the new spy (vitest
+    // quirk), inflating call counts. Assignment style matches the rest of this file.
+    global.fetch = vi.fn(async () => proxyReply([
       { role: "user", content: "tiny" },
     ]));
+    const fetchSpy = global.fetch;
     const body = threeMessageBody();
     const before = structuredClone(body);
     const diag = {};
