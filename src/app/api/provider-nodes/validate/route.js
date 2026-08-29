@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import {
+  assertPublicUrl,
+  fetchPublicUrl,
+  SSRF_BLOCKED_ERROR_CODE,
+} from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 import { canonicalEndpoint, openAIEndpoints } from "../endpointUrls.js";
 import { fetchWithTimeout } from "@/lib/network/fetchWithTimeout.js";
@@ -89,6 +93,8 @@ export async function POST(request) {
         }
       }
 
+      const localRequest = isLocalRequest(request);
+      const outboundFetch = localRequest ? fetch : fetchPublicUrl;
       const model = modelId.trim();
       const probes = [
         [
@@ -136,7 +142,7 @@ export async function POST(request) {
       const results = await Promise.all(
         probes.map(async ([format, url, headers, probeBody]) => {
           try {
-            const response = await fetchWithTimeout(url.replace(/\/+$/, ""), {
+            const response = await fetchWithTimeout(outboundFetch, url.replace(/\/+$/, ""), {
               method: "POST",
               headers,
               body: JSON.stringify(probeBody),
@@ -170,8 +176,11 @@ export async function POST(request) {
       );
     }
 
-    // SSRF guard for remote callers; local host keeps self-hosted nodes (e.g. ollama-local)
-    if (!isLocalRequest(request)) {
+    // Trusted local callers keep self-hosted nodes (e.g. ollama-local). Remote callers
+    // use a DNS-aware dispatcher that also validates redirect destinations.
+    const localRequest = isLocalRequest(request);
+    const outboundFetch = localRequest ? fetch : fetchPublicUrl;
+    if (!localRequest) {
       try {
         assertPublicUrl(baseUrl);
       } catch {
@@ -188,7 +197,7 @@ export async function POST(request) {
           error: "Model ID required for embedding validation",
         });
       }
-      const embedRes = await fetchWithTimeout(`${normalizedBase}/embeddings`, {
+      const embedRes = await fetchWithTimeout(outboundFetch, `${normalizedBase}/embeddings`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -229,7 +238,7 @@ export async function POST(request) {
       }
 
       const modelsUrl = `${normalizedBase}/models`;
-      const res = await fetchWithTimeout(modelsUrl, {
+      const res = await fetchWithTimeout(outboundFetch, modelsUrl, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -251,6 +260,7 @@ export async function POST(request) {
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
         const chatRes = await fetchWithTimeout(
+          outboundFetch,
           `${normalizedBase}/chat/completions`,
           {
             method: "POST",
@@ -285,7 +295,7 @@ export async function POST(request) {
 
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
-    const res = await fetchWithTimeout(modelsUrl, {
+    const res = await fetchWithTimeout(outboundFetch, modelsUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
 
@@ -299,6 +309,7 @@ export async function POST(request) {
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
       const chatRes = await fetchWithTimeout(
+        outboundFetch,
         `${baseUrl.replace(/\/$/, "")}/chat/completions`,
         {
           method: "POST",
@@ -328,6 +339,9 @@ export async function POST(request) {
       error: getModelsErrorMessage(res.status),
     });
   } catch (error) {
+    if (error?.code === SSRF_BLOCKED_ERROR_CODE || error?.cause?.code === SSRF_BLOCKED_ERROR_CODE) {
+      return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+    }
     const errorMessage = getErrorMessage(error);
     console.error("Error validating provider node:", {
       message: error.message,
