@@ -84,6 +84,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - #3493 (headroom hardening, heaviest adapt) merged ba7477d8e after finishing a 429-killed agent's work inline: reworded a test title tripping the secret-scan, made headroom-detect test platform-neutral (upstream assumed Windows separators), full gate green 2351 pass / 64 known / 0 unexpected. Pushed 86b1a5c5a.
 - All 6 batch-11 PRs processed. 73 of ~827 upstream open PRs processed (62 integrated, 11 adapted, 3 rejected).
 
+### 2026-08-28 — session 2 continued: tick 8 complete (batch 12)
+- #3465 (empty-content fallback + Responses translation), #3481 (usage breakdown + pricing refresh + canonicalizeUsage adaptation), #3478 (Ollama think), #3476 (CommandCode error peek), #3471 (filter persistence) all integrated. Merged b74251aee, gate green 2376 pass / 64 known / 0 unexpected, pushed d0ce5c155.
+- Catch: upstream PR 3465's commit chain was ALSO inside PR 3481's branch (both cherry-picked the same chain); merged 3465 first, deduped the resulting duplicate test block + a leftover ||||||| base marker.
+- 78 of ~827 upstream open PRs processed (67 integrated, 11 adapted, 3 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
