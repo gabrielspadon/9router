@@ -306,7 +306,7 @@ export async function POST(request) {
           // Nous exposes /models publicly, so a models request cannot validate
           // the Portal key. Use the smallest authenticated inference instead.
           const probe = createNousApiKeyProbe(apiKey);
-          const res = await fetch(probe.url, {
+          const res = await fetchWithTimeout(probe.url, {
             ...probe.options,
             signal: AbortSignal.timeout(8000),
           });
