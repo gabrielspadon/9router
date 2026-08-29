@@ -18,6 +18,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
+import { isRequestReplayBufferError } from "open-sse/services/accountFallback.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -269,10 +270,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const failCountByConn = new Map();
   let lastError = null;
   let lastStatus = null;
+  // Envoy request-buffer overflow (507): retry the SAME account once — the
+  // failure is upstream buffering, not the account, and other accounts may not
+  // hold the credential state the retry needs.
+  let requestReplayConnectionId = null;
+  let requestReplayAttempted = false;
 
   while (true) {
     const lastFailedConn = failCountByConn.size ? [...failCountByConn.entries()].find(([id, c]) => c >= 1 && c < ACCOUNT_RETRY_LIMIT)?.[0] : null;
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, lastFailedConn ? { ignoreModelLockConnId: lastFailedConn } : {});
+    const credentialOptions = {};
+    if (lastFailedConn) credentialOptions.ignoreModelLockConnId = lastFailedConn;
+    if (requestReplayConnectionId) credentialOptions.preferredConnectionId = requestReplayConnectionId;
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, credentialOptions);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -372,6 +381,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
+      requestReplayAttempted = true;
+      requestReplayConnectionId = credentials.connectionId;
+      log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
+      continue;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
