@@ -4,6 +4,7 @@ import gemini from './gemini.js';
 import openaiCompatNode from './openaiCompatNode.js';
 import selfhostedEmbedding from './selfhostedEmbedding.js';
 import cloudflareAi from './cloudflareAi.js';
+import ollamaLocal from './ollamaLocal.js';
 
 const OPENAI_COMPAT_PROVIDERS = [
   'openai',
@@ -33,6 +34,7 @@ const ADAPTERS = {
   'selfhosted-embedding': selfhostedEmbedding,
   // Account-scoped base URL; needs creds.providerSpecificData.accountId
   'cloudflare-ai': cloudflareAi,
+  'ollama-local': ollamaLocal,
 };
 
 export function getEmbeddingAdapter(provider) {
