@@ -1204,3 +1204,17 @@
 - closed: 2026-08-29
 - detail: qwen3.8 rows before *qwen*max*, step-3.7, canonical Qwen3.8 + qwen3-coder pricing, muse PATTERN_PRICING; upstream muse capability patterns skipped (fork live-verified opencode format wins); thinkingCanDisable:false added to muse-spark exact ids; 39/39
 
+## PR #3445 — fix(opencode): route Muse models through Responses API
+
+- url: https://github.com/decolua/9router/pull/3445
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: non-routing core ported in 3 commits (a9f2a35b8, 9f66475b6, 9ad2c0d30): incomplete-status preservation (finish_reason length/max_tokens), stream-arg respect + max_output_tokens precedence + tool_choice normalization, muse tool_choice demote + findModel suffix strip. Routing hunks NOT ported: fork's upstreamRoute regex (merged 3509) is sole owner. 8/8 new tests, gate green 2420/64/0 unexpected
+

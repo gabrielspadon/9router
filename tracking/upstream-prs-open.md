@@ -8,17 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3445 — fix(opencode): route Muse models through Responses API
-
-- url: https://github.com/decolua/9router/pull/3445
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3421 — feat(kimi): force streaming for the Kimi Code endpoint
 
 - url: https://github.com/decolua/9router/pull/3421
