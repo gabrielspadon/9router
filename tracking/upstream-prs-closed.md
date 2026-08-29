@@ -4788,3 +4788,171 @@
 - closed: 2026-08-29
 - detail: merge 015016f4c; English setup video first in Video Guides, adapted to fork card order
 
+## PR #3618 — Add GLM-5.3-Flash and DeepSeek V4 Vision patterns
+
+- url: https://github.com/decolua/9router/pull/3618
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge f5d3b7f55 (11e5c68f4); *glm-5.3-flash* vision/video/pdf pattern + *glm-5.3* effort row in PATTERN_CAPABILITIES; capabilities.test 15/15
+
+## PR #3616 — fix: all sse handler endpoints (chat, imagegeneratio... in chat.js
+
+- url: https://github.com/decolua/9router/pull/3616
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 7abcd605e (c89d64f97); +20-line sliding-window rate limiter (60 req/min) on src/sse/handlers/chat.js keyed by api key
+
+## PR #3342 — fix(codebuddy-cn): make the system-prompt length gate tunable and loud
+
+- url: https://github.com/decolua/9router/pull/3342
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge e6572967e (7a0ac9e7c); CODEBUDDY_SYSTEM_PROMPT_MAX_LEN env knob + loud warn; 4 codebuddy test files
+
+## PR #3332 — fix(opencode-go): keep DeepSeek on chat completions + normalize (max)
+
+- url: https://github.com/decolua/9router/pull/3332
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 4107b82b6 (0cf5cf067); deepseek-v4-pro/flash supportedFormats reduced to [openai]; fork vision-exp row untouched; opencode-go-models tests updated
+
+## PR #3331 — fix(auth): disable Qoder connection on quota exhaustion (403/code 112)
+
+- url: https://github.com/decolua/9router/pull/3331
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 779ebc1d2 (4ac0a6a68); isQoderQuotaExhausted() 403/code-112 deactivation in markAccountUnavailable; qoder-quota-112-disable.test.js
+
+## PR #3330 — fix(auth): give no-auth free providers a stable upstream session id
+
+- url: https://github.com/decolua/9router/pull/3330
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 4d4a119bf (4b39c99ae); noauth creds carry connectionId:'noauth' so deriveSessionId is stable; noauth-session-id-3262.test.js
+
+## PR #3311 — Sửa Test Connection Xiaomi Token Plan theo vùng
+
+- url: https://github.com/decolua/9router/pull/3311
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 118993aef (9adb24663); resolveXiaomiTokenplanModelsUrl() region-aware + isXiaomiTokenplanTestResponseValid(); 7 new tests
+
+## PR #3310 — Sửa đối số tool call và khả năng Xiaomi Token Plan
+
+- url: https://github.com/decolua/9router/pull/3310
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 302ca4eb8 (5bafdb283+3e17b42bf); XIAOMI_TOKENPLAN_CAPABILITIES + ensureToolCallIds normalizes empty args to {}; 37 tests
+
+## PR #3284 — feat(cowork): add Lians memory plugin
+
+- url: https://github.com/decolua/9router/pull/3284
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5b7861ef4 (d83c6bcee); lians-memory cowork plugin entry + setupUrl link; cowork-lians-memory.test.js
+
+## PR #3265 — feat(commandcode): add per-connection ZDR toggle
+
+- url: https://github.com/decolua/9router/pull/3265
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 751b00459 (4aba4ba0d); commandcode x-cmd-zdr header + AddApiKey/EditConnection ZDR toggle (hand-ported UI); 4 zdr test files; fixed committed conflict artifact in EditConnectionModal.js
+
+## PR #3254 — fix(translator): treat an empty tool_calls array as no tool calls
+
+- url: https://github.com/decolua/9router/pull/3254
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 19ee17abb (356743d9a); msg.tool_calls?.length so empty [] treated as no tool calls in formats/openai.js
+
+## PR #3252 — fix(models): let a curated custom-provider model list suppress the live catalog
+
+- url: https://github.com/decolua/9router/pull/3252
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge fca693a8d (4922a908b); customModels whitelist moved above live-catalog gate; custom-provider-model-list-3115.test.js
+

@@ -8,53 +8,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3342 — fix(codebuddy-cn): make the system-prompt length gate tunable and loud
-
-- url: https://github.com/decolua/9router/pull/3342
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3333 — fix(tools): DeepSeek same-name tool dedup + endpoint matrix tests
 
 - url: https://github.com/decolua/9router/pull/3333
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3332 — fix(opencode-go): keep DeepSeek on chat completions + normalize (max)
-
-- url: https://github.com/decolua/9router/pull/3332
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3331 — fix(auth): disable Qoder connection on quota exhaustion (403/code 112)
-
-- url: https://github.com/decolua/9router/pull/3331
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3330 — fix(auth): give no-auth free providers a stable upstream session id
-
-- url: https://github.com/decolua/9router/pull/3330
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -184,28 +140,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3311 — Sửa Test Connection Xiaomi Token Plan theo vùng
-
-- url: https://github.com/decolua/9router/pull/3311
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3310 — Sửa đối số tool call và khả năng Xiaomi Token Plan
-
-- url: https://github.com/decolua/9router/pull/3310
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3297 — fix(responses): forward usage on streamed response.completed
 
 - url: https://github.com/decolua/9router/pull/3297
@@ -220,17 +154,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3295 — fix(ollama-local): verbose debug diagnostics + timeout/retry tuning
 
 - url: https://github.com/decolua/9router/pull/3295
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3284 — feat(cowork): add Lians memory plugin
-
-- url: https://github.com/decolua/9router/pull/3284
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -275,17 +198,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3268 — feat(codex): support fast service tier for image generation
 
 - url: https://github.com/decolua/9router/pull/3268
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3265 — feat(commandcode): add per-connection ZDR toggle
-
-- url: https://github.com/decolua/9router/pull/3265
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -341,28 +253,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3255 —  Latency Monitoring for Provider Selection
 
 - url: https://github.com/decolua/9router/pull/3255
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3254 — fix(translator): treat an empty tool_calls array as no tool calls
-
-- url: https://github.com/decolua/9router/pull/3254
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3252 — fix(models): let a curated custom-provider model list suppress the live catalog
-
-- url: https://github.com/decolua/9router/pull/3252
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -5357,28 +5247,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3613 — feat(codex): show OAuth subscription expiry
 
 - url: https://github.com/decolua/9router/pull/3613
-- upstream-state: open (discovered 2026-08-29)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3616 — fix: all sse handler endpoints (chat, imagegeneratio... in chat.js
-
-- url: https://github.com/decolua/9router/pull/3616
-- upstream-state: open (discovered 2026-08-29)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3618 — Add GLM-5.3-Flash and DeepSeek V4 Vision patterns
-
-- url: https://github.com/decolua/9router/pull/3618
 - upstream-state: open (discovered 2026-08-29)
 - local-status: queued
 - branch: 
