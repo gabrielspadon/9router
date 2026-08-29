@@ -1512,3 +1512,129 @@
 - closed: 2026-08-29
 - detail: fork's providerNodes system (types openai-compatible/anthropic-compatible/multi-compatible/custom-embedding, prefix-wins routing in src/sse/services/model.js post-3607) already implements the same job; PR adds a second parallel system colliding at migration 002 (fork has 002-seen-models at v2), SCHEMA_VERSION, and prefix levels. No fork demand for scripted unofficial endpoints. Analysis agent verdict: skip, medium confidence, 5/5 files checked against fork at 9e421206e
 
+## PR #3361 — fix(codex): preserve typed Responses system prompts
+
+- url: https://github.com/decolua/9router/pull/3361
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3361)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 770ba4a12 (cherry-pick of upstream dae1a6cd, authorship preserved); typed Responses system injection + normalizeCodexMessageItems; tests/unit/codex-responses-system-injection.test.js; batch-18 gate 2580 pass/63 known fails
+
+## PR #3359 — feat(antigravity): add hermes agent system prompt sanitization
+
+- url: https://github.com/decolua/9router/pull/3359
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3359)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 2a73a071a (upstream 1a7f88d98/a0ab2f51a/8fdc51fea, authorship Travis Groth); sanitizeAntigravitySystemPrompt at 3 sites + executor safeguard; tests/unit/hermes-cloaking.test.js
+
+## PR #3357 — fix(codebuddy-intl): preserve caller system prompts
+
+- url: https://github.com/decolua/9router/pull/3357
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3357)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge a02416762 (upstream a4f29f45); caller system/developer prompts preserved after CodeBuddy identity; tests/unit/codebuddy-intl-system-prompt-3344.test.js
+
+## PR #3352 — feat(backoff): make 429 cooldown schedule configurable
+
+- url: https://github.com/decolua/9router/pull/3352
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3352)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge a4fe5d118 (upstream dd6ba369 + fork comment fix 88d669128); BACKOFF_BASE_MS/MAX_MS/MAX_LEVEL with parsePositiveInteger validation, defaults unchanged; resetsAtMs path untouched; tests/unit/rate-limit-backoff-config.test.js
+
+## PR #3349 — docs(i18n): sync Indonesian README with English source
+
+- url: https://github.com/decolua/9router/pull/3349
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3349)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 73078e6b2 (upstream 15d9a9b37/cb18da439, authorship Alfareza); docs-only i18n/README.id-ID.md sync, image paths verified
+
+## PR #3350 — Fix/kiro reasoning text content fields
+
+- url: https://github.com/decolua/9router/pull/3350
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3350)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge df7bbf800+ (upstream 195505255 partial, commits 3ccf3a873/003fa6f0c/9d7bdfc2c); kiro reasoning text field in 3 frame sites, mitm lock-dir mkdir, getTailscaledBin, oauth 502 no-token guard. GapGPT provider addition skipped (deferred, large port)
+
+## PR #3348 — fix(stream): recover partial usage when a client disconnects before completion
+
+- url: https://github.com/decolua/9router/pull/3348
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3348)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge df7bbf800 (ad283c428); error-path finalization only, routed through fork's single finishStream guard, no streamState double-record; tests/unit/streaming-interrupted-detail.test.js (7)
+
+## PR #3347 — Improvements: opencode/Hermes QOL - usable /v1/models listing, bare-name resolution, usage pipeline fixes
+
+- url: https://github.com/decolua/9router/pull/3347
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3347)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge b3472d12c (7cf0ef406+); bare-name model resolution (fork freeModelsRepo backing) + canonicalEchoModel echo + requestedModel attribution via buildRecentRequestRow; PR route.js/usageRepo-backfill/UI-toggle hunks skipped (superseded by fork freeModelSync/3488)
+
+## PR #3346 — fix(kiro/cloudflare): dedup catalogs, request-scoped 400s, live model import + usage
+
+- url: https://github.com/decolua/9router/pull/3346
+- upstream-state: open (seeded 2026-08-28)
+- local-status: in-progress (batch 18, branch upstream-pr-3346)
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 7e935d1ac (cac646095/e9665a558/18db502a6); targeted subset: invalid-model-id pass rule, Cloudflare + OpenCode-Go usage handlers, Ark GLM maxOutputCap, combo prefill tool-results-to-user. Skipped: commandcode migration (fork runs legacy stack), models-dev stack, requestLogger masking (fork keeps full tokens deliberately), upstream glm-5.2 caps
+

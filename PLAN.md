@@ -115,3 +115,15 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
+
+### 2026-08-29 — session 2 continued: tick 14 (batch 18)
+
+Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770ba4a12.
+
+- PR #3376 skipped: fork's providerNodes system (multi/custom-embedding types, prefix-wins routing post-3607) already implements the job; PR adds a parallel plugin system colliding at migration 002/SCHEMA_VERSION/prefix levels.
+- Group A: 3361 (codex typed Responses prompts), 3359 (antigravity Hermes sanitization), 3357 (codebuddy-intl caller prompts), 3352 (configurable 429 backoff, defaults unchanged).
+- Group B subsets: 3350 (kiro reasoning text + 3 small fixes; GapGPT skipped), 3349 (id-ID README sync, docs-only), 3348 (stream error-path usage finalization routed through fork's finishStream guard), 3347 (bare-name model resolution + canonicalEchoModel + requestedModel attribution), 3346 (invalid-model-id pass rule, Cloudflare/OpenCode-Go usage handlers, Ark GLM cap, combo prefill; commandcode/models-dev/requestLogger skipped).
+- Group B workflow lost 6 agent attempts to provider 429s (z-ai/glm-5.3-flash rate limit); all 5 agents recovered on retry, work verified on branches. Recovery workflow for 3348/3347 launched after a stale read, then stopped once the original completion notification arrived.
+- Worktree/base anomalies fixed before merge: upstream-pr-3349 and upstream-pr-3350 branches were based on upstream tip 90b52e06f instead of fork master; rebuilt on 3922ed66f via cherry-pick (8815f5a37, 3ccf3a873/003fa6f0c/9d7bdfc2c). 3348 worktree had uncommitted duplicate of committed work; reset to ad283c428.
+- Merge conflict in errorConfig.js (3346 pass-rule + 3352 backoff touching the same block) resolved taking the 3352 side; node --check + gate verified.
+- Gate: full vitest 2580 pass / 63 fail (all known-fails baseline); verify-no-regression clean. First-run 4 flagged (multi-compatible-provider-nodes, usage-dispatch, xai-oauth-service x2) reproduce pass in isolation, parallel-run flake.
