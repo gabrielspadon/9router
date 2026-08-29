@@ -106,7 +106,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetail: vi.fn(() => Promise.resolve()),
 }));
 
-const FORCED = ["openai", "codex", "commandcode"];
+const FORCED = ["openai", "codex", "commandcode", "kimi"];
 
 function makeOptions(bodyStream) {
   const body = {
@@ -153,5 +153,21 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+    // The negotiated flag must also land in the upstream BODY, not just the
+    // stream param: openai→openai (passthrough/transport) skips translators, so
+    // a stale client body.stream:false would reach the provider and make it
+    // answer with a plain JSON body while the response path treats it as SSE.
+    const sentBody = executeMock.mock.calls[0][0].body;
+    expect(sentBody.stream).toBe(true);
+  });
+
+  it("syncs negotiated stream:true into a same-format openai→kimi JSON-client body", async () => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const options = makeOptions(false);
+    options.body.stream = false;
+    await handleChatCore(options);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(executeMock.mock.calls[0][0].stream).toBe(true);
+    expect(executeMock.mock.calls[0][0].body.stream).toBe(true);
   });
 });

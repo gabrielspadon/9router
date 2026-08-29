@@ -24,6 +24,10 @@ export default {
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {
+    // K3/K3-256k non-streaming waits for full inference (~20s+); streaming
+    // returns first token in 2-4s. Non-streaming clients still receive JSON —
+    // chatCore converts SSE back to JSON (handleForcedSSEToJson).
+    forceStream: true,
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
     urlSuffix: "?beta=true",
