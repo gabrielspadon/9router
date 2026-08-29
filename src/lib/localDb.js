@@ -18,5 +18,6 @@ export {
   getFreeModels, getFreeModelsForProvider, setFreeModels,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  getDailyConnectionUsage,
   exportDb, importDb,
 } from "@/lib/db/index.js";
