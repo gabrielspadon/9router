@@ -41,17 +41,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3428 — fix: default stream to false when client omits stream field
-
-- url: https://github.com/decolua/9router/pull/3428
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3426 — fix(usage): show model and provider for single-item groups
 
 - url: https://github.com/decolua/9router/pull/3426

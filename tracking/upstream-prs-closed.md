@@ -1134,3 +1134,17 @@
 - closed: 2026-08-29
 - detail: 13 upstream commits (fadlee) + adaptation 965f0da4e: Devin Cloud provider (registry/executor/oauth/models/tests), alias+golden baselines regen, dead images config dropped, OAuthModal paste-gating fix (zed crash), server.js conflict kept fork OAUTH_TIMEOUT; 49 devin tests
 
+## PR #3428 — fix: default stream to false when client omits stream field
+
+- url: https://github.com/decolua/9router/pull/3428
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-29
+- detail: Superseded by fork's merged PR 3528: streamMode.js:23 body?.stream===true with Gemini/Antigravity carve-outs, stronger test coverage (stream-mode-default-3492 + force-stream-config); upstream one-liner is a strict subset
+
