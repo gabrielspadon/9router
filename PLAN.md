@@ -80,6 +80,10 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Remaining in batch: #3493 (headroom hardening, heavy adapt — supersedes 3507's phantom-warn design), #3492? no. Next: 3493.
 - 72 of ~827 upstream open PRs processed (61 integrated, 11 adapted, 3 rejected).
 
+### 2026-08-28 — session 2 continued: tick 7 complete (batch 11 done)
+- #3493 (headroom hardening, heaviest adapt) merged ba7477d8e after finishing a 429-killed agent's work inline: reworded a test title tripping the secret-scan, made headroom-detect test platform-neutral (upstream assumed Windows separators), full gate green 2351 pass / 64 known / 0 unexpected. Pushed 86b1a5c5a.
+- All 6 batch-11 PRs processed. 73 of ~827 upstream open PRs processed (62 integrated, 11 adapted, 3 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
