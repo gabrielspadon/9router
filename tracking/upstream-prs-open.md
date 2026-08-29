@@ -8,17 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3493 — fix(headroom): harden compression and managed lifecycle
-
-- url: https://github.com/decolua/9router/pull/3493
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3481 — fix(usage): preserve cache/reasoning breakdown, stop reasoning double-billing, refresh OpenAI/GPT prices
 
 - url: https://github.com/decolua/9router/pull/3481

@@ -966,3 +966,17 @@
 - closed: 2026-08-28
 - detail: upstream 8a4d6af07 + d9f3a6e06 (KunN-21); proxy allowlist/rewrites/generic-502/Bearer injection with fork loopback-credential exception preserved; token-saver-ui tests merged (3507 + PR assertions); pxpipe-install test-env adapted for mise layout; 73/73 focused
 
+## PR #3493 — fix(headroom): harden compression and managed lifecycle
+
+- url: https://github.com/decolua/9router/pull/3493
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-28
+- detail: upstream KunN-21 commit adapted on branch upstream-pr-3493, merged ba7477d8e: pre-commit phantom-savings + structural-identity guards (replaces fork 3507 post-hoc warn, tiles now emit only on real commits), outbound key auth with scrubbing, PID-ownership + exactly-once fd, 500ms probe timeout, Claude direct path (pivot dropped, responses import kept), /api/headroom/status subsumed by fork prefix; detect test made platform-neutral (Linux); 135/135 focused, full gate green 2351/64/0 unexpected
+
