@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, ComboTestModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -56,6 +56,7 @@ export default function CombosPage() {
   const [freeSyncCfg, setFreeSyncCfg] = useState({ enabled: false, intervalHours: 4, autoComboIds: [] });
   const [freeMemberIds, setFreeMemberIds] = useState([]);
   const { getCaps } = useModelCaps();
+  const [testingCombo, setTestingCombo] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
   const [importing, setImporting] = useState(false);
@@ -367,6 +368,7 @@ export default function CombosPage() {
               isAutoManaged={(freeSyncCfg.autoComboIds || []).includes(combo.id)}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              onTest={() => setTestingCombo(combo)}
               strategy={comboStrategies[combo.name] || {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
             />
@@ -382,6 +384,16 @@ export default function CombosPage() {
         getCaps={getCaps}
       />
 
+      {/* Combo Test Modal */}
+      {testingCombo && (
+        <ComboTestModal
+          isOpen={!!testingCombo}
+          combo={testingCombo}
+          onClose={() => setTestingCombo(null)}
+          strategy={comboStrategies[testingCombo.name] || {}}
+        />
+      )}
+
       {/* Create Modal - Use key to force remount and reset state */}
       {showCreateModal && (
         <ComboFormModal
@@ -389,6 +401,7 @@ export default function CombosPage() {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSave={handleCreate}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
         />
       )}
@@ -401,6 +414,7 @@ export default function CombosPage() {
           combo={{ name: "Free-All", models: [...freeMemberIds] }}
           onClose={() => setShowCreateFreeModal(false)}
           onSave={handleCreate}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
           showKeepInSync
         />
@@ -413,6 +427,7 @@ export default function CombosPage() {
           combo={editingCombo}
           onClose={() => setEditingCombo(null)}
           onSave={(data, keepInSync) => handleUpdate(editingCombo.id, data, keepInSync)}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
           showKeepInSync
           initialKeepInSync={(freeSyncCfg.autoComboIds || []).includes(editingCombo.id)}
@@ -438,7 +453,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, isAutoManaged = false }) {
+function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, onSetStrategy, isAutoManaged = false }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -517,7 +532,15 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={(e) => { e.stopPropagation(); onTest(combo); }}
+              className="flex flex-col items-center rounded px-2 py-1 text-primary transition-colors hover:bg-primary/10"
+              title="Test Run Combo"
+            >
+              <span className="material-symbols-outlined text-[18px]">play_circle</span>
+              <span className="text-[10px] leading-tight font-medium">Test</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -805,7 +828,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, showKeepInSync = false, initialKeepInSync = false }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activeProviders, kindFilter = null, showKeepInSync = false, initialKeepInSync = false }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -992,6 +1015,18 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
           {/* Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">
+            {onTestDraft && models.length > 0 && (
+              <Button
+                type="button"
+                onClick={() => onTestDraft({ id: combo?.id, name: name || "Draft Combo", models, kind: kindFilter || "llm" })}
+                variant="outline"
+                fullWidth
+                size="sm"
+                icon="play_circle"
+              >
+                Test Run
+              </Button>
+            )}
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">
               Cancel
             </Button>
