@@ -12,6 +12,8 @@ import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
 import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn.js";
 import { getGrokCliUsage } from "./usage/grok-cli.js";
+import { getTokenRouterUsage } from "./usage/tokenrouter.js";
+import { getTokenRouterUsage } from "./usage/tokenrouter.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getCursorUsage } from "./usage/cursor.js";
 import { getCloudflareUsage } from "./usage/cloudflare.js";
@@ -61,6 +63,7 @@ const USAGE_HANDLERS = {
   "opencode-go": (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
   ocg: (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
   "cloudflare-ai": (c) => getCloudflareUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
+  tokenrouter: (c) => getTokenRouterUsage(c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {

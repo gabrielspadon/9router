@@ -57,6 +57,7 @@ export default function AddApiKeyModal({
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
   const isCommandCode = provider === "commandcode";
+  const isTokenRouter = provider === "tokenrouter";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion =
     AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
@@ -64,6 +65,7 @@ export default function AddApiKeyModal({
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
+    managementKey: "",
     defaultModel: "",
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
@@ -100,6 +102,10 @@ export default function AddApiKeyModal({
   const buildProviderSpecificData = () => {
     if (isCommandCode) {
       return { zdrEnabled };
+    }
+    if (isTokenRouter) {
+      const managementKey = formData.managementKey.trim();
+      return managementKey ? { managementKey } : undefined;
     }
     return buildSpecificData({
       hasBaseUrlField: Boolean(baseUrlField),
@@ -418,6 +424,20 @@ export default function AddApiKeyModal({
                   label: r.label,
                 }))}
               />
+            )}
+            {isTokenRouter && (
+              <>
+                <Input
+                  label="Management Key (optional)"
+                  type="password"
+                  value={formData.managementKey}
+                  onChange={(e) => setFormData({ ...formData, managementKey: e.target.value })}
+                  placeholder="sk-..."
+                />
+                <p className="text-xs text-text-muted">
+                  Optional. Used by the Quota Tracker to show per-key usage and account balance. Get it from the TokenRouter dashboard (Settings → Management Key). Leave empty to skip quota tracking.
+                </p>
+              </>
             )}
             {isCompatible && (
               <Input
