@@ -1,6 +1,7 @@
 // Re-export from open-sse with localDb integration
 import {
   getModelAliases,
+  getCustomModels,
   getComboByName,
   getProviderNodes,
 } from "@/lib/localDb";
@@ -8,7 +9,10 @@ import {
   parseModel as parseModelCore,
   resolveModelAliasFromMap,
   getModelInfoCore,
+  resolveProviderAlias,
+  resolveBareModelStaticOwner,
 } from "open-sse/services/model.js";
+import { getFreeModelsForProvider } from "@/lib/db/repos/freeModelsRepo.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -98,7 +102,75 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
+  // Bare (provider-less) model name: resolve to whichever provider actually
+  // serves it (custom registry → static catalog → opencode free catalog),
+  // before the generic prefix-inference fallback can blind-route it to the
+  // wrong provider.
+  const dynamic = await resolveBareModelToProvider(parsed.model);
+  if (dynamic) {
+    return dynamic;
+  }
+
   return getModelInfoCore(modelStr, getModelAliases);
+}
+
+/**
+ * Dynamic fallback for bare (provider-less) model names, in priority order:
+ * 1. admin-registered custom models (explicit intent — wins over everything),
+ * 2. user-defined model aliases (explicit intent — wins over catalog hits),
+ * 3. the synced free-model catalog (opencode free tier — hourly fetch+cache
+ *    via freeModelSync, no per-request fetch; checked first because the static
+ *    registry also declares free-tier ids under opencode-go),
+ * 4. static registry declarations (deterministic, no admin data needed).
+ * This replaces the brittle hardcoded prefix→provider inference for opencode
+ * free tier, mimo, and any other connection-less/providerless provider — a
+ * bare name resolves to the real owner instead of being blind-routed to a
+ * provider that will reject it.
+ */
+export async function resolveBareModelToProvider(modelStr) {
+  try {
+    const custom = await getCustomModels();
+    const hit = custom.find(
+      (m) => m && m.id === modelStr && (m.type === "llm" || !m.type),
+    );
+    if (hit && hit.providerAlias) {
+      const provider = resolveProviderAlias(hit.providerAlias);
+      return { provider, model: hit.id };
+    }
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+
+  // 2) user-defined model aliases — explicit intent, must win over catalog hits
+  try {
+    const aliases = await getModelAliases();
+    const aliasHit = resolveModelAliasFromMap(modelStr, aliases);
+    if (aliasHit) return aliasHit;
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+
+  try {
+    // Connection-less providers with a synced free catalog: ids are stored per
+    // provider id by freeModelSync. Checked before the static scan because the
+    // fork's static registry also declares free-tier ids under opencode-go,
+    // and the free-tier (noAuth) provider is the intended owner of its names.
+    for (const id of ["opencode", "mimo-free"]) {
+      const entry = await getFreeModelsForProvider(id);
+      if (entry?.ids?.includes(modelStr)) {
+        return { provider: id, model: modelStr };
+      }
+    }
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+
+  const staticOwner = resolveBareModelStaticOwner(modelStr);
+  if (staticOwner) {
+    return { provider: staticOwner, model: modelStr };
+  }
+
+  return null;
 }
 
 /**
