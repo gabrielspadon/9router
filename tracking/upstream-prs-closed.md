@@ -5544,3 +5544,297 @@
 - closed: 2026-08-29
 - detail: merge 11354418c; secretCol helper AES-256-GCM at rest (enc1: prefix, legacy plaintext fallback) wired in connectionsRepo/exportDb/importDb/importLegacyMain; DB_ENCRYPTION_KEY env; secretCol.test.js
 
+## PR #2775 — fix(privacy): disable Google Analytics by default, add opt-in toggle
+
+- url: https://github.com/decolua/9router/pull/2775
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 4fdb28040 (fc8daf7b2); analyticsEnabled:false default, Privacy card toggle in fork's rewritten profile page
+
+## PR #2724 — feat(grok): show current-day request usage
+
+- url: https://github.com/decolua/9router/pull/2724
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge cdfd839b5 (a3ef8e4a7); getDailyConnectionUsage daily meter, 800/day grok-cli fallback quota; grok-daily-usage-route.test.js
+
+## PR #2706 — fix(minimax): normalize unsigned thinking block starts
+
+- url: https://github.com/decolua/9router/pull/2706
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge ab9cfff18 (8588c6339); ensureThinkingSignature minimax quirk + stream.js unsigned-start normalization (conflict re-applied to fork's passthrough block); minimax-thinking-signature.test.js
+
+## PR #2691 — fix(azure): send max_completion_tokens for gpt-5/o-series reasoning deployments
+
+- url: https://github.com/decolua/9router/pull/2691
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 0aa240e12 (b5e96f9e9); azure requiresMaxCompletionTokens + explicit max_completion_tokens precedence; azure-executor.test.js 8 cases
+
+## PR #2686 — fix(combos): show non-media combo kinds
+
+- url: https://github.com/decolua/9router/pull/2686
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 15e343976 (3538acdb6); combos page MEDIA_PROVIDER_KINDS filter
+
+## PR #2683 — chore(deps): bump actions/setup-node from 6 to 7
+
+- url: https://github.com/decolua/9router/pull/2683
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge db7ab96d2 (0dc8c2ece); gitbook-pages.yml setup-node v7
+
+## PR #2658 — fix(usage): include Claude cache tokens in prompt totals
+
+- url: https://github.com/decolua/9router/pull/2658
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 6d14f0074 (51df193ef); claudeUsageToOpenAI in usageTracking replaces hand-rolled non-streaming Claude usage; claude-nonstreaming-usage.test.js
+
+## PR #2634 — fix(translator): flatten multi-block text content parts, preserve multimodal
+
+- url: https://github.com/decolua/9router/pull/2634
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 3c428603d (89081af47); collapseTextParts joins multi-block text-only parts with newline, multimodal preserved
+
+## PR #2622 — fix(translator): stop leaking literal <think>/</think> markers into OpenAI content
+
+- url: https://github.com/decolua/9router/pull/2622
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 0edb3f292 (0a0d9f5de); thinking-tag leak removed (reasoning_content only) + closeReasoning on reasoning->content transition in openai-responses; supersedes open PRs 980/2190
+
+## PR #3613 — feat(codex): show OAuth subscription expiry
+
+- url: https://github.com/decolua/9router/pull/3613
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 011e51a43 (b23960347 adapted); codex subscription entitlement (JWT fast-path, accounts/check, psd cache) + ProviderLimits expiry badge; union-merged with fork's grok daily meter in usage route; fork quota-snapshot persist preserved; 58 test cases
+
+## PR #3612 — fix(fallback): parse provider-reported rate-limit reset times
+
+- url: https://github.com/decolua/9router/pull/3612
+- upstream-state: open (discovered 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5e435f42d (ae31738ef+5c8b3a226); extractResetsAtMs generic GLM/retry/Retry-After parsing wired into parseUpstreamError 429 paths + MAX_RATE_LIMIT_COOLDOWN_MS 30min->6h; fork's base.js parseError defers correctly
+
+## PR #3611 — fix(stream): passthrough dedup/normalization + OpenAI non-stream contract
+
+- url: https://github.com/decolua/9router/pull/3611
+- upstream-state: open (discovered 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge cfd86f4c5 (7d65768bf); passthrough finish-chunk/[DONE] dedupe + delta.reasoning normalization only; chatCore stream-default + 502 aborts excluded (superseded by streamMode/2392/882)
+
+## PR #3333 — fix(tools): DeepSeek same-name tool dedup + endpoint matrix tests
+
+- url: https://github.com/decolua/9router/pull/3333
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5602297af (db2bfc421); dedupeTools(tools,{clientTool,model}) extended signature, deepseek same-name dedup first-wins; chatCore call site unconditional; tool-deduper.test.js 11 cases
+
+## PR #3329 — w
+
+- url: https://github.com/decolua/9router/pull/3329
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 47d0d57f1 (7b8111114); claude-adaptive omits output_config at auto; claude-budget auto emits budget_tokens:10000; sonnet-5 adaptive pattern + fable/mythos flipped
+
+## PR #3325 — Adaptive unsupported parameter stripper
+
+- url: https://github.com/decolua/9router/pull/3325
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 1e97717cb (188f80425); adaptiveStripper concerns/ module wired at fork's stripContinuityFields + 400-retry (one retry, 3403 pass semantics kept); 16 tests
+
+## PR #3321 — fix(opencode): stop zen free-tier 429 — official client fingerprint + manual egress switch
+
+- url: https://github.com/decolua/9router/pull/3321
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge a24cd453f (66b4db7b2); ocEgress flip util + x-real-ip scrub + versioned UA; session stash moved per-request (fixes concurrent bleed); codebuddy hunk skipped
+
+## PR #3320 — feat(antigravity): update Antigravity IDE fingerprint version to 2.5.5
+
+- url: https://github.com/decolua/9router/pull/3320
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 99437d611 (229db6f4c+d04dc6e78); ANTIGRAVITY_IDE_VERSION 2.5.5 single-sourced (mitm hardcode deleted, requires shared.js); ide-version-sync test
+
+## PR #3318 — fix(translator): wrap array tool outputs in object for Gemini/Antigravity functionResponse
+
+- url: https://github.com/decolua/9router/pull/3318
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 025bc578a (3a40b8fe8); functionResponse array/primitive wrap on Gemini + Claude tool_result paths (PR intent; upstream's final state reverted the guard so intent ported); unrelated hunks skipped
+
+## PR #3313 — fix(security): chặn SSRF khi kiểm tra provider node
+
+- url: https://github.com/decolua/9router/pull/3313
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 840606b0e (7b58c7528+fbd189d9d+5ddebc750); DNS-aware ssrfGuard + fetchPublicUrl wiring for remote provider-node validate; fork's AbortSignal fetchWithTimeout signature kept; 48 tests
+
+## PR #3297 — fix(responses): forward usage on streamed response.completed
+
+- url: https://github.com/decolua/9router/pull/3297
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 604c22878; toResponsesUsage + completionPending deferral + estimated usage pre-flush for Responses clients; antigravity pivot null-usage regression fix; overlaps 3075 (test shapes same)
+
+## PR #3295 — fix(ollama-local): verbose debug diagnostics + timeout/retry tuning
+
+- url: https://github.com/decolua/9router/pull/3295
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 2061da7c3 (84ce16ff0); OLLAMA_LOCAL_CONNECT_TIMEOUT_MS in runtimeConfig + 502/503/504 retry disable + debug diagnostics; base.js fmtBytes
+
