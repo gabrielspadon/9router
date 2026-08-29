@@ -980,3 +980,73 @@
 - closed: 2026-08-28
 - detail: upstream KunN-21 commit adapted on branch upstream-pr-3493, merged ba7477d8e: pre-commit phantom-savings + structural-identity guards (replaces fork 3507 post-hoc warn, tiles now emit only on real commits), outbound key auth with scrubbing, PID-ownership + exactly-once fd, 500ms probe timeout, Claude direct path (pivot dropped, responses import kept), /api/headroom/status subsumed by fork prefix; detect test made platform-neutral (Linux); 135/135 focused, full gate green 2351/64/0 unexpected
 
+## PR #3465 — fix(stream): fallback to next combo account on empty/null content responses
+
+- url: https://github.com/decolua/9router/pull/3465
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: 3 upstream commits (ZQi) + fork adaptation 43e3266b2: empty-content 7-min lock via onEmptyStream, Responses body translation for Chat/Claude clients, data-only SSE; complementary to fork PR-3560 combo guard (no double-lock); 17/17 focused
+
+## PR #3481 — fix(usage): preserve cache/reasoning breakdown, stop reasoning double-billing, refresh OpenAI/GPT prices
+
+- url: https://github.com/decolua/9router/pull/3481
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: 5 commits incl. pricing e511efd2b; reasoning double-bill clamp, cache/reasoning detail passthrough, refreshed OpenAI/GPT rows, stream_options.include_usage; ADAPTATION: canonicalizeUsage reads Responses detail shapes; fork Claude rows now bill reasoning as delta (intended correction); 39/39
+
+## PR #3478 — fix(translator): correctly route Claude thinking to Ollama `think` param
+
+- url: https://github.com/decolua/9router/pull/3478
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick ccefa9caf (Shubham Mathur); ollama think param (bool|low|high|max), gpt-oss rows, manual-apply around fork's opencode/tokenrouter cases; 52/52 thinking tests
+
+## PR #3476 — fix(commandcode): fail request on embedded 503 server_error so combo fallback triggers
+
+- url: https://github.com/decolua/9router/pull/3476
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 34b5feef (Jefri Herdi Triyanto); NDJSON error-frame peek returns synthetic error so combo fallback fires; wrapper 200/SSE harmless on ok-path; 5/5
+
+## PR #3471 — feat(quota): persist account and provider filter preferences in localStorage
+
+- url: https://github.com/decolua/9router/pull/3471
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-28
+- detail: cherry-pick 7f5ff5ac (wolf1999h); account/provider filter persistence + hydration-gated initial fetch; coexists with hasHydratedAutoRefresh; 13/13
+
