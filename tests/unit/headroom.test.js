@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, resetHeadroomCircuitBreaker } from "../../open-sse/rtk/headroom.js";
 import { parseHeadroomTimeoutMs } from "../../src/lib/headroom/detect.js";
 
@@ -730,7 +730,7 @@ describe("compressWithHeadroom", () => {
       tokens_saved: 80,
     }), { status: 200 }));
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => new AbortController().signal);
-    const body = { messages: [{ role: "user", content: "long" }] };
+    const body = { messages: [{ role: "user", content: "meaningful original content that is fairly long here ".repeat(30) }] };
 
     const stats = await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787" });
 
