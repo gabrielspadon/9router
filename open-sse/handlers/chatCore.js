@@ -104,6 +104,7 @@ export async function handleChatCore({
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
+  onEmptyStream,
   onDisconnect,
   clientRawRequest,
   connectionId,
@@ -867,6 +868,7 @@ export async function handleChatCore({
     apiKey,
     clientRawRequest,
     onRequestSuccess,
+    onEmptyStream,
     pxpipe: pxpipeSummary,
     reqTag,
     log,
@@ -877,7 +879,6 @@ export async function handleChatCore({
     );
   const trackDone = () =>
     trackPendingRequest(model, provider, connectionId, false);
-
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({
