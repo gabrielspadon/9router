@@ -21,9 +21,9 @@ function fetchFailed(code) {
 }
 
 describe("describeProviderError (#3424)", () => {
-  it("keeps a string reason exactly as before, clamped to 100 chars", () => {
+  it("keeps a string reason exactly as before, clamped to 2000 chars", () => {
     expect(describeProviderError("upstream said no")).toBe("upstream said no");
-    expect(describeProviderError("x".repeat(200))).toBe("x".repeat(100));
+    expect(describeProviderError("x".repeat(2500))).toBe("x".repeat(2000));
   });
 
   it("names the transport failure behind `fetch failed`", () => {
