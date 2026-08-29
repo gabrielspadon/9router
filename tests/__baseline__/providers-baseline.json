@@ -693,12 +693,14 @@
   },
   "ollama-local": {
     "baseUrl": "http://localhost:11434/api/chat",
-    "format": "ollama"
+    "format": "ollama",
+    "thinkingFormat": "ollama"
   },
   "ollama": {
     "baseUrl": "https://ollama.com/api/chat",
     "validateUrl": "https://ollama.com/api/tags",
-    "format": "ollama"
+    "format": "ollama",
+    "thinkingFormat": "ollama"
   },
   "openai": {
     "baseUrl": "https://api.openai.com/v1/chat/completions",
@@ -742,6 +744,7 @@
   },
   "opencode": {
     "baseUrl": "https://opencode.ai",
+    "thinkingFormat": "opencode",
     "headers": {
       "x-opencode-client": "desktop"
     },
