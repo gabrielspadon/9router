@@ -103,6 +103,11 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Batch 16 analysis complete (3397/3388/3387 integrate, 3394/3403 adapt); implement workflow running in parallel.
 - 95 of ~829 upstream open PRs processed (81 integrated, 14 adapted, 7 rejected).
 
+### 2026-08-29 — session 2 continued: tick 12 complete (batch 16, doubled throughput)
+- Batch 16: #3397 (nvidia EOL), #3388 (usage realtime), #3387 (envelope unwrap) integrated; #3394 (resetsAtMs parsing, upstream TypeError fixed + 30-day uncapped rules dropped), #3403 (reliability set, per-hunk adapt) adapted. Merged 78cf1d20f, gate green 2453 pass / 63 known / 0 unexpected (one known-fail healed), pushed 3699036c0.
+- Doubled throughput delivered: batches 15+16 (10 PRs) processed in one tick via two parallel implement workflows.
+- 100 of ~829 upstream open PRs processed (86 integrated, 16 adapted, 7 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
