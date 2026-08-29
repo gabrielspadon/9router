@@ -8214,3 +8214,26 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## PR #3614 — Merge GLM ZCode OAuth support from PR #1848
+
+- url: https://github.com/decolua/9router/pull/3614
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3613 — feat(codex): show OAuth subscription expiry
+
+- url: https://github.com/decolua/9router/pull/3613
+- upstream-state: open (discovered 2026-08-29)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
