@@ -287,7 +287,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     });
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: aborted ? "STREAM USAGE (aborted)" : "STREAM USAGE", silent: true });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, label: aborted ? "STREAM USAGE (aborted)" : "STREAM USAGE", silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
 
     if (onEmptyStream && !contentObj?.content?.trim?.() && !contentObj?.thinking?.trim?.() && !hasOutputTokens(usage)) {
