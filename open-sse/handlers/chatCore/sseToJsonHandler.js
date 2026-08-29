@@ -395,15 +395,27 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           role: "assistant",
           model: jsonResponse.model || model,
           content: claudeContent,
-          stop_reason: hasToolCalls ? "tool_use" : (responseDone ? "end_turn" : (jsonResponse.status || "end_turn")),
+          // "incomplete" is not a valid Claude stop_reason — map max_output_tokens truncation to "max_tokens".
+          stop_reason: hasToolCalls ? "tool_use"
+            : (jsonResponse.status === "incomplete" && jsonResponse.incomplete_details?.reason === "max_output_tokens") ? "max_tokens"
+            : responseDone ? "end_turn"
+            : (jsonResponse.status || "end_turn"),
           stop_sequence: null,
           usage: { input_tokens: inTokens, output_tokens: outTokens },
         };
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
+        // Map the upstream Responses status to a VALID Chat Completions
+        // finish_reason. "incomplete" is not one — emit "length" when
+        // max_output_tokens truncated the output, else keep prior fallbacks.
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const truncatedByMaxTokens = jsonResponse.status === "incomplete"
+          && jsonResponse.incomplete_details?.reason === "max_output_tokens";
+        const finishReason = hasToolCalls ? "tool_calls"
+          : truncatedByMaxTokens ? "length"
+          : responseDone ? "stop"
+          : (jsonResponse.status || "stop");
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",
