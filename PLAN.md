@@ -127,3 +127,10 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - Worktree/base anomalies fixed before merge: upstream-pr-3349 and upstream-pr-3350 branches were based on upstream tip 90b52e06f instead of fork master; rebuilt on 3922ed66f via cherry-pick (8815f5a37, 3ccf3a873/003fa6f0c/9d7bdfc2c). 3348 worktree had uncommitted duplicate of committed work; reset to ad283c428.
 - Merge conflict in errorConfig.js (3346 pass-rule + 3352 backoff touching the same block) resolved taking the 3352 side; node --check + gate verified.
 - Gate: full vitest 2580 pass / 63 fail (all known-fails baseline); verify-no-regression clean. First-run 4 flagged (multi-compatible-provider-nodes, usage-dispatch, xai-oauth-service x2) reproduce pass in isolation, parallel-run flake.
+
+### 2026-08-29 — session 2 continued: tick 15 (first-pass triage + docs batch)
+
+- Full first-pass triage of all 714 open PRs (tracking/first-pass-triage.json, commit 6eed0f631): two waves, 9 subsystem sweeps, rg-verified verdicts. Final: 179 superseded, 43 skip, 165 integrate, 254 adapt, 67 needs-full-analysis, 6 late additions routed to full analysis.
+- 222 superseded/skip PRs closed in tracking (commit 9da3bb444), all 222 applied cleanly, sync --check OK, open=492 closed=339. 6 PRs triaged in both waves reconciled (superseded-high wins).
+- Docs batch merged (da7008643): PR 2837 Zoo Code branding, 1161 loopback docker bindings (23 files, security), 2812 video reorder. Gate v3 green (2580/63, no regression); v1/v2 reds were parallel-run flake plus one wrong-cwd rerun (ran from repo root, 66 bogus file fails).
+- Remaining open: 489 PRs (165 integrate, 254 adapt, 67 needs-full-analysis, plus float). Next: implement batches over the integrate queue; adapt queue needs per-PR fork-delta reconciliation.
