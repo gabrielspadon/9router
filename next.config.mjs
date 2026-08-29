@@ -29,10 +29,7 @@ const nextConfig = {
     "*": ["./gitbook/**/*"]
   },
   images: {
-    unoptimized: true,
-    remotePatterns: [
-      { protocol: "https", hostname: "app.devin.ai", pathname: "/assets/pwa/apple-touch-icon.png" },
-    ],
+    unoptimized: true
   },
   env: {},
   experimental: {
