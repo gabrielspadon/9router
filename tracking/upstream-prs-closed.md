@@ -1288,3 +1288,73 @@
 - closed: 2026-08-29
 - detail: cherry-pick e58c050ec; params.model suffix strip; 15/15
 
+## PR #3397 — fix(nvidia): drop EOL models, repoint DeepSeek V4 Flash at its live id
+
+- url: https://github.com/decolua/9router/pull/3397
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 16a4b0a4; NVIDIA EOL models dropped, deepseek-v4-flash -> deepseek-ai/deepseek-v4-flash-0731; baselines green
+
+## PR #3388 — fix(usage): update dashboard stats in real time
+
+- url: https://github.com/decolua/9router/pull/3388
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick dc1d8e2e0 (ndhao164); period-aware SSE + client full-replace + abort stale fetches + normalized token columns; fork abort-cleanup preserved; guard verified 401 unauthenticated; 3/3 e2e
+
+## PR #3387 — fix(clinepass): unwrap { data, success } envelope in non-streaming responses
+
+- url: https://github.com/decolua/9router/pull/3387
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: upstream 90a46b71c (linh.doan) + test cd4f5fc25; {data,success} envelope unwrap, inert for plain bodies; 3/3
+
+## PR #3394 — feat(open-sse): parse RetryInfo, ErrorInfo, and resetsAtMs delay from…
+
+- url: https://github.com/decolua/9router/pull/3394
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: cherry-pick a569328b3 (fasilu) + fixes: String(message) coercion before .includes (upstream TypeError bug), 30-day COOLDOWN.quota text rules dropped (uncapped path; ErrorInfo resetsAtMs is capped), gemini-cli retryAfter kept for combo; 10/10 new tests
+
+## PR #3403 — fix: strict proxy propagation, client error fallback prevention, and stream gating
+
+- url: https://github.com/decolua/9router/pull/3403
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: 8 upstream commits (minhnhat166) per-hunk: strictProxy propagation, context-length/400 pass rules (fork abuse rule kept), first-valid-event gate before fork onRequestSuccess, headroom CB merged into fork callCompress, nvidia additions on 3397, anthropic-beta rawHeader before fork strip, context_management strip; snapshots regenerated; golden 126/126
+
