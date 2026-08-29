@@ -54,6 +54,12 @@ function normalizeGeminiContents(contents) {
   return out;
 }
 
+// functionResponse.response is a google.protobuf.Struct — null, primitives and
+// arrays must be wrapped in an object or Gemini rejects the payload (#3318).
+function wrapFunctionResponsePayload(val) {
+  return val !== null && typeof val === "object" && !Array.isArray(val) ? val : { result: val };
+}
+
 // Core: Convert OpenAI request to Gemini format (base for all variants)
 function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const result = {
@@ -190,7 +196,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               let parsedResp = tryParseJSON(resp);
               if (parsedResp === null) {
                 parsedResp = { result: resp };
-              } else if (typeof parsedResp !== "object") {
+              } else if (typeof parsedResp !== "object" || Array.isArray(parsedResp)) {
+                // Gemini's functionResponse.response is a google.protobuf.Struct:
+                // primitives and arrays must be wrapped, or the API rejects the
+                // payload with INVALID_ARGUMENT (#3318).
                 parsedResp = { result: parsedResp };
               }
 
@@ -376,7 +385,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
+                response: { result: wrapFunctionResponsePayload(tryParseJSON(content) || content) }
               }
             });
           }

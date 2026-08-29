@@ -136,4 +136,44 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  // openai-to-gemini.js — functionResponse.response is a google.protobuf.Struct.
+  // A tool output that parses to a JSON array (Cline returns '[{"file":"a.ts"}]')
+  // must be wrapped in an object, or Gemini rejects the request with
+  // INVALID_ARGUMENT "Proto field is not repeating, cannot start list" (#3318).
+  it("wraps array tool outputs in an object for the Gemini functionResponse", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "list files" },
+        { role: "assistant", tool_calls: [
+          { id: "call_1", type: "function", function: { name: "grep_search", arguments: '{"query":"test"}' } },
+        ] },
+        { role: "tool", tool_call_id: "call_1", content: '[{"file":"a.ts"}]' },
+      ],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const resp = out.request.contents
+      .flatMap((c) => c.parts)
+      .find((p) => p.functionResponse).functionResponse.response;
+    expect(Array.isArray(resp), "raw array leaked into functionResponse.response").toBe(false);
+    expect(resp).toEqual({ result: { result: [{ file: "a.ts" }] } });
+  });
+
+  it("wraps array tool outputs in the Claude tool_result path too", () => {
+    const out = openaiToAntigravityRequest("claude-opus-4-6", {
+      messages: [
+        { role: "user", content: "list files" },
+        { role: "assistant", tool_calls: [
+          { id: "call_1", type: "function", function: { name: "grep_search", arguments: '{"query":"test"}' } },
+        ] },
+        { role: "tool", tool_call_id: "call_1", content: '[{"file":"a.ts"}]' },
+      ],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const resp = out.request.contents
+      .flatMap((c) => c.parts)
+      .find((p) => p.functionResponse).functionResponse.response;
+    expect(Array.isArray(resp), "raw array leaked into functionResponse.response").toBe(false);
+    expect(resp).toEqual({ result: { result: [{ file: "a.ts" }] } });
+  });
 });
