@@ -1358,3 +1358,143 @@
 - closed: 2026-08-29
 - detail: 8 upstream commits (minhnhat166) per-hunk: strictProxy propagation, context-length/400 pass rules (fork abuse rule kept), first-valid-event gate before fork onRequestSuccess, headroom CB merged into fork callCompress, nvidia additions on 3397, anthropic-beta rawHeader before fork strip, context_management strip; snapshots regenerated; golden 126/126
 
+## PR #3386 — fix(codex): surface SSE context overflow as 413
+
+- url: https://github.com/decolua/9router/pull/3386
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: upstream l.sousa commit; findSseContextOverflow + 413 + errorConfig {status:413,pass:true}; terminalStatusRule dropped (fork pass mechanism), combo-rotation test dropped (fork rotates on context errors); 21/21
+
+## PR #3381 — fix(db): create credential store with owner-only permissions
+
+- url: https://github.com/decolua/9router/pull/3381
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: upstream bac42ea4f (Elvis Hsu) + fork f1a3e02db: hardenPermissions dirs 0700/db 0600/backups 0600 + sqljs persist openSync(tmp,w,0o600) so rename keeps mode; 9/9
+
+## PR #3380 — fix(auth): recognize the OIDC-only auth mode so SSO login can start
+
+- url: https://github.com/decolua/9router/pull/3380
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 17bd60ab (Alysson Souza e Silva); isOidcAuthMode accepts sso; 6/6
+
+## PR #3373 — fix(responses): normalize custom tool names in non-streaming conversion
+
+- url: https://github.com/decolua/9router/pull/3373
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: upstream 7b3d59c7f (krasumashi); customToolNames Set-normalization at consumer tops; Array/Set equivalence tests; 26/26
+
+## PR #3369 — fix(translator): recover a tool result that arrived without an id
+
+- url: https://github.com/decolua/9router/pull/3369
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 420a5dd6 (Nguyen Thanh Dat); id-less tool_result paired to oldest unanswered call; 10/10
+
+## PR #3368 — fix(cli): stop the hard-coded heap cap from overriding the operator
+
+- url: https://github.com/decolua/9router/pull/3368
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: upstream d74eca222 (Nguyen Thanh Dat); CLI heap from NINEROUTER_MAX_OLD_SPACE_SIZE, NODE_OPTIONS stand-aside; 8/8
+
+## PR #3367 — fix(usage): fetch and compute Cursor quota/usage
+
+- url: https://github.com/decolua/9router/pull/3367
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 0d0f48d2 (Villoh); Cursor Connect-RPC quota + baseline refresh (anthropic/nvidia pre-existing drift)
+
+## PR #3366 — fix(antigravity): drop messages whose parts become empty after thought filtering
+
+- url: https://github.com/decolua/9router/pull/3366
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: upstream 829f2a88 (Lucifer07); empty-parts filter after thought strip; 3/3
+
+## PR #3364 — fix(model): route to custom node when prefix collides with built-in provider alias
+
+- url: https://github.com/decolua/9router/pull/3364
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: cherry-pick b694e16d (ndiepdev); RESERVED_PROVIDER_PREFIXES guard removed, 4 node blocks unwrapped (fork multi-compatible block), cf test inverted to custom-node-first; 5/5
+
+## PR #3363 — feat(providers): add Nous Research support
+
+- url: https://github.com/decolua/9router/pull/3363
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: upstream (dungartoriaaa); Nous provider p123, thinkingFormat nous (nested enabled/effort), probe via fetchWithTimeout (fork gate), baselines re-snapshotted; 16/16
+
