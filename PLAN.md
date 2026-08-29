@@ -108,6 +108,10 @@ Independently maintained fork of decolua/9router: process upstream PR + issue ba
 - Doubled throughput delivered: batches 15+16 (10 PRs) processed in one tick via two parallel implement workflows.
 - 100 of ~829 upstream open PRs processed (86 integrated, 16 adapted, 7 rejected).
 
+### 2026-08-29 — session 2 continued: tick 13 complete (batch 17, 10 PRs doubled)
+- Group A: #3369 (id-less tool result pairing), #3373 (customToolNames Set normalization), #3380 (OIDC-only mode), #3381 (DB owner-only perms + fork sqljs 0600 persist), #3386 (codex 413 via fork pass mechanism). Group B: #3368 (CLI heap flags), #3367 (Cursor quota), #3366 (antigravity empty parts), #3364 (custom prefixes win), #3363 (Nous provider, p123 + fetchWithTimeout probe). Merged f66afbb78, gate green 2529 pass / 63 known / 0 unexpected, pushed.
+- 110 of ~830 upstream open PRs processed (96 integrated, 18 adapted, 7 rejected).
+
 ## Verification commands
 - `node scripts/tracking/sync-upstream.mjs --check`
 - `cd tests && npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json` then `node __baseline__/verify-no-regression.mjs /tmp/vitest-results.json`
