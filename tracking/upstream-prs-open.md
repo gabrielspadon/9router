@@ -1515,17 +1515,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2837 — docs(readme): replace Roo Code branding with Zoo Code
-
-- url: https://github.com/decolua/9router/pull/2837
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2833 — feat(api-keys): add expiry, token quotas, and model policies
 
 - url: https://github.com/decolua/9router/pull/2833
@@ -1584,17 +1573,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2818 — fix(models): sync discovered catalogs with configured models
 
 - url: https://github.com/decolua/9router/pull/2818
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2812 — docs: prioritize English setup video in Video Guides
-
-- url: https://github.com/decolua/9router/pull/2812
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -4422,17 +4400,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #1164 — fix: migrate Cohere provider to v2 API (fixes HTTP 405)
 
 - url: https://github.com/decolua/9router/pull/1164
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #1161 — My master
-
-- url: https://github.com/decolua/9router/pull/1161
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 

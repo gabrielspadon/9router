@@ -4746,3 +4746,45 @@
 - closed: 2026-08-29
 - detail: Fork chatCore.js:215-229 already implements Accept-header JSON vs SSE negotiation
 
+## PR #2837 — docs(readme): replace Roo Code branding with Zoo Code
+
+- url: https://github.com/decolua/9router/pull/2837
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 5aed7f162; README Roo Code cell replaced with Zoo Code (zoocode.png byte-verified vs upstream blob)
+
+## PR #1161 — My master
+
+- url: https://github.com/decolua/9router/pull/1161
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 95531c8f1 (86fa57dff); docker publish bound to 127.0.0.1 across 23 doc files + start.sh + docker-compose.yml, zero residual exposed bindings
+
+## PR #2812 — docs: prioritize English setup video in Video Guides
+
+- url: https://github.com/decolua/9router/pull/2812
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 015016f4c; English setup video first in Video Guides, adapted to fork card order
+
