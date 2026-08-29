@@ -1218,3 +1218,73 @@
 - closed: 2026-08-29
 - detail: non-routing core ported in 3 commits (a9f2a35b8, 9f66475b6, 9ad2c0d30): incomplete-status preservation (finish_reason length/max_tokens), stream-arg respect + max_output_tokens precedence + tool_choice normalization, muse tool_choice demote + findModel suffix strip. Routing hunks NOT ported: fork's upstreamRoute regex (merged 3509) is sole owner. 8/8 new tests, gate green 2420/64/0 unexpected
 
+## PR #3421 — feat(kimi): force streaming for the Kimi Code endpoint
+
+- url: https://github.com/decolua/9router/pull/3421
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: forceStream:true on kimi + guarded negotiated-stream sync after stripContinuityFields (upstream unconditional sync would inject stream into gemini-cli/antigravity passthrough); baseline regen; 4/4 force-stream tests
+
+## PR #3420 — fix(chat): sync negotiated stream flag into upstream body
+
+- url: https://github.com/decolua/9router/pull/3420
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: upstream c73f33e1c (zmf); chatCore sync lines landed via 3421's guarded variant (superseding unconditional form); it.each sentBody assertion kept
+
+## PR #3415 — feat(antigravity): add hot reload for pending quota countdown + bun lockfile support
+
+- url: https://github.com/decolua/9router/pull/3415
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: adapted
+- closed: 2026-08-29
+- detail: hotreload route + HOT_RELOAD_CONFIG + UI (ConnectionRow/providers page/ProviderLimits) adapted to fork 3470-timer + filter-persistence state; bun gitignore; 40/40
+
+## PR #3411 — fix(gemini): sanitize schema keywords in function responses to prevent 400
+
+- url: https://github.com/decolua/9router/pull/3411
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick 69f9c55ea (AhooraZen) + Claude-path test; tryParseJSON sanitization covers all 3 call sites; sanitizes args too (upstream trade-off adopted)
+
+## PR #3408 — fix(commandcode): strip thinking suffix from params.model
+
+- url: https://github.com/decolua/9router/pull/3408
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: cherry-pick e58c050ec; params.model suffix strip; 15/15
+
