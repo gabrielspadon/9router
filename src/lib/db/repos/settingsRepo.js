@@ -7,6 +7,7 @@ const DEFAULT_HEADROOM_URL =
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
+  analyticsEnabled: false,
   tunnelEnabled: false,
   tunnelUrl: "",
   tunnelProvider: "cloudflare",
