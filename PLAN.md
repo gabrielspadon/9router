@@ -143,3 +143,10 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - Final (2): 3211 Novita provider (baselines regenerated), 3206 loopback API-only listener.
 - Ops note: 6-agent wave limit silently truncates 10-agent parallel batches; fixed by splitting into 6+2 waves. z-ai 429s retried by the workflow runtime without loss.
 - Integrate queue: 145 remaining. Next: continue integrate batches by age.
+
+### 2026-08-29 — session 2 continued: tick 17 (batch 20, 12 PRs)
+
+- Batch 20: 12 integrate PRs merged through 6756afe2a, gate 2701 pass / 63 known fails, pushed 383fb29f2.
+- Notable: 3174 tool-call id normalization + luna effort=none (cherry-picks + 2 fork-shape fixes), 3179 centralized shutdown flusher registry, 3124 Meta AI registry, 3087/3066 headroom lossless + body-size gate (conflict resolution kept fork's kompress default-on), 3137 vertex RSA key validation.
+- Test fix: shutdown-flushers.test.js used path.resolve("src/...") which resolves under tests/ at runtime; fixed to ../src (e5720f3f4).
+- Integrate queue: ~133 remaining. Next batches continue by age.
