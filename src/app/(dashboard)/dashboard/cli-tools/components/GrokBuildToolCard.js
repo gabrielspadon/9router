@@ -43,18 +43,16 @@ function ModelField({ label, value, placeholder, onChange, onSelect, disabled, h
           </button>
         )}
       </div>
-      <button
+      <Button
+        variant="secondary"
+        size="sm"
         type="button"
         onClick={onSelect}
         disabled={disabled}
-        className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${
-          !disabled
-            ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer"
-            : "opacity-50 cursor-not-allowed border-border"
-        }`}
+        className="w-full sm:w-auto"
       >
         Select
-      </button>
+      </Button>
     </div>
   );
 }

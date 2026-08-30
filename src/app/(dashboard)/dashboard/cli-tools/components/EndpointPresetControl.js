@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/shared/components";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 
@@ -104,15 +105,17 @@ export default function EndpointPresetControl({
           </option>
         ))}
       </select>
-      <button
+      <Button
+        variant="secondary"
+        size="sm"
         type="button"
         onClick={handleSave}
         disabled={!baseUrl || !apiKey}
-        className="px-2 py-1.5 rounded border text-xs bg-surface border-border text-text-main hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         title="Save current Base URL and API key as a browser-local preset"
+        className="shrink-0"
       >
         Save
-      </button>
+      </Button>
       {selectedPreset && (
         <button
           type="button"

@@ -350,16 +350,16 @@ export default function DroidToolCard({
                         placeholder="provider/model-id"
                         className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
                       />
-                      <button
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => setModalOpen(true)}
                         disabled={!hasActiveProviders}
-                        className={`px-2 py-1.5 rounded border text-xs shrink-0 ${hasActiveProviders ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                        className="shrink-0"
                       >
                         Select
-                      </button>
-                      <button onClick={addModel} disabled={!modelInput.trim()} className="px-2 py-1.5 rounded border bg-surface border-border hover:border-primary text-xs shrink-0 disabled:opacity-50" title="Add model">
-                        <span className="material-symbols-outlined text-[14px]">add</span>
-                      </button>
+                      </Button>
+                      <Button variant="secondary" size="sm" icon="add" onClick={addModel} disabled={!modelInput.trim()} title="Add model" aria-label="Add model" className="shrink-0" />
                     </div>
                   </div>
                 </div>

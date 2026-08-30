@@ -212,34 +212,40 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Action buttons */}
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center" data-i18n-skip="true">
             {status?.certExists && !status?.certTrusted && (
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="verified_user"
                 onClick={() => handleAction("trust-cert")}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs font-medium text-yellow-600 transition-colors hover:bg-yellow-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
+                className="w-full sm:w-auto"
               >
-                <span className="material-symbols-outlined text-[16px]">verified_user</span>
                 Trust Cert
-              </button>
+              </Button>
             )}
             {isRunning ? (
-              <button
+              <Button
+                variant="danger"
+                size="sm"
+                icon="stop_circle"
                 onClick={() => handleAction("stop")}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
+                className="w-full sm:w-auto"
               >
-                <span className="material-symbols-outlined text-[16px]">stop_circle</span>
                 Stop Server
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                variant="primary"
+                size="sm"
+                icon="play_circle"
                 onClick={() => handleAction("start")}
                 disabled={loading || !status || (serverIsWindows && !isAdmin)}
                 title={serverIsWindows && !isAdmin ? "Administrator required" : undefined}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
+                className="w-full sm:w-auto"
               >
-                <span className="material-symbols-outlined text-[16px]">play_circle</span>
                 Start Server
-              </button>
+              </Button>
             )}
             {isRunning && (
               <p className="text-xs text-text-muted">Enable DNS per tool below to activate interception</p>

@@ -221,13 +221,14 @@ export default function MitmToolCard({
                         </button>
                       )}
                     </div>
-                    <button
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => openModelSelector(model.alias)}
                       disabled={!hasActiveProviders || !dnsActive}
-                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
                     >
                       Select
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -240,23 +241,27 @@ export default function MitmToolCard({
             {/* Start / Stop DNS button */}
             <div className="flex flex-col gap-2 sm:items-start">
               {dnsActive ? (
-                <button
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon="stop_circle"
                   onClick={handleDnsToggle}
                   disabled={!serverRunning || loading}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
+                  className="w-full sm:w-auto"
                 >
-                  <span className="material-symbols-outlined text-[16px]">stop_circle</span>
                   Stop DNS
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="play_circle"
                   onClick={handleDnsToggle}
                   disabled={!serverRunning || loading}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
+                  className="w-full sm:w-auto"
                 >
-                  <span className="material-symbols-outlined text-[16px]">play_circle</span>
                   Start DNS
-                </button>
+                </Button>
               )}
 
               {/* Warning below button */}
