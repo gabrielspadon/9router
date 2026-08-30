@@ -10,11 +10,21 @@ vi.mock("@/lib/localDb", () => ({
 
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: vi.fn(async () => ({
+    kind: "usable",
+    resolutionKind: "unselected",
     connectionProxyEnabled: false,
     connectionProxyUrl: "",
     connectionNoProxy: "",
     proxyPoolId: null,
     vercelRelayUrl: "",
+  })),
+  toConnectionProxyOptions: vi.fn((config) => ({
+    connectionProxyEnabled: config.connectionProxyEnabled,
+    connectionProxyUrl: config.connectionProxyUrl,
+    connectionNoProxy: config.connectionNoProxy,
+    vercelRelayUrl: config.vercelRelayUrl,
+    strictProxy: config.strictProxy,
+    resolutionKind: config.resolutionKind,
   })),
   pickProxyPoolId: vi.fn(() => null),
 }));

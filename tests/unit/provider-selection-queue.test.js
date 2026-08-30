@@ -10,6 +10,14 @@ const dbMocks = vi.hoisted(() => ({
 
 const proxyMocks = vi.hoisted(() => ({
   resolveConnectionProxyConfig: vi.fn(),
+  toConnectionProxyOptions: vi.fn((config) => ({
+    connectionProxyEnabled: config.connectionProxyEnabled,
+    connectionProxyUrl: config.connectionProxyUrl,
+    connectionNoProxy: config.connectionNoProxy,
+    vercelRelayUrl: config.vercelRelayUrl,
+    strictProxy: config.strictProxy,
+    resolutionKind: config.resolutionKind,
+  })),
   pickProxyPoolId: vi.fn(),
 }));
 
@@ -76,6 +84,8 @@ describe("provider-scoped account-selection queue", () => {
     dbMocks.getProxyPools.mockResolvedValue([]);
     dbMocks.updateProviderConnection.mockResolvedValue(undefined);
     proxyMocks.resolveConnectionProxyConfig.mockResolvedValue({
+      kind: "usable",
+      resolutionKind: "unselected",
       connectionProxyEnabled: false,
       connectionProxyUrl: "",
       connectionNoProxy: "",
