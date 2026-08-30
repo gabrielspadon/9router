@@ -15,6 +15,7 @@ import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
@@ -404,12 +405,25 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
-  trackDone();
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
+  let antigravitySseText = null;
 
   if (contentType.includes("text/event-stream")) {
+    if (provider === "antigravity") {
+      antigravitySseText = await providerResponse.text();
+      const validation = classifyAntigravitySseValidation(antigravitySseText);
+      if (validation) {
+        try {
+          await onValidationRequired?.({ validation, observationId: verificationContext?.observationId });
+        } catch {
+          log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+        }
+        return createErrorResult(HTTP_STATUS.FORBIDDEN, "Antigravity account verification required");
+      }
+    }
+    trackDone();
     // A provider not statically flagged forceStream (e.g. a dynamically-added
     // openai-compatible connection) can still force SSE at the HTTP level —
     // providerRequiresStreaming only catches known providers, so this branch
@@ -420,14 +434,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     // aware converter (same one handleForcedSSEToJson uses) in that case.
     if (targetFormat === FORMATS.OPENAI_RESPONSES) {
       try {
-        responseBody = await convertResponsesStreamToJson(providerResponse.body);
+        responseBody = await convertResponsesStreamToJson(antigravitySseText === null ? providerResponse.body : createSseTextStream(antigravitySseText));
       } catch (err) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
         console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, err.message);
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to convert streaming response to JSON for ${provider}`);
       }
     } else {
-      const sseText = await providerResponse.text();
+      const sseText = antigravitySseText ?? await providerResponse.text();
       const parsed = parseSSEToOpenAIResponse(sseText, model);
       if (!parsed) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
@@ -436,6 +450,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       responseBody = parsed;
     }
   } else {
+    trackDone();
     try {
       responseBody = await providerResponse.json();
     } catch (err) {

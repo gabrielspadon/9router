@@ -114,6 +114,29 @@ describe("Antigravity usage verification", () => {
     expect(listener.onValidationRequired).toHaveBeenCalledWith(expect.objectContaining({ observationId: "obs-usage" }));
   });
 
+  it("preserves a subscription validation challenge without probing quota or clearing it", async () => {
+    const google = await loadGoogle([
+      jsonResponse({ ineligibleTiers: [{ reasonCode: "VALIDATION_REQUIRED", validationUrl: VALIDATION_URL }] }),
+      jsonResponse({ models: {} }),
+    ]);
+    const listener = hooks();
+    let pendingChallenge = null;
+    listener.onValidationRequired.mockImplementation(async ({ validation }) => {
+      pendingChallenge = validation.url;
+    });
+    listener.onVerificationSuccess.mockImplementation(async () => {
+      pendingChallenge = null;
+    });
+
+    const result = await google.getAntigravityUsage("token", {}, null, listener);
+
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+    expect(listener.onValidationRequired).toHaveBeenCalledOnce();
+    expect(listener.onVerificationSuccess).not.toHaveBeenCalled();
+    expect(pendingChallenge).toBe(VALIDATION_URL);
+    expect(google.isUsableAntigravityUsageResult(result)).toBe(false);
+  });
+
   it("reports a strict quota 403 challenge", async () => {
     const google = await loadGoogle([jsonResponse({}), jsonResponse(rpcValidation(), 403)]);
     const listener = hooks();

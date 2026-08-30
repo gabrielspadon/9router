@@ -9,7 +9,8 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
-import { classifyAntigravityValidation, redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { classifyAntigravitySseValidation, createAntigravitySseValidationGate } from "./antigravitySseValidation.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -20,22 +21,6 @@ const CODEX_SOURCE_TO_TARGET = {
   [FORMATS.GEMINI]: FORMATS.ANTIGRAVITY,
   [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
-const MAX_INITIAL_SSE_FRAME_BYTES = 64 * 1024;
-
-function classifyInitialAntigravitySseFrame(chunk) {
-  if (!chunk || chunk.byteLength > MAX_INITIAL_SSE_FRAME_BYTES) return null;
-  const text = new TextDecoder().decode(chunk);
-  const dataLine = text.split(/\r?\n/).find((line) => line.startsWith("data:"));
-  if (!dataLine) return null;
-  try {
-    const payload = JSON.parse(dataLine.slice(5).trim());
-    const status = payload?.error?.code ?? payload?.error?.status ?? payload?.status;
-    return classifyAntigravityValidation({ status, payload, source: "chat" });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
@@ -153,18 +138,21 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  const initialValidation = provider === "antigravity"
-    ? classifyInitialAntigravitySseFrame(firstChunk)
-    : null;
-  if (initialValidation) {
+  const reportValidation = async (validation) => {
     try {
       await onValidationRequired?.({
-        validation: initialValidation,
+        validation,
         observationId: verificationContext?.observationId,
       });
     } catch {
       log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
     }
+  };
+  const initialValidation = provider === "antigravity"
+    ? classifyAntigravitySseValidation(new TextDecoder().decode(firstChunk), { includeTrailing: false })
+    : null;
+  if (initialValidation) {
+    await reportValidation(initialValidation);
     try { await reader.cancel(); } catch {}
     try { reader.releaseLock?.(); } catch {}
     const status = 403;
@@ -224,32 +212,44 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       });
   }
 
-  // Reconstruct ReadableStream with the buffered firstChunk prepended
+  // Reconstruct the upstream stream with the buffered first chunk prepended.
+  // Antigravity frames are parsed before every downstream sink, not only once.
   let responseBodyStream = providerResponse.body;
   if (reader && firstChunk) {
-    let yieldedFirst = false;
-    responseBodyStream = new ReadableStream({
-      async pull(controller) {
-        if (!yieldedFirst) {
-          yieldedFirst = true;
-          controller.enqueue(firstChunk);
-          return;
-        }
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
+    if (provider === "antigravity") {
+      responseBodyStream = createAntigravitySseValidationGate({
+        reader,
+        initialChunk: firstChunk,
+        onValidationRequired: async (validation) => {
+          await reportValidation(validation);
+          streamController?.handleError?.(new Error("Antigravity account verification required"));
+        },
+      });
+    } else {
+      let yieldedFirst = false;
+      responseBodyStream = new ReadableStream({
+        async pull(controller) {
+          if (!yieldedFirst) {
+            yieldedFirst = true;
+            controller.enqueue(firstChunk);
             return;
           }
-          controller.enqueue(value);
-        } catch (err) {
-          controller.error(err);
+          try {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(value);
+          } catch (err) {
+            controller.error(err);
+          }
+        },
+        cancel(reason) {
+          return reader.cancel(reason);
         }
-      },
-      cancel(reason) {
-        return reader.cancel(reason);
-      }
-    });
+      });
+    }
   }
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, streamState });

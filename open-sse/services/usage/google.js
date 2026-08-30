@@ -155,7 +155,11 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
 export async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null, hooks = null) {
   try {
     // Fetch subscription info once — reuse for both projectId and plan
-    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions, hooks);
+    const subscription = await getAntigravitySubscriptionInfo(accessToken, proxyOptions, hooks);
+    if (subscription.validation) {
+      return { message: "Antigravity account verification required.", quotas: {} };
+    }
+    const subscriptionInfo = subscription.data;
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
@@ -304,11 +308,11 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null, 
       source: "loadCodeAssist",
     });
     await reportAntigravityValidation(validation, hooks);
-    if (validation) return null;
-    if (!response.ok) return null;
-    return data;
+    if (validation) return { data: null, validation };
+    if (!response.ok) return { data: null, validation: null };
+    return { data, validation: null };
   } catch (error) {
     console.error("[Antigravity Subscription] Error:", redactAntigravityValidationText(error?.message || "unknown error"));
-    return null;
+    return { data: null, validation: null };
   }
 }

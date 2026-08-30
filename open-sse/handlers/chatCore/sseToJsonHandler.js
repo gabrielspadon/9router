@@ -9,6 +9,7 @@ import { stripJsonFence, unfenceJsonChoices, wantsJsonOutput } from "../../utils
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -297,10 +298,24 @@ async function notifyTerminalVerificationSuccess(callback, connectionId, log) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, notifyTerminalVerificationSuccess: notifyTerminal, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
+
+  let antigravitySseText = null;
+  if (provider === "antigravity") {
+    antigravitySseText = await providerResponse.text();
+    const validation = classifyAntigravitySseValidation(antigravitySseText);
+    if (validation) {
+      try {
+        await onValidationRequired?.({ validation, observationId: verificationContext?.observationId });
+      } catch {
+        log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+      }
+      return createErrorResult(HTTP_STATUS.FORBIDDEN, "Antigravity account verification required");
+    }
+  }
 
   trackDone();
 
@@ -325,7 +340,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     try {
       let jsonResponse;
       if (isGeminiSse) {
-        const parsed = parseGeminiSSEToOpenAIResponse(await providerResponse.text(), model);
+        const parsed = parseGeminiSSEToOpenAIResponse(antigravitySseText ?? await providerResponse.text(), model);
         if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
         if (parsed.error) {
           const message = parsed.error.message || "Upstream SSE stream failed";
@@ -336,7 +351,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         }
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
       } else {
-        jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+        jsonResponse = await convertResponsesStreamToJson(antigravitySseText === null ? providerResponse.body : createSseTextStream(antigravitySseText));
       }
       if (provider === "antigravity" && hasUsefulForcedSseOutput(jsonResponse)) {
         await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
@@ -475,7 +490,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
   // Standard Chat Completions SSE path
   try {
-    const sseText = await providerResponse.text();
+    const sseText = antigravitySseText ?? await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {

@@ -134,7 +134,7 @@ describe("Streaming first-valid-event gate (Issue 2951 Finding 3)", () => {
     expect(res.response).toBeDefined();
 
     // Verify onRequestSuccess was triggered
-    await new Promise((r) => setTimeout(r, 10));
+    await Promise.resolve();
     expect(onRequestSuccess).toHaveBeenCalledTimes(1);
 
     // Verify response body can be read and contains the original stream data
@@ -247,7 +247,7 @@ describe("Streaming first-valid-event gate (Issue 2951 Finding 3)", () => {
     });
 
     expect(res.success).toBe(true);
-    await new Promise((r) => setTimeout(r, 10));
+    await Promise.resolve();
     expect(onRequestSuccess).toHaveBeenCalledTimes(1);
   });
 });

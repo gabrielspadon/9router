@@ -71,6 +71,52 @@ function sseResponse(text) {
   return new Response(text, { headers: { "content-type": "text/event-stream" } });
 }
 
+function chunkedSseResponse(chunks) {
+  const encoder = new TextEncoder();
+  return {
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    }),
+  };
+}
+
+function validationFrame() {
+  return {
+    error: {
+      code: 403,
+      details: [
+        {
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          domain: "cloudcode-pa.googleapis.com",
+          reason: "VALIDATION_REQUIRED",
+        },
+        { "@type": "type.googleapis.com/google.rpc.Help", links: VALIDATION_URLS.map((url) => ({ url })) },
+      ],
+    },
+  };
+}
+
+async function readAvailableStreamText(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+  } catch {
+    // The validation gate terminates the unsafe upstream stream after retaining safe frames.
+  }
+  return text + decoder.decode();
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.saveRequestDetail.mockResolvedValue(undefined);
@@ -154,7 +200,7 @@ describe("Antigravity terminal verification success", () => {
       pxpipe: null, reqTag: "TERM", log: { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() },
     });
     await result.response.body.cancel();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
     expect(accountHealth).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled();
   });
@@ -205,6 +251,102 @@ describe("Antigravity terminal verification success", () => {
     expect(clientPayload).not.toContain("project-secret");
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain(VALIDATION_URLS[0]);
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain("onboard-secret");
+  });
+
+  it("gates a later split Antigravity validation frame before stream sinks", async () => {
+    const onValidationRequired = vi.fn();
+    const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const validationSse = `data: ${JSON.stringify(validationFrame())}\n\n`;
+    const splitAt = Math.floor(validationSse.length / 2);
+    const streamController = {
+      signal: new AbortController().signal,
+      isConnected: () => true,
+      handleComplete: vi.fn(),
+      handleDisconnect: vi.fn(),
+      handleError: vi.fn(),
+    };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: chunkedSseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "ordinary frame" } }] })}\n\n`,
+        validationSse.slice(0, splitAt),
+        validationSse.slice(splitAt),
+      ]),
+      sourceFormat: "openai",
+      targetFormat: "openai",
+      userAgent: "test",
+      onRequestSuccess: vi.fn(),
+      onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-later", challengeIdAtStart: "challenge-later" },
+      reqLogger: logger,
+      toolNameMap: null,
+      customToolNames: null,
+      streamController,
+      onStreamComplete: vi.fn(),
+      streamDetailId: "stream-later-frame",
+      streamState: {},
+      log,
+    });
+    const clientPayload = await readAvailableStreamText(result.response);
+
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-later",
+    });
+    expect(clientPayload).toContain("ordinary frame");
+    expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
+    expect(clientPayload).not.toContain("project-secret");
+    expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain(VALIDATION_URLS[0]);
+    expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain("onboard-secret");
+    expect(streamController.handleError).toHaveBeenCalled();
+  });
+
+  it("gates Antigravity validation before forced SSE-to-JSON conversion sinks", async () => {
+    const onValidationRequired = vi.fn();
+    const ctx = {
+      ...forcedCtx(sseResponse(`data: ${JSON.stringify({ candidates: [] })}\n\ndata: ${JSON.stringify(validationFrame())}\n\n`)),
+      targetFormat: "antigravity",
+      onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-forced", challengeIdAtStart: "challenge-forced" },
+    };
+    const result = await handleForcedSSEToJson(ctx);
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 403 });
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-forced",
+    });
+    expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+    expect(ctx.trackDone).not.toHaveBeenCalled();
+    expect(ctx.appendLog).not.toHaveBeenCalled();
+    expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
+    expect(clientPayload).not.toContain("project-secret");
+  });
+
+  it("gates Antigravity validation before dynamic non-stream SSE sinks", async () => {
+    const onValidationRequired = vi.fn();
+    const logger = { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() };
+    const ctx = {
+      ...nonStreamingCtx(sseResponse(`data: ${JSON.stringify({ choices: [{ delta: { content: "ordinary frame" } }] })}\n\ndata: ${JSON.stringify(validationFrame())}\n\n`), terminalSpy(), logger),
+      onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-nonstream", challengeIdAtStart: "challenge-nonstream" },
+    };
+    const result = await handleNonStreamingResponse(ctx);
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 403 });
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-nonstream",
+    });
+    expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+    expect(ctx.trackDone).not.toHaveBeenCalled();
+    expect(ctx.appendLog).not.toHaveBeenCalled();
+    expect(logger.logProviderResponse).not.toHaveBeenCalled();
+    expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
+    expect(clientPayload).not.toContain("onboard-secret");
   });
 
   it("notifies at non-aborted terminal text completion", () => {
