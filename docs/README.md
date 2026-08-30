@@ -47,10 +47,16 @@ translator, are in `open-sse/AGENTS.md` beside the code.
 
 ## Conventions for this directory
 
-A page in the top level of `docs/` is documentation and is expected to stay
-correct. A page under `superpowers/` is a working document tied to one change
-and is not updated afterwards. An `analysis-` or `plan-` prefix marks a dated
-investigation, which carries its date in its own header.
+Every page here is documentation and is expected to stay correct. There is no
+second tier: the working documents tied to one change, the dated investigations
+under an `analysis-` or `plan-` prefix, and the per-change plans and specs that
+used to sit under `superpowers/` are gone, and `.gitignore` keeps them from
+coming back. A reader opening any page in this directory can trust it describes
+the product as it is.
+
+`design/` is the one nested directory, and it is documentation too: the rules
+the interface obeys, the evidence behind them, and the suite that re-measures
+both.
 
 When a page states a number that will drift, such as how many providers ship or
 how many tests pass, it cites the command that produces the number instead of
