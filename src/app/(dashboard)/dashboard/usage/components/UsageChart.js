@@ -72,14 +72,18 @@ export default function UsageChart({ period = "7d", refreshKey = 0 }) {
       ) : (
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            {/* Series colours come from the chart token scale, not raw palette
+                steps: amber-500 drew the cost line at 1.8:1 on the light ground,
+                under the 3:1 a 2px stroke needs to be seen at all. See
+                docs/design/design-system.md section 8. */}
             <defs>
               <linearGradient id="gradTokens" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--color-chart-6)" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="var(--color-chart-6)" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
@@ -112,7 +116,7 @@ export default function UsageChart({ period = "7d", refreshKey = 0 }) {
               <Area
                 type="monotone"
                 dataKey="tokens"
-                stroke="#6366f1"
+                stroke="var(--color-chart-2)"
                 strokeWidth={2}
                 fill="url(#gradTokens)"
                 dot={false}
@@ -122,7 +126,7 @@ export default function UsageChart({ period = "7d", refreshKey = 0 }) {
               <Area
                 type="monotone"
                 dataKey="cost"
-                stroke="#f59e0b"
+                stroke="var(--color-chart-6)"
                 strokeWidth={2}
                 fill="url(#gradCost)"
                 dot={false}
