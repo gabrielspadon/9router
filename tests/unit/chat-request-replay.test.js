@@ -87,6 +87,8 @@ beforeEach(() => {
     cavemanEnabled: false,
     ponytailEnabled: false,
     ccFilterNaming: false,
+    connectTimeoutMs: 15000,
+    providerStrategies: { codex: { connectTimeoutMs: 8000 } },
   });
   modelMocks.getComboModels.mockResolvedValue(null);
   modelMocks.getModelInfo.mockResolvedValue({ provider: "codex", model: "gpt-5.6-sol" });
@@ -95,6 +97,39 @@ beforeEach(() => {
 });
 
 describe("chat request replay", () => {
+  it("passes unresolved provider and global timeouts to chat core", async () => {
+    dispatchMocks.handleChatCore.mockImplementation(() => success());
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(200);
+    expect(dispatchMocks.handleChatCore.mock.calls[0][0].connectTimeout).toEqual({
+      providerOverride: 8000,
+      globalTimeout: 15000,
+    });
+  });
+
+  it("passes invalid imported timeout values through without coercion", async () => {
+    settingsMocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      providerThinking: {},
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      ccFilterNaming: false,
+      connectTimeoutMs: "15000",
+      providerStrategies: { codex: { connectTimeoutMs: Infinity } },
+    });
+    dispatchMocks.handleChatCore.mockImplementation(() => success());
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(200);
+    expect(dispatchMocks.handleChatCore.mock.calls[0][0].connectTimeout).toEqual({
+      providerOverride: Infinity,
+      globalTimeout: "15000",
+    });
+  });
+
   it("replays once on the same account before returning success", async () => {
     let attempts = 0;
     dispatchMocks.handleChatCore.mockImplementation(() => {

@@ -315,6 +315,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const connectTimeout = {
+      providerOverride: chatSettings.providerStrategies?.[provider]?.connectTimeoutMs,
+      globalTimeout: chatSettings.connectTimeoutMs,
+    };
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -342,6 +346,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onPxpipeEvent: appendPxpipeEvent,
       onTokenSaverEvent: appendTokenSaverEvent,
       providerThinking,
+      connectTimeout,
       memorySettings: chatSettings,
       toolDisclosure: (chatSettings.toolDisclosureEnabled || chatSettings.toolDisclosureFilterEnabled) ? {
         disclosureEnabled: !!chatSettings.toolDisclosureEnabled,

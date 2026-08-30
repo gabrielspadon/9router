@@ -1,0 +1,269 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  execute: vi.fn(),
+  refreshCredentials: vi.fn(),
+  refreshWithRetry: vi.fn(),
+  parseUpstreamError: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock("../../open-sse/executors/index.js", () => ({
+  getExecutor: vi.fn(() => ({
+    execute: mocks.execute,
+    refreshCredentials: mocks.refreshCredentials,
+    noAuth: false,
+  })),
+}));
+
+vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
+  refreshWithRetry: (...args) => mocks.refreshWithRetry(...args),
+}));
+
+vi.mock("../../open-sse/translator/index.js", () => ({
+  translateRequest: vi.fn((_source, _target, model, body) => ({ ...body, model })),
+}));
+
+vi.mock("../../open-sse/utils/requestLogger.js", () => ({
+  createRequestLogger: vi.fn(async () => ({
+    logClientRawRequest: vi.fn(),
+    logRawRequest: vi.fn(),
+    logTargetRequest: vi.fn(),
+    logError: vi.fn(),
+  })),
+}));
+
+vi.mock("../../open-sse/utils/clientDetector.js", () => ({
+  detectClientTool: vi.fn(() => null),
+  isNativePassthrough: vi.fn(() => false),
+}));
+
+vi.mock("../../open-sse/utils/bypassHandler.js", () => ({
+  handleBypassRequest: vi.fn(() => null),
+}));
+
+vi.mock("../../open-sse/utils/streamHandler.js", () => ({
+  createStreamController: vi.fn(() => ({
+    signal: undefined,
+    handleComplete: vi.fn(),
+    handleError: vi.fn(),
+  })),
+}));
+
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  default: vi.fn(),
+  proxyAwareFetch: vi.fn(),
+}));
+
+vi.mock("../../open-sse/translator/formats/claude.js", () => ({
+  normalizeClaudePassthrough: vi.fn(),
+  anchorClaudeCache: vi.fn(),
+}));
+
+vi.mock("../../open-sse/utils/toolDeduper.js", () => ({
+  dedupeTools: vi.fn((tools) => ({ tools, stripped: [] })),
+}));
+
+vi.mock("../../open-sse/rtk/caveman.js", () => ({ injectCaveman: vi.fn() }));
+vi.mock("../../open-sse/rtk/ponytail.js", () => ({ injectPonytail: vi.fn() }));
+vi.mock("../../open-sse/rtk/index.js", () => ({
+  compressMessages: vi.fn(() => null),
+  formatRtkLog: vi.fn(() => ""),
+}));
+vi.mock("../../open-sse/rtk/headroom.js", () => ({
+  compressWithHeadroom: vi.fn(async () => null),
+  formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
+}));
+
+vi.mock("../../open-sse/providers/capabilities.js", () => ({
+  getCapabilitiesForModel: vi.fn(() => ({})),
+}));
+
+vi.mock("../../open-sse/translator/concerns/modality.js", () => ({
+  stripUnsupportedModalities: vi.fn(() => false),
+}));
+
+vi.mock("../../open-sse/translator/concerns/prefetch.js", () => ({
+  prefetchRemoteImages: vi.fn(async () => 0),
+}));
+
+vi.mock("../../open-sse/translator/concerns/adaptiveStripper.js", () => ({
+  stripRejectedFields: vi.fn((body) => {
+    if (!Object.hasOwn(body, "verbosity")) return null;
+    const stripped = { ...body };
+    delete stripped.verbosity;
+    return stripped;
+  }),
+  addRejectedFields: vi.fn(),
+  getRejectedFields: vi.fn(() => new Set()),
+  extractRejectedFieldNamesFromError: vi.fn((message) =>
+    message.includes("verbosity") ? ["verbosity"] : []),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
+  buildRequestDetail: vi.fn((detail) => detail),
+  extractRequestConfig: vi.fn((body, stream) => ({ body, stream })),
+}));
+
+vi.mock("../../open-sse/utils/error.js", () => ({
+  createErrorResult: vi.fn((status, message) => ({
+    success: false,
+    status,
+    error: message,
+    response: Response.json({ error: { message } }, { status }),
+  })),
+  formatProviderError: vi.fn((error) => error.message),
+  parseUpstreamError: (...args) => mocks.parseUpstreamError(...args),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/nonStreamingHandler.js", () => ({
+  handleNonStreamingResponse: vi.fn(async ({ providerResponse }) => ({
+    success: true,
+    response: providerResponse,
+  })),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/sseToJsonHandler.js", () => ({
+  handleForcedSSEToJson: vi.fn(async () => null),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/streamingHandler.js", () => ({
+  buildOnStreamComplete: vi.fn(() => ({
+    onStreamComplete: vi.fn(),
+    onStreamAbandoned: vi.fn(),
+    streamDetailId: null,
+    streamState: {},
+  })),
+  handleStreamingResponse: vi.fn(() => ({ success: true, response: new Response() })),
+}));
+
+vi.mock("@/lib/usageDb.js", () => ({
+  trackPendingRequest: vi.fn(),
+  appendRequestLog: vi.fn(() => Promise.resolve()),
+  saveRequestDetail: vi.fn(() => Promise.resolve()),
+}));
+
+const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+const { ConnectTimeoutError } = await import("../../open-sse/utils/responseHeaderTimeout.js");
+
+const connectTimeout = { providerOverride: 8000, globalTimeout: 15000 };
+
+function response(status) {
+  return {
+    response: new Response(null, { status }),
+    url: "https://upstream.test/chat",
+    headers: {},
+    transformedBody: {},
+  };
+}
+
+function options(overrides = {}) {
+  const body = {
+    model: "deepseek-chat",
+    messages: [{ role: "user", content: "hello" }],
+    stream: false,
+    ...overrides.body,
+  };
+  return {
+    body,
+    modelInfo: { provider: "deepseek", model: "deepseek-chat" },
+    credentials: { apiKey: "test", providerSpecificData: {} },
+    clientRawRequest: {
+      endpoint: "/v1/chat/completions",
+      body,
+      headers: { accept: "application/json" },
+    },
+    connectionId: "connection-1",
+    log: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: mocks.warn,
+      error: vi.fn(),
+    },
+    connectTimeout,
+    ...overrides,
+    body,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.refreshCredentials.mockResolvedValue({ accessToken: "fresh-token" });
+  mocks.refreshWithRetry.mockImplementation(async (refresh) => refresh());
+  mocks.parseUpstreamError.mockImplementation(async (upstream) => ({
+    statusCode: upstream.status,
+    message: upstream.status === 400 ? "Unsupported parameter: verbosity" : "upstream rejected request",
+  }));
+});
+
+describe("chat connect timeout propagation", () => {
+  it("passes the same context to initial and credential-refresh attempts", async () => {
+    mocks.execute.mockResolvedValueOnce(response(401)).mockResolvedValueOnce(response(200));
+
+    const result = await handleChatCore(options());
+
+    expect(result.success).toBe(true);
+    expect(mocks.execute.mock.calls.map(([request]) => request.connectTimeout)).toEqual([
+      connectTimeout,
+      connectTimeout,
+    ]);
+  });
+
+  it("passes the same context to initial and field-strip attempts", async () => {
+    mocks.execute.mockResolvedValueOnce(response(400)).mockResolvedValueOnce(response(200));
+
+    const result = await handleChatCore(options({ body: { verbosity: "high" } }));
+
+    expect(result.success).toBe(true);
+    expect(mocks.execute.mock.calls.map(([request]) => request.connectTimeout)).toEqual([
+      connectTimeout,
+      connectTimeout,
+    ]);
+  });
+
+  it("maps an initial typed timeout to 502", async () => {
+    mocks.execute.mockRejectedValueOnce(new ConnectTimeoutError(8000));
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 502 });
+  });
+
+  it("maps an initial caller abort to 499", async () => {
+    mocks.execute.mockRejectedValueOnce(new DOMException("client left", "AbortError"));
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 499 });
+  });
+
+  it.each([
+    [new ConnectTimeoutError(8000), 502],
+    [new DOMException("client left", "AbortError"), 499],
+  ])("maps credential-refresh retry transport error to %s", async (failure, expectedStatus) => {
+    mocks.execute.mockResolvedValueOnce(response(401)).mockRejectedValueOnce(failure);
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: expectedStatus });
+  });
+
+  it("retains the original 401 for an unrelated credential-refresh retry error", async () => {
+    mocks.execute.mockResolvedValueOnce(response(401)).mockRejectedValueOnce(new Error("socket closed"));
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 401 });
+    expect(mocks.warn).toHaveBeenCalledWith("TOKEN", "DEEPSEEK | retry after refresh failed");
+  });
+
+  it.each([
+    [new ConnectTimeoutError(8000), 502],
+    [new DOMException("client left", "AbortError"), 499],
+  ])("maps field-strip retry transport error to %s", async (failure, expectedStatus) => {
+    mocks.execute.mockResolvedValueOnce(response(400)).mockRejectedValueOnce(failure);
+    await expect(handleChatCore(options({ body: { verbosity: "high" } }))).resolves.toMatchObject({
+      success: false,
+      status: expectedStatus,
+    });
+  });
+
+  it("retains the original 400 for an unrelated field-strip retry error", async () => {
+    mocks.execute.mockResolvedValueOnce(response(400)).mockRejectedValueOnce(new Error("socket closed"));
+    await expect(handleChatCore(options({ body: { verbosity: "high" } }))).resolves.toMatchObject({
+      success: false,
+      status: 400,
+    });
+    expect(mocks.warn).toHaveBeenCalledWith("FIELDSTRIP", "Retry threw: socket closed");
+  });
+});

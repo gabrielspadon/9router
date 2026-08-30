@@ -75,6 +75,7 @@ import {
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
+import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -145,6 +146,7 @@ export async function handleChatCore({
   onTokenSaverEvent,
   sourceFormatOverride,
   providerThinking,
+  connectTimeout,
   memorySettings,
   toolDisclosure,
 }) {
@@ -713,24 +715,7 @@ export async function handleChatCore({
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
-  try {
-    const result = await executor.execute({
-      model,
-      body: translatedBody,
-      stream,
-      credentials,
-      signal: streamController.signal,
-      log,
-      proxyOptions,
-      sourceFormat,
-    });
-    providerResponse = result.response;
-    providerUrl = result.url;
-    providerHeaders = result.headers;
-    finalBody = result.transformedBody;
-    providerResponseFormat = result.responseFormat || targetFormat;
-    reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
-  } catch (error) {
+  const mapTransportError = (error) => {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
       model,
@@ -775,6 +760,27 @@ export async function handleChatCore({
       );
     }
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+  };
+  try {
+    const result = await executor.execute({
+      model,
+      body: translatedBody,
+      stream,
+      credentials,
+      signal: streamController.signal,
+      log,
+      proxyOptions,
+      sourceFormat,
+      connectTimeout,
+    });
+    providerResponse = result.response;
+    providerUrl = result.url;
+    providerHeaders = result.headers;
+    finalBody = result.transformedBody;
+    providerResponseFormat = result.responseFormat || targetFormat;
+    reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+  } catch (error) {
+    return mapTransportError(error);
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)
@@ -824,14 +830,18 @@ export async function handleChatCore({
             signal: streamController.signal,
             log,
             proxyOptions,
-      sourceFormat,
+            sourceFormat,
+            connectTimeout,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
             providerResponseFormat = retryResult.responseFormat || targetFormat;
           }
-        } catch {
+        } catch (error) {
+          if (error.name === "AbortError" || isConnectTimeoutError(error)) {
+            return mapTransportError(error);
+          }
           log?.warn?.(
             "TOKEN",
             `${provider.toUpperCase()} | retry after refresh failed`,
@@ -888,6 +898,7 @@ export async function handleChatCore({
             log,
             proxyOptions,
             sourceFormat,
+            connectTimeout,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
@@ -978,6 +989,9 @@ export async function handleChatCore({
             );
           }
         } catch (e) {
+          if (e.name === "AbortError" || isConnectTimeoutError(e)) {
+            return mapTransportError(e);
+          }
           log?.warn?.("FIELDSTRIP", `Retry threw: ${e.message}`);
         }
       } else {
