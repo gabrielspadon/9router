@@ -370,12 +370,12 @@ export default function StatisticsContent({ initialData }) {
                   <td className="px-4 py-2.5 whitespace-nowrap">{providerNameMap[it.provider] || it.provider || "-"}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap">{it.account || "-"}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap">{it.model || "-"}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtTokens(it.inputTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtTokens(it.outputTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-blue-500">{fmtTokens(it.cacheReadTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-purple-500">{fmtTokens(it.cacheCreationTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtPct(it.cacheHitRate)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtLatencyPair(it.latencyMs, it.ttftMs)}</td>
+                  <td className="px-4 py-2.5 text-right metric">{fmtTokens(it.inputTokens)}</td>
+                  <td className="px-4 py-2.5 text-right metric">{fmtTokens(it.outputTokens)}</td>
+                  <td className="px-4 py-2.5 text-right metric text-blue-500">{fmtTokens(it.cacheReadTokens)}</td>
+                  <td className="px-4 py-2.5 text-right metric text-purple-500">{fmtTokens(it.cacheCreationTokens)}</td>
+                  <td className="px-4 py-2.5 text-right metric">{fmtPct(it.cacheHitRate)}</td>
+                  <td className="px-4 py-2.5 text-right metric whitespace-nowrap">{fmtLatencyPair(it.latencyMs, it.ttftMs)}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     <StatusBadge status={it.status} />
                   </td>

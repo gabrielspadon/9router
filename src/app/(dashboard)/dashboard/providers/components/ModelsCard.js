@@ -263,7 +263,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
           <button
             onClick={() => setShowAddCustomModel(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
           >
             <span className="material-symbols-outlined text-sm">add</span>
             Add Model

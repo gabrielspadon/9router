@@ -3,32 +3,37 @@
 import { cn } from "@/shared/utils/cn";
 import { formatResetTime } from "./utils";
 
-// Calculate color based on remaining percentage
+// Quota headroom is a status, not decoration: healthy above 70% remaining,
+// degraded between 30 and 70, exhausted below 30. Each band pairs its token
+// with a distinct icon shape, so the state survives greyscale.
 const getColorClasses = (remainingPercentage) => {
   if (remainingPercentage > 70) {
     return {
-      text: "text-green-500",
-      bg: "bg-green-500",
-      bgLight: "bg-green-500/10",
-      emoji: "🟢"
+      text: "text-success",
+      bg: "bg-success-solid",
+      bgLight: "bg-success-soft",
+      icon: "check_circle",
+      state: "Healthy"
     };
   }
   
   if (remainingPercentage >= 30) {
     return {
-      text: "text-yellow-500",
-      bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10",
-      emoji: "🟡"
+      text: "text-warning",
+      bg: "bg-warning-solid",
+      bgLight: "bg-warning-soft",
+      icon: "warning",
+      state: "Low"
     };
   }
   
-  // 0-29% including 0% (out of quota) - show red
+  // 0-29% including 0% (out of quota) - show danger
   return {
-    text: "text-red-500",
-    bg: "bg-red-500",
-    bgLight: "bg-red-500/10",
-    emoji: "🔴"
+    text: "text-danger",
+    bg: "bg-danger-solid",
+    bgLight: "bg-danger-soft",
+    icon: "error",
+    state: "Critical"
   };
 };
 
@@ -86,45 +91,55 @@ export default function QuotaProgressBar({
   return (
     <div className="space-y-2">
       {/* Label and percentage */}
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-text-primary">
+      <div className="flex items-start justify-between gap-4 text-sm">
+        <span className="min-w-0 font-semibold text-text-main">
           {label}
         </span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs">{colors.emoji}</span>
-          <span className={cn("font-medium", colors.text)}>
+        <div className={cn("flex shrink-0 items-center gap-1.5", colors.text)}>
+          <span className="material-symbols-outlined text-[16px] leading-none" aria-hidden="true">
+            {colors.icon}
+          </span>
+          <span className="metric font-medium">
             {remaining}%
           </span>
+          <span className="sr-only">{colors.state}</span>
         </div>
       </div>
 
       {/* Progress bar */}
       {!unlimited && (
-        <div className={cn("h-2 rounded-full overflow-hidden", colors.bgLight)}>
+        <div
+          className={cn("h-2 rounded-full overflow-hidden", colors.bgLight)}
+          role="progressbar"
+          aria-valuenow={Math.min(remaining, 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={label}
+        >
           <div
-            className={cn("h-full transition-all duration-300", colors.bg)}
+            className={cn("h-full transition-[width] duration-150", colors.bg)}
             style={{ width: `${Math.min(remaining, 100)}%` }}
           />
         </div>
       )}
 
       {/* Usage details and countdown */}
-      <div className="flex items-center justify-between text-xs text-text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-text-muted">
         <span>
-          {used.toLocaleString()} / {total.toLocaleString()} requests
+          <span className="metric">{used.toLocaleString()} / {total.toLocaleString()}</span> requests
         </span>
         {countdown !== "-" && (
           <div className="flex items-center gap-1">
-            <span>•</span>
-            <span className="font-medium">{resetWord} in {countdown}</span>
+            <span aria-hidden="true">•</span>
+            <span className="font-medium">{resetWord} in <span className="metric">{countdown}</span></span>
           </div>
         )}
       </div>
 
       {/* Reset time display */}
       {resetDisplay && (
-        <div className="text-xs text-text-muted/70">
-          {resetWord} at {resetDisplay}
+        <div className="text-xs text-text-subtle">
+          {resetWord} at <span className="metric">{resetDisplay}</span>
         </div>
       )}
     </div>
