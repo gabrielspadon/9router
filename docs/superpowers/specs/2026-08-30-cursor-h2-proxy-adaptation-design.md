@@ -73,6 +73,24 @@ The update merge keeps the pair through unrelated provider-specific edits.
 Token refresh also keeps it because its merge starts with the existing
 `providerSpecificData`; a refresh may not erase selection provenance.
 
+An active pool's strict value is not immutable. `PUT /api/proxy-pools/[id]`
+must not commit a `strictProxy` change while bound selections retain the old
+snapshot. The pool repository performs an atomic fan-out in the same database
+transaction as that PUT. After it writes the pool's new strict boolean, it
+updates every still-bound normal connection's `providerSpecificData` and every
+still-bound no-auth `settings.providerStrategies[*]` entry that has that exact
+`proxyPoolId`. The update writes the same `{ proxyPoolId, strictProxy }` pair
+and leaves unrelated data intact. If any pool, connection, or settings write
+fails, the complete transaction rolls back and the API returns an error. There
+is no asynchronous or best-effort repair window.
+
+The transaction serializes a concurrent reassignment or clearing operation.
+Fan-out updates only records still bound to the target pool at commit time. A
+subsequent reassignment writes its newly selected pool's pair atomically. This
+prevents a false-to-true pool change from leaving a connection or no-auth
+strategy with `strictProxy: false` that could later escape when the pool becomes
+unavailable.
+
 No-auth provider strategies use the same pair in
 `settings.providerStrategies[providerId]`. The settings PATCH path validates
 and resolves a submitted `proxyPoolId`, then atomically stores that pool's
@@ -153,6 +171,31 @@ back to an environment proxy or direct egress. A non-strict HTTP/SOCKS proxy
 failure may use the existing direct fallback only when no relay was selected.
 An explicit `connectionNoProxy` match is an intentional direct route, not a
 proxy failure.
+
+## Typed required-unavailable boundary
+
+`required-unavailable` is a control result, not proxy options with an empty URL.
+Every connection-derived caller branches on it before it calls a proxy-options
+builder, a refresh helper, a model resolver, or any transport. The conversion
+to `{ connectionProxyEnabled, connectionProxyUrl, strictProxy }` accepts only
+an egress-capable route. It rejects `required-unavailable`, and no caller may
+replace it with `strictProxy: false` to preserve a historical quota or refresh
+fallback.
+
+| Caller | Required branch before options | Forbidden downstream work |
+| --- | --- | --- |
+| `src/sse/services/quotaGuard.js` | Return its no-live-quota result | `getUsageForProvider` or provider fetch |
+| `src/shared/services/quotaAutoPing.js` | Record/skip the ping as unavailable | credential refresh or `handler.getUsage` |
+| `src/app/api/usage/[connectionId]/route.js` | Return its typed unavailable response | proxy options, refresh, usage fetch |
+| `src/app/api/usage/[connectionId]/codex-reset-credits/route.js` | Return its typed unavailable response | proxy options, refresh, reset request |
+| `src/app/api/providers/[id]/hotreload/route.js` | Return its typed unavailable response | refresh, model poke, quota verification |
+| `src/app/api/providers/[id]/test/testUtils.js` | Return a typed failed connection test | proxy test, API-key test, OAuth test |
+| `src/app/api/v1/models/route.js` | Propagate a typed per-connection unavailable result | proxy options, custom resolver, Cursor catalog |
+| `src/app/api/providers/[id]/models/route.js` | Propagate a typed unavailable result | proxy options, custom resolver, Cursor catalog |
+
+Normal non-strict proxy failure still reaches the existing direct fallback only
+after an egress-capable non-strict `proxy` route was returned. A required route
+never enters that fallback path.
 
 The resolver's route descriptor carries selection provenance plus a non-secret
 cache identity. The cache key may hash the full normalized proxy URL inside the
@@ -335,35 +378,47 @@ tunnelling.
 4. Extend `tests/unit/cursor-agent-proto.test.js` to decode the nested
    `RequestedModel`, assert field 1 only, and cover Fable-fast normalization
    plus non-Fable preservation.
-5. Extend `tests/unit/strict-proxy-propagation.test.js`, provider route tests,
-   and `tests/unit/settings-connect-timeout.test.js` (or focused successor
-   files). Prove create records `{ proxyPoolId, strictProxy }`, update replaces
-   both from the selected active pool, explicit clearing deletes both, and an
-   unrelated credentials refresh preserves both. Prove a no-auth fixed-pool
-   strategy records and clears the same pair, a rotating selection carries the
-   selected pool strict snapshot, and a legacy strategy is atomically migrated
-   before use only when its pool is active. Seed a real stored normal connection
-   and a real stored no-auth strategy with only `{ proxyPoolId: "pool-strict" }`.
-   With an active strict pool, assert the durable pair is written before the
-   shared resolver returns a usable config, including through a non-auth normal
-   connection caller; then remove that pool and assert the next resolution is
+5. Extend `tests/unit/strict-proxy-propagation.test.js`, proxy-pool route/repo
+   tests, provider route tests, and `tests/unit/settings-connect-timeout.test.js`
+   (or focused successor files). Prove create records `{ proxyPoolId,
+   strictProxy }`, update replaces both from the selected active pool, explicit
+   clearing deletes both, and an unrelated credentials refresh preserves both.
+   Seed a normal connection and no-auth strategy bound to an active
+   `strictProxy: false` pool, update that pool through the real pool PUT to
+   `strictProxy: true`, and assert both snapshots changed in the same committed
+   transaction. Then make the pool unavailable and assert both paths return
+   `required-unavailable` with zero egress. Prove the pool PUT rolls back on a
+   fan-out write failure and a concurrent reassignment preserves the new pool's
+   snapshot.
+6. In the same focused tests, prove a no-auth fixed-pool strategy records and
+   clears the pair, a rotating selection carries the selected pool strict
+   snapshot, and a legacy strategy is atomically migrated before use only when
+   its pool is active. Seed a real stored normal connection and a real stored
+   no-auth strategy with only `{ proxyPoolId: "pool-strict" }`. With an active
+   strict pool, assert the durable pair is written before the shared resolver
+   returns a usable config, including through a non-auth normal connection
+   caller; then remove that pool and assert the next resolution is
    `required-unavailable` with zero egress. Separately seed pairless normal and
    no-auth records whose selected pool is missing, inactive, malformed, or
    throws on lookup, plus a migration-write failure or absent persistence owner.
-   Each must be
-   `required-unavailable` and prove zero calls to environment resolution,
-   `net.connect`, `tls.connect`, SOCKS, HTTP CONNECT, direct `http2.connect`,
-   and catalog post seams. Repeat the disappearance, deactivation, and resolver
-   throw assertions for records already persisted with
-   `{ proxyPoolId: "pool-strict", strictProxy: true }`. Also assert a cache hit
-   closes a returned proxy lease exactly once and a fallback-to-direct cache hit
-   closes the returned direct lease exactly once.
-6. Add focused route tests, or extract a small pure proxy-options builder, to
+   Each must be `required-unavailable` and prove zero calls to environment
+   resolution, `net.connect`, `tls.connect`, SOCKS, HTTP CONNECT, direct
+   `http2.connect`, and catalog post seams. Repeat the disappearance,
+   deactivation, and resolver throw assertions for records already persisted
+   with `{ proxyPoolId: "pool-strict", strictProxy: true }`. Also assert a
+   cache hit closes a returned proxy lease exactly once and a fallback-to-direct
+   cache hit closes the returned direct lease exactly once.
+7. Add caller-specific unavailable tests for quota guard, quota auto-ping,
+   usage, Codex reset credits, hot-reload, provider test, `/api/v1/models`, and
+   `/api/providers/[id]/models`. Inject `required-unavailable`, then assert its
+   typed outcome and zero calls to each table row's forbidden work. Assert each
+   former `strictProxy: false` options builder is unreachable for that result.
+8. Add focused route tests, or extract a small pure proxy-options builder, to
    prove both `/api/v1/models` and `/api/providers/[id]/models` pass the
    resolved connection proxy and persisted `strictProxy` to Cursor catalog
    discovery. Cover missing/inactive selected pools and resolver exceptions
    that retain strict provenance and produce no egress.
-7. Run those focused suites, the Cursor adjacency suites, lint for changed
+9. Run those focused suites, the Cursor adjacency suites, lint for changed
    files, the repository regression-baseline verifier, and the normal build.
    Live Cursor/proxy tests remain an explicitly unrun external gate unless
    authenticated test credentials and a disposable proxy are supplied.
@@ -376,21 +431,31 @@ open-sse/utils/proxyFetch.js                           structured route resolver
 open-sse/executors/cursor.js                           AgentService route, deadline, model field
 open-sse/services/cursorModels.js                      catalog route, cache, injected seam
 src/lib/network/connectionProxy.js                     migration gate and strict provenance
-src/app/api/v1/models/route.js                         resolved Cursor catalog options
-src/app/api/providers/[id]/models/route.js             resolved Cursor catalog options
+src/lib/db/repos/proxyPoolsRepo.js                     transactional strict snapshot fan-out
+src/lib/db/repos/connectionsRepo.js                    in-transaction bound connection updates
+src/app/api/proxy-pools/[id]/route.js                  atomic pool PUT boundary
+src/app/api/v1/models/route.js                         typed unavailable before catalog/options
+src/app/api/providers/[id]/models/route.js             typed unavailable before catalog/options
 src/app/api/providers/route.js                          pool strict snapshot on create
 src/app/api/providers/[id]/route.js                     pool strict snapshot lifecycle
 src/app/api/settings/route.js                           no-auth strategy snapshot validation
 src/lib/db/repos/settingsRepo.js                        atomic strategy snapshot lifecycle
 src/sse/services/auth.js                                normal/no-auth gate ownership
+src/sse/services/quotaGuard.js                          typed unavailable before quota fetch
+src/shared/services/quotaAutoPing.js                    typed unavailable before refresh/ping
+src/app/api/usage/[connectionId]/route.js               typed unavailable usage response
+src/app/api/usage/[connectionId]/codex-reset-credits/route.js typed unavailable reset response
+src/app/api/providers/[id]/hotreload/route.js           typed unavailable before reload
+src/app/api/providers/[id]/test/testUtils.js            typed unavailable test result
 open-sse/services/tokenRefresh.js                       preserve selection pair on refresh
-all persisted connection-proxy callers                  use migration gate, not raw data
 tests/unit/http2-connect.test.js                       new transport tests
 tests/unit/cursor-connect-timeout.test.js              lifecycle regression tests
 tests/unit/cursor-models.test.js                       cache and seam tests
 tests/unit/cursor-agent-proto.test.js                  protobuf and mapping tests
 tests/unit/strict-proxy-propagation.test.js             persisted fail-closed tests
 tests/unit/settings-connect-timeout.test.js             strategy lifecycle and migration tests
+tests/unit/proxy-pool-strict-snapshot.test.js           atomic fan-out regressions
+tests/unit/required-unavailable-callers.test.js         no transport from typed result
 ```
 
 No generated registry, dependency manifest, dashboard, production service, or
