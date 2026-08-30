@@ -6,57 +6,127 @@ import {
   deleteProviderConnection,
 } from "@/models";
 
-function normalizeProxyConfig(body = {}) {
-  const hasAnyProxyField =
-    Object.prototype.hasOwnProperty.call(body, "connectionProxyEnabled") ||
-    Object.prototype.hasOwnProperty.call(body, "connectionProxyUrl") ||
-    Object.prototype.hasOwnProperty.call(body, "connectionNoProxy");
+const RESERVED_PROXY_FIELDS = [
+  "connectionProxyMode",
+  "connectionProxyEnabled",
+  "connectionProxyUrl",
+  "connectionNoProxy",
+  "proxyPoolId",
+  "strictProxy",
+];
+const SUPPORTED_PROVIDER_PROXY_SCHEMES = new Set([
+  "http:", "https:", "socks:", "socks4:", "socks4a:", "socks5:", "socks5h:",
+]);
 
-  if (!hasAnyProxyField) return { hasAnyProxyField: false };
+function hasOwn(data, key) {
+  return Object.prototype.hasOwnProperty.call(data || {}, key);
+}
 
-  const enabled = body?.connectionProxyEnabled === true;
-  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
-  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+function normalizeString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
-  if (enabled && !url) {
-    return {
-      hasAnyProxyField: true,
-      error: "Connection proxy URL is required when connection proxy is enabled",
-    };
+function isSupportedProviderProxyUrl(url) {
+  try {
+    return SUPPORTED_PROVIDER_PROXY_SCHEMES.has(new URL(url).protocol);
+  } catch {
+    return false;
   }
+}
 
+function normalizeConnectionProxyWrite(body = {}) {
+  if (hasOwn(body, "connectionProxyMode") || hasOwn(body, "strictProxy")) {
+    return { error: "Connection proxy policy is server-managed" };
+  }
+  const hasEnabled = hasOwn(body, "connectionProxyEnabled");
+  const hasUrl = hasOwn(body, "connectionProxyUrl");
+  const hasNoProxy = hasOwn(body, "connectionNoProxy");
+  if (!hasEnabled && !hasUrl && !hasNoProxy) return { mode: "omit" };
+  if (body.connectionProxyEnabled === false) {
+    if (hasUrl || hasNoProxy) return { error: "Connection direct policy cannot include proxy URL or no-proxy" };
+    return { mode: "direct" };
+  }
+  const url = normalizeString(body.connectionProxyUrl);
+  const noProxy = normalizeString(body.connectionNoProxy);
+  if (body.connectionProxyEnabled !== true || !url || !isSupportedProviderProxyUrl(url)) {
+    return { error: "Connection proxy requires an enabled supported proxy URL" };
+  }
+  return { mode: "proxy", url, ...(noProxy ? { noProxy } : {}) };
+}
+
+async function normalizeSelectedPool(body = {}) {
+  if (!hasOwn(body, "proxyPoolId")) return { hasProxyPoolField: false, mode: "unselected" };
+  if (body.proxyPoolId === "__none__") {
+    return { hasProxyPoolField: true, mode: "direct" };
+  }
+  if (body.proxyPoolId === undefined || body.proxyPoolId === null || body.proxyPoolId === "") {
+    return { hasProxyPoolField: true, mode: "unselected" };
+  }
+  const proxyPoolId = String(body.proxyPoolId).trim();
+  if (!proxyPoolId) return { hasProxyPoolField: true, mode: "unselected" };
+  const proxyPool = await getProxyPoolById(proxyPoolId);
+  if (!proxyPool?.isActive || !normalizeString(proxyPool.proxyUrl)) {
+    return { error: "Active proxy pool not found" };
+  }
   return {
-    hasAnyProxyField: true,
-    connectionProxyEnabled: enabled,
-    connectionProxyUrl: url,
-    connectionNoProxy: noProxy,
+    hasProxyPoolField: true,
+    mode: "pool",
+    proxyPoolId: proxyPool.id,
+    strictProxy: proxyPool.strictProxy === true,
   };
 }
 
-async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
-  if (proxyPoolIdInput === undefined) {
-    return { hasProxyPoolField: false, proxyPoolId: null };
-  }
-
-  if (proxyPoolIdInput === null || proxyPoolIdInput === "" || proxyPoolIdInput === "__none__") {
-    return { hasProxyPoolField: true, proxyPoolId: null };
-  }
-
-  const proxyPoolId = String(proxyPoolIdInput).trim();
-  if (!proxyPoolId) {
-    return { hasProxyPoolField: true, proxyPoolId: null };
-  }
-
-  const proxyPool = await getProxyPoolById(proxyPoolId);
-  if (!proxyPool) {
-    return { hasProxyPoolField: true, error: "Proxy pool not found" };
-  }
-
-  return { hasProxyPoolField: true, proxyPoolId };
+function stripReservedProxyFields(data) {
+  const sanitized = { ...(data || {}) };
+  for (const key of RESERVED_PROXY_FIELDS) delete sanitized[key];
+  return sanitized;
 }
 
-function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
-  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+function applySelection(data, selection) {
+  if (selection.mode === "pool") {
+    data.proxyPoolId = selection.proxyPoolId;
+    data.strictProxy = selection.strictProxy;
+    return;
+  }
+  delete data.proxyPoolId;
+  delete data.strictProxy;
+}
+
+function applyConnectionProxyWrite(data, config) {
+  for (const key of ["connectionProxyMode", "connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy", "strictProxy"]) {
+    delete data[key];
+  }
+  if (config.mode === "proxy") {
+    Object.assign(data, {
+      connectionProxyMode: "proxy",
+      connectionProxyEnabled: true,
+      connectionProxyUrl: config.url,
+      ...(config.noProxy ? { connectionNoProxy: config.noProxy } : {}),
+    });
+  } else if (config.mode === "direct") {
+    data.connectionProxyMode = "direct";
+  }
+}
+
+function applyExplicitDirectSelection(data) {
+  applySelection(data, { mode: "unselected" });
+  applyConnectionProxyWrite(data, { mode: "direct" });
+}
+
+function isHistoricalDefaultTuple(data) {
+  return !hasOwn(data, "connectionProxyMode")
+    && data.connectionProxyEnabled === false
+    && normalizeString(data.connectionProxyUrl) === ""
+    && normalizeString(data.connectionNoProxy) === ""
+    && (!hasOwn(data, "strictProxy") || data.strictProxy === false);
+}
+
+function clearHistoricalDefaultTuple(data) {
+  if (!isHistoricalDefaultTuple(data)) return;
+  delete data.connectionProxyEnabled;
+  delete data.connectionProxyUrl;
+  delete data.connectionNoProxy;
+  delete data.strictProxy;
 }
 
 // GET /api/providers/[id] - Get single connection
@@ -107,14 +177,20 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    const proxyConfig = normalizeProxyConfig(body);
+    const proxyConfig = normalizeConnectionProxyWrite(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
     }
 
-    const proxyPoolResult = await normalizeProxyPoolUpdate(body.proxyPoolId);
+    const proxyPoolResult = await normalizeSelectedPool(body);
     if (proxyPoolResult.error) {
       return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
+    }
+    if (proxyPoolResult.mode === "pool" && proxyConfig.mode !== "omit") {
+      return NextResponse.json({ error: "Proxy pool selection cannot include connection proxy fields" }, { status: 400 });
+    }
+    if (proxyPoolResult.mode === "direct" && proxyConfig.mode !== "omit") {
+      return NextResponse.json({ error: "Direct proxy-pool selection cannot include connection proxy fields" }, { status: 400 });
     }
 
     const updateData = {};
@@ -141,31 +217,26 @@ export async function PUT(request, { params }) {
       updateData.quotaPauseThresholds = clean;
     }
 
-    if (
-      shouldMergeProviderSpecificData(
-        existing.providerSpecificData,
-        providerSpecificData,
-        proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
-      )
-    ) {
+    if (existing.providerSpecificData !== undefined
+        || providerSpecificData !== undefined
+        || proxyConfig.mode !== "omit"
+        || proxyPoolResult.hasProxyPoolField) {
       updateData.providerSpecificData = {
         ...(existing.providerSpecificData || {}),
-        ...(providerSpecificData || {}),
+        ...stripReservedProxyFields(providerSpecificData),
       };
 
-      if (proxyConfig.hasAnyProxyField) {
-        updateData.providerSpecificData.connectionProxyEnabled = proxyConfig.connectionProxyEnabled;
-        updateData.providerSpecificData.connectionProxyUrl = proxyConfig.connectionProxyUrl;
-        updateData.providerSpecificData.connectionNoProxy = proxyConfig.connectionNoProxy;
-      }
-
-      if (proxyPoolResult.hasProxyPoolField) {
-        if (proxyPoolResult.proxyPoolId === null) {
-          delete updateData.providerSpecificData.proxyPoolId;
-        } else {
-          updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
-        }
+      if (proxyPoolResult.mode === "direct" || proxyConfig.mode === "direct") {
+        applyExplicitDirectSelection(updateData.providerSpecificData);
+      } else if (proxyPoolResult.mode === "pool") {
+        applySelection(updateData.providerSpecificData, proxyPoolResult);
+      } else if (proxyPoolResult.hasProxyPoolField) {
+        applySelection(updateData.providerSpecificData, proxyPoolResult);
+      } else if (proxyConfig.mode === "proxy") {
+        applySelection(updateData.providerSpecificData, { mode: "unselected" });
+        applyConnectionProxyWrite(updateData.providerSpecificData, proxyConfig);
+      } else if (providerSpecificData !== undefined) {
+        clearHistoricalDefaultTuple(updateData.providerSpecificData);
       }
     }
 

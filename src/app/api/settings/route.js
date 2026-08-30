@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateProviderStrategy, updateSettings } from "@/lib/localDb";
+import { getProxyPoolById, getSettings, updateProviderStrategy, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { isValidConnectTimeoutMs } from "open-sse/config/connectTimeout.js";
@@ -15,6 +15,12 @@ const SETTINGS_RESPONSE_HEADERS = {
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 const DANGEROUS_STRATEGY_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+const NOAUTH_LEGACY_PROXY_KEYS = new Set([
+  "connectionProxyMode",
+  "connectionProxyEnabled",
+  "connectionProxyUrl",
+  "connectionNoProxy",
+]);
 
 function isPlainObject(value) {
   return value !== null
@@ -28,6 +34,51 @@ function hasInvalidCodexFastMode(providerId, values, { allowNull = false } = {})
     return false;
   }
   return typeof values.fastMode !== "boolean" && !(allowNull && values.fastMode === null);
+}
+
+function normalizeString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function normalizeProviderStrategyProxySelection(values) {
+  if ([...NOAUTH_LEGACY_PROXY_KEYS].some((key) => Object.prototype.hasOwnProperty.call(values, key))) {
+    return { error: "Connection proxy fields are not valid for provider strategies" };
+  }
+  if (Object.prototype.hasOwnProperty.call(values, "strictProxy")) {
+    return { error: "Provider strategy strictness is server-managed" };
+  }
+  if (!Object.prototype.hasOwnProperty.call(values, "proxyPoolId")) {
+    return { values };
+  }
+  const proxyPoolId = values.proxyPoolId;
+  if (proxyPoolId === null || proxyPoolId === undefined || proxyPoolId === "" || proxyPoolId === "__none__") {
+    return { values: { ...values, proxyPoolId: null, strictProxy: null } };
+  }
+  const normalizedId = normalizeString(String(proxyPoolId));
+  if (!normalizedId) {
+    return { values: { ...values, proxyPoolId: null, strictProxy: null } };
+  }
+  const pool = await getProxyPoolById(normalizedId);
+  if (!pool?.isActive || !normalizeString(pool.proxyUrl)) {
+    return { error: "Active proxy pool not found" };
+  }
+  return {
+    values: {
+      ...values,
+      proxyPoolId: pool.id,
+      strictProxy: pool.strictProxy === true,
+    },
+  };
+}
+
+async function normalizeProviderStrategies(strategies) {
+  const normalized = {};
+  for (const [providerId, values] of Object.entries(strategies)) {
+    const selection = await normalizeProviderStrategyProxySelection(values);
+    if (selection.error) return selection;
+    normalized[providerId] = selection.values;
+  }
+  return { strategies: normalized };
 }
 
 function toSafeSettings(settings) {
@@ -103,7 +154,11 @@ export async function PATCH(request) {
           { status: 400 },
         );
       }
-      const settings = await updateProviderStrategy(providerId, values);
+      const normalizedSelection = await normalizeProviderStrategyProxySelection(values);
+      if (normalizedSelection.error) {
+        return NextResponse.json({ error: normalizedSelection.error }, { status: 400 });
+      }
+      const settings = await updateProviderStrategy(providerId, normalizedSelection.values);
       return NextResponse.json(toSafeSettings(settings), { headers: SETTINGS_RESPONSE_HEADERS });
     }
 
@@ -142,6 +197,11 @@ export async function PATCH(request) {
           );
         }
       }
+      const normalizedStrategies = await normalizeProviderStrategies(strategies);
+      if (normalizedStrategies.error) {
+        return NextResponse.json({ error: normalizedStrategies.error }, { status: 400 });
+      }
+      body.providerStrategies = normalizedStrategies.strategies;
     }
 
     // Strip protected secrets before any internal handling sets them

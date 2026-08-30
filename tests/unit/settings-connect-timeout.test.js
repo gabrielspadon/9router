@@ -15,6 +15,7 @@ let priorDataDir;
 let priorDataDirPresent;
 let listenerBaseline;
 let repository;
+let proxyPools;
 let GET;
 let PATCH;
 
@@ -54,6 +55,7 @@ beforeEach(async () => {
   delete global._dbAdapter;
   vi.resetModules();
   repository = await import("../../src/lib/db/repos/settingsRepo.js");
+  proxyPools = await import("../../src/lib/db/repos/proxyPoolsRepo.js");
   ({ GET, PATCH } = await import("../../src/app/api/settings/route.js"));
 });
 
@@ -333,4 +335,48 @@ describe("connect timeout settings route", () => {
       }));
     },
   );
+});
+
+describe("provider strategy proxy-pool snapshots", () => {
+  it("derives a fixed no-auth strict snapshot from an active pool", async () => {
+    const pool = await proxyPools.createProxyPool({
+      name: "Strict Pool",
+      proxyUrl: "https://proxy.example.test:8443",
+      strictProxy: true,
+      isActive: true,
+    });
+
+    const response = await PATCH(settingsRequest({
+      providerStrategyPatch: {
+        providerId: "mimo-free",
+        values: { proxyPoolId: pool.id },
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect((await repository.getSettings()).providerStrategies["mimo-free"])
+      .toMatchObject({ proxyPoolId: pool.id, strictProxy: true });
+  });
+
+  it("rejects inactive and client-strict no-auth pool selections without writing", async () => {
+    const pool = await proxyPools.createProxyPool({
+      name: "Inactive Pool",
+      proxyUrl: "https://proxy.example.test:8443",
+      strictProxy: true,
+      isActive: false,
+    });
+
+    await expectRejectedWithoutWrite(settingsRequest({
+      providerStrategyPatch: {
+        providerId: "mimo-free",
+        values: { proxyPoolId: pool.id },
+      },
+    }));
+    await expectRejectedWithoutWrite(settingsRequest({
+      providerStrategyPatch: {
+        providerId: "mimo-free",
+        values: { proxyPoolId: "pool-missing", strictProxy: false },
+      },
+    }));
+  });
 });

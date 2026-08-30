@@ -217,6 +217,43 @@ export async function updateProviderStrategy(providerId, values) {
   return mergeWithDefaults(next);
 }
 
+// Conditional ownership prevents a migration writer from overwriting a newer
+// no-auth strategy selection that raced with its read.
+export async function updateProviderStrategyProxyPoolSnapshotIfBound(providerId, expectedPoolId, pair) {
+  const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
+  if (dangerousKeys.has(providerId)) {
+    throw new TypeError("Invalid provider strategy key");
+  }
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const strategies = { ...(current.providerStrategies || {}) };
+    const strategy = strategies[providerId];
+    if (
+      !strategy
+      || typeof strategy !== "object"
+      || Array.isArray(strategy)
+      || strategy.proxyPoolId !== expectedPoolId
+    ) {
+      return;
+    }
+    const updatedStrategy = {
+      ...strategy,
+      proxyPoolId: pair.proxyPoolId,
+      strictProxy: pair.strictProxy === true,
+    };
+    strategies[providerId] = updatedStrategy;
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson({ ...current, providerStrategies: strategies })],
+    );
+    result = updatedStrategy;
+  });
+  return result;
+}
+
 export async function isCloudEnabled() {
   const settings = await getSettings();
   return settings.cloudEnabled === true;
