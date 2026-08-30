@@ -102,7 +102,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
     return (
       <div className="flex flex-col gap-1">
         <Badge variant="error">Invalid</Badge>
-        {error && <span className="text-sm text-red-500">{error}</span>}
+        {error && <span className="text-sm text-danger">{error}</span>}
       </div>
     );
   };

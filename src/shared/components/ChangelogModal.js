@@ -76,7 +76,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
             </div>
           )}
           {error && (
-            <div className="text-red-500 py-4">Failed to load changelog: {error}</div>
+            <div className="text-danger py-4">Failed to load changelog: {error}</div>
           )}
           {!loading && !error && html && (
             <div

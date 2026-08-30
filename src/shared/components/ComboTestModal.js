@@ -166,7 +166,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
 
         {/* Error state */}
         {error && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-500 flex items-start gap-2">
+          <div className="rounded-lg bg-danger-soft border border-danger-line p-3 text-xs text-danger flex items-start gap-2">
             <span className="material-symbols-outlined text-lg shrink-0">error</span>
             <div>
               <p className="font-semibold mb-0.5">Test Error</p>
@@ -195,8 +195,8 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
             <div
               className={`rounded-lg p-3.5 border ${
                 result.comboStatus === "success"
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
-                  : "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
+                  ? "bg-success-soft border-success-line text-success"
+                  : "bg-danger-soft border-danger-line text-danger"
               }`}
             >
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -220,7 +220,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
 
                 <div className="flex items-center gap-3 text-xs font-medium">
                   {fallbacksCount > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-amber-700 dark:text-amber-300">
+                    <span className="inline-flex items-center gap-1 rounded bg-warning-soft px-2 py-0.5 text-warning">
                       <span className="material-symbols-outlined text-[14px]">swap_calls</span>
                       {fallbacksCount} Fallback{fallbacksCount > 1 ? "s" : ""}
                     </span>
@@ -255,9 +255,9 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                     key={step.index}
                     className={`rounded-lg border p-3 text-xs transition-all ${
                       step.servedRequest
-                        ? "border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-500/10 shadow-xs"
+                        ? "border-success-line bg-success-soft shadow-xs"
                         : step.fallbackTriggered
-                        ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-500/10"
+                        ? "border-warning-line bg-warning-soft"
                         : "border-border-subtle bg-surface-2 opacity-60"
                     }`}
                   >
@@ -266,9 +266,9 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                         <span
                           className={`size-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
                             step.servedRequest
-                              ? "bg-emerald-500 text-white"
+                              ? "bg-success-solid text-success-on"
                               : step.fallbackTriggered
-                              ? "bg-amber-500 text-white"
+                              ? "bg-warning-solid text-warning-on"
                               : "bg-black/20 dark:bg-white/20 text-text-muted"
                           }`}
                         >
@@ -283,14 +283,14 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                       {/* Status badges */}
                       <div className="flex items-center gap-2 shrink-0">
                         {step.servedRequest && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-semibold px-2 py-0.5 text-[10px]">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-success-soft text-success font-semibold px-2 py-0.5 text-[10px]">
                             <span className="material-symbols-outlined text-[12px]">verified</span>
                             SERVED REQUEST
                           </span>
                         )}
 
                         {step.fallbackTriggered && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-semibold px-2 py-0.5 text-[10px]">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft text-warning font-semibold px-2 py-0.5 text-[10px]">
                             <span className="material-symbols-outlined text-[12px]">warning</span>
                             FALLBACK TRIGGERED
                           </span>
@@ -313,7 +313,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
 
                     {/* Fallback error reason */}
                     {step.fallbackTriggered && (
-                      <div className="mt-2 rounded bg-red-500/10 border border-red-500/20 p-2 font-mono text-[11px] text-red-500 break-words">
+                      <div className="mt-2 rounded bg-danger-soft border border-danger-line p-2 font-mono text-[11px] text-danger break-words">
                         <span className="font-bold">Error: </span>
                         {step.error || `HTTP ${step.status}`}
                       </div>
@@ -321,8 +321,8 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
 
                     {/* Output preview */}
                     {step.servedRequest && step.preview && (
-                      <div className="mt-2 rounded bg-surface p-2 border border-emerald-500/30 text-[11px] text-text-main font-mono whitespace-pre-wrap max-h-24 overflow-y-auto custom-scrollbar">
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold block mb-0.5">
+                      <div className="mt-2 rounded bg-surface p-2 border border-success-line text-[11px] text-text-main font-mono whitespace-pre-wrap max-h-24 overflow-y-auto custom-scrollbar">
+                        <span className="text-[10px] text-success font-bold block mb-0.5">
                           Output Preview:
                         </span>
                         {step.preview}

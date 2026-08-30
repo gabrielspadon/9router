@@ -42,7 +42,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
         </button>
       </div>
-      <button onClick={onRemove} className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all" title="Remove">
+      <button onClick={onRemove} className="p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-all" title="Remove">
         <span className="material-symbols-outlined text-[12px]">close</span>
       </button>
     </div>
@@ -121,7 +121,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
                   <input value={name} onChange={handleNameChange} placeholder="my-combo"
                     className="flex-1 min-w-0 rounded-r border border-black/10 dark:border-white/10 bg-white dark:bg-black/20 px-2 py-1.5 font-mono text-sm outline-none focus:border-primary" />
                 </div>
-                {nameError && <p className="text-[11px] text-red-500 mt-0.5">{nameError}</p>}
+                {nameError && <p className="text-[11px] text-danger mt-0.5">{nameError}</p>}
               </>
             ) : (
               <Input label="Combo Name" value={name} onChange={handleNameChange} placeholder="my-combo" error={nameError} />

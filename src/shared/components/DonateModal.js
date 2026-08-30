@@ -46,7 +46,7 @@ export default function DonateModal({ isOpen, onClose }) {
       >
         <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
           <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
+            <span className="material-symbols-outlined text-text-muted">volunteer_activism</span>
             {data?.title || "Support 9Router"}
           </h2>
           <button
@@ -66,7 +66,7 @@ export default function DonateModal({ isOpen, onClose }) {
             </div>
           )}
           {error && (
-            <div className="text-red-500 py-4">Failed to load donate info: {error}</div>
+            <div className="text-danger py-4">Failed to load donate info: {error}</div>
           )}
           {!loading && !error && data && (
             <>
@@ -114,7 +114,7 @@ function DonateChannelCard({ channel }) {
   );
 
   return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
+    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-border transition-colors">
       {content}
       {url && (
         <a
