@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-08-30_
 
 ## Executive Summary
 
@@ -56,8 +56,7 @@ flowchart LR
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
-        DB[(db.json)]
-        UDB[(usage.json + log.txt)]
+        DB[(data.sqlite)]
     end
 
     subgraph Upstreams[Upstream Providers]
@@ -135,17 +134,40 @@ Main flow modules:
 
 ## 3) Persistence Layer
 
+State is one SQLite database. Usage is no longer a separate JSON store, and it
+follows `DATA_DIR` like everything else.
+
 Primary state DB:
 
-- `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+- `src/lib/db/index.js`, with per-entity logic under `src/lib/db/repos/*` and
+  schema and migrations under `src/lib/db/migrations/`
+- file: `${DATA_DIR}/db/data.sqlite` (or `~/.9router/db/data.sqlite` when
+  `DATA_DIR` is unset), resolved by `src/lib/db/paths.js`
+- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys,
+  settings, pricing, usage history, request details
+- automatic backups under `${DATA_DIR}/db/backups/`
+- `src/lib/localDb.js` and `src/lib/usageDb.js` are backward-compatibility shims
+  that re-export the above. New code imports `@/lib/db/index.js` directly.
 
-Usage DB:
+Driver selection (`src/lib/db/driver.js`) falls back in order. Under Bun,
+`bun:sqlite` then `sql.js`. Under Node, `better-sqlite3`, then `node:sqlite` on
+Node 22.5 or newer, then `sql.js`. `better-sqlite3` sits in
+`optionalDependencies` so an install never fails without build tools, and
+`sql.js` is a pure-JavaScript last resort that always works. Journal mode is WAL.
 
-- `src/lib/usageDb.js`
-- files: `~/.9router/usage.json`, `~/.9router/log.txt`
-- note: currently independent from `DATA_DIR`
+Secrets at rest:
+
+- `providerConnections.data` is encrypted with AES-256-GCM by
+  `src/lib/db/helpers/secretCol.js`
+- the key derives from the machine id unless `DB_ENCRYPTION_KEY` is set, which
+  is what makes a copied database unreadable on another machine
+- the directory is created 0700 and the database file 0600 on POSIX platforms,
+  because it holds provider tokens and client API keys
+
+Legacy `db.json`, `usage.json`, `disabledModels.json` and
+`request-details.json` are imported once when a new database is first created
+and are not read afterwards. `log.txt` is retired; `appendRequestLog()` is a
+no-op and log views are derived from the `usageHistory` table on read.
 
 ## 4) Auth + Security Surfaces
 
@@ -377,10 +399,13 @@ erDiagram
 
 Physical storage files:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
-- usage stats: `~/.9router/usage.json`
-- request log lines: `~/.9router/log.txt`
-- optional translator/request debug sessions: `<repo>/logs/...`
+- main state, usage history and request details: `${DATA_DIR}/db/data.sqlite`
+  (or `~/.9router/db/data.sqlite`)
+- automatic backups: `${DATA_DIR}/db/backups/`
+- generated session signing secret when `JWT_SECRET` is unset:
+  `${DATA_DIR}/jwt-secret`
+- optional translator/request debug sessions: a `logs/` directory relative to
+  the process working directory, not to `DATA_DIR`
 
 ## Deployment Topology
 
@@ -394,8 +419,7 @@ flowchart LR
     subgraph ContainerOrProcess[9Router Runtime]
         Next[Next.js Server\nPORT=20128]
         Core[SSE Core + Executors]
-        MainDB[(db.json)]
-        UsageDB[(usage.json/log.txt)]
+        MainDB[(data.sqlite)]
     end
 
     subgraph External[External Services]
@@ -515,8 +539,9 @@ Translations are selected dynamically based on source payload shape and provider
 Runtime visibility sources:
 
 - console logs from `src/sse/utils/logger.js`
-- per-request usage aggregates in `usage.json`
-- textual request status log in `log.txt`
+- per-request usage aggregates in the `usageHistory` table
+- request details in the database, gated by `OBSERVABILITY_ENABLED` and falling
+  back to `ENABLE_REQUEST_LOGS` and then to the dashboard toggle
 - optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
 - dashboard usage endpoints (`/api/usage/*`) for UI consumption
 
@@ -532,26 +557,38 @@ Runtime visibility sources:
 
 Environment variables actively used by code:
 
-- App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
-- Storage: `DATA_DIR`
+- App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`, `AUTH_COOKIE_SECURE`, `REQUIRE_API_KEY`
+- Storage: `DATA_DIR`, `DB_ENCRYPTION_KEY`
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
-- Logging: `ENABLE_REQUEST_LOGS`
-- Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
+- Logging and observability: `ENABLE_REQUEST_LOGS`, `OBSERVABILITY_ENABLED`
+- Sync/cloud URLing: `BASE_URL`, `CLOUD_URL`, with `NEXT_PUBLIC_BASE_URL` and `NEXT_PUBLIC_CLOUD_URL` kept for compatibility
+- Listener split: `API_PORT`, `API_HOSTNAME`
+- Rate-limit backoff: `BACKOFF_BASE_MS`, `BACKOFF_MAX_MS`, `BACKOFF_MAX_LEVEL`
+- Streaming and upstream timeouts: `FETCH_CONNECT_TIMEOUT_MS`, `STREAM_FIRST_CHUNK_TIMEOUT_MS`, `STREAM_STALL_TIMEOUT_MS`, `SSE_KEEPALIVE_MS`, `JSON_PROXY_TIMEOUT_MS`
+- Token savers: `HEADROOM_URL`, `HEADROOM_TIMEOUT_MS`, `HEADROOM_API_KEY`, `HEADROOM_PROXY_TOKEN`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
+`.env.example` is the authoritative list and carries the reasoning for each
+value. The operational subset with defaults is tabulated in
+[deployment.md](deployment.md).
+
 ## Known Architectural Notes
 
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
-2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
-3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
-4. Cloud behavior depends on correct `NEXT_PUBLIC_BASE_URL` and cloud endpoint reachability.
+1. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
+2. Request logger masks credential headers to a scheme plus the last four characters but writes bodies unredacted; treat the log directory as secret material.
+3. Cloud behavior depends on a correct `BASE_URL` and cloud endpoint reachability. `NEXT_PUBLIC_BASE_URL` remains honoured for compatibility, but the server runtime prefers `BASE_URL`.
+4. `npm run dev` and `npm run start` pass `--port 20127` on the command line, which outranks `PORT` in the Next.js CLI. Only the standalone server started directly honours `PORT`.
 
 ## Operational Verification Checklist
 
-- Build from source: `cd /root/dev/9router && npm run build`
-- Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
-- Start service and verify:
-- `GET /api/settings`
-- `GET /api/v1/models`
-- CLI target base URL should be `http://<host>:20128/v1` when `PORT=20128`
+Run these from the repository root.
+
+- Build from source: `npm run build`
+- Build the Docker image: `docker build -t 9router .`
+- Start an isolated instance on port 20129 with its own `DATA_DIR`:
+  `scripts/dev-test-server.sh up`
+- Smoke it: `node scripts/smoke-test.mjs`
+- Verify `GET /api/settings` and `GET /api/v1/models` answer
+- The CLI target base URL is `http://<host>:20128/v1` when the standalone
+  server runs with `PORT=20128`
