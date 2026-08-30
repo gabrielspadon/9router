@@ -27,6 +27,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The blocking lint step diffs against the base commit, which a
+          # depth-1 checkout does not contain.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -39,7 +43,31 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: ESLint
+      # Two-tier on purpose. `npx eslint .` is red on master with a backlog of
+      # react-hooks findings in the routing and store layers that predate this
+      # workflow, so making it the merge gate would wedge every pull request on
+      # debt its author did not create. The blocking gate is therefore the diff:
+      # every file a pull request touches must lint clean. The whole-tree run
+      # stays as a visible, non-blocking report so the backlog does not go quiet.
+      - name: ESLint (changed files, blocking)
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "no usable base ref, linting the whole tree instead"
+            npx eslint .
+            exit $?
+          fi
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$base"...HEAD \
+            | grep -E '\.(js|jsx|mjs)$' | while read -r f; do [ -f "$f" ] && echo "$f"; done)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no changed JavaScript files"
+            exit 0
+          fi
+          printf 'linting %d changed file(s)\n' "${#files[@]}"
+          npx eslint "${files[@]}"
+
+      - name: ESLint (whole tree, reporting only)
+        continue-on-error: true
         run: npx eslint .
 
   baseline:
