@@ -142,7 +142,10 @@ These are short summaries only. This English page is canonical.
 
 ## Support and license
 
-Website [9router.com](https://9router.com). Upstream issues and discussion at
-[github.com/decolua/9router](https://github.com/decolua/9router/issues).
+Website [9router.com](https://9router.com). Questions, bug reports and feature
+requests go through [SUPPORT.md](SUPPORT.md), which names the right channel for
+each. Code changes start at [CONTRIBUTING.md](CONTRIBUTING.md). A vulnerability
+goes through the private route in [SECURITY.md](SECURITY.md) and never through a
+public issue.
 
 MIT, see [LICENSE](LICENSE).
