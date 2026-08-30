@@ -340,6 +340,15 @@ export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) 
   return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
 }
 
+function getCodexQuotaLabel(quotaType) {
+  const windowType = quotaType.replace(/_(primary|secondary)$/, "");
+  if (windowType === "session") return "5h";
+  if (windowType === "weekly") return "Weekly";
+  if (windowType === "review_session") return "Review 5h";
+  if (windowType === "review_weekly") return "Review Weekly";
+  return quotaType;
+}
+
 /**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
@@ -385,7 +394,8 @@ export function parseQuotaData(provider, data) {
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
             normalizedQuotas.push({
-              name: quotaType,
+              name: getCodexQuotaLabel(quotaType),
+              modelKey: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               remaining: quota.remaining,

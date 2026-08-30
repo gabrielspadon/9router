@@ -203,6 +203,23 @@ function formatCodexWindow(window) {
   };
 }
 
+function getCodexWindowType(window, fallback) {
+  const windowSeconds = toFiniteNumber(
+    window?.limit_window_seconds ?? window?.window_seconds ?? window?.windowSeconds,
+    null,
+  );
+  if (windowSeconds === 18000) return "session";
+  if (windowSeconds === 604800) return "weekly";
+  return fallback;
+}
+
+function appendCodexQuotaWindow(quotas, prefix, window, fallbackType, position) {
+  const type = getCodexWindowType(window, fallbackType);
+  const baseKey = prefix ? `${prefix}_${type}` : type;
+  const key = Object.hasOwn(quotas, baseKey) ? `${baseKey}_${position}` : baseKey;
+  quotas[key] = formatCodexWindow(window);
+}
+
 function appendCodexQuotaWindows(quotas, prefix, snapshot) {
   const rateLimit = getCodexRateLimitBody(snapshot);
   if (!rateLimit) return false;
@@ -212,11 +229,11 @@ function appendCodexQuotaWindows(quotas, prefix, snapshot) {
   let added = false;
 
   if (primary) {
-    quotas[prefix ? `${prefix}_session` : "session"] = formatCodexWindow(primary);
+    appendCodexQuotaWindow(quotas, prefix, primary, "session", "primary");
     added = true;
   }
   if (secondary) {
-    quotas[prefix ? `${prefix}_weekly` : "weekly"] = formatCodexWindow(secondary);
+    appendCodexQuotaWindow(quotas, prefix, secondary, "weekly", "secondary");
     added = true;
   }
 
