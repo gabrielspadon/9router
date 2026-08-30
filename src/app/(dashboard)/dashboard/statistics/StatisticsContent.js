@@ -257,17 +257,24 @@ export default function StatisticsContent({ initialData }) {
         </div>
       </Card>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-9">
-        <StatCard label="Requests" value={loading ? "…" : String(summary?.totalRequests ?? 0)} />
-        <StatCard label="Total Tokens" value={loading ? "…" : fmtTokens(summary?.totalTokens)} />
-        <StatCard label="Input Tokens" value={loading ? "…" : fmtTokens(summary?.inputTokens)} />
-        <StatCard label="Output Tokens" value={loading ? "…" : fmtTokens(summary?.outputTokens)} />
-        <StatCard label="Cache Read" value={loading ? "…" : fmtTokens(summary?.cacheReadTokens)} />
-        <StatCard label="Cache Write" value={loading ? "…" : fmtTokens(summary?.cacheCreationTokens)} />
-        <StatCard label="Cache Hit Rate" value={loading ? "…" : fmtPct(summary?.cacheHitRate)} />
-        <StatCard label="Avg Response" value={loading ? "…" : fmtDur(summary?.latency?.avgLatencyMs)} />
-        <StatCard label="Avg TTFT" value={loading ? "…" : fmtDur(summary?.latency?.avgTtftMs)} />
+      {/* Summary. Nine figures given identical weight made the page a wall of
+          equal numbers, most of them zero. Requests and total tokens orient the
+          reader; the other seven support them and are set in a dense band.
+          Every figure is still present. */}
+      <div className="grid gap-px bg-border border border-border">
+        <div className="grid grid-cols-1 gap-px sm:grid-cols-2">
+          <StatCard lead label="Requests" value={loading ? "…" : String(summary?.totalRequests ?? 0)} />
+          <StatCard lead label="Total Tokens" value={loading ? "…" : fmtTokens(summary?.totalTokens)} />
+        </div>
+        <div className="grid grid-cols-2 gap-px sm:grid-cols-4 xl:grid-cols-7">
+          <StatCard label="Input Tokens" value={loading ? "…" : fmtTokens(summary?.inputTokens)} />
+          <StatCard label="Output Tokens" value={loading ? "…" : fmtTokens(summary?.outputTokens)} />
+          <StatCard label="Cache Read" value={loading ? "…" : fmtTokens(summary?.cacheReadTokens)} />
+          <StatCard label="Cache Write" value={loading ? "…" : fmtTokens(summary?.cacheCreationTokens)} />
+          <StatCard label="Cache Hit Rate" value={loading ? "…" : fmtPct(summary?.cacheHitRate)} />
+          <StatCard label="Avg Response" value={loading ? "…" : fmtDur(summary?.latency?.avgLatencyMs)} />
+          <StatCard label="Avg TTFT" value={loading ? "…" : fmtDur(summary?.latency?.avgTtftMs)} />
+        </div>
       </div>
 
       {/* Trend chart */}
@@ -417,11 +424,22 @@ const SERIES_LABELS = {
   cacheHitRate: "Hit Rate",
 };
 
-function StatCard({ label, value }) {
+// Hairlines come from the parent grid's gap, so the figures read as one
+// instrument face rather than nine separate cards. A card is for a portable
+// object, and a summary figure is not one.
+function StatCard({ label, value, lead = false }) {
   return (
-    <div className="rounded-[var(--radius-brand-lg)] border border-border bg-surface p-5 shadow-soft">
-      <p className="text-xs text-text-muted">{label}</p>
-      <p className="mt-1 metric text-lg font-semibold text-text-main truncate">{value}</p>
+    <div className={`bg-surface ${lead ? "px-5 py-4" : "px-4 py-3"}`}>
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+        {label}
+      </p>
+      <p
+        className={`metric mt-1 truncate font-semibold text-text-main ${
+          lead ? "text-3xl" : "text-base"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }

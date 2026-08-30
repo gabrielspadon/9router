@@ -112,7 +112,9 @@ Container specifics live in [DOCKER.md](DOCKER.md).
 
 ## Localised summaries
 
-These are short summaries only. This English page is canonical.
+These are short summaries only. This English page is canonical, and what a
+translated page is expected to carry is written down in
+[docs/design/translation-policy.md](docs/design/translation-policy.md).
 
 [Português (Brasil)](./i18n/README.pt-BR.md) |
 [Tiếng Việt](./i18n/README.vi.md) |
