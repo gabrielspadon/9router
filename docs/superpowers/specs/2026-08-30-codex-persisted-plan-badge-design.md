@@ -81,10 +81,10 @@ adds no `useEffect`, callback, page state, API route, persistence code, or
 
 ## Strict Test Boundary
 
-Add `tests/unit/codex-plan-badge.test.js`. It imports only the named pure
-`getPersistedCodexPlan` helper from `ConnectionRow.js` and uses a throwing
-`globalThis.fetch` mock to prove resolving the display label has no network
-dependency. The focused cases are these.
+Add `tests/unit/codex-plan-badge.test.js`. It imports the named pure
+`getPersistedCodexPlan` helper and `ConnectionRow` from `ConnectionRow.js`, and
+uses a throwing `globalThis.fetch` mock to prove both label resolution and row
+rendering have no network dependency. The focused cases are these.
 
 | Case | Required result |
 | --- | --- |
@@ -93,8 +93,13 @@ dependency. The focused cases are these.
 | Both values are blank, unknown, missing, or non-strings | `null` is returned. |
 | Connection is not Codex | `null` is returned even when it carries either field. |
 | Focused helper calls | The mocked `fetch` has zero calls. |
+| Codex row markup | `renderToStaticMarkup(ConnectionRow)` renders the selected plan in a primary badge and includes `Codex subscription plan` as visually hidden text. |
+| Non-Codex row markup | `renderToStaticMarkup(ConnectionRow)` renders no plan badge even if it carries Codex-plan-shaped data. |
+| Focused row calls | The mocked `fetch` has zero calls while rendering either row. |
 
-The implementation review also verifies that the provider-detail page receives
+Use the established `react-dom/server` SSR markup pattern in
+`tests/unit/commandcode-zdr-ui.test.js` for the row assertions. The
+implementation review also verifies that the provider-detail page receives
 no plan state or `/api/usage` fetch, and that
 `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/` has no diff.
 Run the new focused test with the existing Codex subscription UI and route
