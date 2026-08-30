@@ -117,7 +117,7 @@ export default function EndpointPresetControl({
         <button
           type="button"
           onClick={handleDelete}
-          className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
+          className="p-1 text-text-muted hover:text-danger rounded transition-colors"
           title="Delete selected preset"
         >
           <span className="material-symbols-outlined text-[14px]">delete</span>

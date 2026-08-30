@@ -155,7 +155,7 @@ export default function BaseUrlSelect({
           {canSave && <option value={SAVE_VALUE}>+ Save current as...</option>}
         </select>
         {isSaved && (
-          <button type="button" onClick={handleDeleteSaved} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors shrink-0" title="Delete saved endpoint">
+          <button type="button" onClick={handleDeleteSaved} className="p-1 text-text-muted hover:text-danger rounded transition-colors shrink-0" title="Delete saved endpoint">
             <span className="material-symbols-outlined text-[14px]">delete</span>
           </button>
         )}

@@ -6,11 +6,11 @@ import { Card } from "@/shared/components";
 
 // Derive simple connected/configured/not-installed status from API payload
 function getStatus(tool, status) {
-  if (tool.unsupported) return { label: "Unsupported", cls: "bg-red-500/10 text-red-600 dark:text-red-400" };
-  if (!status) return { label: "Unknown", cls: "bg-gray-500/10 text-gray-500" };
-  if (!status.installed) return { label: "Not installed", cls: "bg-gray-500/10 text-gray-500" };
-  if (status.has9Router) return { label: "Connected", cls: "bg-green-500/10 text-green-600 dark:text-green-400" };
-  return { label: "Not configured", cls: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" };
+  if (tool.unsupported) return { label: "Unsupported", cls: "bg-danger-soft text-danger border border-danger-line" };
+  if (!status) return { label: "Unknown", cls: "bg-surface-2 text-text-muted border border-border" };
+  if (!status.installed) return { label: "Not installed", cls: "bg-surface-2 text-text-muted border border-border" };
+  if (status.has9Router) return { label: "Connected", cls: "bg-success-soft text-success border border-success-line" };
+  return { label: "Not configured", cls: "bg-warning-soft text-warning border border-warning-line" };
 }
 
 export default function ToolSummaryCard({ toolId, tool, status }) {
@@ -29,7 +29,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="font-medium text-sm truncate">{tool.name}</h3>
-              <span className={`inline-block mt-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full ${s.cls}`}>{s.label}</span>
+              <span className={`inline-block mt-1 px-1.5 py-0.5 text-xs font-medium rounded-full ${s.cls}`}>{s.label}</span>
             </div>
             <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0">chevron_right</span>
           </div>

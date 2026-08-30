@@ -273,11 +273,11 @@ export default function AntigravityToolCard({
                     {isLoading ? (
                       <span className="material-symbols-outlined text-[14px] text-primary animate-spin">progress_activity</span>
                     ) : (
-                      <span className={`material-symbols-outlined text-[14px] ${ok ? "text-green-500" : "text-text-muted"}`}>
+                      <span className={`material-symbols-outlined text-[14px] ${ok ? "text-success" : "text-text-muted"}`}>
                         {ok ? "check_circle" : "radio_button_unchecked"}
                       </span>
                     )}
-                    <span className={`text-xs font-medium ${isLoading ? "text-primary" : ok ? "text-green-500" : "text-text-muted"}`}>
+                    <span className={`text-xs font-medium ${isLoading ? "text-primary" : ok ? "text-success" : "text-text-muted"}`}>
                       {label}
                     </span>
                   </div>
@@ -311,7 +311,7 @@ export default function AntigravityToolCard({
           </div>
 
           {message?.type === "error" && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-danger-soft text-danger border border-danger-line">
               <span className="material-symbols-outlined text-[14px]">error</span>
               <span>{message.text}</span>
             </div>
@@ -353,7 +353,7 @@ export default function AntigravityToolCard({
                     {modelMappings[model.alias] && (
                       <button
                         onClick={() => handleModelMappingChange(model.alias, "")}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors"
                         title="Clear"
                       >
                         <span className="material-symbols-outlined text-[14px]">close</span>
@@ -386,7 +386,7 @@ export default function AntigravityToolCard({
 
           {/* Windows admin warning */}
           {!isRunning && serverIsWindows && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-warning-soft text-warning border border-warning-line">
               <span className="material-symbols-outlined text-[14px]">warning</span>
               <span>Windows: Run terminal (9Router) as Administrator to enable MITM</span>
             </div>
@@ -420,8 +420,8 @@ export default function AntigravityToolCard({
         size="sm"
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
+          <div className="flex items-start gap-3 p-4 bg-warning-soft border border-warning-line rounded-lg">
+            <span className="material-symbols-outlined text-warning text-[20px]">warning</span>
             <p className="text-xs text-text-muted">Required for SSL certificate and DNS configuration</p>
           </div>
 
@@ -436,7 +436,7 @@ export default function AntigravityToolCard({
           />
 
           {message && (
-            <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
+            <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-success-soft text-success border border-success-line" : "bg-danger-soft text-danger border border-danger-line"}`}>
               <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
               <span>{message.text}</span>
             </div>
