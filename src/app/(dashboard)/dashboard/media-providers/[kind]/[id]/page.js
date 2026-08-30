@@ -56,7 +56,7 @@ export default function MediaProviderDetailPage() {
 
   // For custom embedding nodes, build a synthetic provider object
   const provider = isCustom
-    ? (customNode ? { id, name: customNode.name || "Custom Embedding", color: "#6366F1", textIcon: "CE" } : null)
+    ? (customNode ? { id, name: customNode.name || "Custom Embedding", color: "#6B7280", textIcon: "CE" } : null)
     : builtInProvider;
 
   if (!isCustom && !builtInProvider) return notFound();
@@ -69,14 +69,14 @@ export default function MediaProviderDetailPage() {
   if (!isCustom && !kinds.includes(kind)) return notFound();
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       {/* Back */}
       <div>
         <Link
           href={`/dashboard/media-providers/${kind}`}
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="focus-ring rounded-sm inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors duration-150 mb-4"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">arrow_back</span>
           {kindConfig.label}
         </Link>
 
@@ -94,15 +94,15 @@ export default function MediaProviderDetailPage() {
           </div>
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="text-3xl font-semibold tracking-tight">{provider.name}</h1>
+              <h1 className="text-lg font-semibold text-text-main">{provider.name}</h1>
               {!isCustom && provider.notice?.apiKeyUrl && (
                 <a
                   href={provider.notice.apiKeyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  className="focus-ring rounded-sm text-xs text-primary hover:underline inline-flex items-center gap-1"
                 >
-                  <span className="material-symbols-outlined text-sm">open_in_new</span>
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">open_in_new</span>
                   Get API Key
                 </a>
               )}
@@ -131,23 +131,23 @@ export default function MediaProviderDetailPage() {
 
       {/* Kind-specific notice (e.g. codex/image requires Plus) */}
       {!isCustom && provider.kindNotice?.[kind] && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400">
-          <span className="material-symbols-outlined text-[20px] mt-0.5">warning</span>
+        <div className="flex items-start gap-3 p-4 rounded-[var(--radius-brand)] bg-warning-soft border border-warning-line text-warning">
+          <span className="material-symbols-outlined text-[20px] mt-0.5 shrink-0" aria-hidden="true">warning</span>
           <p className="text-sm">{provider.kindNotice[kind]}</p>
         </div>
       )}
 
       {/* Provider notice text (only when there's actual text content) */}
       {!isCustom && provider.notice?.text && !provider.deprecated && (
-        <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
-          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
-          <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">{provider.notice.text}</p>
+        <div className="flex flex-col gap-2 rounded-[var(--radius-brand)] border border-info-line bg-info-soft p-4 sm:flex-row sm:items-center">
+          <span className="material-symbols-outlined text-[16px] text-info shrink-0" aria-hidden="true">info</span>
+          <p className="min-w-0 flex-1 text-xs leading-relaxed text-info">{provider.notice.text}</p>
           {provider.notice.apiKeyUrl && (
             <a
               href={provider.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
+              className="focus-ring inline-flex shrink-0 justify-center rounded-[var(--radius-brand)] bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-opacity duration-150 hover:opacity-90 sm:py-0.5"
             >
               Get API Key →
             </a>
