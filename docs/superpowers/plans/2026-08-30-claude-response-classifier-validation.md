@@ -17,7 +17,8 @@
 - Do not cherry-pick, merge, or raw-apply PR 3319. Do not add `-1m` or `[1m]` normalization.
 - Detection requires a Claude client request, non-streaming shape, exact system prefix, and one accepted stage stop shape. Response text never participates in detection.
 - Responses SSE and JSON classifier paths project every raw output item before conversion. Chat and native-Claude paths validate every final Anthropic content block.
-- Ordinary requests return the existing object or consume the existing stream exactly once. They are never teed, projected, cloned, or canonicalized.
+- A handler calls a projector or final validator only when `sourceFormat === FORMATS.CLAUDE && isClaudeClassifierRequest(body)`. The leaf repeats detection as defense in depth, but handlers do not rely on that no-op behavior.
+- Ordinary and non-Claude requests return the existing object or consume the existing stream exactly once. They are never teed, projected, validated, cloned, or canonicalized, and projector and validator spies remain at zero calls.
 - A valid classifier decision is case-sensitive and, after outer whitespace only, exactly `<block>no</block>` or `<block>yes</block>`. Thinking is discardable. Every other item or block fails closed.
 - Every typed validation failure maps through `createErrorResult(HTTP_STATUS.BAD_GATEWAY, CLAUDE_CLASSIFIER_ERROR_MESSAGE)`. No response text appears in the error.
 - Status 499 returns before replay detection, account mutation, counters, retry, exclusion, credential reselection, combo fallback, model lock, cooldown, or timer creation.
@@ -67,10 +68,20 @@ The opaque projection is a plain object with this internal contract. The handler
     type: string | null,
     text: string | null,
   }],
+  evidence: [{
+    eventOrdinal: number,
+    eventType: string,
+    outputIndex: number,
+    itemId: string | null,
+    itemType: string | null,
+    blockIndex: number | null,
+    blockType: string | null,
+    resolved: boolean,
+  }],
 }
 ```
 
-Every logical output item produces at least one entry. Each message content block and reasoning summary block produces its own entry. No raw provider object, request, Message, content array, stream chunk, or projection is mutated.
+Every logical output item produces at least one entry. Each message content block and reasoning summary block produces its own entry. JSON projections have `evidence: []`. SSE projections retain one evidence record for every output-item announcement and content or argument fragment. Every evidence record must resolve to an authoritative done item or terminal output item before validation. No raw provider object, request, Message, content array, stream chunk, or projection is mutated.
 
 Use fixed fixtures with no `Date.now()` or random IDs.
 
@@ -221,7 +232,7 @@ Add direct Message validation rows.
 | Thinking-only, malformed thinking, malformed redacted thinking, tool-use, image, document, tool-result, and unknown block |
 | Exact decision plus tool-use and exact decision plus unknown block |
 
-For each classifier rejection, assert `toThrowError(ClaudeClassifierValidationError)`, exact `.code`, exact message, and absence of the invalid output from the thrown text. Deep-freeze the original Message and assert it remains byte-equal. Deep-freeze one supplied Responses projection and assert validation neither edits its entries nor replaces their objects.
+For each classifier rejection, assert `toThrowError(ClaudeClassifierValidationError)`, exact `.code`, exact message, and absence of the invalid output from the thrown text. Deep-freeze the original Message and assert it remains byte-equal. Deep-freeze one supplied Responses projection and assert validation edits neither its entries nor its evidence and replaces none of their objects. A hand-built projection with one exact text entry but one `resolved:false` evidence record must reject.
 
 Run the dedicated file. Expected RED is module-not-found for the new leaf plus the original handler gap. Do not weaken assertions to get a partial green.
 
@@ -263,9 +274,56 @@ Direct stream projector tests use raw bytes, not aggregated JSON. Cover each row
 | Function call, custom-tool call, unknown item, or unknown nested block beside a decision | Preserved rejecting entry |
 | Missing done item, non-integer index, negative index, malformed JSON, or hidden item/content/output on unknown event | Malformed entry |
 | Duplicate terminal, incomplete, failed, unsuccessful terminal status, and EOF without successful terminal | Malformed entry |
-| Recognized deltas, output-item-added, content-part, call-argument frames, metadata, and `[DONE]` | No invented decision entries |
+| Matching output-item-added, content-part, output-text, reasoning-summary, call-argument, and custom-tool fragments followed by authoritative logical items | Resolved evidence, with no text reconstructed from fragments |
+| Output-item-added message or custom-tool item with no matching done or terminal item | Unresolved evidence plus malformed entry |
+| Content-part-added or content-part-done with no matching final item/block | Unresolved evidence plus malformed entry |
+| Function-call-arguments or custom-tool-input fragment with no matching final call item | Unresolved evidence plus malformed entry |
+| Fragment output index, item ID, item type, block index, or block type that disagrees with the authoritative item | Unresolved evidence plus malformed entry |
+| Content-free lifecycle metadata and `[DONE]` | No projection entry and no pending evidence |
 
-Assert event ordinals increase in arrival order and duplicate output indexes remain distinct. Assert `projectResponsesClassifierStream` returns `null` without calling `getReader()` for a non-classifier body.
+Assert event ordinals increase in arrival order, duplicate output indexes remain distinct, evidence order matches frame arrival, and every successful projection has only `resolved:true` evidence. Assert `projectResponsesClassifierStream` returns `null` without calling `getReader()` for a non-classifier body.
+
+Add five load-bearing real-handler REDs whose final terminal output otherwise contains one valid decision. The preceding hidden evidence is an unpaired `custom_tool_call` in `response.output_item.added`, an unpaired unknown `response.content_part.added`, an unpaired `response.function_call_arguments.delta`, an unpaired `response.custom_tool_call_input.delta`, and an output-text fragment whose item ID disagrees with the terminal message. Each must expect the fixed 502.
+
+Add one forced Responses non-Claude near-miss. Use the exact classifier-shaped body with `sourceFormat: FORMATS.OPENAI`, return arbitrary prose, and assert the existing successful Chat response remains deeply equal while all four leaf spies stay at zero calls.
+
+For call-count assertions after the leaf exists, wrap the real leaf exports with Vitest passthrough spies rather than replacing behavior.
+
+```js
+const classifierSpies = vi.hoisted(() => ({
+  detect: vi.fn(),
+  stream: vi.fn(),
+  output: vi.fn(),
+  validate: vi.fn(),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/claudeClassifier.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    isClaudeClassifierRequest: classifierSpies.detect
+      .mockImplementation(actual.isClaudeClassifierRequest),
+    projectResponsesClassifierStream: classifierSpies.stream
+      .mockImplementation(actual.projectResponsesClassifierStream),
+    projectResponsesClassifierOutput: classifierSpies.output
+      .mockImplementation(actual.projectResponsesClassifierOutput),
+    validateClaudeClassifierMessage: classifierSpies.validate
+      .mockImplementation(actual.validateClaudeClassifierMessage),
+  };
+});
+```
+
+In `beforeEach`, call `.mockClear()` on each spy. Do not use `.mockReset()` or `.mockRestore()`, which would remove the passthrough implementation.
+
+Run these five rows before implementing evidence reconciliation.
+
+```bash
+npx vitest run --config vitest.config.js \
+  unit/claude-auto-mode-classifier.test.js \
+  -t "rejects unresolved Responses transport evidence"
+```
+
+Expected RED is five failed tests because the current aggregator and the first plan revision ignore added and fragment frames, then accept the terminal decision.
 
 - [ ] **Step 4: Implement the pure leaf**
 
@@ -325,7 +383,7 @@ Implement an internal recursive structural equality function that compares primi
 
 The stream projector must use one streaming `TextDecoder("utf-8", { fatal: false })`, preserve incomplete UTF-8 between reads, accept LF and CRLF, join all data lines with `\n`, and dispatch a trailing frame at EOF. For each parsed frame, the explicit `event:` value wins over `parsed.type`.
 
-Treat these exact fragment events as transport-only. They never create decision text.
+Treat these exact fragment events as transport-only announcements. They never create decision text, but each creates pending evidence that must resolve against an authoritative logical item.
 
 ```js
 const RESPONSES_FRAGMENT_EVENTS = new Set([
@@ -347,24 +405,100 @@ const RESPONSES_FRAGMENT_EVENTS = new Set([
 
 Ignore content-free lifecycle metadata such as `response.created`, `response.queued`, and `response.in_progress`. An event outside the fixed terminal, done-item, fragment, and metadata cases is malformed when it exposes `item`, `content`, or `response.output`; otherwise ignore it as content-free metadata.
 
-Maintain `doneRecords`, `terminalFrames`, and `entries`. Append every done item before reconciliation, even with a duplicate or invalid index. A successful terminal is `response.completed` or `response.done` with absent, `completed`, or `done` status. Any other terminal or terminal count other than one adds malformed evidence. Reconcile as follows.
+Maintain `doneRecords`, `terminalFrames`, `entries`, and `evidence`. Append every done item before reconciliation, even with a duplicate or invalid index. A successful terminal is `response.completed` or `response.done` with absent, `completed`, or `done` status. Any other terminal or terminal count other than one adds a malformed entry.
+
+Build one evidence record for every fragment with `resolved:false`, and maintain an internal `invalidEvidence` set. Record `output_index` and the item identity and type for every row. `response.output_item.added` reads `item.id` and `item.type`. All other fragment events read `item_id`. Content-part events also read `content_index` and `part.type`. Output-text events require `content_index` and infer `message` plus `output_text`. Reasoning-summary events require `summary_index` and infer `reasoning` plus `summary_text`. Function-call-argument and custom-tool-input events infer `function_call` and `custom_tool_call`, respectively, and have no block index. A missing, negative, or non-integer required index, a missing, empty, or non-string item ID, or a missing announced or inferred type adds that evidence object to `invalidEvidence` and adds a malformed entry immediately.
+
+First reconcile done and terminal items into `authoritativeByIndex`, without changing the arrival-ordered `entries`.
 
 ```js
-if (doneRecords.length > 0) {
-  require unique integer indexes covering 0..doneRecords.length - 1;
+const appendMalformed = (eventOrdinal, outputIndex = null, type = null) => {
+  entries.push({
+    kind: "malformed",
+    eventOrdinal,
+    outputIndex,
+    itemIndex: null,
+    blockIndex: null,
+    type,
+    text: null,
+  });
+};
+
+const indexes = doneRecords.map(({ outputIndex }) => outputIndex);
+const doneIndexesValid = indexes.every(Number.isInteger)
+  && indexes.every((index) => index >= 0 && index < doneRecords.length)
+  && new Set(indexes).size === doneRecords.length;
+if (doneRecords.length > 0 && !doneIndexesValid) {
+  appendMalformed(null, null, "response.output_item.done");
 }
-if (doneRecords.length === 0 && Array.isArray(terminalOutput)) {
-  entries.push(...projectOutput(terminalOutput, terminalOrdinal).entries);
-} else if (doneRecords.length > 0 && terminalOutput === undefined) {
-  // Keep already projected done records.
-} else if (doneRecords.length > 0 && Array.isArray(terminalOutput)) {
-  require equal lengths and structural equality at each done output index;
+
+const doneByIndex = new Map();
+for (const record of doneRecords) {
+  if (Number.isInteger(record.outputIndex)
+      && record.outputIndex >= 0
+      && !doneByIndex.has(record.outputIndex)) {
+    doneByIndex.set(record.outputIndex, record.item);
+  }
+}
+
+let authoritativeByIndex = new Map();
+if (doneRecords.length === 0) {
+  if (Array.isArray(terminalOutput)) {
+    entries.push(...projectOutput(terminalOutput, terminalOrdinal).entries);
+    authoritativeByIndex = new Map(
+      terminalOutput.map((item, index) => [index, item]),
+    );
+  } else {
+    appendMalformed(terminalOrdinal, null, "terminal.output");
+  }
 } else {
-  append one malformed entry;
+  authoritativeByIndex = doneByIndex;
+  if (Array.isArray(terminalOutput)) {
+    const terminalMatchesDone = doneIndexesValid
+      && terminalOutput.length === doneRecords.length
+      && doneRecords.every(({ outputIndex, item }) =>
+        structuralEqual(item, terminalOutput[outputIndex]));
+    if (!terminalMatchesDone) {
+      appendMalformed(terminalOrdinal, null, "terminal.output");
+    }
+  } else if (terminalOutput !== undefined) {
+    appendMalformed(terminalOrdinal, null, "terminal.output");
+  }
 }
 ```
 
-Invalid JSON in a non-empty data frame adds malformed evidence. Ignore `[DONE]`, recognized transport fragments, and content-free metadata. An unrecognized event exposing `item`, `content`, or `response.output` adds malformed evidence.
+Then resolve every evidence record with this exact predicate. Rows already marked unresolved by malformed required fields stay unresolved. Do not concatenate or compare fragment text.
+
+```js
+for (const record of evidence) {
+  const item = authoritativeByIndex.get(record.outputIndex);
+  const blocks = record.itemType === "message"
+    ? item?.content
+    : record.itemType === "reasoning"
+      ? item?.summary
+      : null;
+  const block = record.blockIndex === null || !Array.isArray(blocks)
+    ? null
+    : blocks[record.blockIndex];
+  const resolved = !invalidEvidence.has(record)
+    && item !== undefined
+    && item.id === record.itemId
+    && item.type === record.itemType
+    && (record.blockIndex === null
+      || (block !== undefined && block?.type === record.blockType));
+
+  record.resolved = resolved;
+  if (!resolved) {
+    appendMalformed(
+      record.eventOrdinal,
+      record.outputIndex,
+      record.eventType,
+    );
+  }
+}
+```
+
+Call-argument evidence resolves against the call item itself because its block index is null. Invalid JSON in a non-empty data frame adds a malformed entry. Ignore only `[DONE]` and content-free metadata. An unrecognized event exposing `item`, `content`, or `response.output` adds a malformed entry. The validator requires every supplied evidence record to be resolved in addition to the exact entry policy.
 
 Both public projectors call the detector first. JSON then projects `responseBody.output`; SSE then consumes the stream exactly once.
 
@@ -381,14 +515,20 @@ Every invalid classifier shape throws a new `ClaudeClassifierValidationError`. A
 
 - [ ] **Step 5: Tee and validate only the forced Responses SSE classifier path**
 
-Add leaf imports to `sseToJsonHandler.js`. In the actual Responses branch only, evaluate the detector when `sourceFormat === FORMATS.CLAUDE`.
+Add leaf imports to `sseToJsonHandler.js`. After the SSE content-type gate, compute the handler-wide mode once.
+
+```js
+const classifierMode = sourceFormat === FORMATS.CLAUDE
+  && isClaudeClassifierRequest(body);
+```
+
+In the actual Responses branch only, tee when `classifierMode` is true.
 
 ```js
 let classifierProjection = null;
 if (
   !isGeminiSse
-  && sourceFormat === FORMATS.CLAUDE
-  && isClaudeClassifierRequest(body)
+  && classifierMode
 ) {
   const [conversionStream, projectionStream] = providerResponse.body.tee();
   [jsonResponse, classifierProjection] = await Promise.all([
@@ -400,7 +540,17 @@ if (
 }
 ```
 
-After the Claude branch builds `finalResp` and before line 438 returns success, call `validateClaudeClassifierMessage(body, finalResp, classifierProjection)`. In the existing catch, map only the typed error before the generic conversion error.
+After the Claude branch builds `finalResp` and before line 438 returns success, validate only the actual Responses path in Task 1. This leaves the distinct Gemini RED for Task 2. In the existing catch, map only the typed error before the generic conversion error.
+
+```js
+if (classifierMode && !isGeminiSse) {
+  finalResp = validateClaudeClassifierMessage(
+    body,
+    finalResp,
+    classifierProjection,
+  );
+}
+```
 
 ```js
 if (err instanceof ClaudeClassifierValidationError) {
@@ -411,7 +561,7 @@ if (err instanceof ClaudeClassifierValidationError) {
 }
 ```
 
-Do not tee Gemini-created Responses bodies, Responses clients, Chat SSE, or ordinary Claude requests.
+Do not tee or validate Gemini-created Responses bodies in Task 1. Do not tee Responses clients, Chat SSE, or ordinary Claude requests.
 
 - [ ] **Step 6: Run Task 1 GREEN and mutation checks**
 
@@ -422,7 +572,7 @@ node --check ../open-sse/handlers/chatCore/claudeClassifier.js
 node --check ../open-sse/handlers/chatCore/sseToJsonHandler.js
 ```
 
-Expected is one file passed with zero skips and every Task 1 matrix row green. Record the exact dedicated test count for later arithmetic. Confirm the ordinary Responses fixture receives the same body reference in the converter spy, the classifier conversion branch sees the same bytes as the projector, and every deep-frozen input remains unchanged.
+Expected is one file passed with zero skips and every Task 1 matrix row green. Record the displayed count as `task1_classifier_count`. Confirm the ordinary Responses fixture receives the same body reference in the converter spy, projector and validator spies remain at zero calls for ordinary Claude fixtures, all four leaf spies remain at zero calls for non-Claude fixtures, the classifier conversion branch sees the same bytes as the projector, and every deep-frozen input remains unchanged.
 
 - [ ] **Step 7: Commit the Responses vertical slice**
 
@@ -449,16 +599,35 @@ Expected HEAD subject is exactly `fix(claude): validate Responses classifier dec
 
 - [ ] **Step 1: Add a separate path RED before each missing hook**
 
-Add the malformed-prose test for one family, run only that named test, save the RED, then add that family's call site. Repeat in this order.
+Before any Task 2 production edit, add one independently named load-bearing RED for each later hook. Run only that named test and save its failure before adding the next RED. Use this order.
 
 1. Forced Chat Completions SSE.
 2. OpenAI Chat Completions JSON.
-3. OpenAI Responses JSON.
+3. OpenAI Responses JSON with earlier prose followed by an exact decision, proving the raw JSON projector is required.
 4. Native Claude JSON.
-5. Unexpected Responses SSE handled by `handleNonStreamingResponse`.
+5. Unexpected Responses SSE with a hidden custom-tool done item, proving the raw stream tee is required.
 6. Gemini SSE converted to a final Claude Message.
 
-Each RED asserts status 502 and exact `CLASSIFIER_ERROR`. The current failure must be HTTP 200 or the existing generic path, never a missing fixture or mock exception.
+Each RED asserts status 502 and exact `CLASSIFIER_ERROR`. Each current failure must be HTTP 200 or the existing generic path, never a missing fixture or mock exception. Do not add a Task 2 call site until all six saved RED receipts exist, so the shared non-streaming final seam cannot make a later family test accidentally green before its lossless capture requirement is proved.
+
+Run the exact named cases separately from `tests/`.
+
+```bash
+red_cases=(
+  "rejects malformed classifier prose from forced Chat SSE"
+  "rejects malformed classifier prose from OpenAI Chat JSON"
+  "rejects earlier Responses JSON prose before an exact decision"
+  "rejects malformed classifier prose from native Claude JSON"
+  "rejects a hidden custom tool from unexpected Responses SSE"
+  "rejects malformed classifier prose from Gemini SSE"
+)
+for red_case in "${red_cases[@]}"; do
+  npx vitest run --config vitest.config.js \
+    unit/claude-auto-mode-classifier.test.js -t "$red_case"
+done
+```
+
+Expected is six separate one-test RED runs. Retain each exit-1 output before Step 3.
 
 - [ ] **Step 2: Add valid, invalid, and unchanged family matrices**
 
@@ -475,17 +644,18 @@ Add these path-specific rejection rows.
 
 For each family, freeze one ordinary non-classifier request and compare the final parsed response deeply to a fixed current-behavior fixture. Include Responses reasoning, custom tool, incomplete status, cache-aware usage, JSON fence, canonical model echo, empty-content fallback, Chat reasoning, native Claude content, and Gemini text across the set. Ordinary Responses calls must prove the projector export was not called and the body was not teed.
 
+Add exactly six non-Claude near-miss rows, one for each family above. Give each handler the exact classifier-shaped body but a non-Claude `sourceFormat`, return arbitrary prose, and assert its current successful response remains deeply equal. Spy on all four leaf exports and require zero calls to `isClaudeClassifierRequest`, `projectResponsesClassifierStream`, `projectResponsesClassifierOutput`, and `validateClaudeClassifierMessage`; short-circuit the source-format check before detection.
+
 - [ ] **Step 3: Add non-streaming projection capture and final validation**
 
-Import the leaf exports. Initialize `let classifierProjection = null` beside `let responseBody`.
+Import the leaf exports. At the start of `handleNonStreamingResponse`, compute `const classifierMode = sourceFormat === FORMATS.CLAUDE && isClaudeClassifierRequest(body)`. Initialize `let classifierProjection = null` beside `let responseBody`.
 
 For unexpected actual Responses SSE only, tee and consume concurrently under the same predicate used in Task 1.
 
 ```js
 if (
   targetFormat === FORMATS.OPENAI_RESPONSES
-  && sourceFormat === FORMATS.CLAUDE
-  && isClaudeClassifierRequest(body)
+  && classifierMode
 ) {
   const [conversionStream, projectionStream] = providerResponse.body.tee();
   [responseBody, classifierProjection] = await Promise.all([
@@ -501,7 +671,7 @@ Immediately after `await providerResponse.json()` succeeds and before unwrapping
 
 ```js
 if (
-  sourceFormat === FORMATS.CLAUDE
+  classifierMode
   && targetFormat === FORMATS.OPENAI_RESPONSES
   && !contentType.includes("text/event-stream")
 ) {
@@ -509,23 +679,25 @@ if (
 }
 ```
 
-Change `const translatedResponse` to `let translatedResponse`. Immediately after translation and before useful-content handling, validate in a local typed catch.
+Change `const translatedResponse` to `let translatedResponse`. Immediately after translation and before useful-content handling, enter the local typed catch only when `classifierMode` is true.
 
 ```js
-try {
-  translatedResponse = validateClaudeClassifierMessage(
-    body,
-    translatedResponse,
-    classifierProjection,
-  );
-} catch (err) {
-  if (err instanceof ClaudeClassifierValidationError) {
-    return createErrorResult(
-      HTTP_STATUS.BAD_GATEWAY,
-      CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+if (classifierMode) {
+  try {
+    translatedResponse = validateClaudeClassifierMessage(
+      body,
+      translatedResponse,
+      classifierProjection,
     );
+  } catch (err) {
+    if (err instanceof ClaudeClassifierValidationError) {
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+      );
+    }
+    throw err;
   }
-  throw err;
 }
 ```
 
@@ -537,7 +709,23 @@ For one malformed forced Responses result and one malformed JSON result, assert 
 
 In the standard Chat SSE branch, validate only after `finalBody` is built and before its success return. In the existing catch, map the typed error before the generic Chat conversion error.
 
-The Gemini branch stays unteed and has `classifierProjection === null`. When `sourceFormat === FORMATS.CLAUDE`, validate the final `finalResp` after current Gemini conversion. Do not add a Gemini wire projector.
+```js
+if (classifierMode) {
+  finalBody = validateClaudeClassifierMessage(body, finalBody, null);
+}
+```
+
+The Gemini branch stays unteed and has `classifierProjection === null`. After its saved RED, widen the Task 1 final guard from `classifierMode && !isGeminiSse` to `classifierMode`. This validates `finalResp` after current Gemini conversion without adding a Gemini wire projector.
+
+```js
+if (classifierMode) {
+  finalResp = validateClaudeClassifierMessage(
+    body,
+    finalResp,
+    classifierProjection,
+  );
+}
+```
 
 Use the same typed catch code as Task 1. Do not change either converter, reasoning assembly, tool mapping, usage reattachment, fence handling, incomplete mapping, or any non-Claude branch.
 
@@ -559,7 +747,7 @@ npx vitest run --config vitest.config.js \
   unit/combo-autoswitch.test.js
 ```
 
-Expected dedicated result is zero failures and zero skips. Combined total is `113 + dedicated_count` tests. Exactly the two frozen `combo-autoswitch.test.js` failures may remain, so passing count is `111 + dedicated_count`; any other failure stops the task.
+Expected dedicated result is zero failures and zero skips. Record its displayed count as `task2_classifier_count`; it must exceed `task1_classifier_count` by at least the six non-Claude near-miss rows and every path-specific row added in this task. Combined total is `113 + task2_classifier_count` tests. Exactly the two frozen `combo-autoswitch.test.js` failures may remain, so passing count is `111 + task2_classifier_count`; any other failure stops the task.
 
 - [ ] **Step 6: Commit the remaining response seams**
 
@@ -675,7 +863,7 @@ npx vitest run --config vitest.config.js \
 node --check ../src/sse/handlers/chat.js
 ```
 
-Expected is zero new failures. The dedicated module has zero skips. The application 499 test observes zero mutation and timers. The neighboring 502 test and real combo test still fall back.
+Expected is zero new failures. The dedicated module has zero skips. Record its displayed count as `final_classifier_count`; it must exceed `task2_classifier_count` by every application, combo, Fast-tier, mutation, and real-ID row added in Task 3. The application 499 test observes zero mutation and timers. The neighboring 502 test and real combo test still fall back.
 
 ```bash
 git add src/sse/handlers/chat.js \
@@ -713,7 +901,7 @@ npx vitest run --config vitest.config.js \
   unit/combo-autoswitch.test.js
 ```
 
-Expected focused result has zero failures and zero skips. Expected adjacency total is `113 + dedicated_count`, with `111 + dedicated_count` passing and only the two frozen `combo-autoswitch` failures. Any other failure stops verification.
+Expected focused result has exactly `final_classifier_count` tests, zero failures, and zero skips. Expected adjacency total is `113 + final_classifier_count`, with `111 + final_classifier_count` passing and only the two frozen `combo-autoswitch` failures. Any other failure stops verification.
 
 - [ ] **Step 2: Run syntax, lint, and diff checks**
 
@@ -747,7 +935,7 @@ node tests/__baseline__/verify-no-regression.mjs \
 git status --short
 ```
 
-The frozen base has 3,498 tests, 60 known failures, and 57 pending. The new total must equal `3,498 + dedicated_count`; the 60 known failures and 57 pending may remain, and the no-regression verifier must exit zero. Any new failure is a stop.
+The frozen base has 3,498 tests, 60 known failures, and 57 pending. The new total must equal `3,498 + final_classifier_count`; the 60 known failures and 57 pending may remain, and the no-regression verifier must exit zero. Any new failure is a stop.
 
 If any generated path appears after the suite, stop without committing, restoring, or deleting it. Report the exact paths to the coordinator. This applies even to the three known snapshot reorder files listed under Global Constraints.
 
@@ -784,6 +972,6 @@ Critical or Important findings block integration. Apply no speculative refactor.
 
 ## Completion Boundary
 
-The implementation is complete only when every detected non-streaming Claude classifier family returns one canonical exact decision or the fixed typed 502, Responses ambiguity remains visible before lossy conversion, ordinary traffic is unchanged, status 499 causes zero account or combo mutation, classifier 502 still falls back, automatic and explicit tiers remain exact, real `-1m` IDs remain exact, and all fresh gates above satisfy their stated counts.
+The implementation is complete only when every detected non-streaming Claude classifier family returns one canonical exact decision or the fixed typed 502, every Responses SSE announcement and fragment resolves to an authoritative item and block, Responses ambiguity remains visible before lossy conversion, ordinary and non-Claude traffic is unchanged, status 499 causes zero account or combo mutation, classifier 502 still falls back, automatic and explicit tiers remain exact, real `-1m` IDs remain exact, and all fresh gates above satisfy their stated counts.
 
 No push, upstream mutation, tracking close, suffix support, converter refactor, or additional PR 3319 hunk belongs to this plan.
