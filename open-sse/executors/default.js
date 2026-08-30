@@ -133,7 +133,19 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials, sourceFormat) {
-    const transformed = this.applyJsonSchemaFallback(body);
+    let transformed = this.applyJsonSchemaFallback(body);
+
+    // Combo fallbacks reuse one request body across providers. Isolate every
+    // message before Mistral-specific stripping or prefix normalization so a
+    // failed Mistral attempt cannot change the next provider's request.
+    if (this.provider === "mistral" && Array.isArray(transformed?.messages)) {
+      transformed = {
+        ...transformed,
+        messages: transformed.messages.map((message) =>
+          message && typeof message === "object" ? { ...message } : message,
+        ),
+      };
+    }
 
     if (transformed && typeof transformed === "object") {
       // The official OpenAI transport is force-streamed even for JSON clients.

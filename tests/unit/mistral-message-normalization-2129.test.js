@@ -183,4 +183,43 @@ describe("Mistral trailing-assistant normalization (PR 2129)", () => {
 
     expect(JSON.stringify(outbound)).toBe(expectedJson);
   });
+
+  it("does not leak Mistral normalization into a later combo fallback", () => {
+    const sharedBody = {
+      model: "shared-model",
+      messages: [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: "partial answer",
+          reasoning_content: "keep on fallback",
+        },
+      ],
+    };
+    const expectedJson = JSON.stringify(sharedBody);
+
+    const mistralOutbound = new DefaultExecutor("mistral").transformRequest(
+      "mistral-large-latest",
+      sharedBody,
+      false,
+      {},
+      FORMATS.OPENAI,
+    );
+    const fallbackOutbound = new DefaultExecutor("openrouter").transformRequest(
+      "some-model",
+      sharedBody,
+      false,
+      {},
+      FORMATS.OPENAI,
+    );
+
+    expect(mistralOutbound.messages.at(-1).prefix).toBe(true);
+    expect({
+      shared: JSON.stringify(sharedBody),
+      fallback: JSON.stringify(fallbackOutbound),
+    }).toEqual({
+      shared: expectedJson,
+      fallback: expectedJson,
+    });
+  });
 });
