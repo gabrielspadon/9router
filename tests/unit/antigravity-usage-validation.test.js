@@ -28,6 +28,7 @@ vi.mock("open-sse/services/usage/codex.js", () => ({ getCodexSubscriptionEntitle
 const VALIDATION_URL = "https://accounts.google.com/AccountChooser?token=usage-secret";
 const MIXED_ACTION_URL = "https://accounts.google.com/v3/signin/challenge/pwd?opaque=mixed-action-secret";
 const MIXED_OPAQUE_VALUE = "mixed-subscription-opaque-secret";
+const RAW_QUOTA_BODY = 'prefix: {"diagnostic":"raw-opaque-secret"}';
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -36,6 +37,15 @@ function jsonResponse(payload, status = 200) {
     headers: new Headers({ "content-type": "application/json" }),
     json: async () => payload,
     text: async () => JSON.stringify(payload),
+  };
+}
+
+function textResponse(text, status) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ "content-type": "text/plain" }),
+    text: async () => text,
   };
 }
 
@@ -306,5 +316,38 @@ describe("Antigravity usage verification", () => {
     expect(serialized).not.toContain(MIXED_ACTION_URL);
     expect(serialized).not.toContain("mixed-action-secret");
     expect(serialized).not.toContain(MIXED_OPAQUE_VALUE);
+  });
+
+  it("does not expose a non-JSON quota diagnostic through the usage endpoint", async () => {
+    const google = await loadGoogle([
+      jsonResponse({ currentTier: { name: "Premium" } }),
+      textResponse(RAW_QUOTA_BODY, 500),
+    ]);
+    const usage = await google.getAntigravityUsage("token", {});
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage",
+      provider: "antigravity",
+      authType: "oauth",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.getUsageForProvider.mockResolvedValue(usage);
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(
+      new Request("http://localhost:20128/api/usage/conn-usage"),
+      { params: Promise.resolve({ connectionId: "conn-usage" }) },
+    );
+    const payload = await response.json();
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toEqual({
+      message: "Antigravity quota API request failed (500).",
+      quotas: {},
+    });
+    expect(serialized).not.toContain(RAW_QUOTA_BODY);
+    expect(serialized).not.toContain("raw-opaque-secret");
   });
 });

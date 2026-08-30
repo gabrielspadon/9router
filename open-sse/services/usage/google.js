@@ -176,7 +176,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       }),
     }, 10000, proxyOptions);
 
-    const { data, text } = await readAntigravityJson(response);
+    const { data } = await readAntigravityJson(response);
     const validation = classifyAntigravityValidation({
       status: response.status,
       payload: data,
@@ -199,7 +199,13 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     }
 
     if (!response.ok) {
-      throw new Error(redactAntigravityValidationText(`Antigravity API error: ${response.status} ${text}`));
+      const safeStatus = Number.isInteger(response.status) && response.status >= 400 && response.status < 600
+        ? response.status
+        : 502;
+      return {
+        message: `Antigravity quota API request failed (${safeStatus}).`,
+        quotas: {},
+      };
     }
 
     if (
