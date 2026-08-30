@@ -406,13 +406,17 @@ export default function StatisticsContent({ initialData }) {
   );
 }
 
+// The chart series palette lives in globals.css, not here. The legend renders
+// each series name as 12px text in the series colour, so these are text colours
+// with a text contrast requirement, and the raw Tailwind steps this used to
+// carry failed it on the light surface. See design-system.md section 8.
 const COLORS = {
-  total: "#64748b",
-  input: "#6366f1",
-  output: "#10b981",
-  cacheRead: "#3b82f6",
-  cacheWrite: "#a855f7",
-  hitRate: "#f59e0b",
+  total: "var(--color-chart-1)",
+  input: "var(--color-chart-2)",
+  output: "var(--color-chart-3)",
+  cacheRead: "var(--color-chart-4)",
+  cacheWrite: "var(--color-chart-5)",
+  hitRate: "var(--color-chart-6)",
 };
 
 const SERIES_LABELS = {
@@ -445,7 +449,7 @@ function StatCard({ label, value, lead = false }) {
 }
 
 // Request outcome. Badge supplies the glyph for the tone, so the result never
-// depends on hue alone. See TOKEN-CONTRACT.md section 1.
+// depends on hue alone. See docs/design/design-system.md section 1.
 function StatusBadge({ status }) {
   const ok = status === "success" || status === "ok" || status === "200 OK";
   return (

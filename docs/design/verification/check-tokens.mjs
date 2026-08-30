@@ -32,7 +32,7 @@ offenders.slice(0, 20).forEach((o) => console.log(`  ${o.n.toString().padStart(4
 // A ratchet rather than zero. Provider brand marks legitimately carry their own
 // colours (a vendor's orange is data, not styling), so the honest gate is that
 // this number never grows. Lower it whenever a real offender is tokenised.
-const CEILING = 126;
+const CEILING = 120;
 if (total > CEILING) {
   console.log(`RAW_COLOURS grew past the ceiling of ${CEILING}`);
   process.exit(1);

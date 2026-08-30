@@ -50,7 +50,7 @@
      surface-3 no lighter value clears 4.5:1, so those use muted. */
   --color-text-subtle: #5B6167;
 
-  /* Status (light). Five slots per status; see .unlazy/TOKEN-CONTRACT.md.
+  /* Status (light). Five slots per status; see docs/design/design-system.md.
      Every value here holds at least 4.5:1 against the surface it is used on. */
   /* Hover step for a solid fill. Darker, never lighter: a `/90` alpha hover
      blends the fill toward whatever is behind it, which lowers contrast
@@ -94,6 +94,18 @@
   --color-brand-on: #ffffff;
   --color-brand-soft: #E4F5F2;
   --color-brand-line: #7FC9C0;
+
+  /* Chart series (light). Six slots, deliberately outside the status set so a
+     series colour is never read as a state. Each carries 4.5:1 on
+     --color-surface, because a legend label is 12px text in this colour, not
+     just a stroke. Ordered so adjacent series stay separable under
+     deuteranopia: slate, indigo, teal, blue, fuchsia, amber. */
+  --color-chart-1: #475569;
+  --color-chart-2: #4338CA;
+  --color-chart-3: #0F766E;
+  --color-chart-4: #1D4ED8;
+  --color-chart-5: #A21CAF;
+  --color-chart-6: #B45309;
 
   /* Radius */
   --radius-brand: 3px;
@@ -195,6 +207,17 @@
     0 1px 2px rgba(0,0,0,0.4),
     0 16px 48px -8px rgba(0,0,0,0.55);
   --shadow-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-brand-solid);
+
+  /* Chart series (dark), authored rather than inverted: the light steps are
+     unreadable on --color-surface here, so each slot moves to a step that
+     carries 4.5:1 against it while keeping the same six hues in the same
+     order. */
+  --color-chart-1: #94A3B8;
+  --color-chart-2: #A5B4FC;
+  --color-chart-3: #5EEAD4;
+  --color-chart-4: #93C5FD;
+  --color-chart-5: #F0ABFC;
+  --color-chart-6: #FCD34D;
 
   color-scheme: dark;
 }

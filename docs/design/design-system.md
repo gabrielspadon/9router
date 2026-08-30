@@ -159,6 +159,16 @@ colour appears in a chart only where the chart is about status. Axes are lines,
 not boxes. A sparkline carries its current value as text beside it, because a
 line without a number cannot be read precisely.
 
+A multi-series chart draws from `--color-chart-1` through `--color-chart-6`,
+which sit outside the status set so a series is never misread as a state. The
+order is slate, indigo, teal, blue, fuchsia, amber, chosen so neighbouring
+series stay separable under deuteranopia. Each slot carries 4.5:1 against the
+surface it is drawn on, in both themes, because the legend renders the series
+name as 12px text in the series colour rather than as a swatch beside neutral
+text. That is a text requirement, not the 3:1 a bare stroke would need. The two
+themes are authored independently here as everywhere else: the light steps are
+unreadable on the dark ground and the dark steps wash out on the light one.
+
 The bar, used for quota headroom and share, is a single rule with a filled
 portion, not a rounded pill. Its track is the inset ground so the filled
 portion reads as material rather than as decoration.
@@ -204,7 +214,10 @@ recorded in the localisation report rather than assumed.
 
 ## 12. Measured contrast
 
-Generated from the live token values. Every declared pair, both themes.
+Generated from the live token values by
+`docs/design/verification/contrast.mjs`, which
+`check-designsystem.mjs` re-runs so this table cannot go stale. Every declared
+pair, both themes.
 
 ### Light theme
 
@@ -226,8 +239,8 @@ Generated from the live token values. Every declared pair, both themes.
 | `--color-brand-on` | `--color-brand-solid` | label on a solid accent control | 4.5 | 5.38 |
 | `--color-brand-on` | `--color-brand-solid-hover` | label on a hovered accent control | 4.5 | 7.91 |
 | `--color-brand` | `--color-brand-soft` | accent text on its own soft field | 4.5 | 6.19 |
-| `--color-brand-solid` | `--color-surface` | focus ring against a raised surface | 3.0 | 5.38 |
-| `--color-brand-solid` | `--color-bg` | focus ring against the page ground | 3.0 | 5.05 |
+| `--color-brand-solid` | `--color-surface` | focus ring against a raised surface | 3 | 5.38 |
+| `--color-brand-solid` | `--color-bg` | focus ring against the page ground | 3 | 5.05 |
 | `--color-danger` | `--color-surface` | danger text on a raised surface | 4.5 | 6.57 |
 | `--color-danger` | `--color-bg` | danger text on the page ground | 4.5 | 6.17 |
 | `--color-danger` | `--color-danger-soft` | danger text on its own soft field | 4.5 | 6.05 |
@@ -243,22 +256,34 @@ Generated from the live token values. Every declared pair, both themes.
 | `--color-warning` | `--color-warning-soft` | warning text on its own soft field | 4.5 | 4.84 |
 | `--color-warning-on` | `--color-warning-solid` | label on a solid warning control | 4.5 | 5.02 |
 | `--color-warning-on` | `--color-warning-solid-hover` | label on a hovered warning control | 4.5 | 7.31 |
-| `--color-info` | `--color-surface` | info text on a raised surface | 4.5 | 6.70 |
+| `--color-info` | `--color-surface` | info text on a raised surface | 4.5 | 6.7 |
 | `--color-info` | `--color-bg` | info text on the page ground | 4.5 | 6.29 |
 | `--color-info` | `--color-info-soft` | info text on its own soft field | 4.5 | 6.16 |
-| `--color-info-on` | `--color-info-solid` | label on a solid info control | 4.5 | 6.70 |
+| `--color-info-on` | `--color-info-solid` | label on a solid info control | 4.5 | 6.7 |
 | `--color-info-on` | `--color-info-solid-hover` | label on a hovered info control | 4.5 | 9.41 |
+| `--color-chart-1` | `--color-surface` | chart series 1 legend label on a raised surface | 4.5 | 7.58 |
+| `--color-chart-1` | `--color-bg` | chart series 1 legend label on the page ground | 4.5 | 7.11 |
+| `--color-chart-2` | `--color-surface` | chart series 2 legend label on a raised surface | 4.5 | 7.9 |
+| `--color-chart-2` | `--color-bg` | chart series 2 legend label on the page ground | 4.5 | 7.42 |
+| `--color-chart-3` | `--color-surface` | chart series 3 legend label on a raised surface | 4.5 | 5.47 |
+| `--color-chart-3` | `--color-bg` | chart series 3 legend label on the page ground | 4.5 | 5.14 |
+| `--color-chart-4` | `--color-surface` | chart series 4 legend label on a raised surface | 4.5 | 6.7 |
+| `--color-chart-4` | `--color-bg` | chart series 4 legend label on the page ground | 4.5 | 6.29 |
+| `--color-chart-5` | `--color-surface` | chart series 5 legend label on a raised surface | 4.5 | 6.32 |
+| `--color-chart-5` | `--color-bg` | chart series 5 legend label on the page ground | 4.5 | 5.94 |
+| `--color-chart-6` | `--color-surface` | chart series 6 legend label on a raised surface | 4.5 | 5.02 |
+| `--color-chart-6` | `--color-bg` | chart series 6 legend label on the page ground | 4.5 | 4.71 |
 
 ### Dark theme
 
 | Foreground | Background | Use | Required | Measured |
 |---|---|---|---|---|
-| `--color-text` | `--color-bg` | body text on the page ground | 4.5 | 16.60 |
+| `--color-text` | `--color-bg` | body text on the page ground | 4.5 | 16.6 |
 | `--color-text` | `--color-bg-alt` | body text on the alternate ground | 4.5 | 16.07 |
 | `--color-text` | `--color-surface` | body text on a raised surface | 4.5 | 15.71 |
 | `--color-text` | `--color-surface-2` | body text on an inset region | 4.5 | 14.57 |
 | `--color-text` | `--color-surface-3` | body text on a sunken region | 4.5 | 13.16 |
-| `--color-text-muted` | `--color-bg` | secondary text on the page ground | 4.5 | 9.60 |
+| `--color-text-muted` | `--color-bg` | secondary text on the page ground | 4.5 | 9.6 |
 | `--color-text-muted` | `--color-surface` | secondary text on a raised surface | 4.5 | 9.08 |
 | `--color-text-muted` | `--color-surface-2` | secondary text on an inset region | 4.5 | 8.43 |
 | `--color-text-muted` | `--color-surface-3` | secondary text on a sunken region | 4.5 | 7.61 |
@@ -266,11 +291,11 @@ Generated from the live token values. Every declared pair, both themes.
 | `--color-text-subtle` | `--color-surface` | tertiary text on a raised surface | 4.5 | 7.11 |
 | `--color-brand` | `--color-surface` | accent text on a raised surface | 4.5 | 11.23 |
 | `--color-brand` | `--color-bg` | accent text on the page ground | 4.5 | 11.87 |
-| `--color-brand-on` | `--color-brand-solid` | label on a solid accent control | 4.5 | 10.20 |
+| `--color-brand-on` | `--color-brand-solid` | label on a solid accent control | 4.5 | 10.2 |
 | `--color-brand-on` | `--color-brand-solid-hover` | label on a hovered accent control | 4.5 | 11.55 |
 | `--color-brand` | `--color-brand-soft` | accent text on its own soft field | 4.5 | 8.63 |
-| `--color-brand-solid` | `--color-surface` | focus ring against a raised surface | 3.0 | 11.23 |
-| `--color-brand-solid` | `--color-bg` | focus ring against the page ground | 3.0 | 11.87 |
+| `--color-brand-solid` | `--color-surface` | focus ring against a raised surface | 3 | 11.23 |
+| `--color-brand-solid` | `--color-bg` | focus ring against the page ground | 3 | 11.87 |
 | `--color-danger` | `--color-surface` | danger text on a raised surface | 4.5 | 6.73 |
 | `--color-danger` | `--color-bg` | danger text on the page ground | 4.5 | 7.12 |
 | `--color-danger` | `--color-danger-soft` | danger text on its own soft field | 4.5 | 6.16 |
@@ -289,5 +314,17 @@ Generated from the live token values. Every declared pair, both themes.
 | `--color-info` | `--color-surface` | info text on a raised surface | 4.5 | 7.33 |
 | `--color-info` | `--color-bg` | info text on the page ground | 4.5 | 7.74 |
 | `--color-info` | `--color-info-soft` | info text on its own soft field | 4.5 | 6.78 |
-| `--color-info-on` | `--color-info-solid` | label on a solid info control | 4.5 | 6.70 |
+| `--color-info-on` | `--color-info-solid` | label on a solid info control | 4.5 | 6.7 |
 | `--color-info-on` | `--color-info-solid-hover` | label on a hovered info control | 4.5 | 9.41 |
+| `--color-chart-1` | `--color-surface` | chart series 1 legend label on a raised surface | 4.5 | 7.26 |
+| `--color-chart-1` | `--color-bg` | chart series 1 legend label on the page ground | 4.5 | 7.68 |
+| `--color-chart-2` | `--color-surface` | chart series 2 legend label on a raised surface | 4.5 | 9.34 |
+| `--color-chart-2` | `--color-bg` | chart series 2 legend label on the page ground | 4.5 | 9.88 |
+| `--color-chart-3` | `--color-surface` | chart series 3 legend label on a raised surface | 4.5 | 12.59 |
+| `--color-chart-3` | `--color-bg` | chart series 3 legend label on the page ground | 4.5 | 13.31 |
+| `--color-chart-4` | `--color-surface` | chart series 4 legend label on a raised surface | 4.5 | 10.33 |
+| `--color-chart-4` | `--color-bg` | chart series 4 legend label on the page ground | 4.5 | 10.92 |
+| `--color-chart-5` | `--color-surface` | chart series 5 legend label on a raised surface | 4.5 | 10.59 |
+| `--color-chart-5` | `--color-bg` | chart series 5 legend label on the page ground | 4.5 | 11.19 |
+| `--color-chart-6` | `--color-surface` | chart series 6 legend label on a raised surface | 4.5 | 12.92 |
+| `--color-chart-6` | `--color-bg` | chart series 6 legend label on the page ground | 4.5 | 13.65 |
