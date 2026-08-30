@@ -6523,3 +6523,45 @@
 - final-disposition: adapted and integrated
 - closed: 2026-08-30
 - detail: commits 3ca10771c through af4e0e76b, merged 4e95d3f2e; classifier validation preserves every actionable response alternative before lossy conversion, rejects malformed or hidden output, keeps 499 terminal, and preserves Codex Fast and real -1m behavior. Independent final review approved; canonical focused replay 216/216.
+
+## PR #3220 — fix(chatCore): bound non-streaming body reads, return 504 on stall
+
+- url: https://github.com/decolua/9router/pull/3220
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as reader-owned body deadline rather than the raw patch
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c preserves caller abort as terminal 499, existing header deadline as 502, and bounded post-header read stall as 504 with one normal fallback. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.
+
+## PR #3221 — fix(chat): key error state to its model, and preserve the upstream status class
+
+- url: https://github.com/decolua/9router/pull/3221
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as model-keyed safe metadata with selected-account projection
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c scopes lock metadata to exact model or __all, retains raw fallback status, prevents cross-model and cross-account stale errors, and pins video polling to its selected account. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.
+
+## PR #3222 — fix(stream): synthesize a terminal when upstream drops mid-response
+
+- url: https://github.com/decolua/9router/pull/3222
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as bounded post-transform typed terminal observation, not the raw tracker port
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c rejects mismatched SSE event/type records, preserves positional TTFT and keepalive compatibility, emits exactly one typed terminal for supported incomplete streams, and emits none for caller cancellation. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.

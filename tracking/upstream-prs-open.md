@@ -151,39 +151,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3222 — fix(stream): synthesize a terminal when upstream drops mid-response
-
-- url: https://github.com/decolua/9router/pull/3222
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3221 — fix(chat): key error state to its model, and preserve the upstream status class
-
-- url: https://github.com/decolua/9router/pull/3221
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3220 — fix(chatCore): bound non-streaming body reads, return 504 on stall
-
-- url: https://github.com/decolua/9router/pull/3220
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3214 — fix(antigravity): harden Gemini streaming and 3.6 handling
 
 - url: https://github.com/decolua/9router/pull/3214
