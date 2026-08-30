@@ -43,7 +43,7 @@ export default function Card({
                 <span aria-hidden="true" className="material-symbols-outlined text-[20px]">{icon}</span>
               </div>
             )}
-            <div>
+            <div className="min-w-0">
               {title && (
                 <h3 className="text-sm font-semibold text-text-main">{title}</h3>
               )}
