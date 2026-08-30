@@ -6509,3 +6509,17 @@
 - final-disposition: adapted and integrated
 - closed: 2026-08-30
 - detail: commits 54c2771c0 through 2a4483c6e; provider-keyed auth selection queues, graceful LRU proxy-dispatcher eviction, and allocation-reduced SSE scanning passed independent review, 132 combined focused tests, a 3,498-test no-regression gate, exact provider/alias/OAuth baselines, and a 140-route production build; indefinite caches and content chunk arrays were rejected
+
+## PR #3319 — fix(claude): hỗ trợ Auto Mode khi dùng model Codex
+
+- url: https://github.com/decolua/9router/pull/3319
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task7-pr3319
+- local-ref: 4e95d3f2e
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-7-pr3319-review.md
+- notes: upstream patch was adapted into a fail-closed, source-format-scoped classifier across all response families
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 3ca10771c through af4e0e76b, merged 4e95d3f2e; classifier validation preserves every actionable response alternative before lossy conversion, rejects malformed or hidden output, keeps 499 terminal, and preserves Codex Fast and real -1m behavior. Independent final review approved; canonical focused replay 216/216.

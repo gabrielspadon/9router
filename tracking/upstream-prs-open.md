@@ -8,17 +8,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3319 — fix(claude): hỗ trợ Auto Mode khi dùng model Codex
-
-- url: https://github.com/decolua/9router/pull/3319
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3276 — fix(cursor): tunnel AgentService through HTTP/2 proxy so vendor models stream
 
 - url: https://github.com/decolua/9router/pull/3276
