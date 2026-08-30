@@ -37,17 +37,17 @@ export default function LanguageSwitcher({ currentLang }) {
   const modal = open && (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
       <div
-        className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden"
+        className="bg-surface border border-border rounded-[var(--radius-brand-lg)] shadow-elev max-w-md w-full max-h-[80vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="font-bold text-lg text-gray-900">{t(currentLang, "selectLanguage")}</h2>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="font-bold text-lg text-text-main">{t(currentLang, "selectLanguage")}</h2>
           <button
             onClick={() => setOpen(false)}
-            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors duration-150"
             aria-label="Close"
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5 text-text-muted" />
           </button>
         </div>
         <div className="p-2 overflow-y-auto max-h-[60vh]">
@@ -55,16 +55,16 @@ export default function LanguageSwitcher({ currentLang }) {
             <button
               key={lang.code}
               onClick={() => switchTo(lang.code)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors duration-150 ${
                 lang.code === currentLang
-                  ? "bg-[#E68A6E]/10 text-[#E68A6E] font-medium"
-                  : "text-gray-700 hover:bg-gray-100"
+                  ? "bg-brand-soft text-brand font-medium"
+                  : "text-text-main hover:bg-surface-2"
               }`}
             >
               <span className="text-2xl">{lang.flag}</span>
               <div className="flex-1">
                 <div className="font-medium">{lang.native}</div>
-                <div className="text-xs text-gray-500">{lang.name}</div>
+                <div className="text-xs text-text-muted">{lang.name}</div>
               </div>
               {lang.code === currentLang && <span className="text-xs">✓</span>}
             </button>
@@ -78,7 +78,7 @@ export default function LanguageSwitcher({ currentLang }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-text-main bg-surface-2 rounded-lg hover:bg-surface-3 transition-colors duration-150"
         aria-label="Switch language"
       >
         <Globe className="w-4 h-4" />

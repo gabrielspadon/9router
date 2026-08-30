@@ -13,21 +13,21 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur-sm border-gray-200">
+      <header className="sticky top-0 z-50 w-full border-b bg-surface/80 backdrop-blur-sm border-border">
         <div className=" mx-auto px-4 h-16 flex items-center justify-between">
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            className="lg:hidden p-2 rounded-lg hover:bg-surface-2 transition-colors duration-150"
             aria-label="Open menu"
           >
-            <Menu className="w-6 h-6 text-gray-600" />
+            <Menu className="w-6 h-6 text-text-muted" />
           </button>
 
           {/* Logo */}
-          <Link href={`/${lang}`} className="flex items-center gap-2 font-bold text-2xl text-black hover:opacity-80 transition-opacity">
+          <Link href={`/${lang}`} className="flex items-center gap-2 font-bold text-2xl text-text-main hover:opacity-80 transition-opacity duration-150">
             <span>9</span>
-            <span className="text-[#E68A6E]">{DOCS_CONFIG.logo} Docs</span>
+            <span className="text-brand">{DOCS_CONFIG.logo} Docs</span>
           </Link>
 
           {/* Right side */}
@@ -39,7 +39,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
               href={DOCS_CONFIG.appUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#E68A6E] text-white rounded-lg font-medium hover:bg-[#d67a5e] transition-colors text-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-brand-solid text-brand-on rounded-lg font-medium hover:bg-brand transition-colors duration-150 text-sm"
             >
               <span className="hidden sm:inline">{t(lang, "goToApp")}</span>
               <ExternalLink className="w-4 h-4" />
@@ -57,16 +57,16 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
           />
           
           <div className="mobile-menu-drawer lg:hidden">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <span className="font-bold text-lg text-black">
-                <span className="text-[#E68A6E]">9</span>{DOCS_CONFIG.logo} Docs
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <span className="font-bold text-lg text-text-main">
+                <span className="text-brand">9</span>{DOCS_CONFIG.logo} Docs
               </span>
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2 rounded-lg hover:bg-surface-2 transition-colors duration-150"
                 aria-label="Close menu"
               >
-                <X className="w-5 h-5 text-gray-600" />
+                <X className="w-5 h-5 text-text-muted" />
               </button>
             </div>
             <DocsSidebar isMobile onClose={() => setMobileMenuOpen(false)} lang={lang} />

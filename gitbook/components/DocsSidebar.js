@@ -70,7 +70,7 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
   };
 
   return (
-    <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-white border-gray-200 ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
+    <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-surface border-border ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
       <nav className="p-4 space-y-6">
         {navigation.map((section, sectionIndex) => {
           const SectionIcon = SECTION_ICONS[section.key] || BookOpen;
@@ -79,7 +79,7 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
             <div key={section.key}>
               <button
                 onClick={() => toggleSection(sectionIndex)}
-                className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-2 hover:text-[#E68A6E] transition-colors"
+                className="flex items-center justify-between w-full text-sm font-semibold text-text-main mb-2 hover:text-brand transition-colors duration-150"
               >
                 <span className="flex items-center gap-2">
                   <SectionIcon className="w-4 h-4" />
@@ -102,10 +102,10 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
                         <Link
                           href={buildHref(item.slug)}
                           onClick={handleLinkClick}
-                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors duration-150 ${
                             isActive(item.slug)
-                              ? "bg-[#E68A6E]/10 text-[#E68A6E] font-medium"
-                              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                              ? "bg-brand-soft text-brand font-medium"
+                              : "text-text-muted hover:bg-surface-2 hover:text-text-main"
                           }`}
                         >
                           <ItemIcon className="w-4 h-4" />
