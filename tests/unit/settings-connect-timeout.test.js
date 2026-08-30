@@ -280,4 +280,57 @@ describe("connect timeout settings route", () => {
       connectTimeoutMs: 8000,
     });
   });
+
+  it("atomically persists and deletes Codex Fast without losing siblings", async () => {
+    await repository.updateSettings({
+      providerStrategies: {
+        codex: { fallbackStrategy: "round-robin", connectTimeoutMs: 9000 },
+      },
+    });
+
+    const enabled = await PATCH(settingsRequest({
+      providerStrategyPatch: { providerId: "codex", values: { fastMode: true } },
+    }));
+    expect(enabled.status).toBe(200);
+    expect((await enabled.json()).providerStrategies.codex).toEqual({
+      fallbackStrategy: "round-robin",
+      connectTimeoutMs: 9000,
+      fastMode: true,
+    });
+
+    const disabled = await PATCH(settingsRequest({
+      providerStrategyPatch: { providerId: "codex", values: { fastMode: null } },
+    }));
+    expect(disabled.status).toBe(200);
+    expect((await disabled.json()).providerStrategies.codex).toEqual({
+      fallbackStrategy: "round-robin",
+      connectTimeoutMs: 9000,
+    });
+  });
+
+  it.each(["true", 1, 0, {}, []])(
+    "rejects invalid atomic Codex Fast literal %# without a write",
+    async (fastMode) => {
+      await expectRejectedWithoutWrite(settingsRequest({
+        providerStrategyPatch: { providerId: "codex", values: { fastMode } },
+      }));
+    },
+  );
+
+  it("accepts a boolean Codex Fast value in the legacy strategy map", async () => {
+    const response = await PATCH(settingsRequest({
+      providerStrategies: { codex: { fastMode: false } },
+    }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).providerStrategies.codex.fastMode).toBe(false);
+  });
+
+  it.each([null, "true", 1, {}, []])(
+    "rejects invalid legacy Codex Fast literal %# without a write",
+    async (fastMode) => {
+      await expectRejectedWithoutWrite(settingsRequest({
+        providerStrategies: { codex: { fastMode } },
+      }));
+    },
+  );
 });

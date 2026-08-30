@@ -109,6 +109,25 @@ describe("chat request replay", () => {
     });
   });
 
+  it.each([
+    [true, true],
+    [false, false],
+    ["true", false],
+    [1, false],
+  ])("passes only an exact persisted Fast boolean %#", async (fastMode, expected) => {
+    settingsMocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      providerThinking: {},
+      providerStrategies: { codex: { fastMode } },
+    });
+    dispatchMocks.handleChatCore.mockImplementation(() => success());
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(200);
+    expect(dispatchMocks.handleChatCore.mock.calls[0][0].codexFastMode).toBe(expected);
+  });
+
   it("passes invalid imported timeout values through without coercion", async () => {
     settingsMocks.getSettings.mockResolvedValue({
       requireApiKey: false,

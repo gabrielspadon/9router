@@ -21,7 +21,16 @@ vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
 }));
 
 vi.mock("../../open-sse/translator/index.js", () => ({
-  translateRequest: vi.fn((_source, _target, model, body) => ({ ...body, model })),
+  translateRequest: vi.fn((source, _target, model, body) => {
+    if (source === "claude") {
+      return {
+        model,
+        input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+        stream: body.stream,
+      };
+    }
+    return { ...body, model };
+  }),
 }));
 
 vi.mock("../../open-sse/utils/requestLogger.js", () => ({
@@ -147,6 +156,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 const { ConnectTimeoutError } = await import("../../open-sse/utils/responseHeaderTimeout.js");
+const { applyCodexFastMode } = await import("../../open-sse/config/codexFastMode.js");
 
 const connectTimeout = { providerOverride: 8000, globalTimeout: 15000 };
 
@@ -266,4 +276,76 @@ describe("chat connect timeout propagation", () => {
     });
     expect(mocks.warn).toHaveBeenCalledWith("FIELDSTRIP", "Retry threw: socket closed");
   });
+});
+
+describe("Codex Sol Fast policy", () => {
+  it("is provider-scoped and leaves the input body untouched", () => {
+    const body = Object.freeze({ model: "gpt-5.6-sol", input: [] });
+
+    expect(applyCodexFastMode(body, {
+      provider: "openai",
+      model: "gpt-5.6-sol(max)",
+      enabled: true,
+    })).toBe(body);
+    expect(applyCodexFastMode(body, {
+      provider: "codex",
+      model: "codex/gpt-5.6-sol(max)",
+      enabled: true,
+    })).toEqual({ ...body, service_tier: "priority" });
+    expect(body).not.toHaveProperty("service_tier");
+  });
+
+  it.each([
+    "gpt-5.6-sol(max)",
+    "gpt-5.6-sol-review(ultra)",
+  ])("applies priority after Claude translation for %s", async (model) => {
+    mocks.execute.mockResolvedValueOnce(response(200));
+
+    await handleChatCore(options({
+      body: {
+        model,
+        system: "Be concise",
+        messages: [{ role: "user", content: "hello" }],
+      },
+      modelInfo: { provider: "codex", model },
+      sourceFormatOverride: "claude",
+      codexFastMode: true,
+    }));
+
+    expect(mocks.execute.mock.calls[0][0].body).toMatchObject({
+      model: expect.stringMatching(/^gpt-5\.6-sol/),
+      service_tier: "priority",
+    });
+  });
+
+  it.each([
+    [false, "gpt-5.6-sol(max)"],
+    [true, "gpt-5.6-codex(max)"],
+    [true, "gpt-5.6-solstice(max)"],
+  ])("does not apply outside the enabled Sol scope", async (enabled, model) => {
+    mocks.execute.mockResolvedValueOnce(response(200));
+
+    await handleChatCore(options({
+      modelInfo: { provider: "codex", model },
+      codexFastMode: enabled,
+    }));
+
+    expect(mocks.execute.mock.calls[0][0].body).not.toHaveProperty("service_tier");
+  });
+
+  it.each(["default", "priority", "unsupported"])(
+    'preserves explicit service tier "%s" for executor validation',
+    async (serviceTier) => {
+    mocks.execute.mockResolvedValueOnce(response(200));
+
+    await handleChatCore(options({
+      body: { service_tier: serviceTier },
+      modelInfo: { provider: "codex", model: "gpt-5.6-sol" },
+      sourceFormatOverride: "claude",
+      codexFastMode: true,
+    }));
+
+      expect(mocks.execute.mock.calls[0][0].body.service_tier).toBe(serviceTier);
+    },
+  );
 });

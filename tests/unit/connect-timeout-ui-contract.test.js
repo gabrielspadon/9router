@@ -180,4 +180,28 @@ describe("connect timeout input contract", () => {
     expect(providerSource).toContain("value={providerConnectTimeoutMs}");
     expect(providerSource).toContain("setProviderConnectTimeoutMs(value)");
   });
+
+  it("wires an accessible provider-wide Codex Sol Fast control through the persistent queue", () => {
+    const providerSource = readFileSync(
+      new URL("../../src/app/(dashboard)/dashboard/providers/[id]/page.js", import.meta.url),
+      "utf8",
+    );
+    const toggleSource = readFileSync(
+      new URL("../../src/shared/components/Toggle.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(providerSource).toContain('providerId === "codex"');
+    expect(providerSource).toContain('ariaLabel="Use Fast tier for Codex Sol models"');
+    expect(providerSource).toContain("Sol and Sol Review only");
+    expect(providerSource).toContain("all Codex accounts");
+    expect(providerSource).toContain("2.5× subscription credits");
+    expect(providerSource).toContain("values: { fastMode: enabled ? true : null }");
+    expect(providerSource).toContain("enqueueProviderStrategySave({");
+    expect(providerSource).toContain("onStart:");
+    expect(providerSource).toContain("onSuccess:");
+    expect(providerSource).toContain("onError:");
+    expect(providerSource).toContain('role="alert"');
+    expect(toggleSource).toContain("aria-label={ariaLabel || label || undefined}");
+  });
 });

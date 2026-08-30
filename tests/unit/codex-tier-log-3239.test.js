@@ -23,6 +23,8 @@ describe('Codex effective service tier logging (#3239)', () => {
 
   it.each([
     ['fast', 'TIER:priority'],
+    ['priority', 'TIER:priority'],
+    ['default', 'TIER:default'],
     [undefined, 'TIER:default'],
   ])('logs the final transformed tier for %s', async (serviceTier, expected) => {
     vi.spyOn(BaseExecutor.prototype, 'execute').mockImplementation(function execute(args) {

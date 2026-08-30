@@ -42,6 +42,16 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("xhigh");
   });
 
+  it.each(["default", "unsupported"])("omits non-priority service tier %s", (serviceTier) => {
+    const body = new CodexExecutor().transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+      service_tier: serviceTier,
+    }, true, {});
+
+    expect(body).not.toHaveProperty("service_tier");
+  });
+
   it("uses ChatGPT workspace header fallback", () => {
     const executor = new CodexExecutor();
     const headers = executor.buildHeaders({

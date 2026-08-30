@@ -347,6 +347,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onTokenSaverEvent: appendTokenSaverEvent,
       providerThinking,
       connectTimeout,
+      codexFastMode: chatSettings.providerStrategies?.codex?.fastMode === true,
       memorySettings: chatSettings,
       toolDisclosure: (chatSettings.toolDisclosureEnabled || chatSettings.toolDisclosureFilterEnabled) ? {
         disclosureEnabled: !!chatSettings.toolDisclosureEnabled,

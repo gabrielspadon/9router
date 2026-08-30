@@ -23,6 +23,13 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
+function hasInvalidCodexFastMode(providerId, values, { allowNull = false } = {}) {
+  if (providerId !== "codex" || !Object.prototype.hasOwnProperty.call(values, "fastMode")) {
+    return false;
+  }
+  return typeof values.fastMode !== "boolean" && !(allowNull && values.fastMode === null);
+}
+
 function toSafeSettings(settings) {
   const safeSettings = { ...settings };
   const oidcClientSecret = safeSettings.oidcClientSecret;
@@ -90,6 +97,12 @@ export async function PATCH(request) {
           { status: 400 },
         );
       }
+      if (hasInvalidCodexFastMode(providerId, values, { allowNull: true })) {
+        return NextResponse.json(
+          { error: "codex.fastMode must be a boolean or null" },
+          { status: 400 },
+        );
+      }
       const settings = await updateProviderStrategy(providerId, values);
       return NextResponse.json(toSafeSettings(settings), { headers: SETTINGS_RESPONSE_HEADERS });
     }
@@ -119,6 +132,12 @@ export async function PATCH(request) {
             && !isValidConnectTimeoutMs(values.connectTimeoutMs)) {
           return NextResponse.json(
             { error: "connectTimeoutMs must be an integer from 1000 through 120000" },
+            { status: 400 },
+          );
+        }
+        if (hasInvalidCodexFastMode(providerId, values)) {
+          return NextResponse.json(
+            { error: "codex.fastMode must be a boolean" },
             { status: 400 },
           );
         }

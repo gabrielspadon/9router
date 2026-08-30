@@ -75,6 +75,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
+import { applyCodexFastMode } from "../config/codexFastMode.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -148,6 +149,7 @@ export async function handleChatCore({
   connectTimeout,
   memorySettings,
   toolDisclosure,
+  codexFastMode,
 }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
@@ -171,6 +173,10 @@ export async function handleChatCore({
       : "";
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
+  const clientServiceTierSpecified = Object.prototype.hasOwnProperty.call(
+    body,
+    "service_tier",
+  );
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(
@@ -355,6 +361,14 @@ export async function handleChatCore({
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     translatedBody = stripContinuityFields(translatedBody, provider, model, log);
   }
+
+  translatedBody = applyCodexFastMode(translatedBody, {
+    provider,
+    model,
+    enabled: codexFastMode,
+    clientServiceTierSpecified,
+    clientServiceTier: body.service_tier,
+  });
 
   // Sync the negotiated stream flag into the upstream body. `stream` may differ
   // from the client's body.stream (forceStream providers, Accept-header JSON

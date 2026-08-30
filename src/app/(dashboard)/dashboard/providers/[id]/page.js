@@ -90,6 +90,8 @@ export default function ProviderDetailPage() {
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [providerStrategySaving, setProviderStrategySaving] = useState(false);
   const [providerConnectTimeoutMs, setProviderConnectTimeoutMs] = useState(null);
+  const [codexFastMode, setCodexFastMode] = useState(false);
+  const [providerStrategyError, setProviderStrategyError] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -371,6 +373,8 @@ export default function ProviderDetailPage() {
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
       setProviderConnectTimeoutMs(override.connectTimeoutMs ?? null);
+      setCodexFastMode(override.fastMode === true);
+      setProviderStrategyError("");
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -453,6 +457,22 @@ export default function ProviderDetailPage() {
 
   const handleStickyLimitCommit = () => {
     saveProviderStrategy("round-robin", providerStickyLimit);
+  };
+
+  const handleCodexFastModeToggle = (enabled) => {
+    const previous = codexFastMode;
+    setCodexFastMode(enabled);
+    enqueueProviderStrategySave({
+      providerId: "codex",
+      values: { fastMode: enabled ? true : null },
+      onStart: () => setProviderStrategyError(""),
+      onSuccess: () => setCodexFastMode(enabled),
+      onError: async (error) => {
+        setCodexFastMode(previous);
+        await fetchConnections();
+        setProviderStrategyError(error.message || "Failed to save Codex Fast mode");
+      },
+    }).catch(() => {});
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1565,13 +1585,30 @@ export default function ProviderDetailPage() {
 
       {/* Connections */}
       <div className="rounded-lg border border-border bg-surface-1 p-4">
-        <div className="w-full sm:max-w-sm">
+        <div className="w-full space-y-4 sm:max-w-xl">
           <ConnectTimeoutInput
             providerId={providerId}
             value={providerConnectTimeoutMs}
             disabled={loading}
             onSaved={(value) => setProviderConnectTimeoutMs(value)}
           />
+          {providerId === "codex" && (
+            <div className="border-t border-border pt-4">
+              <Toggle
+                checked={codexFastMode}
+                onChange={handleCodexFastModeToggle}
+                disabled={providerStrategySaving || loading}
+                ariaLabel="Use Fast tier for Codex Sol models"
+                label="Sol Fast"
+                description="Sol and Sol Review only, across all Codex accounts. Uses 2.5× subscription credits."
+              />
+              {!!providerStrategyError && (
+                <p role="alert" className="mt-2 text-xs text-red-500">
+                  {providerStrategyError}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
