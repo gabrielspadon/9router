@@ -44,6 +44,8 @@ function waitForEvent(resource, eventName, signal, destroyed) {
     const cleanup = () => {
       resource.removeListener?.(eventName, onEvent);
       resource.removeListener?.("error", onError);
+      resource.removeListener?.("close", onClosed);
+      resource.removeListener?.("end", onClosed);
       signal?.removeEventListener("abort", onAbort);
     };
     const settle = (handler, value) => {
@@ -54,6 +56,7 @@ function waitForEvent(resource, eventName, signal, destroyed) {
     };
     const onEvent = () => settle(resolve, resource);
     const onError = error => settle(reject, signal?.aborted ? abortReason(signal) : error);
+    const onClosed = () => settle(reject, connectionClosedError());
     const onAbort = () => {
       const reason = abortReason(signal);
       destroyOnce(resource, reason, destroyed);
@@ -62,6 +65,8 @@ function waitForEvent(resource, eventName, signal, destroyed) {
 
     resource.once(eventName, onEvent);
     resource.once("error", onError);
+    resource.once("close", onClosed);
+    resource.once("end", onClosed);
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) onAbort();
   });
@@ -112,6 +117,12 @@ function unsupportedRelayError() {
   });
 }
 
+function connectionClosedError() {
+  return Object.assign(new Error("HTTP/2 connection closed before readiness"), {
+    code: "http2_connection_closed",
+  });
+}
+
 function proxyConnectError(status) {
   return Object.assign(new Error(`Proxy CONNECT failed with status ${status}`), {
     code: "proxy_connect_failed",
@@ -151,6 +162,8 @@ function establishHttpConnect(socket, target, proxy, signal, destroyed) {
     const cleanup = () => {
       socket.removeListener?.("data", onData);
       socket.removeListener?.("error", onError);
+      socket.removeListener?.("close", onClosed);
+      socket.removeListener?.("end", onClosed);
       signal?.removeEventListener("abort", onAbort);
     };
     const finish = (handler, value) => {
@@ -160,6 +173,7 @@ function establishHttpConnect(socket, target, proxy, signal, destroyed) {
       handler(value);
     };
     const onError = error => finish(reject, signal?.aborted ? abortReason(signal) : error);
+    const onClosed = () => finish(reject, connectionClosedError());
     const onAbort = () => {
       const reason = abortReason(signal);
       destroyOnce(socket, reason, destroyed);
@@ -183,6 +197,8 @@ function establishHttpConnect(socket, target, proxy, signal, destroyed) {
 
     socket.on("data", onData);
     socket.once("error", onError);
+    socket.once("close", onClosed);
+    socket.once("end", onClosed);
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) {
       onAbort();
@@ -259,8 +275,13 @@ async function openProxyTunnel(target, route, signal, primitives, destroyed) {
 async function openSession(target, tunnel, signal, primitives, destroyed) {
   const options = tunnel ? { createConnection: () => tunnel } : {};
   const session = primitives.http2Connect(targetOrigin(target), options);
-  await waitForEvent(session, "connect", signal, destroyed);
-  return session;
+  try {
+    await waitForEvent(session, "connect", signal, destroyed);
+    return session;
+  } catch (error) {
+    destroyOnce(session, error, destroyed);
+    throw error;
+  }
 }
 
 function makeLease(session, tunnel, effectiveRoute) {

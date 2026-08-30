@@ -197,6 +197,22 @@ function proxyRoute(proxyUrl, strictProxy = true) {
   return { kind: "proxy", proxyUrl, strictProxy, cacheIdentity: "proxy:test" };
 }
 
+function rejectionWithin(promise) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("connection did not reject before readiness")), 75);
+    Promise.resolve(promise).then(
+      () => {
+        clearTimeout(timer);
+        reject(new Error("connection resolved before readiness"));
+      },
+      error => {
+        clearTimeout(timer);
+        resolve(error);
+      },
+    );
+  });
+}
+
 describe("Cursor HTTP/2 tunnel SessionLease", () => {
   it("opens a direct session and closes it only once", async () => {
     const fake = fakePrimitives();
@@ -213,6 +229,18 @@ describe("Cursor HTTP/2 tunnel SessionLease", () => {
     lease.close();
     lease.close();
     expect(fake.sessions[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects and cleans a direct H2 session that closes before readiness", async () => {
+    const fake = fakePrimitives({ autoHttp2Connect: false });
+    const pending = connectHttp2(TARGET, {
+      route: { kind: "direct", strictProxy: false, cacheIdentity: "direct" },
+      primitives: fake.primitives,
+    });
+    queueMicrotask(() => fake.sessions[0].emit("close"));
+
+    await expect(rejectionWithin(pending)).resolves.toMatchObject({ code: "http2_connection_closed" });
+    expect(fake.sessions[0].destroy).toHaveBeenCalledTimes(1);
   });
 
   it.each(["http:", "https:"])("uses verified %s CONNECT before target TLS", async (scheme) => {
@@ -305,6 +333,36 @@ describe("Cursor HTTP/2 tunnel SessionLease", () => {
       primitives: fake.primitives,
     })).rejects.toThrow("Proxy CONNECT failed with status 407");
 
+    expect(fake.netSocket.destroy).toHaveBeenCalledTimes(1);
+    expect(fake.primitives.http2Connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects and cleans a proxy socket that closes before CONNECT starts", async () => {
+    const fake = fakePrimitives({ autoNetConnect: false });
+    const pending = connectHttp2(TARGET, {
+      route: proxyRoute("http://proxy.test:8080"),
+      primitives: fake.primitives,
+    });
+    queueMicrotask(() => fake.netSocket.emit("close"));
+
+    await expect(rejectionWithin(pending)).resolves.toMatchObject({ code: "http2_connection_closed" });
+    expect(fake.netSocket.destroy).toHaveBeenCalledTimes(1);
+    expect(fake.primitives.http2Connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects and cleans a CONNECT tunnel peer that ends before its response", async () => {
+    const fake = fakePrimitives({ connectResponse: [] });
+    fake.netSocket.write.mockImplementation(() => {
+      queueMicrotask(() => fake.netSocket.emit("end"));
+      return true;
+    });
+
+    const pending = connectHttp2(TARGET, {
+      route: proxyRoute("http://proxy.test:8080"),
+      primitives: fake.primitives,
+    });
+
+    await expect(rejectionWithin(pending)).resolves.toMatchObject({ code: "http2_connection_closed" });
     expect(fake.netSocket.destroy).toHaveBeenCalledTimes(1);
     expect(fake.primitives.http2Connect).not.toHaveBeenCalled();
   });
