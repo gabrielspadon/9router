@@ -916,9 +916,9 @@ export default function BasicChatPageClient() {
                 {attachments.map((attachment) => (
                   <div key={attachment.id} className="flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-2">
                     <span className="text-xs text-text-muted max-w-[12rem] truncate">{attachment.name}</span>
-                    <button type="button" onClick={() => removeAttachment(attachment.id)} className="focus-ring rounded-sm text-text-muted hover:text-text-main transition-colors duration-150" aria-label="Remove attachment">
+                    <Button variant="bare" size="icon-sm" type="button" onClick={() => removeAttachment(attachment.id)} className="text-text-muted hover:text-text-main" aria-label="Remove attachment">
                       <span className="material-symbols-outlined text-[18px]" aria-hidden="true">close</span>
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -938,22 +938,22 @@ export default function BasicChatPageClient() {
 
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!activeModel || loadingData} aria-label="Attach image" className="focus-ring p-2 text-text-muted hover:text-text-main transition-colors duration-150 rounded-full hover:bg-surface-3 disabled:opacity-50">
+                    <Button variant="bare" size="icon" type="button" onClick={() => fileInputRef.current?.click()} disabled={!activeModel || loadingData} aria-label="Attach image" className="text-text-muted hover:text-text-main rounded-full hover:bg-surface-3">
                       <span className="material-symbols-outlined text-[20px]" aria-hidden="true">attach_file</span>
-                    </button>
+                    </Button>
                     <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleAttachFiles} />
                     <span className="text-xs font-medium text-text-subtle truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     {isSending ? (
-                      <button type="button" onClick={handleStop} aria-label="Stop generating" className="focus-ring p-2 text-text-main bg-surface-3 hover:opacity-90 transition-opacity duration-150 rounded-full h-8 w-8 flex items-center justify-center">
+                      <Button variant="bare" size="icon" type="button" onClick={handleStop} aria-label="Stop generating" className="text-text-main bg-surface-3 hover:opacity-90 transition-opacity rounded-full">
                         <span className="material-symbols-outlined text-[16px]" aria-hidden="true">stop</span>
-                      </button>
+                      </Button>
                     ) : null}
-                    <button onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`focus-ring h-8 w-8 rounded-full flex items-center justify-center transition-opacity duration-150 ${canSend ? 'bg-brand-solid text-brand-on hover:opacity-90' : 'bg-surface-3 text-text-subtle cursor-not-allowed'}`}>
+                    <Button variant="bare" size="icon" onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`rounded-full transition-opacity ${canSend ? 'bg-brand-solid text-brand-on hover:opacity-90' : 'bg-surface-3 text-text-subtle cursor-not-allowed'}`}>
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_upward</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>

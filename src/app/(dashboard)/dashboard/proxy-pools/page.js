@@ -700,9 +700,10 @@ export default function ProxyPoolsPage() {
                     onChange={() => handleToggleActive(pool)}
                     title={pool.isActive ? "Disable" : "Enable"}
                   />
-                  <button
+                  <Button
+                    variant="bare" size="icon"
                     onClick={() => handleTest(pool.id)}
-                    className="focus-ring p-2 rounded-[var(--radius-brand)] hover:bg-surface-2 text-text-muted hover:text-primary transition-colors duration-150"
+                    className="hover:bg-surface-2 text-text-muted hover:text-primary"
                     aria-label="Test proxy"
                     title="Test proxy"
                     disabled={testingId === pool.id}
@@ -714,23 +715,25 @@ export default function ProxyPoolsPage() {
                     >
                       {testingId === pool.id ? "progress_activity" : "science"}
                     </span>
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="bare" size="icon"
                     onClick={() => openEditModal(pool)}
-                    className="focus-ring p-2 rounded-[var(--radius-brand)] hover:bg-surface-2 text-text-muted hover:text-primary transition-colors duration-150"
+                    className="hover:bg-surface-2 text-text-muted hover:text-primary"
                     aria-label="Edit"
                     title="Edit"
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden="true">edit</span>
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="bare" size="icon"
                     onClick={() => handleDelete(pool)}
-                    className="focus-ring p-2 rounded-[var(--radius-brand)] hover:bg-danger-soft text-danger transition-colors duration-150"
+                    className="hover:bg-danger-soft text-danger"
                     aria-label="Delete"
                     title="Delete"
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden="true">delete</span>
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

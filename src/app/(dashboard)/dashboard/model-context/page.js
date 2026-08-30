@@ -471,14 +471,15 @@ function ModelContextPage() {
             <span className="material-symbols-outlined text-[16px] shrink-0" aria-hidden="true">error</span>
             {error}
           </span>
-          <button
+          <Button
+            variant="bare" size="icon-sm"
             onClick={() => setError("")}
             aria-label="关闭"
             title="关闭"
-            className="focus-ring rounded-sm shrink-0"
+            className="shrink-0"
           >
             <span className="material-symbols-outlined text-sm" aria-hidden="true">close</span>
-          </button>
+          </Button>
         </div>
       )}
       {notice && (
@@ -633,15 +634,16 @@ function ModelContextPage() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] text-text-subtle metric">{hitCount} models</span>
-                        <button
+                        <Button
+                          variant="bare" size="icon-sm"
                           onClick={() => deleteKeysBulk([k])}
                           disabled={saving}
-                          className="focus-ring p-1 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-colors duration-150"
+                          className="hover:bg-danger-soft text-text-muted hover:text-danger"
                           aria-label="删除此覆盖"
                           title="删除此覆盖"
                         >
                           <span className="material-symbols-outlined text-sm" aria-hidden="true">close</span>
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   );
@@ -718,23 +720,25 @@ function ModelContextPage() {
                             onKeyDown={(e) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditing(null); }}
                             className="focus-ring h-7 w-24 rounded-[var(--radius-brand)] border border-border bg-surface-2 px-2 text-xs text-text-main metric focus:outline-none"
                           />
-                          <button
+                          <Button
+                            variant="primary" size="icon-sm"
                             onClick={commitEdit}
                             aria-label="确认（Enter）"
                             title="确认（Enter）"
-                            className="focus-ring h-7 w-7 flex items-center justify-center rounded-[var(--radius-brand)] bg-brand-solid text-brand-on hover:opacity-90 disabled:opacity-40 shrink-0 transition-opacity duration-150"
+                            className="shrink-0"
                             disabled={saving || editing.value.trim() === ""}
                           >
                             <span className="material-symbols-outlined" style={{ fontSize: 16 }} aria-hidden="true">check</span>
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon-sm"
                             onClick={() => setEditing(null)}
                             aria-label="取消（Esc）"
                             title="取消（Esc）"
-                            className="focus-ring h-7 w-7 flex items-center justify-center rounded-[var(--radius-brand)] border border-border text-text-muted hover:bg-surface-2 hover:text-text-main shrink-0 transition-colors duration-150"
+                            className="border border-border shrink-0"
                           >
                             <span className="material-symbols-outlined" style={{ fontSize: 16 }} aria-hidden="true">close</span>
-                          </button>
+                          </Button>
                         </div>
                       ) : r.src ? (
                         <div>
@@ -758,21 +762,21 @@ function ModelContextPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button onClick={() => startEdit(r)} aria-label="编辑生效窗口" title="编辑生效窗口" className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors duration-150">
+                      <Button variant="bare" size="icon-sm" onClick={() => startEdit(r)} aria-label="编辑生效窗口" title="编辑生效窗口" className="hover:bg-surface-2 text-text-muted hover:text-primary">
                         <span className="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
-                      </button>
+                      </Button>
                       {r.src?.type === "scoped" ? (
-                        <button onClick={() => revertRow(r)} disabled={saving} aria-label="恢复默认（移除此行的覆盖）" title="恢复默认（移除此行的覆盖）" className="focus-ring p-1 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-colors duration-150">
+                        <Button variant="bare" size="icon-sm" onClick={() => revertRow(r)} disabled={saving} aria-label="恢复默认（移除此行的覆盖）" title="恢复默认（移除此行的覆盖）" className="hover:bg-danger-soft text-text-muted hover:text-danger">
                           <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
-                        </button>
+                        </Button>
                       ) : r.src ? (
                         <span title="由此行的覆盖键控制，可在「覆盖键」面板管理" className="inline-block p-1 text-text-subtle">
                           <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
                         </span>
                       ) : null}
-                      <button onClick={() => toggleHideRow(r)} aria-label={hiddenView ? "取消隐藏" : "隐藏此行"} title={hiddenView ? "取消隐藏" : "隐藏此行"} className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors duration-150">
+                      <Button variant="bare" size="icon-sm" onClick={() => toggleHideRow(r)} aria-label={hiddenView ? "取消隐藏" : "隐藏此行"} title={hiddenView ? "取消隐藏" : "隐藏此行"} className="hover:bg-surface-2 text-text-muted hover:text-primary">
                         <span className="material-symbols-outlined text-sm" aria-hidden="true">{hiddenView ? "visibility" : "visibility_off"}</span>
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))

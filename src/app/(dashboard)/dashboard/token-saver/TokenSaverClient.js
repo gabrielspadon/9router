@@ -682,15 +682,15 @@ export default function TokenSaverClient() {
                 );
               })}
               {pendingExtras.length > 0 && (
-                <button
+                <Button
+                  variant="primary" size="sm"
                   onClick={handleInstallExtras}
                   disabled={extrasActionLoading}
-                  className="focus-ring text-xs px-2.5 py-1 rounded-[var(--radius-brand)] bg-brand-solid text-brand-on hover:opacity-90 disabled:opacity-50"
                 >
                   {extrasActionLoading
                     ? "Installing…"
                     : `Install [proxy,${pendingExtras.join(",")}]`}
-                </button>
+                </Button>
               )}
             </div>
             {extrasActionError && (
