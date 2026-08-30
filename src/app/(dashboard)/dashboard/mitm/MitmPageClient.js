@@ -79,7 +79,7 @@ export default function MitmPageClient() {
       <div className="flex items-start gap-3 p-4 rounded-[var(--radius-brand)] bg-warning-soft border border-warning-line">
         <span className="material-symbols-outlined text-[16px] text-warning mt-0.5 shrink-0" aria-hidden="true">warning</span>
         <p className="text-xs text-warning leading-relaxed">
-          MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.
+          ⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.
         </p>
       </div>
 
