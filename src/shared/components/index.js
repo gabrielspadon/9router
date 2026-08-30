@@ -41,7 +41,6 @@ export { default as ProviderInfoCard } from "./ProviderInfoCard";
 export { default as CapacityBadges } from "./CapacityBadges";
 
 // Round-2 primitives. Structure over card chrome, status never by hue alone.
-export { default as Skeleton } from "./Skeleton";
 export { default as EmptyState } from "./EmptyState";
 export { default as ErrorState } from "./ErrorState";
 export { default as StatusToken } from "./StatusToken";
