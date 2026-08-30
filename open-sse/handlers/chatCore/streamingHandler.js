@@ -9,7 +9,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
-import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { classifyAntigravityValidation, redactAntigravityValidationText } from "../../services/antigravityValidation.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -20,6 +20,21 @@ const CODEX_SOURCE_TO_TARGET = {
   [FORMATS.GEMINI]: FORMATS.ANTIGRAVITY,
   [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
+const MAX_INITIAL_SSE_FRAME_BYTES = 64 * 1024;
+
+function classifyInitialAntigravitySseFrame(chunk) {
+  if (!chunk || chunk.byteLength > MAX_INITIAL_SSE_FRAME_BYTES) return null;
+  const text = new TextDecoder().decode(chunk);
+  const dataLine = text.split(/\r?\n/).find((line) => line.startsWith("data:"));
+  if (!dataLine) return null;
+  try {
+    const payload = JSON.parse(dataLine.slice(5).trim());
+    const status = payload?.error?.code ?? payload?.error?.status ?? payload?.status;
+    return classifyAntigravityValidation({ status, payload, source: "chat" });
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Determine which SSE transform stream to use based on provider/format.
@@ -45,7 +60,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, reqTag, log }) {
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -132,6 +147,34 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       status,
       error: shortMsg,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
+        status,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      }),
+    };
+  }
+
+  const initialValidation = provider === "antigravity"
+    ? classifyInitialAntigravitySseFrame(firstChunk)
+    : null;
+  if (initialValidation) {
+    try {
+      await onValidationRequired?.({
+        validation: initialValidation,
+        observationId: verificationContext?.observationId,
+      });
+    } catch {
+      log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+    }
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock?.(); } catch {}
+    const status = 403;
+    const message = "Antigravity account verification required";
+    streamController?.handleError?.(new Error(message));
+    return {
+      success: false,
+      status,
+      error: message,
+      response: new Response(JSON.stringify({ error: { message: `[${status}]: ${message}` } }), {
         status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       }),

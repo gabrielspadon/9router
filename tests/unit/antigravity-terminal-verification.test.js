@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ saveRequestDetail: vi.fn(), appendRequestLog: vi.fn() }));
+const mocks = vi.hoisted(() => ({ saveRequestDetail: vi.fn(), appendRequestLog: vi.fn(), trackPendingRequest: vi.fn() }));
 vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetail: mocks.saveRequestDetail,
   appendRequestLog: mocks.appendRequestLog,
+  trackPendingRequest: mocks.trackPendingRequest,
 }));
 vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
   buildRequestDetail: vi.fn((detail, extra = {}) => ({ ...detail, ...extra })),
@@ -156,6 +157,54 @@ describe("Antigravity terminal verification success", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(accountHealth).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("preflights a normal Antigravity data frame before it can reach stream sinks", async () => {
+    const onValidationRequired = vi.fn();
+    const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const frame = {
+      error: {
+        code: 403,
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            domain: "cloudcode-pa.googleapis.com",
+            reason: "VALIDATION_REQUIRED",
+          },
+          { "@type": "type.googleapis.com/google.rpc.Help", links: VALIDATION_URLS.map((url) => ({ url })) },
+        ],
+      },
+    };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: sseResponse(`data: ${JSON.stringify(frame)}\n\n`),
+      sourceFormat: "openai",
+      targetFormat: "openai",
+      userAgent: "test",
+      onRequestSuccess: vi.fn(),
+      onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-stream", challengeIdAtStart: "challenge-stream" },
+      reqLogger: logger,
+      toolNameMap: null,
+      customToolNames: null,
+      streamController: { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() },
+      onStreamComplete: vi.fn(),
+      streamDetailId: "stream-frame",
+      streamState: {},
+      log,
+    });
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 403 });
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-stream",
+    });
+    expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
+    expect(clientPayload).not.toContain("project-secret");
+    expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain(VALIDATION_URLS[0]);
+    expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain("onboard-secret");
   });
 
   it("notifies at non-aborted terminal text completion", () => {

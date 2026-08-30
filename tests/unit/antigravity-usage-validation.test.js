@@ -1,10 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fetchWithTimeout = vi.fn();
+const routeMocks = vi.hoisted(() => ({
+  getProviderConnectionById: vi.fn(),
+  getDailyConnectionUsage: vi.fn(),
+  updateProviderConnection: vi.fn(),
+  getUsageForProvider: vi.fn(),
+  getExecutor: vi.fn(),
+  resolveConnectionProxyConfig: vi.fn(),
+  getCodexSubscriptionEntitlement: vi.fn(),
+}));
+
 vi.mock("../../open-sse/services/usage/shared.js", async () => {
   const actual = await vi.importActual("../../open-sse/services/usage/shared.js");
   return { ...actual, fetchWithTimeout };
 });
+vi.mock("@/lib/localDb", () => ({
+  getProviderConnectionById: routeMocks.getProviderConnectionById,
+  getDailyConnectionUsage: routeMocks.getDailyConnectionUsage,
+  updateProviderConnection: routeMocks.updateProviderConnection,
+}));
+vi.mock("open-sse/services/usage.js", () => ({ getUsageForProvider: routeMocks.getUsageForProvider }));
+vi.mock("open-sse/executors/index.js", () => ({ getExecutor: routeMocks.getExecutor }));
+vi.mock("@/lib/network/connectionProxy", () => ({ resolveConnectionProxyConfig: routeMocks.resolveConnectionProxyConfig }));
+vi.mock("open-sse/services/usage/codex.js", () => ({ getCodexSubscriptionEntitlement: routeMocks.getCodexSubscriptionEntitlement }));
 
 const VALIDATION_URL = "https://accounts.google.com/AccountChooser?token=usage-secret";
 
@@ -184,5 +203,33 @@ describe("Antigravity usage verification", () => {
 
     await google.getAntigravityUsage("token", {}, null, listener);
     expect(listener.onVerificationSuccess).not.toHaveBeenCalled();
+  });
+
+  it("does not expose a classified 2xx validation payload through the usage endpoint", async () => {
+    const google = await loadGoogle([
+      jsonResponse({ ineligibleTiers: [{ reasonCode: "VALIDATION_REQUIRED", validationUrl: VALIDATION_URL }] }),
+      jsonResponse({ models: {} }),
+    ]);
+    const usage = await google.getAntigravityUsage("token", {});
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage",
+      provider: "antigravity",
+      authType: "oauth",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.getUsageForProvider.mockResolvedValue(usage);
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(
+      new Request("http://localhost:20128/api/usage/conn-usage"),
+      { params: Promise.resolve({ connectionId: "conn-usage" }) },
+    );
+    const serialized = JSON.stringify(await response.json());
+
+    expect(serialized).not.toContain(VALIDATION_URL);
+    expect(serialized).not.toContain("usage-secret");
   });
 });

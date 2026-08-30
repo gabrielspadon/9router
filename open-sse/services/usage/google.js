@@ -304,6 +304,7 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null, 
       source: "loadCodeAssist",
     });
     await reportAntigravityValidation(validation, hooks);
+    if (validation) return null;
     if (!response.ok) return null;
     return data;
   } catch (error) {
