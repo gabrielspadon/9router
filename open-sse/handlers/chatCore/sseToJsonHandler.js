@@ -12,6 +12,7 @@ import {
   CLAUDE_CLASSIFIER_ERROR_MESSAGE,
   ClaudeClassifierValidationError,
   isClaudeClassifierRequest,
+  projectResponsesClassifierStream,
   validateClaudeClassifierMessage,
 } from "./claudeClassifier.js";
 
@@ -311,11 +312,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   if (isCodexResponsesApi || isGeminiSse) {
     try {
       let jsonResponse;
+      let classifierProjection = null;
       if (isGeminiSse) {
         const parsed = parseGeminiSSEToOpenAIResponse(await providerResponse.text(), model);
         if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
         if (parsed.error) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
+      } else if (classifierMode && typeof providerResponse.body?.tee === "function") {
+        const [conversionStream, projectionStream] = providerResponse.body.tee();
+        [jsonResponse, classifierProjection] = await Promise.all([
+          convertResponsesStreamToJson(conversionStream),
+          projectResponsesClassifierStream(body, projectionStream),
+        ]);
       } else {
         jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
       }
@@ -445,7 +453,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
 
       if (classifierMode && !isGeminiSse) {
-        finalResp = validateClaudeClassifierMessage(body, finalResp, null);
+        finalResp = validateClaudeClassifierMessage(
+          body,
+          finalResp,
+          classifierProjection,
+        );
       }
 
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
