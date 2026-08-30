@@ -1060,5 +1060,11 @@
       "scheme": "bearer"
     },
     "format": "openai"
+  },
+  "nube": {
+    "baseUrl": "https://ai.nube.sh/api/v1/chat/completions",
+    "validateUrl": "https://ai.nube.sh/api/v1/models",
+    "thinkingFormat": "openai",
+    "format": "openai"
   }
 }
