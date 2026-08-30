@@ -68,6 +68,7 @@ export default function NoAuthProxyCard({ providerId }) {
     return enqueueProviderStrategySave({
       providerId,
       values,
+      onStart: () => setError(""),
       onSuccess: () => {
         confirmedRef.current = { poolId, strategy };
         setProxyPoolId(poolId);

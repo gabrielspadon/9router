@@ -61,7 +61,8 @@ export function createProviderStrategySaveQueue(
     const current = tail
       .catch(() => {})
       .then(async () => {
-        const { onSuccess, onError, ...saveOptions } = options;
+        const { onStart, onSuccess, onError, ...saveOptions } = options;
+        await onStart?.();
         let result;
         try {
           result = await save(saveOptions);

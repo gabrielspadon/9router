@@ -71,6 +71,7 @@ describe("provider strategy writer source contract", () => {
   it("keeps no-auth controls disabled until queued saves settle and reports errors", () => {
     expect(noAuthProxySource).toContain("disabled={saving || isRotation}");
     expect(noAuthProxySource).toContain("disabled={saving}");
+    expect(noAuthProxySource).toContain('onStart: () => setError("")');
     expect(noAuthProxySource).toContain("setError(");
     expect(noAuthProxySource).toContain("text-red-500");
   });
@@ -394,5 +395,68 @@ describe("provider strategy atomic patch helper", () => {
       "confirm:2",
     ]);
     expect(busyChanges).toEqual([true, false]);
+  });
+
+  it("shows Saved without a stale error after a rejected predecessor succeeds", async () => {
+    const { createProviderStrategySaveQueue } = await loadHelper();
+    const firstResponse = deferred();
+    const secondResponse = deferred();
+    const state = { saved: false, error: "" };
+    const busyChanges = [];
+    const callbacks = {
+      onStart: () => { state.error = ""; },
+      onSuccess: () => { state.saved = true; },
+      onError: (error) => {
+        state.saved = false;
+        state.error = error.message;
+      },
+    };
+    const save = vi.fn(async ({ sequence }) => {
+      if (sequence === 1) {
+        await firstResponse.promise;
+        throw new Error("first failed");
+      }
+      await secondResponse.promise;
+      return { sequence };
+    });
+    const enqueue = createProviderStrategySaveQueue(
+      save,
+      (busy) => busyChanges.push(busy),
+    );
+
+    const first = enqueue({ sequence: 1, ...callbacks });
+    const second = enqueue({ sequence: 2, ...callbacks });
+    firstResponse.resolve();
+    await expect(first).rejects.toThrow("first failed");
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(busyChanges).toEqual([true]);
+    secondResponse.resolve();
+    await expect(second).resolves.toEqual({ sequence: 2 });
+
+    expect(state).toEqual({ saved: true, error: "" });
+    expect(busyChanges).toEqual([true, false]);
+  });
+
+  it("keeps failure-only feedback visible and clears old errors before success", async () => {
+    const { createProviderStrategySaveQueue } = await loadHelper();
+    const state = { saved: true, error: "old error" };
+    const callbacks = {
+      onStart: () => { state.error = ""; },
+      onSuccess: () => { state.saved = true; },
+      onError: (error) => {
+        state.saved = false;
+        state.error = error.message;
+      },
+    };
+    const save = vi.fn()
+      .mockRejectedValueOnce(new Error("only failure"))
+      .mockResolvedValueOnce({ confirmed: true });
+    const enqueue = createProviderStrategySaveQueue(save);
+
+    await expect(enqueue({ sequence: 1, ...callbacks })).rejects.toThrow("only failure");
+    expect(state).toEqual({ saved: false, error: "only failure" });
+
+    await expect(enqueue({ sequence: 2, ...callbacks })).resolves.toEqual({ confirmed: true });
+    expect(state).toEqual({ saved: true, error: "" });
   });
 });
