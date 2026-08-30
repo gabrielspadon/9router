@@ -139,26 +139,35 @@ afterEach(() => {
 });
 
 describe("Codex persisted plan badge", () => {
-  it("prefers the persisted Codex plan and falls back from unusable data", () => {
-    expect(getPersistedCodexPlan(connection("codex", {
-      codexSubscriptionPlan: " Pro ",
-      chatgptPlanType: "Plus",
-    }))).toBe("Pro");
-    expect(getPersistedCodexPlan(connection("codex", {
-      codexSubscriptionPlan: " unknown ",
+  it.each([
+    ["prefers a valid persisted Codex plan", "codex", {
+      codexSubscriptionPlan: " Pro ", chatgptPlanType: "Plus",
+    }, "Pro"],
+    ["falls back when the preferred plan is missing", "codex", {
       chatgptPlanType: " Plus ",
-    }))).toBe("Plus");
-  });
-
-  it("returns no label for unusable plans or non-Codex connections", () => {
-    expect(getPersistedCodexPlan(connection("codex", {
-      codexSubscriptionPlan: " ",
-      chatgptPlanType: "UNKNOWN",
-    }))).toBeNull();
-    expect(getPersistedCodexPlan(connection("openai", {
-      codexSubscriptionPlan: "Pro",
-      chatgptPlanType: "Plus",
-    }))).toBeNull();
+    }, "Plus"],
+    ["falls back when the preferred plan is a number", "codex", {
+      codexSubscriptionPlan: 1, chatgptPlanType: "Plus",
+    }, "Plus"],
+    ["falls back when the preferred plan is an object", "codex", {
+      codexSubscriptionPlan: { tier: "pro" }, chatgptPlanType: "Plus",
+    }, "Plus"],
+    ["falls back when the preferred plan is blank", "codex", {
+      codexSubscriptionPlan: " ", chatgptPlanType: " Plus ",
+    }, "Plus"],
+    ["falls back when the preferred plan is case-folded unknown", "codex", {
+      codexSubscriptionPlan: " UnKnOwN ", chatgptPlanType: " Plus ",
+    }, "Plus"],
+    ["hides two unusable plans", "codex", {
+      codexSubscriptionPlan: " ", chatgptPlanType: "UNKNOWN",
+    }, null],
+    ["hides Codex-shaped metadata on a non-Codex connection", "openai", {
+      codexSubscriptionPlan: "Pro", chatgptPlanType: "Plus",
+    }, null],
+  ])("%s", (_name, provider, providerSpecificData, expected) => {
+    expect(getPersistedCodexPlan(
+      connection(provider, providerSpecificData),
+    )).toBe(expected);
   });
 
   it("renders the accessible persisted badge without fetching", () => {
@@ -249,9 +258,12 @@ Run the same command.
 npx vitest run --config vitest.config.js unit/codex-plan-badge.test.js
 ```
 
-Expected GREEN is four passing tests. It proves trimmed precedence, fallback,
-invalid suppression, non-Codex suppression, primary static markup, hidden
-accessibility text, and zero fetch calls during both SSR renders.
+Expected GREEN is ten passing tests. The eight table rows prove trimmed
+precedence plus fallback from missing, number, object, blank, and
+case-folded-unknown preferred values, including a valid legacy value after each
+applicable rejection. The two SSR tests prove primary static markup, hidden
+accessibility text, non-Codex suppression, and zero fetch calls during both
+renders.
 
 - [ ] **Step 4: Run adjacent verification and enforce scope**
 
@@ -328,4 +340,3 @@ display, and zero-fetch SSR contract. It names the only two allowed
 implementation files, excludes the page, API, and quota component, and includes
 complete test and implementation code. Exported names, fields, commands, and
 expected outcomes are consistent. There is no placeholder or deferred decision.
-
