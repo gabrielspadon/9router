@@ -575,21 +575,49 @@ export default function ProvidersPage() {
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => {
+        {(() => {
+          // Forty providers rendered as one uniform grid weighted the six
+          // accounts that carry traffic exactly the same as the thirty-odd that
+          // are configured and idle. The set is unchanged and the sort inside
+          // each band is unchanged; this only separates what is in use from
+          // what is inventory, and lifts anything reporting an error to the
+          // front of the band that needs attention.
+          const withStats = oauthEntries.map(([key, info]) => {
             const authTypes = dualAuthTypes(info, key);
-            return (
-              <ProviderCard
-                key={key}
-                providerId={key}
-                provider={info}
-                stats={getProviderStats(key, authTypes)}
-                authType="oauth"
-                onToggle={(active) => handleToggleProvider(key, authTypes, active)}
-              />
-            );
-          })}
-        </div>
+            return { key, info, authTypes, stats: getProviderStats(key, authTypes) };
+          });
+          const inUse = withStats
+            .filter((e) => e.stats.total > 0)
+            .sort((a, b) => (b.stats.error > 0) - (a.stats.error > 0));
+          const idle = withStats.filter((e) => e.stats.total === 0);
+          const bands = [
+            { id: "in-use", label: "Connected", entries: inUse },
+            { id: "idle", label: "Not connected", entries: idle },
+          ].filter((b) => b.entries.length > 0);
+
+          return bands.map((band) => (
+            <div key={band.id} className="flex flex-col gap-3">
+              {bands.length > 1 && (
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
+                  {band.label}
+                  <span className="ml-2 tabular-nums">{band.entries.length}</span>
+                </p>
+              )}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+                {band.entries.map(({ key, info, authTypes, stats }) => (
+                  <ProviderCard
+                    key={key}
+                    providerId={key}
+                    provider={info}
+                    stats={stats}
+                    authType="oauth"
+                    onToggle={(active) => handleToggleProvider(key, authTypes, active)}
+                  />
+                ))}
+              </div>
+            </div>
+          ));
+        })()}
       </div>
       )}
 

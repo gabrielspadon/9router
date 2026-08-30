@@ -485,7 +485,15 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
                 combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text-muted">
+                  // A combo's model list is an ordered fallback chain, and a row
+                  // of undifferentiated chips hid the one thing that matters
+                  // about it. The leading number is the channel position, which
+                  // is what "tries models in order" actually means.
+                  <code key={index} className="inline-flex items-center gap-1.5 rounded-[2px] bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text-muted">
+                    <span aria-hidden="true" className="border border-border px-1 text-[10px] tabular-nums text-text-subtle">
+                      {index + 1}
+                    </span>
+                    <span className="sr-only">Channel {index + 1}, </span>
                     <span>{model}</span>
                     <CapacityBadges caps={getCaps?.(model)} />
                   </code>
