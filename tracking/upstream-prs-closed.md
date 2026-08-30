@@ -1,5 +1,19 @@
 # Upstream PRs — closed (processed)
 
+## PR #3635 — Adding a link to verify your antigravity account
+
+- url: https://github.com/decolua/9router/pull/3635
+- upstream-state: open (discovered 2026-08-30)
+- local-status: in-progress
+- branch: integration/task6-pr3635
+- local-ref: a885318bc
+- disposition: adapted
+- validation: 616 passed, 6 documented skips in final combined review; whole-branch review approved
+- notes: strict structured validation provenance, bounded connection-scoped state, terminal-only success, route-local access and CSRF boundary, safe UI action and locale coverage; rejected upstream global SSE/banner and fingerprint changes
+- final-disposition: adapted
+- closed: 2026-08-30
+- detail: merged master safety, classifier, and Codex dashboard work through 24e6eef42 without semantic loss. Adaptation preserves 499 caller abort, 502 header/error, 504 body deadlines, strict safe URL/diagnostic projection, and no remote dashboard refresh. Final test-only mock repair a885318bc restored hot-reload route collection.
+
 ## PR #3210 — feat(dashboard): show effective Codex plan badges
 
 - url: https://github.com/decolua/9router/pull/3210

@@ -239,3 +239,9 @@ Run an idempotent final upstream sync, require zero reachable PR and issue entri
 - Rejected the upstream page-level live-usage fetch. The adapted two-file dashboard slice renders only the persisted Codex subscription plan with strict normalization, legacy fallback, accessible SSR markup, and zero network activity.
 - Independent design, plan, and implementation reviews passed. Focused evidence is 10/10 dedicated and 27/27 adjacent Codex badge, UI, and route tests. The scoped lint has zero errors and one unchanged ConnectionRow exhaustive-deps warning.
 - Branch `integration/task8-pr3210` fast-forwarded into master at `7aa2ae7e5`; PR #3210 was moved to the closed ledger. Fork publication follows the tracking checkpoint.
+
+### 2026-08-30 — PR #3635 adapted and integrated
+
+- Adapted strict Antigravity account verification rather than the upstream global usage-banner design. The merged implementation validates official structured signals, keeps sensitive challenge links connection-scoped and bounded, protects state transitions against stale callbacks, and exposes an authenticated, CSRF-protected dashboard action in all supported locales.
+- Merge composition retained B31 caller-abort/body-deadline/typed-terminal guarantees, PR3319 classifier validation, and PR3210's persisted plan badge. Whole-branch review approved after the final 616-pass, six-skip composed gate.
+- Branch `integration/task6-pr3635` fast-forwarded to master at `a885318bc`; PR #3635 was moved to the closed ledger. Fork publication follows the tracking checkpoint.
