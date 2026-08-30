@@ -5,6 +5,10 @@ import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/c
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
 import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
+import {
+  createProviderStrategySaveQueue,
+  saveProviderStrategyPatch,
+} from "@/shared/utils/providerStrategyPatch";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -311,7 +315,16 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
+  const [strategySaving, setStrategySaving] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const providerStrategySaveQueueRef = useRef(null);
+  if (providerStrategySaveQueueRef.current == null) {
+    providerStrategySaveQueueRef.current = createProviderStrategySaveQueue(
+      saveProviderStrategyPatch,
+      setStrategySaving,
+    );
+  }
+  const enqueueProviderStrategySave = providerStrategySaveQueueRef.current;
 
   const fetch_ = useCallback(async () => {
     try {
@@ -332,21 +345,33 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     finally { setLoading(false); }
   }, [providerId]);
 
-  useEffect(() => { fetch_(); }, [fetch_]);
+  useEffect(() => {
+    // Initial server synchronization is intentionally owned by this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetch_();
+  }, [fetch_]);
 
   const saveStrategy = async (strategy, stickyLimit) => {
+    const values = {
+      fallbackStrategy: strategy || null,
+      stickyRoundRobinLimit: strategy === "round-robin" && stickyLimit !== ""
+        ? Number(stickyLimit) || 3
+        : null,
+    };
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
-      const current = data.providerStrategies || {};
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) delete updated[providerId];
-      else updated[providerId] = override;
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
-    } catch (e) { console.log("saveStrategy error:", e); }
+      await enqueueProviderStrategySave({ providerId, values });
+      setProviderStrategy(strategy);
+      if (strategy === "round-robin") {
+        setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
+      }
+    } catch (e) {
+      console.log("saveStrategy error:", e);
+      await fetch_();
+    }
+  };
+
+  const handleStickyLimitCommit = () => {
+    saveStrategy("round-robin", providerStickyLimit);
   };
 
   const handleSwapPriority = async (i1, i2) => {
@@ -414,6 +439,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
             <span className="text-xs text-text-muted font-medium">Round Robin</span>
             <Toggle
               checked={providerStrategy === "round-robin"}
+              disabled={strategySaving}
               onChange={(enabled) => {
                 const strategy = enabled ? "round-robin" : null;
                 setProviderStrategy(strategy);
@@ -426,7 +452,15 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                 <span className="text-xs text-text-muted">Sticky:</span>
                 <input
                   type="number" min={1} value={providerStickyLimit}
-                  onChange={(e) => { setProviderStickyLimit(e.target.value); saveStrategy("round-robin", e.target.value); }}
+                  onChange={(event) => setProviderStickyLimit(event.target.value)}
+                  onBlur={handleStickyLimitCommit}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  disabled={strategySaving}
                   className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
                 />
               </div>

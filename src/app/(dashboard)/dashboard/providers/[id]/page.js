@@ -24,6 +24,10 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput";
+import {
+  createProviderStrategySaveQueue,
+  saveProviderStrategyPatch,
+} from "@/shared/utils/providerStrategyPatch";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -84,6 +88,7 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [providerStrategySaving, setProviderStrategySaving] = useState(false);
   const [providerConnectTimeoutMs, setProviderConnectTimeoutMs] = useState(null);
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
@@ -107,6 +112,14 @@ export default function ProviderDetailPage() {
   const [hotReloadSummary, setHotReloadSummary] = useState(null);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
+  const providerStrategySaveQueueRef = useRef(null);
+  if (providerStrategySaveQueueRef.current == null) {
+    providerStrategySaveQueueRef.current = createProviderStrategySaveQueue(
+      saveProviderStrategyPatch,
+      setProviderStrategySaving,
+    );
+  }
+  const enqueueProviderStrategySave = providerStrategySaveQueueRef.current;
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
 
@@ -408,32 +421,21 @@ export default function ProviderDetailPage() {
   };
 
   const saveProviderStrategy = async (strategy, stickyLimit) => {
+    const values = {
+      fallbackStrategy: strategy || null,
+      stickyRoundRobinLimit: strategy === "round-robin" && stickyLimit !== ""
+        ? Number(stickyLimit) || 3
+        : null,
+    };
     try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerStrategies || {};
-
-      // Build override: null strategy means remove override, use global
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
+      await enqueueProviderStrategySave({ providerId, values });
+      setProviderStrategy(strategy);
+      if (strategy === "round-robin") {
+        setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
       }
-
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = override;
-      }
-
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
-      });
     } catch (error) {
       console.log("Error saving provider strategy:", error);
+      await fetchConnections();
     }
   };
 
@@ -445,9 +447,8 @@ export default function ProviderDetailPage() {
     saveProviderStrategy(strategy, sticky);
   };
 
-  const handleStickyLimitChange = (value) => {
-    setProviderStickyLimit(value);
-    saveProviderStrategy("round-robin", value);
+  const handleStickyLimitCommit = () => {
+    saveProviderStrategy("round-robin", providerStickyLimit);
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1651,6 +1652,7 @@ export default function ProviderDetailPage() {
                 <Toggle
                   checked={providerStrategy === "round-robin"}
                   onChange={handleRoundRobinToggle}
+                  disabled={providerStrategySaving}
                 />
                 {providerStrategy === "round-robin" && (
                   <div className="flex items-center gap-1.5">
@@ -1659,7 +1661,15 @@ export default function ProviderDetailPage() {
                       type="number"
                       min={1}
                       value={providerStickyLimit}
-                      onChange={(e) => handleStickyLimitChange(e.target.value)}
+                      onChange={(event) => setProviderStickyLimit(event.target.value)}
+                      onBlur={handleStickyLimitCommit}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      disabled={providerStrategySaving}
                       placeholder="1"
                       className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
                     />
