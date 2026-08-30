@@ -21,13 +21,10 @@ const aliases = {
   success: "primary",
 };
 
-// Focus: the `focus-ring` utility in globals.css draws the product-wide
-// two-colour :focus-visible ring from --shadow-focus. It is never removed and
-// never overridden by a caller's className.
 const sizes = {
   sm: "h-7 px-3 text-xs rounded-[8px]",
-  md: "h-9 px-4 text-sm rounded-[10px]",
-  lg: "h-11 px-6 text-sm rounded-[10px]",
+  md: "h-9 px-4 text-sm rounded-[var(--radius-brand)]",
+  lg: "h-11 px-6 text-sm rounded-[var(--radius-brand)]",
 };
 
 export default function Button({
@@ -51,6 +48,9 @@ export default function Button({
     <button
       type={type}
       className={cn(
+        // `focus-ring` is the product-wide :focus-visible ring built from
+        // --shadow-focus in globals.css. It is never removed and never
+        // overridden by a caller's className.
         "focus-ring inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-150 cursor-pointer",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         variants[resolved] || variants.primary,

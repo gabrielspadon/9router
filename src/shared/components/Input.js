@@ -28,7 +28,7 @@ export default function Input({
       <div className="relative">
         {icon && (
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted">
-            <span className="material-symbols-outlined text-[20px]">{icon}</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">{icon}</span>
           </div>
         )}
         <input
@@ -38,10 +38,11 @@ export default function Input({
           onChange={onChange}
           disabled={disabled}
           aria-invalid={error ? "true" : undefined}
+          aria-label={typeof label === "string" ? label : undefined}
           className={cn(
             // One field treatment, shared with Select. The ring is the
             // product-wide focus-ring utility; error recolours the border only.
-            "focus-ring w-full py-2.5 px-3 text-sm text-text-main bg-surface rounded-[10px]",
+            "focus-ring w-full py-2.5 px-3 text-text-main bg-surface rounded-[var(--radius-brand)]",
             "border border-border placeholder-text-muted/70",
             "transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
             // iOS zoom fix
@@ -55,7 +56,7 @@ export default function Input({
       </div>
       {error && (
         <p className="text-xs text-danger flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">error</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[14px]">error</span>
           {error}
         </p>
       )}
