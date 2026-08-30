@@ -83,14 +83,34 @@ pool object supplies both values to the virtual connection before a second
 lookup. Thus a pool disappearing between rotation and resolution retains the
 selected strict provenance.
 
-Existing no-auth strategies that contain a `proxyPoolId` but no strict snapshot
-are migrated before use. If the pool is active, resolve its strict value and
-atomically write the pair, then construct the virtual connection. If it is
-missing, inactive, malformed, or the lookup throws before that migration, do
-not infer a non-strict selection. Return a required-unavailable result and make
-zero environment or direct egress attempts until the user selects or clears a
-pool. This conservative legacy behavior avoids an unknowable historical strict
-selection silently escaping direct.
+Pre-egress migration applies to every existing persisted selection that has a
+`proxyPoolId` but no boolean `strictProxy`, including a normal provider
+connection's `providerSpecificData` and a no-auth provider strategy. The shared
+connection-proxy resolver becomes the mandatory pre-egress migration gate for
+all persisted normal-connection callers, not only `getProviderCredentials()`.
+It receives a persistence owner, or an injected `persistPoolSnapshot` callback,
+with the selected data. A normal connection caller supplies an atomic update for
+that exact connection; a no-auth caller supplies the atomic strategy update. A
+pairless input without such a persistence owner is unsafe and returns
+`required-unavailable`, never the old non-strict behavior.
+
+For a normal connection, the gate reads its selected pool, requires an active
+well-formed pool, atomically writes the pair to that exact connection's
+`providerSpecificData`, and only then returns a usable proxy configuration. All
+callers that begin from a persisted connection, including credential selection,
+model discovery, quota/usage, hot-reload, and provider test paths, use that
+gate instead of calling the raw resolver with only `providerSpecificData`. For
+a no-auth strategy, do the equivalent atomic strategy update before constructing
+the virtual connection.
+
+If a pairless selected pool is missing, inactive, malformed, its lookup throws,
+or the migration write fails, do not infer a non-strict selection. Return
+`required-unavailable` and make zero environment or direct egress attempts
+until the user selects or clears a pool. On a successful migration, a later
+pool disappearance, deactivation, malformed record, or resolver exception uses
+the persisted strict snapshot and likewise fails closed. This conservative
+legacy behavior avoids an unknowable historical strict selection silently
+escaping direct.
 
 ## Effective egress route
 
@@ -100,6 +120,12 @@ if the pool is missing, inactive, malformed, or its lookup throws. Its result
 distinguishes an intentional `__none__` from `missing-selected-pool`,
 `inactive-selected-pool`, and `selection-resolution-error`. It must not convert
 those error states to `strictProxy: false`.
+
+The migration gate returns pairless legacy selection as
+`required-unavailable` when it cannot durably record the pair. It must not
+treat an absent `strictProxy` as false or consult environment settings for it.
+This makes the migration barrier explicit rather than depending on the current
+pool row to survive until a transport is selected.
 
 The credential handoff carries `connectionProxyPoolId` and `strictProxy`; the
 stored boolean is authoritative only when the selected pool cannot be read. An
@@ -115,6 +141,7 @@ and expose a structured route, not only a URL. Its result is one of `direct`,
 | --- | --- | --- |
 | Selected `vercelRelayUrl` | `relay` | Reject before a socket is opened. The existing relay sends one HTTP request with relay headers and cannot be assumed to carry arbitrary TLS/H2 bytes. |
 | Selected connection/pool proxy | `proxy` | Honor `connectionNoProxy`, then use the normalized connection URL. |
+| Pairless persisted selected pool that cannot be migrated | `required-unavailable` | Reject before environment resolution or socket construction. |
 | Missing, inactive, malformed, or failed selected pool | `required-unavailable` when strict | Reject before socket construction. Non-strict selection follows existing fallback policy. |
 | Environment proxy | `proxy` | Reuse `HTTPS_PROXY` then `ALL_PROXY`, including existing loopback and `NO_PROXY` rules. |
 | No selected proxy | `direct` | Use normal `http2.connect()`. |
@@ -315,15 +342,22 @@ tunnelling.
    unrelated credentials refresh preserves both. Prove a no-auth fixed-pool
    strategy records and clears the same pair, a rotating selection carries the
    selected pool strict snapshot, and a legacy strategy is atomically migrated
-   before use only when its pool is active. Seed a real stored connection and
-   a real stored no-auth strategy with `{ proxyPoolId: "pool-strict",
-   strictProxy: true }`, then remove or deactivate that pool before resolution.
-   Also simulate the pool resolver throwing. Each case must return
+   before use only when its pool is active. Seed a real stored normal connection
+   and a real stored no-auth strategy with only `{ proxyPoolId: "pool-strict" }`.
+   With an active strict pool, assert the durable pair is written before the
+   shared resolver returns a usable config, including through a non-auth normal
+   connection caller; then remove that pool and assert the next resolution is
+   `required-unavailable` with zero egress. Separately seed pairless normal and
+   no-auth records whose selected pool is missing, inactive, malformed, or
+   throws on lookup, plus a migration-write failure or absent persistence owner.
+   Each must be
    `required-unavailable` and prove zero calls to environment resolution,
    `net.connect`, `tls.connect`, SOCKS, HTTP CONNECT, direct `http2.connect`,
-   and catalog post seams. Also assert a cache hit closes a returned proxy
-   lease exactly once and a fallback-to-direct cache hit closes the returned
-   direct lease exactly once.
+   and catalog post seams. Repeat the disappearance, deactivation, and resolver
+   throw assertions for records already persisted with
+   `{ proxyPoolId: "pool-strict", strictProxy: true }`. Also assert a cache hit
+   closes a returned proxy lease exactly once and a fallback-to-direct cache hit
+   closes the returned direct lease exactly once.
 6. Add focused route tests, or extract a small pure proxy-options builder, to
    prove both `/api/v1/models` and `/api/providers/[id]/models` pass the
    resolved connection proxy and persisted `strictProxy` to Cursor catalog
@@ -341,15 +375,16 @@ open-sse/utils/http2Connect.js                         new dedicated adapter
 open-sse/utils/proxyFetch.js                           structured route resolver
 open-sse/executors/cursor.js                           AgentService route, deadline, model field
 open-sse/services/cursorModels.js                      catalog route, cache, injected seam
-src/lib/network/connectionProxy.js                     strict selection provenance
+src/lib/network/connectionProxy.js                     migration gate and strict provenance
 src/app/api/v1/models/route.js                         resolved Cursor catalog options
 src/app/api/providers/[id]/models/route.js             resolved Cursor catalog options
 src/app/api/providers/route.js                          pool strict snapshot on create
 src/app/api/providers/[id]/route.js                     pool strict snapshot lifecycle
 src/app/api/settings/route.js                           no-auth strategy snapshot validation
 src/lib/db/repos/settingsRepo.js                        atomic strategy snapshot lifecycle
-src/sse/services/auth.js                                no-auth migration and virtual provenance
+src/sse/services/auth.js                                normal/no-auth gate ownership
 open-sse/services/tokenRefresh.js                       preserve selection pair on refresh
+all persisted connection-proxy callers                  use migration gate, not raw data
 tests/unit/http2-connect.test.js                       new transport tests
 tests/unit/cursor-connect-timeout.test.js              lifecycle regression tests
 tests/unit/cursor-models.test.js                       cache and seam tests
