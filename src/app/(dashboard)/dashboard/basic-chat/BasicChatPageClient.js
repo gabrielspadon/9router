@@ -769,7 +769,7 @@ export default function BasicChatPageClient() {
                     <div key={group.providerId} className="mb-2 rounded-[var(--radius-brand)] border border-border bg-surface-2 p-2">
                       <div className="flex items-center justify-between px-2 py-2">
                         <p className="text-sm font-semibold text-text-main">{group.providerName}</p>
-                        <Badge size="sm" variant="default">{group.models.length}</Badge>
+                        <Badge size="sm" variant="neutral">{group.models.length}</Badge>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {group.models.map((model) => {

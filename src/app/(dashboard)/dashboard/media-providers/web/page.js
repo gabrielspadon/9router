@@ -25,13 +25,13 @@ function ProviderCard({ provider, kind, connections }) {
 
   const renderStatus = () => {
     if (isNoAuth) return <Badge variant="success" size="sm">Ready</Badge>;
-    if (allDisabled) return <Badge variant="default" size="sm">Disabled</Badge>;
+    if (allDisabled) return <Badge variant="neutral" size="sm">Disabled</Badge>;
     if (total === 0) return <span className="text-xs text-text-muted">No connections</span>;
     return (
       <>
         {connected > 0 && <Badge variant="success" size="sm" dot>{connected} Connected</Badge>}
-        {error > 0 && <Badge variant="error" size="sm" dot>{error} Error</Badge>}
-        {connected === 0 && error === 0 && <Badge variant="default" size="sm">{total} Added</Badge>}
+        {error > 0 && <Badge variant="danger" size="sm" dot>{error} Error</Badge>}
+        {connected === 0 && error === 0 && <Badge variant="neutral" size="sm">{total} Added</Badge>}
       </>
     );
   };

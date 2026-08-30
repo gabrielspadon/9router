@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
+// Badge's canonical status vocabulary, per .unlazy/TOKEN-CONTRACT.md section 1.
 function getStatusVariant(status) {
   if (status === "active") return "success";
-  if (status === "error") return "error";
-  return "default";
+  if (status === "error") return "danger";
+  return "neutral";
 }
 
 function formatDateTime(value) {
@@ -602,7 +603,7 @@ export default function ProxyPoolsPage() {
               {allSelected ? "Unselect all" : "Select all"}
             </label>
           )}
-          <Badge variant="default">Total: <span className="metric">{proxyPools.length}</span></Badge>
+          <Badge variant="neutral">Total: <span className="metric">{proxyPools.length}</span></Badge>
           <Badge variant="success">Active: <span className="metric">{activeCount}</span></Badge>
         </div>
 
@@ -668,16 +669,16 @@ export default function ProxyPoolsPage() {
                     <Badge variant={getStatusVariant(pool.testStatus)} size="sm" dot>
                       {pool.testStatus || "unknown"}
                     </Badge>
-                    <Badge variant={pool.isActive ? "success" : "default"} size="sm">
+                    <Badge variant={pool.isActive ? "success" : "neutral"} size="sm">
                       {pool.isActive ? "active" : "inactive"}
                     </Badge>
                     {pool.type === "vercel" && (
-                      <Badge variant="default" size="sm">vercel relay</Badge>
+                      <Badge variant="neutral" size="sm">vercel relay</Badge>
                     )}
                     {pool.type === "cloudflare" && (
-                      <Badge variant="default" size="sm">cloudflare relay</Badge>
+                      <Badge variant="neutral" size="sm">cloudflare relay</Badge>
                     )}
-                    <Badge variant="default" size="sm" className="metric">
+                    <Badge variant="neutral" size="sm" className="metric">
                       {pool.boundConnectionCount || 0} bound
                     </Badge>
                   </div>

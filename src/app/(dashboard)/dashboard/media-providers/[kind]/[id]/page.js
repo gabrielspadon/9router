@@ -108,9 +108,9 @@ export default function MediaProviderDetailPage() {
               )}
             </div>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              {isCustom && <Badge variant="default" size="sm">Custom · {customNode?.prefix}</Badge>}
+              {isCustom && <Badge variant="neutral" size="sm">Custom · {customNode?.prefix}</Badge>}
               {kinds.map((k) => (
-                <Badge key={k} variant={k === kind ? "primary" : "default"} size="sm">
+                <Badge key={k} variant={k === kind ? "brand" : "neutral"} size="sm">
                   {k.toUpperCase()}
                 </Badge>
               ))}

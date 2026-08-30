@@ -46,10 +46,10 @@ function SkillRow({ skill }) {
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-text-main">{skill.name}</h3>
           {skill.isEntry && (
-            <Badge variant="primary" size="sm">START HERE</Badge>
+            <Badge variant="brand" size="sm">START HERE</Badge>
           )}
           {skill.endpoint && (
-            <Badge variant="default" size="sm">
+            <Badge variant="neutral" size="sm">
               <code className="text-[10px]">{skill.endpoint}</code>
             </Badge>
           )}
