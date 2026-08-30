@@ -493,8 +493,8 @@ export default function TokenSaverClient() {
             : "Stopped";
   const pxpipeChipClass =
     pxpipeHealthy || pxpipeStatus.running
-      ? "bg-success/15 text-success"
-      : "bg-warning/15 text-warning";
+      ? "bg-success-soft border-success-line text-success"
+      : "bg-warning-soft border-warning-line text-warning";
 
   // Aggregate observability (truthful units only; see /api/token-saver/stats)
   const [tsStats, setTsStats] = useState(undefined); // undefined=loading, null=unavailable
@@ -546,11 +546,11 @@ export default function TokenSaverClient() {
   }, []);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">
+          <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">
               bolt
             </span>
             Token Saver
@@ -564,7 +564,7 @@ export default function TokenSaverClient() {
                 href="https://github.com/rtk-ai/rtk"
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
               >
                 (RTK)
               </a>
@@ -587,20 +587,23 @@ export default function TokenSaverClient() {
                   href="https://github.com/chopratejas/headroom"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs font-normal text-primary underline hover:opacity-80"
+                  className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
                 >
                   (Headroom)
                 </a>
               </p>
               <span
-                className={`text-xs px-2 py-0.5 rounded ${headroomRunning ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}
+                className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-[var(--radius-brand)] border ${headroomRunning ? "bg-success-soft border-success-line text-success" : "bg-warning-soft border-warning-line text-warning"}`}
               >
+                <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                  {headroomRunning ? "check_circle" : "pause_circle"}
+                </span>
                 {headroomStatusLabel}
               </span>
               <button
                 type="button"
                 onClick={() => setShowHeadroomInstallModal(true)}
-                className="text-xs text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
               >
                 {headroomRunning ? "Manage" : "Setup"}
               </button>
@@ -634,7 +637,7 @@ export default function TokenSaverClient() {
                   return (
                     <div
                       key={extra}
-                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-success/40 bg-success/5 text-text"
+                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-[var(--radius-brand)] border border-success-line bg-success-soft text-text-main"
                       title={extraTitle}
                     >
                       <Toggle
@@ -648,7 +651,7 @@ export default function TokenSaverClient() {
                         type="button"
                         onClick={() => handleRemoveExtra(extra)}
                         disabled={removingExtra === extra}
-                        className="ml-1 text-error underline hover:opacity-80 disabled:opacity-50"
+                        className="focus-ring rounded-sm ml-1 text-danger underline hover:opacity-80 disabled:opacity-50"
                         title={`Uninstall [${extra}]`}
                       >
                         {removingExtra === extra ? "Uninstalling…" : "Uninstall"}
@@ -660,16 +663,16 @@ export default function TokenSaverClient() {
                 return (
                   <label
                     key={extra}
-                    className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border cursor-pointer transition-colors ${
+                    className={`focus-ring flex items-center gap-1.5 text-xs px-2 py-1 rounded-[var(--radius-brand)] border cursor-pointer transition-colors duration-150 ${
                       pending
-                        ? "border-primary bg-primary/10 text-primary"
+                        ? "border-brand-line bg-brand-soft text-brand"
                         : "border-border text-text-muted hover:bg-surface-2"
                     }`}
                     title={extraTitle}
                   >
                     <input
                       type="checkbox"
-                      className="w-3 h-3"
+                      className="w-3 h-3 accent-brand-500"
                       checked={pending}
                       onChange={() => togglePendingExtra(extra)}
                     />
@@ -682,7 +685,7 @@ export default function TokenSaverClient() {
                 <button
                   onClick={handleInstallExtras}
                   disabled={extrasActionLoading}
-                  className="text-xs px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 disabled:opacity-50"
+                  className="focus-ring text-xs px-2.5 py-1 rounded-[var(--radius-brand)] bg-brand-solid text-brand-on hover:opacity-90 disabled:opacity-50"
                 >
                   {extrasActionLoading
                     ? "Installing…"
@@ -691,13 +694,13 @@ export default function TokenSaverClient() {
               )}
             </div>
             {extrasActionError && (
-              <p className="text-xs text-error mt-1">{extrasActionError}</p>
+              <p className="text-xs text-danger mt-1">{extrasActionError}</p>
             )}
             {restartingProxy && (
               <p className="text-xs text-text-muted mt-1">Restarting proxy…</p>
             )}
             {(extrasActionLoading || removingExtra) && installLog && (
-              <pre className="mt-2 max-h-32 overflow-auto rounded bg-surface-2 p-2 text-[10px] leading-tight text-text-muted whitespace-pre-wrap">
+              <pre tabIndex={0} aria-label="Install log" className="focus-ring mt-2 max-h-32 overflow-auto rounded-[var(--radius-brand)] bg-surface-2 p-4 text-xs leading-tight text-text-muted whitespace-pre-wrap">
                 {installLog}
               </pre>
             )}
@@ -720,7 +723,7 @@ export default function TokenSaverClient() {
                 href="https://github.com/JuliusBrussee/caveman"
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
               >
                 (Caveman)
               </a>
@@ -737,9 +740,10 @@ export default function TokenSaverClient() {
                     <button
                       key={lvl.id}
                       onClick={() => handleCavemanLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      aria-pressed={cavemanLevel === lvl.id}
+                      className={`focus-ring px-3 py-1.5 rounded-[var(--radius-brand)] text-xs font-medium border transition-colors duration-150 ${
                         cavemanLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
+                          ? "bg-brand-solid text-brand-on border-brand-solid"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
                       title={lvl.desc}
@@ -748,7 +752,7 @@ export default function TokenSaverClient() {
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-primary">
+                <p className="text-xs text-text-muted">
                   {
                     CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)
                       ?.desc
@@ -770,7 +774,7 @@ export default function TokenSaverClient() {
                 href="https://github.com/DietrichGebert/ponytail"
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
               >
                 (Ponytail)
               </a>
@@ -788,9 +792,10 @@ export default function TokenSaverClient() {
                     <button
                       key={lvl.id}
                       onClick={() => handlePonytailLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      aria-pressed={ponytailLevel === lvl.id}
+                      className={`focus-ring px-3 py-1.5 rounded-[var(--radius-brand)] text-xs font-medium border transition-colors duration-150 ${
                         ponytailLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
+                          ? "bg-brand-solid text-brand-on border-brand-solid"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
                       title={lvl.desc}
@@ -799,7 +804,7 @@ export default function TokenSaverClient() {
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-primary">
+                <p className="text-xs text-text-muted">
                   {
                     PONYTAIL_LEVELS.find((lvl) => lvl.id === ponytailLevel)
                       ?.desc
@@ -865,24 +870,27 @@ export default function TokenSaverClient() {
                   href="https://github.com/teamchong/pxpipe"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs font-normal text-primary underline hover:opacity-80"
+                  className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
                 >
                   (PXPIPE)
                 </a>
               </p>
-              <span className={`text-xs px-2 py-0.5 rounded ${pxpipeChipClass}`}>
+              <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-[var(--radius-brand)] border ${pxpipeChipClass}`}>
+                <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                  {pxpipeHealthy || pxpipeStatus.running ? "check_circle" : "pause_circle"}
+                </span>
                 {pxpipeStatusLabel}
               </span>
               <button
                 type="button"
                 onClick={() => setShowPxpipeModal(true)}
-                className="text-xs text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
               >
                 {pxpipeStatus.installed ? "Manage" : "Setup"}
               </button>
               <a
                 href="/dashboard/pxpipe"
-                className="text-xs text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
               >
                 Dashboard
               </a>
@@ -902,42 +910,45 @@ export default function TokenSaverClient() {
 
         {/* Aggregate observability — three separate units, never summed */}
         <section className="pt-4 mt-4 border-t border-border" aria-label="Token Saver aggregate statistics">
-          <h3 className="text-base font-semibold mb-2">Aggregate statistics</h3>
+          <h3 className="text-sm font-semibold text-text-main mb-4">Aggregate statistics</h3>
           {tsStats === undefined ? (
             <p className="text-sm text-text-muted">Loading…</p>
           ) : tsStats === null ? (
             <p className="text-sm text-text-muted">Statistics unavailable</p>
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded border border-border p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
                   <p className="text-xs font-medium text-text-muted">RTK</p>
-                  <p className="text-lg font-semibold">
+                  <p className="text-lg font-semibold text-text-main metric">
                     {(tsStats.windows?.today?.charsReduced ?? 0).toLocaleString()}
                   </p>
                   <p className="text-xs text-text-muted">chars reduced today</p>
                 </div>
-                <div className="rounded border border-border p-3">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
                   <p className="text-xs font-medium text-text-muted">Headroom</p>
                   {tsStats.sources?.headroom?.state === "ok" ? (
                     <>
-                      <p className="text-lg font-semibold">
+                      <p className="text-lg font-semibold text-text-main metric">
                         {(tsStats.windows?.today?.proxyTokensSaved ?? 0).toLocaleString()}
                       </p>
                       <p className="text-xs text-text-muted">
                         proxy-reported tokens saved today ·{" "}
-                        {(tsStats.windows?.today?.bodyBytesReduced ?? 0).toLocaleString()} body bytes reduced
+                        <span className="metric">{(tsStats.windows?.today?.bodyBytesReduced ?? 0).toLocaleString()}</span> body bytes reduced
                       </p>
                     </>
                   ) : tsStats.sources?.headroom?.state === "idle" ? (
                     <p className="text-xs text-text-muted">No compression data yet</p>
                   ) : (
-                    <p className="text-xs text-warning">Headroom statistics unavailable</p>
+                    <p className="text-xs text-warning inline-flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">warning</span>
+                      Headroom statistics unavailable
+                    </p>
                   )}
                 </div>
-                <div className="rounded border border-border p-3">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
                   <p className="text-xs font-medium text-text-muted">PXPIPE</p>
-                  <p className="text-lg font-semibold">
+                  <p className="text-lg font-semibold text-text-main metric">
                     {(tsStats.pxpipe?.windows?.today?.tokensSavedEst ?? 0).toLocaleString()}
                   </p>
                   <p className="text-xs text-text-muted">estimated tokens saved today</p>
@@ -946,7 +957,8 @@ export default function TokenSaverClient() {
 
               {/* Phantom warning only when phantom events actually persisted */}
               {tsStats.recent?.some?.((r) => r.reason === "phantom") && (
-                <p className="text-xs text-warning">
+                <p className="text-xs text-warning inline-flex items-start gap-1.5">
+                  <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">warning</span>
                   Headroom recently reported token savings while the outbound body barely shrank — savings may be phantom.
                 </p>
               )}
@@ -956,38 +968,38 @@ export default function TokenSaverClient() {
                   <caption className="sr-only">Daily token-saver aggregates by unit</caption>
                   <thead>
                     <tr className="text-left text-xs text-text-muted">
-                      <th scope="col" className="py-1 pr-2 font-medium">Day (UTC)</th>
-                      <th scope="col" className="py-1 pr-2 font-medium">RTK chars</th>
-                      <th scope="col" className="py-1 pr-2 font-medium">Headroom tokens</th>
-                      <th scope="col" className="py-1 pr-2 font-medium">PXPIPE est. tokens</th>
+                      <th scope="col" className="px-4 py-3 font-medium">Day (UTC)</th>
+                      <th scope="col" className="px-4 py-3 font-medium">RTK chars</th>
+                      <th scope="col" className="px-4 py-3 font-medium">Headroom tokens</th>
+                      <th scope="col" className="px-4 py-3 font-medium">PXPIPE est. tokens</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(tsStats.timeline || []).slice(-7).map((row) => (
-                      <tr key={row.date} className="border-t border-border">
-                        <td className="py-1 pr-2">{row.date}</td>
-                        <td className="py-1 pr-2">{(row.charsReduced ?? 0).toLocaleString()}</td>
-                        <td className="py-1 pr-2">{(row.proxyTokensSaved ?? 0).toLocaleString()}</td>
-                        <td className="py-1 pr-2">{(row.estTokensSaved ?? 0).toLocaleString()}</td>
+                      <tr key={row.date} className="border-t border-border-subtle">
+                        <td className="px-4 py-3 text-text-main metric">{row.date}</td>
+                        <td className="px-4 py-3 text-text-main metric">{(row.charsReduced ?? 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-text-main metric">{(row.proxyTokensSaved ?? 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-text-main metric">{(row.estTokensSaved ?? 0).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded border border-border p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
                   <p className="text-xs font-medium text-text-muted">Caveman</p>
-                  <p className="text-sm">
+                  <p className="text-sm text-text-main">
                     {cavemanEnabled ? `Enabled (${cavemanLevel})` : "Disabled"}
                   </p>
                   <p className="text-xs text-text-muted mt-1">
                     Counterfactual output savings are not measurable.
                   </p>
                 </div>
-                <div className="rounded border border-border p-3">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
                   <p className="text-xs font-medium text-text-muted">Ponytail</p>
-                  <p className="text-sm">
+                  <p className="text-sm text-text-main">
                     {ponytailEnabled ? `Enabled (${ponytailLevel})` : "Disabled"}
                   </p>
                   <p className="text-xs text-text-muted mt-1">
@@ -1003,14 +1015,14 @@ export default function TokenSaverClient() {
       {(toolDisclosureEnabled || toolDisclosureFilterEnabled) && (
         <Card id="tool-disclosure-stats">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary">build</span>
+            <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">build</span>
               MCP Tools
             </h2>
             <button
               type="button"
               onClick={refreshDisclosureStats}
-              className="text-xs text-primary underline hover:opacity-80"
+              className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
             >
               Refresh
             </button>
@@ -1029,19 +1041,19 @@ export default function TokenSaverClient() {
                 const ago = Math.round((Date.now() - entry.ts) / 1000);
                 const agoLabel = ago < 60 ? `${ago}s ago` : `${Math.round(ago / 60)}m ago`;
                 return (
-                  <div key={idx} className="rounded border border-border p-3 flex flex-col gap-2">
-                    <div className="flex items-center justify-between text-xs text-text-muted">
-                      <span className="font-mono truncate max-w-[60%]">
+                  <div key={idx} className="rounded-[var(--radius-brand)] border border-border p-4 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-3 text-xs text-text-muted">
+                      <span className="font-mono truncate min-w-0">
                         {entry.connectionId ? `session:${entry.connectionId.slice(-8)}` : "no session"}
                       </span>
-                      <span>{agoLabel}</span>
+                      <span className="metric shrink-0">{agoLabel}</span>
                     </div>
                     <div className="flex items-center gap-3 text-sm">
-                      <span className="font-medium font-mono">{entry.before}</span>
-                      <span className="text-text-muted">→</span>
-                      <span className="font-medium font-mono text-success">{entry.after}</span>
+                      <span className="font-medium font-mono text-text-main metric">{entry.before}</span>
+                      <span className="text-text-muted" aria-hidden="true">→</span>
+                      <span className="font-medium font-mono text-text-main metric">{entry.after}</span>
                       {entry.stripped > 0 && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-warning/15 text-warning ml-auto">
+                        <span className="text-xs px-2 py-0.5 rounded-[var(--radius-brand)] border border-info-line bg-info-soft text-info ml-auto metric">
                           −{entry.stripped} schemas ({savedPct}%)
                         </span>
                       )}
@@ -1049,10 +1061,10 @@ export default function TokenSaverClient() {
                     {entry.keptNames?.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {entry.keptNames.map((n) => (
-                          <span key={n} className="text-xs px-1.5 py-0.5 rounded bg-success/10 text-success font-mono truncate max-w-[180px]">{n}</span>
+                          <span key={n} title={`Kept: ${n}`} className="text-xs px-1.5 py-0.5 rounded-[var(--radius-brand)] bg-success-soft text-success font-mono truncate max-w-[180px]">{n}</span>
                         ))}
                         {(entry.strippedNames || []).map((n) => (
-                          <span key={n} className="text-xs px-1.5 py-0.5 rounded bg-surface-2 text-text-muted font-mono truncate max-w-[180px] line-through">{n}</span>
+                          <span key={n} title={`Stripped: ${n}`} className="text-xs px-1.5 py-0.5 rounded-[var(--radius-brand)] bg-surface-2 text-text-muted font-mono truncate max-w-[180px] line-through">{n}</span>
                         ))}
                       </div>
                     )}
@@ -1083,7 +1095,7 @@ export default function TokenSaverClient() {
               href="/api/headroom/proxy/dashboard"
               target="_blank"
               rel="noreferrer"
-              className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+              className="focus-ring block w-full rounded-[var(--radius-brand)] border border-border px-4 py-2 text-center text-sm text-text-main hover:bg-surface-2 transition-colors duration-150"
             >
               Open Headroom Dashboard
             </a>
@@ -1136,7 +1148,7 @@ export default function TokenSaverClient() {
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium">Install then click Start:</p>
               <div className="flex items-center gap-2">
-                <pre className="flex-1 rounded bg-black/5 dark:bg-white/5 p-2 text-xs font-mono overflow-x-auto">
+                <pre className="flex-1 rounded-[var(--radius-brand)] bg-surface-2 text-text-main p-4 text-xs font-mono overflow-x-auto">
                   {`pip install "headroom-ai[proxy]"`}
                 </pre>
                 <Button
@@ -1190,12 +1202,15 @@ export default function TokenSaverClient() {
             </span>
           </div>
           {pxpipeHealth?.checks?.length > 0 && (
-            <div className="flex flex-col gap-1 rounded border border-border p-3">
-              <p className="text-sm font-medium mb-1">Health check</p>
+            <div className="flex flex-col gap-1 rounded-[var(--radius-brand)] border border-border p-4">
+              <p className="text-sm font-semibold text-text-main mb-1">Health check</p>
               {pxpipeHealth.checks.map((check) => (
                 <div key={check.id} className="flex items-center justify-between text-xs">
-                  <span className={check.ok ? "text-success" : "text-warning"}>
-                    {check.ok ? "●" : "○"} {check.label}
+                  <span className={`inline-flex items-center gap-1 ${check.ok ? "text-success" : "text-warning"}`}>
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                      {check.ok ? "check_circle" : "radio_button_unchecked"}
+                    </span>
+                    {check.label}
                   </span>
                   {check.detail && (
                     <span className="text-text-muted font-mono truncate max-w-[50%]">{check.detail}</span>
@@ -1209,7 +1224,10 @@ export default function TokenSaverClient() {
           )}
           {!pxpipeStatus.installed ? (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-warning">PXPIPE is not installed.</p>
+              <p className="text-sm text-warning inline-flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]" aria-hidden="true">warning</span>
+                PXPIPE is not installed.
+              </p>
               <Button
                 onClick={() => pxpipeAction("install")}
                 fullWidth
@@ -1243,7 +1261,7 @@ export default function TokenSaverClient() {
               </Button>
               <a
                 href="/dashboard/pxpipe#logs"
-                className="col-span-2 rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+                className="focus-ring col-span-2 rounded-[var(--radius-brand)] border border-border px-4 py-2 text-center text-sm text-text-main hover:bg-surface-2 transition-colors duration-150"
               >
                 Open Logs
               </a>
