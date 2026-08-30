@@ -512,9 +512,9 @@ export default function ModelSelectModal({
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
                       ${isSelected
-                        ? "bg-brand-solid text-brand-on border-brand-solid"
+                        ? "bg-brand-solid text-brand-on border-brand-solid hover:bg-brand-solid-hover"
                         : addedModelValues.includes(combo.name)
-                          ? "bg-brand-solid border-brand-solid text-brand-on"
+                          ? "bg-brand-solid border-brand-solid text-brand-on hover:bg-brand-solid-hover"
                           : "bg-surface border-border text-text-main hover:border-brand-solid hover:bg-brand-soft"
                       }
                     `}
@@ -564,9 +564,9 @@ export default function ModelSelectModal({
                       ${isPlaceholder
                         ? "border-dashed border-border text-text-muted hover:border-brand-solid hover:text-brand bg-surface italic"
                         : isSelected
-                          ? "bg-brand-solid text-brand-on border-brand-solid"
+                          ? "bg-brand-solid text-brand-on border-brand-solid hover:bg-brand-solid-hover"
                           : addedModelValues.includes(model.value)
-                            ? "bg-brand-solid border-brand-solid text-brand-on"
+                            ? "bg-brand-solid border-brand-solid text-brand-on hover:bg-brand-solid-hover"
                             : "bg-surface border-border text-text-main hover:border-brand-solid hover:bg-brand-soft"
                       }
                     `}

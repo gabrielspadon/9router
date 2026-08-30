@@ -84,7 +84,7 @@ export default function MultiSelect({
             <span
               className={cn(
                 "flex h-4 w-4 items-center justify-center rounded border",
-                allSelected ? "bg-brand-500 border-brand-500 text-white" : "border-border"
+                allSelected ? "bg-brand-solid border-brand-solid text-brand-on" : "border-border"
               )}
             >
               {allSelected && <span className="material-symbols-outlined text-[13px]">check</span>}
@@ -103,7 +103,7 @@ export default function MultiSelect({
                 <span
                   className={cn(
                     "flex h-4 w-4 items-center justify-center rounded border",
-                    isSel ? "bg-brand-500 border-brand-500 text-white" : "border-border"
+                    isSel ? "bg-brand-solid border-brand-solid text-brand-on" : "border-border"
                   )}
                 >
                   {isSel && <span className="material-symbols-outlined text-[13px]">check</span>}

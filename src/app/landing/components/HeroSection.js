@@ -28,7 +28,7 @@ export default function HeroSection() {
         <div className="flex flex-wrap items-center justify-center gap-4 w-full">
           <button
             type="button"
-            className="focus-ring h-12 px-8 rounded-lg bg-brand-solid hover:bg-brand-700 text-brand-on text-base font-bold transition-colors duration-150 flex items-center gap-2"
+            className="focus-ring h-12 px-8 rounded-lg bg-brand-solid hover:bg-brand-solid-hover text-brand-on text-base font-bold transition-colors duration-150 flex items-center gap-2"
           >
             <span className="material-symbols-outlined" aria-hidden="true">rocket_launch</span>
             Get Started

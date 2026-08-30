@@ -37,7 +37,7 @@ export default function Navigation() {
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
-            className="focus-ring hidden sm:flex h-9 items-center justify-center rounded-lg px-4 bg-brand-solid hover:bg-brand-700 transition-colors duration-150 text-brand-on text-sm font-bold"
+            className="focus-ring hidden sm:flex h-9 items-center justify-center rounded-lg px-4 bg-brand-solid hover:bg-brand-solid-hover transition-colors duration-150 text-brand-on text-sm font-bold"
           >
             Get Started
           </button>
@@ -64,7 +64,7 @@ export default function Navigation() {
             <button
               type="button"
               onClick={() => router.push("/dashboard")}
-              className="focus-ring h-9 rounded-lg bg-brand-solid hover:bg-brand-700 text-brand-on text-sm font-bold transition-colors duration-150"
+              className="focus-ring h-9 rounded-lg bg-brand-solid hover:bg-brand-solid-hover text-brand-on text-sm font-bold transition-colors duration-150"
             >
               Get Started
             </button>

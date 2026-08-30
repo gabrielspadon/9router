@@ -54,7 +54,7 @@ export default function LandingPage() {
               <button
                 type="button"
                 onClick={() => router.push("/dashboard")}
-                className="focus-ring w-full sm:w-auto h-14 px-10 rounded-lg bg-brand-solid hover:bg-brand-700 text-brand-on text-lg font-bold transition-colors duration-150"
+                className="focus-ring w-full sm:w-auto h-14 px-10 rounded-lg bg-brand-solid hover:bg-brand-solid-hover text-brand-on text-lg font-bold transition-colors duration-150"
               >
                 Start Free
               </button>
