@@ -180,7 +180,7 @@ export default function LoginPage() {
         <Card padding="none" className="p-5">
           {mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
-              <p className="flex items-start justify-center gap-1.5 text-xs text-warning text-center">
+              <p className="flex items-start gap-1.5 text-xs text-warning">
                 <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
                   key
                 </span>
@@ -249,7 +249,7 @@ export default function LoginPage() {
                 )}
 
                 {authMode === "both" && ssoAvailable && (
-                  <p className="text-xs text-text-muted text-center">
+                  <p className="text-xs text-text-muted">
                     Password and {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login are both enabled.
                   </p>
                 )}
@@ -307,7 +307,7 @@ export default function LoginPage() {
                   Default password is <code className="bg-surface-2 px-1 rounded">123456</code>
                 </p>
                 {hasPassword === false && (
-                  <p className="flex items-start justify-center gap-1.5 text-xs text-warning">
+                  <p className="flex items-start gap-1.5 text-xs text-warning">
                     <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
                       warning
                     </span>
