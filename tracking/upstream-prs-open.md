@@ -19,17 +19,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: docs/superpowers/specs/2026-08-30-pr3273-safe-live-requests-and-cli-presets-design.md
 - notes: independently reviewed safe split is design-only and awaits user review. It permits URL-only local presets and aggregate-only live-request presentation, never the upstream FIFO tracker, spoofable header metadata, or session identity reuse.
 
-## PR #3261 — fix(proxy): rotate no-auth pools after rate limits
-
-- url: https://github.com/decolua/9router/pull/3261
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3259 — update
 
 - url: https://github.com/decolua/9router/pull/3259

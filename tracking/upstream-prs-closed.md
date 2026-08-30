@@ -42,6 +42,20 @@
 - closed: 2026-08-30
 - detail: rejected after upstream discussion and live fork-shape review. Its request serialization tests do not establish endpoint benefit, while its executor normalization broadens exact fast/priority behavior. Reconsider only after an authoritative controlled image-endpoint experiment.
 
+## PR #3261 — fix(proxy): rotate no-auth pools after rate limits
+
+- url: https://github.com/decolua/9router/pull/3261
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: review/pr3261-noauth-pool-rotation
+- local-ref: 45088511c
+- disposition: rejected
+- validation: exact upstream patch conflicts with current strict-proxy propagation; current OpenCode/no-auth proxy seam audit completed
+- notes: rejected, no product change
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: automatic free-tier pool rotation conflicts with the manual per-egress daily-quota policy and can downgrade deleted or inactive selected pools to environment or direct egress. It also pre-dates durable pool snapshots, retries daily exhaustion, clears concurrent cooldown state, and applies broadly to non-OpenCode free providers.
+
 ## PR #3635 — Adding a link to verify your antigravity account
 
 - url: https://github.com/decolua/9router/pull/3635
