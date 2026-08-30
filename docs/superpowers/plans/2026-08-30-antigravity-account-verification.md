@@ -77,7 +77,7 @@
 - `src/sse/services/quotaGuard.js` uses the app usage wrapper while preserving the three-second race and fail-open result.
 - `src/app/api/providers/[id]/hotreload/route.js` uses the wrapper for every quota attempt and classifies a direct 403 body once.
 - `src/app/api/usage/[connectionId]/route.js` uses a fresh wrapper call for initial, forced, and post-refresh Antigravity usage.
-- `src/app/api/providers/[id]/route.js` invalidates the deleted connection lifetime only after connection deletion succeeds.
+- `src/app/api/providers/[id]/route.js` calls the supported engine lifecycle release and invalidates the verification lifetime only after connection deletion succeeds.
 
 ### Created in Phase 3
 
@@ -228,7 +228,7 @@ set -euo pipefail
 pr3635_plan_head=$(git log -1 --format=%H -- docs/superpowers/plans/2026-08-30-antigravity-account-verification.md)
 test -n "$pr3635_plan_head"
 test "$(git rev-parse HEAD)" = "$pr3635_plan_head"
-test "$(git log -1 --format=%s)" = "docs(antigravity): fix verification implementation plan"
+test "$(git log -1 --format=%s)" = "docs(antigravity): correct verification plan gates"
 test -z "$(git status --porcelain)"
 ```
 
@@ -394,7 +394,7 @@ Every rejection asserts `null`. Every successful classification asserts the exac
 - [ ] **Step 3e:** Add the 6 complete retry-replacement cases.
 - [ ] **Step 3f:** Add terminal cases 1 through 7 for non-stream and forced conversion.
 - [ ] **Step 3g:** Add terminal cases 8 through 14 for stream completion and negative terminals.
-- [ ] **Step 3h:** Run the exact five-file RED command and record 40 failed plus 51 passed.
+- [ ] **Step 3h:** Run the exact five-file RED command and record 41 failed plus 50 passed.
 
 Use callback spies that reject independently and response fixtures whose `.text()` throws on a second read.
 
@@ -427,7 +427,7 @@ The exact remaining inventory is as follows.
 
 | Test file | Count | Exact behaviors |
 | --- | ---: | --- |
-| `antigravity-project-outcome.test.js` | 11 | cache hit has no callback; validation reaches initiator; late waiter receives same outcome and observation; throwing waiter isolation; success reaches every waiter; success uses first challenge snapshot; failure has no callbacks; removal abort has no success; different connections are independent; project success still caches; an old pending operation's `finally` cannot delete a replacement entry for the same connection |
+| `antigravity-project-outcome.test.js` | 11 | cache hit has no callback; validation reaches initiator; late waiter receives same outcome and observation; throwing waiter isolation; success reaches every waiter; success uses first challenge snapshot; failure has no callbacks; removal abort has no success; different connections are independent; successful project values cache only until lifecycle release; after release, a same-ID replacement neither reads the old cached project ID nor joins the old pending probe, and the old probe's `finally` cannot delete the replacement entry |
 | `antigravity-usage-validation.test.js` | 12 | subscription success challenge; subscription 403; quota 403; usable `models` success; subscription single read; quota single read; callback rejection fail-open and redacted; message result no success; subscription-only no success; malformed 2xx no success; HTTP error no success; transport failure no success |
 | `antigravity-retry-response.test.js` | 6 | retry success replaces response, URL, headers, body, format, and last target log; retry 403 does the same and classifies retry body; generic retry HTTP error replaces original; typed timeout maps retry; abort maps retry; other transport failure maps retry and never resurrects original 401 |
 | `antigravity-terminal-verification.test.js` | 14 | usable non-stream; malformed non-stream; disguised HTTP-200 structured error containing both `REALISTIC_VALIDATION_URLS`; empty non-stream; usable forced SSE-to-JSON; malformed forced conversion; first stream event only account success; terminal text; terminal thinking; terminal output tokens; empty EOF; aborted completion; abandonment; duplicate terminal callback |
@@ -446,7 +446,7 @@ set -euo pipefail
   unit/antigravity-terminal-verification.test.js
 ```
 
-Expected RED is exactly 40 failed and 51 passed. The failures are 14 positive classifier or redaction assertions, 9 typed-project assertions, 7 usage callback or single-read assertions, 4 retry-replacement assertions, and 6 positive terminal-success assertions. Negative and preservation cases account for the 51 passes.
+Expected RED is exactly 41 failed and 50 passed. The failures are 14 positive classifier or redaction assertions, 9 typed-project assertions, 7 usage callback or single-read assertions, 4 retry-replacement assertions, and 7 terminal or sink-ordering assertions. Negative and preservation cases account for the 50 passes. The total remains 91 Phase 1 tests, so every downstream total remains 189 for Phase 1 focused GREEN, 289 for Phase 2 focused GREEN, 255 for Phase 3 focused GREEN, 212 feature tests, and 3,710 full-suite tests.
 
 **Step group 4: Implement the pure classifier and redactor**
 
@@ -510,7 +510,7 @@ pendingFetches.set(connectionId, pendingEntry);
 
 Every caller, including a late waiter, attaches its own continuation to the same typed promise. Validation invokes each waiter with the pending entry's one observation ID. Project success invokes each waiter with the pending entry's first `challengeIdAtStart`. Wrap each callback independently. Cache hits invoke neither callback. A callback error logs only callback type plus a connection ID prefix.
 
-Every completion, rejection, timeout, and abort cleanup is identity-safe. The operation's `finally` deletes only when `pendingFetches.get(connectionId) === pendingEntry`. The RED starts operation A, calls the existing `removeConnection(connectionId)` so A is aborted and removed, starts replacement B under the same connection ID, releases A, and proves A cannot delete B. A subsequent waiter must still join B and receive B's single typed outcome.
+Every completion, rejection, timeout, and abort cleanup is identity-safe. `removeConnection(connectionId)` marks the removed pending entry `released:true` before deleting it and aborting its controller. A post-fetch cache write is permitted only when `pendingFetches.get(connectionId) === pendingEntry` and `pendingEntry.released !== true`; a released operation whose transport ignores abort must return its typed outcome without writing cache. The operation's `finally` likewise deletes only when `pendingFetches.get(connectionId) === pendingEntry`. One RED starts operation A, calls the engine `removeConnection(connectionId)` lifecycle implementation so A is aborted and removed, starts replacement B under the same connection ID, proves B starts a distinct fetch rather than joining A, releases A after B has completed, and proves A cannot delete B or overwrite B's cache. A subsequent read must return B without another upstream fetch. A second branch first caches project A, calls lifecycle release, recreates the same connection ID, and proves the replacement performs a new upstream fetch and returns project B rather than cached project A.
 
 Classify each raw load and onboard body before constructing any diagnostic. Apply `redactAntigravityValidationText` before values cross project callback-error logging, request logging, thrown errors, public errors, or serialized responses. The raw body and raw validation URL never reach those sinks even when classification is rejected because the transport status is disguised as HTTP 200.
 
@@ -683,8 +683,8 @@ Expected subject is exactly `feat(antigravity): classify account verification`. 
 
 - [ ] **Step 1a:** Re-run the clean-status and dependency assertions.
 - [ ] **Step 1b:** Run the measured Phase 2 adjacency command from `tests/` and record 104 passed.
-- [ ] **Step 1c:** Write the 10 privacy preservation tests from Step group 7.
-- [ ] **Step 1d:** Run the privacy command on the committed Phase 1 baseline and record 10 passed.
+- [ ] **Step 1c:** Preserve the two Phase 1 sink-ordering receipts. Do not create the Phase 2 privacy suite yet because its eight state, route, and SSE assertions require paths that do not exist on the committed Phase 1 baseline.
+- [ ] **Step 1d:** Do not run `antigravity-verification-privacy.test.js` at this point. Create it in Step group 7 only after the Phase 2 store, routes, and callers exist, then require all 10 assertions green there.
 
 Run from `tests/`.
 
@@ -837,7 +837,7 @@ Use module mocks plus a source inventory assertion. All 14 tests must fail befor
 | 2 | every hot-reload quota attempt uses a fresh wrapper; direct 403 poke reads once and records while 2xx, 429, 5xx, abort, and timeout do not clear |
 | 2 | initial and post-refresh usage calls each snapshot independently; existing `force=1` stays explicit |
 | 2 | dedicated recheck uses the wrapper with submitted challenge ID; wrapper forwards only `force` and trusted hook fields |
-| 1 | provider deletion invalidates the connection only after a deleted row is returned; a rejected or empty deletion leaves the lifetime and state intact |
+| 1 | provider deletion treats the live `deleteProviderConnection(id)` boolean as the only success signal; only `true` calls `releaseConnection(id)` and verification invalidation, while `false` or rejection calls neither; after `true`, a same-ID replacement neither joins the deleted connection's pending project probe nor reads its cached project ID |
 
 The static inventory command used by the test is conceptually exact.
 
@@ -894,9 +894,9 @@ Wire the exact inventory.
 - Quota guard races the wrapper promise without aborting or suppressing the losing promise's callbacks.
 - Hot reload calls the wrapper for each verification attempt. A direct 403 reads `text()` once, parses once, classifies with source `chat`, invokes its fresh validation callback, then returns the existing failed-auth result. Other direct poke outcomes never invoke verification success.
 - Usage route calls the wrapper for initial and retry Antigravity reads. Each call allocates its own snapshot. Other providers call the engine directly as before.
-- Provider deletion calls `invalidateAntigravityVerificationConnection(id)` only after `deleteProviderConnection(id)` returns a deleted row. Invalidation happens before returning the successful response. A thrown deletion or an empty result does not invalidate.
+- Provider deletion imports the supported app-side engine lifecycle API as `releaseConnection` from `@/sse/services/tokenRefresh`. Treat the live `deleteProviderConnection(id)` contract as `Promise<boolean>`, not as a deleted row. Only after it resolves exactly truthy, call `releaseConnection(id)` to abort and evict the engine's pending project probe and cached project ID, then call `invalidateAntigravityVerificationConnection(id)`, then return the existing success response. A `false` result returns the existing 404 and calls neither cleanup. A thrown deletion returns the existing 500 and calls neither cleanup. The route must not import or call `open-sse/services/projectId.js` directly.
 
-The deletion RED retains old hook closures for chat, proactive project lookup, and usage, deletes the provider successfully, creates a replacement connection with the same ID and fresh hook lifetime, and releases the old promises. Late old validation callbacks cannot recreate the deleted entry, late old success callbacks cannot clear or evict the replacement entry, and the fresh replacement hooks still work. The failed-deletion branch proves the current hooks remain valid.
+The deletion RED seeds both a pending project probe and a cached project ID through the supported lifecycle layer, retains old hook closures for chat, proactive project lookup, and usage, makes deletion return `true`, and creates a replacement connection with the same ID and fresh hook lifetime. It proves `releaseConnection(id)` was called once, the replacement performs a new project fetch rather than joining the stale probe or reading the cached project, and released old promises cannot affect the replacement. Late old validation callbacks cannot recreate the deleted entry, late old success callbacks cannot clear or evict the replacement entry, and the fresh replacement hooks still work. The `false` and rejection branches prove neither engine release nor verification invalidation runs and current hooks remain valid.
 
 Run this command from `tests/` before and after call-site implementation.
 
@@ -975,7 +975,7 @@ set -euo pipefail
 - [ ] **Step 7c:** Re-run OAuth project/onboard and disguised HTTP-200 sink-ordering exclusions.
 - [ ] **Step 7d:** Record 10 passed after every Phase 2 path is integrated.
 
-The original eight exclusion tests pass on the pre-feature baseline. The two sink-ordering behaviors are first recorded RED in Task 1 inside the project-outcome and terminal-verification suites, before the Phase 1 production edits. This Phase 2 privacy suite repeats those realistic fixtures as independent preservation coverage and must pass on the committed Phase 1 baseline before Phase 2 edits, then remain green.
+The original eight exclusion behaviors remain unchanged on the pre-feature baseline. The two sink-ordering behaviors are first recorded RED in Task 1 inside the project-outcome and terminal-verification suites, before the Phase 1 production edits. Create this independent ten-case Phase 2 privacy suite only after its store, route, and SSE seams exist. It must then pass in full and remain green through the Phase 2 review gate.
 
 | Count | Exact exclusion |
 | ---: | --- |
@@ -994,7 +994,7 @@ Use both `REALISTIC_VALIDATION_URLS` values from Task 1, repeated locally in thi
 
 The implementation contract is ordering, not cleanup after exposure. Classify and redact raw project load/onboard, usage, retry, streaming, and non-streaming bodies before invoking any public-error constructor, response serializer, request logger, console logger, callback-error logger, or stream writer. The URL-bearing validation object remains internal only long enough to invoke the trusted hook and never becomes a sibling on a public object.
 
-Run from `tests/` first in Step 1d and again here after integrating every Phase 2 path. Both runs must report exactly 10 passed.
+Run from `tests/` only here, after integrating every Phase 2 path. The run must report exactly 10 passed.
 
 ```bash
 set -euo pipefail
@@ -1409,14 +1409,14 @@ test -z "$(git status --porcelain)"
 test "$(git log -1 --format=%s)" = "feat(antigravity): add verification action"
 test "$(git log -1 --skip=1 --format=%s)" = "feat(antigravity): secure account verification"
 test "$(git log -1 --skip=2 --format=%s)" = "feat(antigravity): classify account verification"
-test "$(git log -1 --skip=3 --format=%s)" = "docs(antigravity): fix verification implementation plan"
+test "$(git log -1 --skip=3 --format=%s)" = "docs(antigravity): correct verification plan gates"
 git log --oneline -4
 git diff --name-only 9d8193182..HEAD
 git diff --check 9d8193182..HEAD
 git diff --exit-code 9d8193182..HEAD -- open-sse/providers/shared.js open-sse/config/appConstants.js src/dashboardGuard.js src/lib/db/repos/usageRepo.js src/lib/usageDb.js src/app/api/usage/stream/route.js src/shared/components/UsageStats.js src/shared/components/layouts/DashboardLayout.js package.json package-lock.json
 ```
 
-Expected history is the exact corrected-plan subject `docs(antigravity): fix verification implementation plan` followed by the three exact implementation subjects asserted above. The excluded-path diff exits 0. Porcelain is empty.
+Expected history is the exact corrected-plan subject `docs(antigravity): correct verification plan gates` followed by the three exact implementation subjects asserted above. The excluded-path diff exits 0. Porcelain is empty.
 
 **Step group 2: Run the 212 feature tests and all measured adjacency**
 
@@ -1560,12 +1560,16 @@ Save screenshot, accessibility, console, and network receipts outside Git under 
 - [ ] **Step 6e:** Open the anchor explicitly, complete Google validation, and invoke recheck.
 - [ ] **Step 6f:** Record only the seven approved receipt facts and classify the live gate as pass or unavailable.
 
-Use the eligible Antigravity connection selected before boot without printing email or tokens. Its access token had more than 30 minutes remaining when selected, and every copied refresh token is absent. Direct loopback requests authenticate through the tested trusted-peer no-login exception. Use the existing usage operation with `force=1` to provoke the real structured response. Never print the connection row or detail JSON.
+Use the eligible Antigravity connection selected before boot without printing email or tokens. Its access token had more than 30 minutes remaining when selected, and every copied refresh token is absent. Direct loopback requests authenticate through the tested trusted-peer no-login exception. Use the existing usage operation with `force=1` to provoke the real structured response. Never print the connection row or detail JSON. The external challenge is allowed to be unavailable. Consequently, run the probe and detail checks inside explicit `if` branches. A missing connection, absent challenge, non-200 detail, or response without a valid Google challenge sets `PR3635_CREDENTIAL_GATE=unavailable`, records only the allowed unavailable fact, skips challenge-only Steps 6c through 6e, and proceeds to Step 7 cleanup. `set -e` remains active for every other failure.
 
 ```bash
 set -euo pipefail
-test -n "$PR3635_CONNECTION_ID"
-curl -q -sS "http://127.0.0.1:29135/api/usage/$PR3635_CONNECTION_ID?force=1" | jq -e 'type == "object"' >/dev/null
+PR3635_CREDENTIAL_GATE=pass
+if [ -z "${PR3635_CONNECTION_ID:-}" ]; then
+  PR3635_CREDENTIAL_GATE=unavailable
+elif ! curl -q -sS "http://127.0.0.1:29135/api/usage/$PR3635_CONNECTION_ID?force=1" | jq -e 'type == "object"' >/dev/null; then
+  PR3635_CREDENTIAL_GATE=unavailable
+fi
 ```
 
 The probe succeeds only if it records these URL-free facts.
@@ -1580,27 +1584,39 @@ retry outcome
 clear outcome
 ```
 
-Fetch detail through the authenticated route and pipe it directly to a boolean validator that prints only `true`.
+Only when the initial probe remains eligible, fetch detail through the authenticated route and pipe it directly to a boolean validator that prints only `true`. A false result records unavailable rather than terminating cleanup.
 
 ```bash
 set -euo pipefail
-curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -e '.href | type == "string" and startswith("https://accounts.google.com/") and (utf8bytelength <= 8192)'
+if [ "$PR3635_CREDENTIAL_GATE" = pass ] && ! curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -e '(.href | type == "string" and startswith("https://accounts.google.com/") and (utf8bytelength <= 8192)) and (.challengeId | type == "string" and test("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"; "i"))' >/dev/null; then
+  PR3635_CREDENTIAL_GATE=unavailable
+fi
 ```
 
-Exercise compare-dismissal once without printing detail. The browser must lose the anchor through the sanitized remove event, while the copied provider row remains. Then run one new usage attempt so a new observation can create a new challenge for the real completion path.
+Only when `PR3635_CREDENTIAL_GATE=pass`, exercise compare-dismissal once without printing detail. The browser must lose the anchor through the sanitized remove event, while the copied provider row remains. Then run one new usage attempt so a new observation can create a new challenge for the real completion path. Otherwise skip this block and proceed directly to Step 7 cleanup.
 
 ```bash
 set -euo pipefail
-export PR3635_CHALLENGE_ID
-PR3635_CHALLENGE_ID=$(curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -r '.challengeId')
-test -n "$PR3635_CHALLENGE_ID"
-test "$(jq -nc --arg challengeId "$PR3635_CHALLENGE_ID" '{challengeId:$challengeId}' | curl -q -sS -o /dev/null -w '%{http_code}' -X DELETE -H 'Content-Type: application/json' -H 'Origin: http://127.0.0.1:29135' -H 'Sec-Fetch-Site: same-origin' --data-binary @- "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID")" = "204"
-curl -q -sS "http://127.0.0.1:29135/api/usage/$PR3635_CONNECTION_ID?force=1" | jq -e 'type == "object"' >/dev/null
+if [ "$PR3635_CREDENTIAL_GATE" = pass ]; then
+  export PR3635_CHALLENGE_ID
+  PR3635_CHALLENGE_ID=$(curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -r 'if (.challengeId | type == "string" and test("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"; "i")) then .challengeId else empty end')
+  if [ -z "$PR3635_CHALLENGE_ID" ]; then
+    PR3635_CREDENTIAL_GATE=unavailable
+  fi
+fi
+if [ "$PR3635_CREDENTIAL_GATE" = pass ]; then
+  test "$(jq -nc --arg challengeId "$PR3635_CHALLENGE_ID" '{challengeId:$challengeId}' | curl -q -sS -o /dev/null -w '%{http_code}' -X DELETE -H 'Content-Type: application/json' -H 'Origin: http://127.0.0.1:29135' -H 'Sec-Fetch-Site: same-origin' --data-binary @- "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID")" = "204"
+  curl -q -sS "http://127.0.0.1:29135/api/usage/$PR3635_CONNECTION_ID?force=1" | jq -e 'type == "object"' >/dev/null
+  PR3635_NEXT_CHALLENGE_ID=$(curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -r 'if ((.href | type == "string" and startswith("https://accounts.google.com/") and (utf8bytelength <= 8192)) and (.challengeId | type == "string" and test("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"; "i"))) then .challengeId else empty end')
+  if [ -z "$PR3635_NEXT_CHALLENGE_ID" ]; then
+    PR3635_CREDENTIAL_GATE=unavailable
+  fi
+fi
 ```
 
-Open the newly rendered anchor in the managed browser, complete the Google-hosted validation, then click `Check verification`. A usable quota response must remove only the submitted challenge. A repeated structured challenge must produce a new challenge ID and `{ verified: false }`. Any other failure leaves the prior challenge visible and returns a sanitized non-200 response.
+Only when `PR3635_CREDENTIAL_GATE=pass`, open the newly rendered anchor in the managed browser, complete the Google-hosted validation, then click `Check verification`. A usable quota response must remove only the submitted challenge. A repeated structured challenge must produce a new challenge ID and `{ verified: false }`. Any other failure leaves the prior challenge visible and returns a sanitized non-200 response.
 
-If no copied connection currently receives a real `VALIDATION_REQUIRED` response, this live gate is unavailable, not passed. Record the missing external condition, run Step 7 cleanup, then report it. Do not fabricate state or weaken the gate.
+If `PR3635_CREDENTIAL_GATE=unavailable`, record the missing external condition, run Step 7 cleanup, then report the live gate unavailable rather than passed. Do not fabricate state or weaken the gate.
 
 **Step group 7: Stop only the isolated instance and finish clean**
 
