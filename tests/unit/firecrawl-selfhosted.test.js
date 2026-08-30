@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
 
 function fixtureCreds(value = process.env.NOOP) {
-  return Object.fromEntries([["api" + "KEY", value]]);
+  return Object.fromEntries([["api" + "Key", value]]);
 }
 
 const originalFetch = global.fetch;
