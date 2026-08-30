@@ -23,6 +23,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import { useAntigravityVerification } from "./useAntigravityVerification";
 import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput";
 import {
   createProviderStrategySaveQueue,
@@ -62,6 +63,7 @@ export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const providerId = params.id;
+  const antigravityVerification = useAntigravityVerification({ enabled: providerId === "antigravity" });
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1136,6 +1138,10 @@ export default function ProviderDetailPage() {
                 } : null}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
                 hotReloadStatus={hotReloadResults[conn.id] || null}
+                verification={providerId === "antigravity" && !antigravityVerification.accessDenied && antigravityVerification.byConnectionId[conn.id] ? {
+                  ...antigravityVerification.byConnectionId[conn.id],
+                  onRecheck: () => antigravityVerification.recheck(conn.id),
+                } : null}
               />
             </div>
           </div>
@@ -1719,6 +1725,12 @@ export default function ProviderDetailPage() {
               </div>
             </div>
           </div>
+
+          {providerId === "antigravity" && antigravityVerification.accessDenied && (
+            <p role="status" className="mb-3 text-sm text-text-muted">
+              {translate("Sign in or use the local dashboard to verify Antigravity")}
+            </p>
+          )}
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

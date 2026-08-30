@@ -1389,5 +1389,11 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ اطلاعیه ریسک: این ارائه‌دهنده از اشتراک/جلسه OAuth استفاده می‌کند که به طور رسمی برای استفاده پروکسی/روتر مجوز ندارد. حساب ممکن است محدود یا مسدود شود. با مسئولیت خود استفاده کنید.",
   "✓ Confirm Add": "✓ تأیید افزودن",
   "📝 Configure providers in dashboard or use environment variables": "📝 ارائه‌دهندگان را در داشبورد پیکربندی کنید یا از متغیرهای محیطی استفاده کنید",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 نیاز به OAuth. اکنون اضافه کنید و پس از اعمال، احراز هویت کنید؛ لیست ابزارها پس از اولین اتصال کشف می‌شود."
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 نیاز به OAuth. اکنون اضافه کنید و پس از اعمال، احراز هویت کنید؛ لیست ابزارها پس از اولین اتصال کشف می‌شود.",
+  "Verify Antigravity account": "تأیید حساب Antigravity",
+  "Check verification": "بررسی تأیید",
+  "Antigravity account verification required": "تأیید حساب Antigravity الزامی است",
+  "Sign in or use the local dashboard to verify Antigravity": "برای تأیید Antigravity وارد شوید یا از داشبورد محلی استفاده کنید",
+  "Verification link expired": "پیوند تأیید منقضی شده است",
+  "Unable to load verification link": "بارگیری پیوند تأیید ممکن نشد"
 }
