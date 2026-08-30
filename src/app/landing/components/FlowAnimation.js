@@ -133,10 +133,20 @@ export default function FlowAnimation() {
         {PROVIDERS.map((provider, idx) => (
           <div
             key={provider.id}
-            className={`px-4 py-2 rounded-lg bg-surface border border-border text-text-main flex items-center justify-center font-bold text-xs shadow-soft transition-colors duration-150 min-w-[140px] ${
-              activeFlow === idx ? "border-brand-500 text-brand" : ""
+            className={`px-4 py-2 rounded-lg bg-surface border flex items-center gap-1.5 justify-center font-bold text-xs shadow-soft transition-colors duration-150 min-w-[140px] ${
+              activeFlow === idx
+                ? "border-brand-500 text-brand"
+                : "border-border text-text-main"
             }`}
           >
+            <span
+              className={`material-symbols-outlined text-[14px] ${
+                activeFlow === idx ? "opacity-100" : "opacity-0"
+              }`}
+              aria-hidden="true"
+            >
+              bolt
+            </span>
             {provider.name}
           </div>
         ))}
