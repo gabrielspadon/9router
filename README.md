@@ -111,7 +111,10 @@ The index is [docs/README.md](docs/README.md). The pages a new user needs first:
 - [Architecture](docs/ARCHITECTURE.md) for the request lifecycle and the
   module map.
 
-Container specifics live in [DOCKER.md](DOCKER.md).
+Container specifics live in [DOCKER.md](DOCKER.md). The interface's own
+rules are in [docs/design/design-system.md](docs/design/design-system.md),
+and the evidence every design gate is judged against sits beside it under
+[docs/design/](docs/design/).
 
 
 ## Acknowledgments

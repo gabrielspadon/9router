@@ -32,6 +32,10 @@ Container operation is in [../DOCKER.md](../DOCKER.md).
   changing routing behaviour.
 - [MEMORY_OPTIMIZATION.md](MEMORY_OPTIMIZATION.md). The AI memory and token
   optimiser, its modules, phases and defaults.
+- [design/](design/). The design record: the rules the interface obeys, the
+  three structural hypotheses and why one won, the areas deliberately left
+  alone, and the measured evidence behind every design claim. Start at
+  [design/design-system.md](design/design-system.md).
 - [design/progressive-tool-disclosure.md](design/progressive-tool-disclosure.md).
   Why tool schemas dominate a multi-turn agent prompt, and the two-phase filter
   and BM25 selection that prunes them.

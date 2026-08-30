@@ -64,22 +64,12 @@ docs/*
 !docs/deployment.md
 !docs/ARCHITECTURE.md
 !docs/MEMORY_OPTIMIZATION.md
+# The design record ships with the repository: the written design system, the
+# artboards behind the chosen direction, the verification suite and the
+# captured evidence each gate is judged against. A gate that cannot be re-run
+# from a clean checkout is not a gate.
 !docs/design/
-!docs/design/design-system.md
-!docs/design/tokens.pairs.json
-!docs/design/verification/
-!docs/design/verification/contrast.mjs
-# Development artefacts of the design work: exploration, captured evidence and
-# campaign tooling. Local only.
-docs/design/evidence/
-docs/design/artboards/
-docs/design/verification/*
-!docs/design/verification/contrast.mjs
-docs/design/r2-*.md
-docs/design/not-changed.md
-docs/design/backend-handoff.md
-docs/design/progressive-tool-disclosure.md
-docs/design/translation-policy.md
+!docs/design/**
 test/*
 open-sse/test/*
 RM.vn.md
