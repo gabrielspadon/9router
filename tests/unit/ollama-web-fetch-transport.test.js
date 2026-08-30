@@ -420,6 +420,34 @@ describe("Ollama web fetch deadline and bounded body", () => {
     expect(unhandled).toEqual([]);
   });
 
+  it("cancels a late Response once with the caller abort reason and contains sync cleanup failure", async () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let resolveTransport;
+    const transport = vi.fn(() => new Promise((resolve) => {
+      resolveTransport = resolve;
+    }));
+    const pending = runCore({ signal: caller.signal, transport });
+    await Promise.resolve();
+
+    caller.abort(reason);
+    const { result } = await pending;
+    const cancel = vi.fn(() => {
+      throw new Error("synthetic synchronous cancel failure");
+    });
+    const response = successResponse();
+    vi.spyOn(response.body, "getReader").mockReturnValue({ cancel });
+    resolveTransport(response);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result).toMatchObject({ success: false, status: 499, code: "OLLAMA_CLIENT_ABORTED" });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith(reason);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("settles timeout when injected transport ignores its signal and owns a late resolution", async () => {
     vi.useFakeTimers();
     let resolveTransport;
@@ -442,9 +470,17 @@ describe("Ollama web fetch deadline and bounded body", () => {
     ]);
     await vi.advanceTimersByTimeAsync(1);
     const outcome = await guarded;
-    resolveTransport(successResponse());
+    const timeoutReason = transportSignal.reason;
+    const unhandled = [];
+    const onUnhandled = (error) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+    const cancel = vi.fn(() => Promise.reject(new Error("synthetic asynchronous cancel failure")));
+    const response = successResponse();
+    vi.spyOn(response.body, "getReader").mockReturnValue({ cancel });
+    resolveTransport(response);
     await pending;
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    process.off("unhandledRejection", onUnhandled);
 
     expect(outcome.result).toMatchObject({
       success: false,
@@ -452,9 +488,13 @@ describe("Ollama web fetch deadline and bounded body", () => {
       code: "OLLAMA_TIMEOUT",
     });
     expect(transportSignal.aborted).toBe(true);
+    expect(timeoutReason?.code).toBe("OLLAMA_TIMEOUT");
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith(timeoutReason);
     expect(signalAdd.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
     expect(signalRemove.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
+    expect(unhandled).toEqual([]);
   });
 
   it.each([

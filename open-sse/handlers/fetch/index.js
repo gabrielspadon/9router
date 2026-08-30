@@ -221,10 +221,20 @@ function throwIfAborted(signal) {
   }
 }
 
-function waitWithSignal(promise, signal) {
+function ownLateResolution(value, reason, onLateResolve) {
+  if (typeof onLateResolve !== "function") return;
+  try {
+    Promise.resolve(onLateResolve(value, reason)).catch(() => {});
+  } catch { }
+}
+
+function waitWithSignal(promise, signal, onLateResolve) {
   const owned = Promise.resolve(promise);
   if (signal?.aborted) {
-    owned.catch(() => {});
+    owned.then(
+      (value) => ownLateResolution(value, signal.reason, onLateResolve),
+      () => {},
+    );
     return Promise.reject(signal.reason);
   }
   return new Promise((resolve, reject) => {
@@ -238,7 +248,13 @@ function waitWithSignal(promise, signal) {
     const onAbort = () => finish(reject, signal.reason);
     signal?.addEventListener("abort", onAbort, { once: true });
     owned.then(
-      (value) => finish(resolve, value),
+      (value) => {
+        if (settled) {
+          ownLateResolution(value, signal?.reason, onLateResolve);
+          return;
+        }
+        finish(resolve, value);
+      },
       (error) => finish(reject, error),
     );
   });
@@ -376,6 +392,11 @@ function cancelResponseBody(response, reason) {
   try {
     ownCancellation(response.body?.getReader(), reason);
   } catch { }
+}
+
+function cancelLateResponse(value, reason) {
+  if (!(value instanceof Response)) return;
+  cancelResponseBody(value, reason);
 }
 
 function isJsonMediaType(value) {
@@ -587,6 +608,7 @@ async function runOllama(args) {
         signal: deadline.signal,
       }, args.proxyOptions ?? null),
       deadline.signal,
+      cancelLateResponse,
     );
     throwIfAborted(deadline.signal);
 
