@@ -128,6 +128,7 @@ import p123 from "./nous.js";
 import p124 from "./meta.js";
 import p126 from "./chenzk.js";
 import p127 from "./kenari.js";
+import p128 from "./nube.js";
 
 export default [
   p0,
@@ -257,4 +258,5 @@ export default [
   p124,
   p126,
   p127,
+  p128,
 ];
