@@ -1655,10 +1655,10 @@ export default function ProviderLimits() {
                     <table className="w-full min-w-[560px] text-left text-sm">
                       <thead className="bg-surface-2 text-xs uppercase tracking-wide text-text-muted">
                         <tr>
-                          <th className="px-3 py-2 font-medium">Status</th>
-                          <th className="px-3 py-2 font-medium">Granted At</th>
-                          <th className="px-3 py-2 font-medium">Expires At</th>
-                          <th className="px-3 py-2 font-medium">Remaining</th>
+                          <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                          <th scope="col" className="px-4 py-3 font-medium">Granted At</th>
+                          <th scope="col" className="px-4 py-3 font-medium">Expires At</th>
+                          <th scope="col" className="px-4 py-3 font-medium">Remaining</th>
                         </tr>
                       </thead>
                       <tbody>

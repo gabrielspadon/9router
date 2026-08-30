@@ -249,15 +249,15 @@ export default function RequestDetailsTab() {
           <table className="w-full min-w-[880px]">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Cached</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Cache Creation</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
-                <th className="text-center p-4 text-sm font-semibold text-text-main">Action</th>
+                <th scope="col" className="text-left px-4 py-3 text-sm font-semibold text-text-main">Timestamp</th>
+                <th scope="col" className="text-left px-4 py-3 text-sm font-semibold text-text-main">Model</th>
+                <th scope="col" className="text-left px-4 py-3 text-sm font-semibold text-text-main">Provider</th>
+                <th scope="col" className="text-right px-4 py-3 text-sm font-semibold text-text-main">Input Tokens</th>
+                <th scope="col" className="text-right px-4 py-3 text-sm font-semibold text-text-main">Cached</th>
+                <th scope="col" className="text-right px-4 py-3 text-sm font-semibold text-text-main">Cache Creation</th>
+                <th scope="col" className="text-right px-4 py-3 text-sm font-semibold text-text-main">Output Tokens</th>
+                <th scope="col" className="text-left px-4 py-3 text-sm font-semibold text-text-main">Latency</th>
+                <th scope="col" className="text-center px-4 py-3 text-sm font-semibold text-text-main">Action</th>
               </tr>
             </thead>
             <tbody>
