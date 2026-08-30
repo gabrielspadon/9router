@@ -1,11 +1,39 @@
+import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const legacyHttp2 = vi.hoisted(() => ({ connect: vi.fn() }));
+vi.mock("http2", () => ({ default: { connect: legacyHttp2.connect } }));
+
 import {
   clearCursorModelCache,
   parseCursorUsableModels,
   resolveCursorModels,
 } from "../../open-sse/services/cursorModels.js";
+import { resolveEffectiveProxyRoute } from "../../open-sse/utils/proxyFetch.js";
 
-const originalFetch = global.fetch;
+const credentials = {
+  accessToken: "cursor-token",
+  providerSpecificData: { machineId: "machine-id" },
+};
+const direct = { resolutionKind: "intentional-direct", reason: "connection-proxy-direct" };
+const strictProxy = {
+  resolutionKind: "selected-proxy",
+  connectionProxyEnabled: true,
+  connectionProxyUrl: "https://name:secret@proxy-a.test:8443",
+  strictProxy: true,
+};
+const proxyB = {
+  resolutionKind: "selected-proxy",
+  connectionProxyEnabled: true,
+  connectionProxyUrl: "socks5h://proxy-b.test:1080",
+  strictProxy: true,
+};
+const nonStrictProxy = {
+  resolutionKind: "selected-proxy",
+  connectionProxyEnabled: true,
+  connectionProxyUrl: "http://proxy.test:8080",
+  strictProxy: false,
+};
 
 function varint(value) {
   const bytes = [];
@@ -40,14 +68,50 @@ function model(id, name) {
   return field(1, concat(field(1, text(id)), field(4, text(name))));
 }
 
+function protoResponse(models) {
+  return { status: 200, body: concat(...models.map(({ id, name }) => model(id, name))) };
+}
+
+function lease(effectiveRoute) {
+  return { session: {}, effectiveRoute, close: vi.fn() };
+}
+
+function route(kind, cacheIdentity, strictProxy = false) {
+  return { kind, cacheIdentity, strictProxy };
+}
+
+function resolvedRoute(proxyOptions) {
+  return resolveEffectiveProxyRoute(
+    "https://agent.api5.cursor.sh/agent.v1.AgentService/GetUsableModels",
+    proxyOptions,
+  );
+}
+
+function fakeLegacySession() {
+  const client = new EventEmitter();
+  client.close = vi.fn();
+  client.request = vi.fn(() => {
+    const request = new EventEmitter();
+    request.end = vi.fn(() => {
+      queueMicrotask(() => {
+        request.emit("response", { ":status": 503 });
+        request.emit("end");
+      });
+    });
+    return request;
+  });
+  return client;
+}
+
 describe("Cursor live model catalog", () => {
   beforeEach(() => {
     clearCursorModelCache();
+    legacyHttp2.connect.mockImplementation(fakeLegacySession);
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
     clearCursorModelCache();
+    vi.clearAllMocks();
   });
 
   it("decodes the GetUsableModels protobuf response", () => {
@@ -63,41 +127,121 @@ describe("Cursor live model catalog", () => {
     ]);
   });
 
-  it("fetches the account-specific catalog and caches it", async () => {
-    const payload = concat(model("claude-4.6-opus", "Claude 4.6 Opus"));
-    global.fetch = vi.fn().mockResolvedValue(new Response(payload, { status: 200 }));
-    const credentials = {
-      accessToken: "cursor-token",
-      providerSpecificData: { machineId: "machine-id" },
-    };
+  it("uses a direct cache hit without opening a second lease or posting", async () => {
+    const directLease = lease(route("direct", "direct"));
+    const connector = vi.fn().mockResolvedValue(directLease);
+    const post = vi.fn().mockResolvedValue(protoResponse([{ id: "direct-model", name: "Direct" }]));
 
-    await expect(resolveCursorModels(credentials)).resolves.toEqual({
-      models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
+    await expect(resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: post })).resolves.toEqual({
+      models: [{ id: "direct-model", name: "Direct" }],
     });
-    await expect(resolveCursorModels(credentials)).resolves.toEqual({
-      models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
+    await expect(resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: post })).resolves.toEqual({
+      models: [{ id: "direct-model", name: "Direct" }],
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://agent.api5.cursor.sh/agent.v1.AgentService/GetUsableModels",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.any(Uint8Array),
-        headers: expect.objectContaining({
-          "content-type": "application/proto",
-          accept: "application/proto",
-        }),
-      }),
-    );
+    expect(connector).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(directLease.close).toHaveBeenCalledTimes(1);
   });
 
-  it("fails open when the Cursor catalog request fails", async () => {
-    global.fetch = vi.fn().mockResolvedValue(new Response("no", { status: 403 }));
+  it("partitions direct and distinct proxied catalog cache entries", async () => {
+    const connector = vi.fn()
+      .mockResolvedValueOnce(lease(route("direct", "direct")))
+      .mockResolvedValueOnce(lease(resolvedRoute(strictProxy)))
+      .mockResolvedValueOnce(lease(resolvedRoute(proxyB)));
+    const post = vi.fn()
+      .mockResolvedValueOnce(protoResponse([{ id: "direct", name: "Direct" }]))
+      .mockResolvedValueOnce(protoResponse([{ id: "proxy-a", name: "Proxy A" }]))
+      .mockResolvedValueOnce(protoResponse([{ id: "proxy-b", name: "Proxy B" }]));
 
-    await expect(resolveCursorModels({
-      accessToken: "cursor-token",
-      providerSpecificData: { machineId: "machine-id" },
-    })).resolves.toBeNull();
+    await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: post });
+    await resolveCursorModels(credentials, { proxyOptions: strictProxy, connectHttp2: connector, http2Post: post });
+    await resolveCursorModels(credentials, { proxyOptions: proxyB, connectHttp2: connector, http2Post: post });
+
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(connector).toHaveBeenCalledTimes(3);
+  });
+
+  it("closes a non-strict fallback-to-direct lease on the effective direct cache hit", async () => {
+    const seededDirectLease = lease(route("direct", "direct"));
+    const fallbackLease = lease(route("direct", "direct"));
+    const seedConnector = vi.fn().mockResolvedValue(seededDirectLease);
+    const fallbackConnector = vi.fn().mockResolvedValue(fallbackLease);
+    const post = vi.fn().mockResolvedValue(protoResponse([{ id: "direct-model", name: "Direct" }]));
+
+    await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: seedConnector, http2Post: post });
+    await expect(resolveCursorModels(credentials, {
+      proxyOptions: nonStrictProxy,
+      connectHttp2: fallbackConnector,
+      http2Post: post,
+    })).resolves.toEqual({ models: [{ id: "direct-model", name: "Direct" }] });
+
+    expect(fallbackConnector).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(fallbackLease.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes a strict proxied lease after warming its route-specific cache", async () => {
+    const proxyLease = lease(resolvedRoute(strictProxy));
+    const connector = vi.fn().mockResolvedValue(proxyLease);
+    const post = vi.fn().mockResolvedValue(protoResponse([{ id: "proxy-model", name: "Proxy" }]));
+
+    await resolveCursorModels(credentials, { proxyOptions: strictProxy, connectHttp2: connector, http2Post: post });
+    await resolveCursorModels(credentials, { proxyOptions: strictProxy, connectHttp2: connector, http2Post: post });
+
+    expect(connector).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(proxyLease.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("bypasses every catalog cache read and overwrites the effective route on force refresh", async () => {
+    const oldLease = lease(route("direct", "direct"));
+    const refreshedLease = lease(route("direct", "direct"));
+    const connector = vi.fn()
+      .mockResolvedValueOnce(oldLease)
+      .mockResolvedValueOnce(refreshedLease);
+    const oldPost = vi.fn().mockResolvedValue(protoResponse([{ id: "old", name: "Old" }]));
+    const refreshedPost = vi.fn().mockResolvedValue(protoResponse([{ id: "new", name: "New" }]));
+
+    await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: oldPost });
+    await resolveCursorModels(credentials, {
+      forceRefresh: true,
+      proxyOptions: direct,
+      connectHttp2: connector,
+      http2Post: refreshedPost,
+    });
+    await expect(resolveCursorModels(credentials, {
+      proxyOptions: direct,
+      connectHttp2: vi.fn(),
+      http2Post: vi.fn(),
+    })).resolves.toEqual({ models: [{ id: "new", name: "New" }] });
+
+    expect(refreshedPost).toHaveBeenCalledTimes(1);
+    expect(connector).toHaveBeenCalledTimes(2);
+    expect(refreshedLease.close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["relay", { resolutionKind: "selected-proxy", vercelRelayUrl: "https://relay.test", strictProxy: true }],
+    ["required-unavailable", { resolutionKind: "required-unavailable", reason: "pool-missing", strictProxy: true }],
+  ])("returns typed %s without catalog transport", async (_name, proxyOptions) => {
+    const connector = vi.fn();
+    const post = vi.fn();
+
+    await expect(resolveCursorModels(credentials, { proxyOptions, connectHttp2: connector, http2Post: post })).resolves.toMatchObject({
+      unavailable: true,
+    });
+    expect(connector).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(legacyHttp2.connect).not.toHaveBeenCalled();
+  });
+
+  it("fails open on an ordinary catalog post failure while closing its lease", async () => {
+    const directLease = lease(route("direct", "direct"));
+    const connector = vi.fn().mockResolvedValue(directLease);
+    const post = vi.fn().mockRejectedValue(new Error("catalog failed"));
+
+    await expect(resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: post })).resolves.toBeNull();
+    expect(directLease.close).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,5 @@
 import { Readable } from "stream";
+import crypto from "crypto";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
@@ -290,6 +291,114 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   return normalizeProxyUrl(proxyUrlRaw);
 }
 
+const TUNNEL_PROXY_PROTOCOLS = new Set([
+  "http:",
+  "https:",
+  "socks:",
+  "socks4:",
+  "socks4a:",
+  "socks5:",
+  "socks5h:",
+]);
+
+function isSupportedTunnelScheme(proxyUrl) {
+  try {
+    return TUNNEL_PROXY_PROTOCOLS.has(new URL(proxyUrl).protocol);
+  } catch {
+    return false;
+  }
+}
+
+function hashRouteUrl(proxyUrl) {
+  return crypto.createHash("sha256")
+    .update(new URL(proxyUrl).toString())
+    .digest("hex");
+}
+
+function inferResolutionKind(proxyOptions = {}) {
+  const declared = normalizeString(proxyOptions.resolutionKind);
+  if (["selected-proxy", "intentional-direct", "unselected", "required-unavailable"].includes(declared)) {
+    return declared;
+  }
+  if (normalizeString(proxyOptions.connectionProxyMode) === "direct") return "intentional-direct";
+  if (
+    proxyOptions.enabled === true
+    || proxyOptions.connectionProxyEnabled === true
+    || normalizeString(proxyOptions.vercelRelayUrl)
+  ) return "selected-proxy";
+  return "unselected";
+}
+
+/**
+ * Resolve connection provenance into the one route a transport may attempt.
+ * The optional third argument is intentionally internal-facing so fake transport
+ * tests can prove unavailable selections never consult environment policy.
+ */
+export function resolveEffectiveProxyRoute(targetUrl, proxyOptions = {}, {
+  getEnvProxyUrl: resolveEnvProxyUrl = getEnvProxyUrl,
+} = {}) {
+  const resolutionKind = inferResolutionKind(proxyOptions);
+  const strictProxy = proxyOptions.strictProxy === true;
+
+  if (resolutionKind === "required-unavailable") {
+    return {
+      kind: "required-unavailable",
+      strictProxy,
+      reason: normalizeString(proxyOptions.reason) || "selected-proxy-unavailable",
+      cacheIdentity: null,
+    };
+  }
+
+  if (resolutionKind === "intentional-direct") {
+    return { kind: "direct", strictProxy: false, cacheIdentity: "direct" };
+  }
+
+  if (resolutionKind === "selected-proxy") {
+    if (normalizeString(proxyOptions.vercelRelayUrl)) {
+      return { kind: "relay", strictProxy, cacheIdentity: null };
+    }
+    if (
+      isLoopbackTarget(targetUrl)
+      || shouldBypassByNoProxy(targetUrl, proxyOptions.connectionNoProxy ?? proxyOptions.noProxy)
+    ) {
+      return { kind: "direct", strictProxy: false, cacheIdentity: "direct" };
+    }
+
+    const selectedProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+    if (!selectedProxyUrl || !isSupportedTunnelScheme(selectedProxyUrl)) {
+      return {
+        kind: "required-unavailable",
+        strictProxy,
+        reason: "selected-proxy-invalid",
+        cacheIdentity: null,
+      };
+    }
+
+    return {
+      kind: "proxy",
+      strictProxy,
+      proxyUrl: selectedProxyUrl,
+      cacheIdentity: `proxy:${hashRouteUrl(selectedProxyUrl)}`,
+    };
+  }
+
+  const envProxyUrl = normalizeProxyUrl(resolveEnvProxyUrl(targetUrl));
+  if (!envProxyUrl) return { kind: "direct", strictProxy: false, cacheIdentity: "direct" };
+  return {
+    kind: "proxy",
+    strictProxy: false,
+    proxyUrl: envProxyUrl,
+    cacheIdentity: `proxy:${hashRouteUrl(envProxyUrl)}`,
+  };
+}
+
+function requiredProxyUnavailableError(route) {
+  const error = new Error("Required proxy is unavailable");
+  error.code = "required_proxy_unavailable";
+  error.reason = route.reason;
+  return error;
+}
+
 // Connection pool limits — prevent socket exhaustion under concurrent upstream load
 const PROXY_MAX_CONNECTIONS = 64;
 const PROXY_MAX_FREE_CONNECTIONS = 32;
@@ -450,10 +559,13 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   throwIfAborted(options.signal);
   const targetUrl = typeof url === "string" ? url : url.toString();
+  const route = resolveEffectiveProxyRoute(targetUrl, proxyOptions || {});
+
+  if (route.kind === "required-unavailable") throw requiredProxyUnavailableError(route);
 
   // Vercel relay: forward request via relay headers
-  const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
-  if (vercelRelayUrl) {
+  if (route.kind === "relay") {
+    const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
     const parsed = new URL(targetUrl);
     const relayHeaders = {
       ...options.headers,
@@ -463,9 +575,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 
-  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
-  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
-  const proxyUrl = connectionProxyUrl || envProxyUrl;
+  const proxyUrl = route.kind === "proxy" ? route.proxyUrl : null;
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
@@ -476,7 +586,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         return await originalFetch(url, { ...options, dispatcher });
       } catch (proxyError) {
         throwIfAborted(options.signal);
-        if (proxyOptions?.strictProxy === true) {
+        if (route.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
         }
         console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
@@ -500,7 +610,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     } catch (proxyError) {
       throwIfAborted(options.signal);
       // If strictProxy is enabled, fail hard instead of falling back to direct
-      if (proxyOptions?.strictProxy === true) {
+      if (route.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
