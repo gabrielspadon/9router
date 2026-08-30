@@ -126,6 +126,7 @@ import p125 from "./opencode-zen.js";
 import p121 from "./alitp-intl.js";
 import p123 from "./nous.js";
 import p124 from "./meta.js";
+import p126 from "./chenzk.js";
 
 export default [
   p0,
@@ -253,4 +254,5 @@ export default [
   p121,
   p123,
   p124,
+  p126,
 ];
