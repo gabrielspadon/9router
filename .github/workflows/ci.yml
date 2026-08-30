@@ -87,14 +87,14 @@ jobs:
           fi
           git worktree remove --force "$wt" >/dev/null 2>&1 || true
 
-          node - /tmp/base.json /tmp/head.json <<'NODE'
+          node - /tmp/base.json /tmp/head.json "$wt" "$PWD" <<'NODE'
           const fs = require("node:fs");
-          const [, , baseP, headP] = process.argv;
+          const [, , baseP, headP, baseRoot = "", headRoot = ""] = process.argv;
           const load = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; } };
           const tally = (rs) => {
             const m = new Map();
             for (const r of rs) {
-              const f = r.filePath.replace(/^.*?\/(src|docs|cli|tests)\//, "$1/");
+              const f = r.filePath.replace(baseRoot, "").replace(headRoot, "").replace(/^\/+/, "");
               for (const msg of r.messages || []) {
                 const k = `${f}|${msg.ruleId || "syntax"}`;
                 m.set(k, (m.get(k) || 0) + 1);
