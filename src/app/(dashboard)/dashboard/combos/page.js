@@ -305,7 +305,7 @@ export default function CombosPage() {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-6">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
@@ -346,7 +346,7 @@ export default function CombosPage() {
       {combos.length === 0 ? (
         <Card>
           <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-soft text-brand mb-4">
               <span className="material-symbols-outlined text-[32px]">layers</span>
             </div>
             <p className="text-text-main font-medium mb-1">No combos yet</p>
@@ -464,15 +464,15 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
     <Card padding="sm" className="group">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
+          <div className="size-8 rounded-lg bg-brand-soft flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-brand text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
               {isAutoManaged && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-brand"
                   title="Members are replaced automatically whenever the free-model sync runs"
                 >
                   <span className="material-symbols-outlined text-[12px]">autorenew</span>
@@ -492,16 +492,16 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 ))
               )}
               {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+                <span className="text-xs text-text-muted">+{combo.models.length - 3} more</span>
               )}
             </div>
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-text-muted">Judge</span>
+                <span className="text-xs font-medium text-text-muted">Judge</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
-                  className="focus-ring inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
+                  className="focus-ring inline-flex max-w-full items-center gap-1 rounded border border-dashed border-brand-line px-1.5 py-0.5 font-mono text-xs text-brand hover:border-brand hover:bg-brand-soft transition-colors"
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
@@ -536,29 +536,29 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
           <div className="grid grid-cols-4 gap-1 sm:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onTest(combo); }}
-              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-primary transition-colors hover:bg-primary/10"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-brand transition-colors hover:bg-brand-soft"
               title="Test Run Combo"
             >
               <span className="material-symbols-outlined text-[18px]">play_circle</span>
-              <span className="text-[10px] leading-tight font-medium">Test</span>
+              <span className="text-xs leading-tight font-medium">Test</span>
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
-              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-primary"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-brand"
               title="Copy combo name"
             >
               <span className="material-symbols-outlined text-[18px]">
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
               </span>
-              <span className="text-[10px] leading-tight">Copy</span>
+              <span className="text-xs leading-tight">Copy</span>
             </button>
             <button
               onClick={onEdit}
-              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-primary"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-brand"
               title="Edit"
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
-              <span className="text-[10px] leading-tight">Edit</span>
+              <span className="text-xs leading-tight">Edit</span>
             </button>
             <button
               onClick={onDelete}
@@ -566,7 +566,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
               title="Delete"
             >
               <span className="material-symbols-outlined text-[18px]">delete</span>
-              <span className="text-[10px] leading-tight">Delete</span>
+              <span className="text-xs leading-tight">Delete</span>
             </button>
           </div>
         </div>
@@ -597,7 +597,7 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
           <p className="text-xs text-text-muted mt-0.5">
             Your model can&apos;t read image/audio? Auto-switches to a model in the pool below.
           </p>
-          <ul className="mt-1.5 text-[11px] text-text-muted flex flex-col gap-0.5">
+          <ul className="mt-1.5 text-xs text-text-muted flex flex-col gap-0.5">
             <li><span className="font-medium text-text-main">Vision</span> — images (png, jpg, webp, …)</li>
             <li><span className="font-medium text-text-main">Audio</span> — audio input</li>
           </ul>
@@ -653,13 +653,13 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
             onChange={(v) => patch({ enabled: v })}
             aria-label={`Enable ${cap.label} adapter`}
           />
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-primary text-[18px]">{cap.icon}</span>
+          <div className="size-8 rounded-lg bg-brand-soft flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-brand text-[18px]">{cap.icon}</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <code className="font-mono text-sm font-medium">{cap.label}</code>
-              <span className="text-[10px] text-text-muted">— {cap.desc}</span>
+              <span className="text-xs text-text-muted">— {cap.desc}</span>
             </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {models.length === 0 ? (
@@ -672,10 +672,10 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                   >
                     <span>{model}</span>
                     <CapacityBadges caps={getCaps?.(model)} />
-                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title={`Move ${model} earlier`} aria-label={`Move ${model} earlier`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
+                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title={`Move ${model} earlier`} aria-label={`Move ${model} earlier`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted/20" : "text-text-muted hover:text-brand"}`}>
                       <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_upward</span>
                     </button>
-                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} title={`Move ${model} later`} aria-label={`Move ${model} later`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
+                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} title={`Move ${model} later`} aria-label={`Move ${model} later`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-brand"}`}>
                       <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_downward</span>
                     </button>
                     <button onClick={() => handleRemove(index)} title={`Remove ${model}`} aria-label={`Remove ${model}`} className="focus-ring leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-danger">
@@ -685,7 +685,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                 ))
               )}
               {models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{models.length - 3} more</span>
+                <span className="text-xs text-text-muted">+{models.length - 3} more</span>
               )}
             </div>
           </div>
@@ -757,14 +757,14 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-surface-2 hover:bg-surface-2 transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-surface-2 hover:bg-surface-2 transition-colors ${isDragging ? "shadow-soft ring-1 ring-brand-line" : ""}`}
     >
       {/* Drag handle */}
       <button
         {...attributes}
         {...listeners}
         type="button"
-        className="focus-ring cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-primary active:cursor-grabbing shrink-0"
+        className="focus-ring cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-brand active:cursor-grabbing shrink-0"
         title="Drag to reorder"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -775,7 +775,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
       </button>
 
       {/* Index badge */}
-      <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+      <span className="text-xs font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
       {/* Inline editable model value */}
       {editing ? (
@@ -802,7 +802,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         <button
           onClick={onMoveUp}
           disabled={isFirst}
-          className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`}
+          className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}`}
           title="Move up"
         >
           <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
@@ -810,7 +810,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         <button
           onClick={onMoveDown}
           disabled={isLast}
-          className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`}
+          className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}`}
           title="Move down"
         >
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
@@ -950,7 +950,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
               placeholder="my-combo"
               error={nameError}
             />
-            <p className="text-[10px] text-text-muted mt-0.5">
+            <p className="text-xs text-text-muted mt-0.5">
               Only letters, numbers, -, _ and . allowed
             </p>
           </div>
@@ -994,7 +994,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
             {/* Add Model button */}
             <button
               onClick={() => setShowModelSelect(true)}
-              className="focus-ring w-full mt-2 py-2 border border-dashed border-border rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+              className="focus-ring w-full mt-2 py-2 border border-dashed border-border rounded-lg text-xs text-brand font-medium hover:text-brand hover:border-brand-line transition-colors flex items-center justify-center gap-1"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model

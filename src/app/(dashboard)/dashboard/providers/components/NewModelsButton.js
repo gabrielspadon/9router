@@ -151,7 +151,7 @@ function NewModelsModal({ onClose }) {
                       <code className="text-xs font-mono text-text-muted truncate flex-1">
                         {m.modelId}
                       </code>
-                      <span className="text-[9px] text-text-muted/60 shrink-0">
+                      <span className="text-xs text-text-muted/60 shrink-0">
                         {new Date(m.firstSeenAt).toLocaleDateString()}
                       </span>
                     </div>
@@ -162,7 +162,7 @@ function NewModelsModal({ onClose }) {
 
             <button
               onClick={handleMarkAllRead}
-              className="focus-ring mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+              className="focus-ring mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-brand-line transition-colors"
             >
               <span className="material-symbols-outlined text-[14px]">done_all</span>
               Mark all as read

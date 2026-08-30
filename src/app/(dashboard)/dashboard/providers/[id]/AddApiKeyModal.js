@@ -406,7 +406,7 @@ export default function AddApiKeyModal({
                       href={website}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="focus-ring text-primary underline"
+                      className="focus-ring text-brand underline"
                     >
                       Open {website.replace(/^https?:\/\//, "")}
                     </a>
@@ -496,7 +496,7 @@ export default function AddApiKeyModal({
                     href="https://dash.cloudflare.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="focus-ring text-primary underline"
+                    className="focus-ring text-brand underline"
                   >
                     dash.cloudflare.com
                   </a>

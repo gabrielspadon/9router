@@ -21,7 +21,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
   return (
     <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
       <span
-        className="material-symbols-outlined text-base text-text-muted"
+        className="material-symbols-outlined text-sm text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
       >
         {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
@@ -37,13 +37,13 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
               title={copied === `model-${modelId}` ? "Copied" : "Copy model id"}
               aria-label={copied === `model-${modelId}` ? "Copied" : "Copy model id"}
-              className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+              className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-brand"
             >
               <span className="material-symbols-outlined text-sm" aria-hidden="true">
                 {copied === `model-${modelId}` ? "check" : "content_copy"}
               </span>
             </button>
-            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
               {copied === `model-${modelId}` ? "Copied!" : "Copy"}
             </span>
           </div>
@@ -54,13 +54,13 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
                 disabled={isTesting}
                 title={isTesting ? "Testing model" : "Test model"}
                 aria-label={isTesting ? "Testing model" : "Test model"}
-                className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+                className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-brand transition-colors"
               >
                 <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                   {isTesting ? "progress_activity" : "science"}
                 </span>
               </button>
-              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
                 {isTesting ? "Testing..." : "Test"}
               </span>
             </div>
@@ -139,7 +139,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="anthropic/claude-3-opus"
-            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-primary"
+            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand"
           />
         </div>
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>

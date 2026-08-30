@@ -181,7 +181,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           <button
             onClick={onMoveUp}
             disabled={isFirst}
-            className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
             title="Raise connection priority"
             aria-label="Raise connection priority"
           >
@@ -190,14 +190,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           <button
             onClick={onMoveDown}
             disabled={isLast}
-            className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
             title="Lower connection priority"
             aria-label="Lower connection priority"
           >
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
           </button>
         </div>
-        <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
+        <span className="material-symbols-outlined shrink-0 text-sm text-text-muted">
           {authIcon}
         </span>
         <div className="flex-1 min-w-0">
@@ -260,16 +260,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           </div>
           {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
+              <span className="max-w-full truncate text-xs text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
                 {proxyDisplayText}
               </span>
               {maskedProxyUrl && (
-                <code className="max-w-full truncate rounded bg-surface-2 px-1 py-0.5 font-mono text-[10px] text-text-muted sm:max-w-[260px]">
+                <code className="max-w-full truncate rounded bg-surface-2 px-1 py-0.5 font-mono text-xs text-text-muted sm:max-w-[260px]">
                   {maskedProxyUrl}
                 </code>
               )}
               {noProxyText && (
-                <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[320px]" title={noProxyText}>
+                <span className="max-w-full truncate text-xs text-text-muted sm:max-w-[320px]" title={noProxyText}>
                   no_proxy: {noProxyText}
                 </span>
               )}
@@ -308,19 +308,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
                 <span className="material-symbols-outlined text-[18px]">
                   {updatingProxy ? "progress_activity" : "lan"}
                 </span>
-                <span className="text-[10px] leading-tight">Proxy</span>
+                <span className="text-xs leading-tight">Proxy</span>
               </button>
               {showProxyDropdown && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg">
+                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-elev">
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`focus-ring w-full text-left px-3 py-1.5 text-sm hover:bg-surface-2 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`focus-ring w-full text-left px-3 py-1.5 text-sm hover:bg-surface-2 ${!boundProxyPoolId ? "text-brand font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -328,7 +328,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`focus-ring w-full text-left px-3 py-1.5 text-sm hover:bg-surface-2 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`focus-ring w-full text-left px-3 py-1.5 text-sm hover:bg-surface-2 ${boundProxyPoolId === pool.id ? "text-brand font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
@@ -341,10 +341,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Tooltip text={autoPingTooltip}>
               <button
                 onClick={() => autoPing.onToggle(!autoPing.on)}
-                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${autoPing.on ? "text-brand" : "text-text-muted hover:text-brand"}`}
               >
                 <span className="material-symbols-outlined text-[18px]">bolt</span>
-                <span className="text-[10px] leading-tight">Auto-ping</span>
+                <span className="text-xs leading-tight">Auto-ping</span>
               </button>
             </Tooltip>
           )}
@@ -354,20 +354,20 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 onClick={hotReload.onRun}
                 disabled={hotReload.running}
                 title={hotReloadStatus?.state === "failed" ? hotReloadStatus.error : undefined}
-                className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-primary"
+                className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand"
               >
                 <span className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
-                <span className="text-[10px] leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
+                <span className="text-xs leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
               </button>
             </Tooltip>
           )}
-          <button onClick={onEdit} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-primary">
+          <button onClick={onEdit} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand">
             <span className="material-symbols-outlined text-[18px]">edit</span>
-            <span className="text-[10px] leading-tight">Edit</span>
+            <span className="text-xs leading-tight">Edit</span>
           </button>
           <button onClick={onDelete} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-danger hover:bg-danger-soft">
             <span className="material-symbols-outlined text-[18px]">delete</span>
-            <span className="text-[10px] leading-tight">Delete</span>
+            <span className="text-xs leading-tight">Delete</span>
           </button>
         </div>
         <Toggle

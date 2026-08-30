@@ -78,7 +78,7 @@ export default function NewProviderPage() {
       <div className="mb-8">
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
@@ -138,8 +138,8 @@ export default function NewProviderPage() {
                   onClick={() => handleChange("authMethod", method.value)}
                   className={`focus-ring flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border transition-all ${
                     formData.authMethod === method.value
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:border-primary/50"
+                      ? "border-brand bg-brand-soft text-brand"
+                      : "border-border hover:border-brand-line"
                   }`}
                 >
                   <span className="material-symbols-outlined">

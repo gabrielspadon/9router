@@ -15,30 +15,30 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
   return (
     <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-base" style={iconColor ? { color: iconColor } : undefined}>
+        <span className="material-symbols-outlined text-sm" style={iconColor ? { color: iconColor } : undefined}>
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
         <div className="flex flex-col gap-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
+          {model.name && <span className="text-xs text-text-subtle italic pl-1">{model.name}</span>}
         </div>
         {onTest && (
           <div className="relative group/btn">
-            <button onClick={onTest} disabled={isTesting} title={isTesting ? "Testing model" : "Test model"} aria-label={isTesting ? "Testing model" : "Test model"} className={`focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            <button onClick={onTest} disabled={isTesting} title={isTesting ? "Testing model" : "Test model"} aria-label={isTesting ? "Testing model" : "Test model"} className={`focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-brand transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
               <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
-            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
               {isTesting ? "Testing..." : "Test"}
             </span>
           </div>
         )}
         <div className="relative group/btn">
-          <button onClick={() => onCopy(fullModel, `model-${model.id}`)} title={copied === `model-${model.id}` ? "Copied" : "Copy model id"} aria-label={copied === `model-${model.id}` ? "Copied" : "Copy model id"} className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary">
+          <button onClick={() => onCopy(fullModel, `model-${model.id}`)} title={copied === `model-${model.id}` ? "Copied" : "Copy model id"} aria-label={copied === `model-${model.id}` ? "Copied" : "Copy model id"} className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-brand">
             <span className="material-symbols-outlined text-sm" aria-hidden="true">{copied === `model-${model.id}` ? "check" : "content_copy"}</span>
           </button>
-          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
@@ -82,7 +82,7 @@ function AddCustomModelModal({ isOpen, onSave, onClose }) {
         <div>
           <label className="text-xs text-text-muted mb-1 block">Model ID</label>
           <input
-            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-primary"
+            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand"
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSave()}
@@ -263,7 +263,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
           <button
             onClick={() => setShowAddCustomModel(true)}
-            className="focus-ring flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+            className="focus-ring flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line transition-colors"
           >
             <span className="material-symbols-outlined text-sm">add</span>
             Add Model

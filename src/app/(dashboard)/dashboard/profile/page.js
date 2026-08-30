@@ -844,7 +844,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-0">
+    <div className="max-w-2xl mx-auto">
       <div className="flex flex-col gap-6">
         {/* Local Mode Info */}
         <Card>
@@ -866,7 +866,7 @@ export default function ProfilePage() {
                   onClick={() => setTheme(option)}
                   className={cn('focus-ring flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial',
                     theme === option
-                      ? 'bg-white text-text-main shadow-sm'
+                      ? 'bg-surface text-text-main shadow-soft'
                       : 'text-text-muted hover:text-text-main'
                   )}
                 >
@@ -885,7 +885,7 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
-                <p className="font-medium text-sm sm:text-base">Database Location</p>
+                <p className="font-medium text-sm">Database Location</p>
                 <p className="text-xs sm:text-sm text-text-muted font-mono break-all">
                   ~/.9router/db/data.sqlite
                 </p>
@@ -934,11 +934,11 @@ export default function ProfilePage() {
             <div className="size-10 rounded-lg bg-info-soft text-info flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-[20px]">language</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Language</h3>
+            <h3 className="text-sm font-semibold">Language</h3>
           </div>
           <button
             onClick={() => setLangOpen(true)}
-            className="focus-ring flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-primary/50 transition-colors"
+            className="focus-ring flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-brand-line transition-colors"
             data-i18n-skip="true"
           >
             <span className="text-sm text-text-muted">Display language</span>
@@ -949,15 +949,15 @@ export default function ProfilePage() {
         {/* Security */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+            <div className="p-2 rounded-lg bg-brand-soft text-brand shrink-0">
               <span className="material-symbols-outlined text-[20px]">shield</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Security</h3>
+            <h3 className="text-sm font-semibold">Security</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Require login</p>
+                <p className="font-medium text-sm">Require login</p>
                 <p className="text-xs sm:text-sm text-text-muted">
                   When ON, dashboard requires password. When OFF, access without login.
                 </p>
@@ -1049,7 +1049,7 @@ export default function ProfilePage() {
               <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-base sm:text-lg font-semibold">Single Sign-On (SSO)</h3>
+              <h3 className="text-sm font-semibold">Single Sign-On (SSO)</h3>
               <p className="text-xs text-text-muted">
                 {settings.authMode === 'sso' ||
                 settings.authMode === 'oidc' ||
@@ -1073,14 +1073,14 @@ export default function ProfilePage() {
 
               {/* SSO Protocol Switcher Tabs */}
               <div className="flex flex-col gap-2">
-                <label className="font-medium text-sm sm:text-base">SSO Protocol</label>
+                <label className="font-medium text-sm">SSO Protocol</label>
                 <div className="flex p-1 rounded-lg bg-surface-2 border border-border">
                   <button
                     type="button"
                     onClick={() => setSsoTypeTab('saml')}
                     className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
                       ssoTypeTab === 'saml'
-                        ? 'bg-white text-text-main shadow-sm'
+                        ? 'bg-surface text-text-main shadow-soft'
                         : 'text-text-muted hover:text-text-main'
                     )}
                   >
@@ -1091,7 +1091,7 @@ export default function ProfilePage() {
                     onClick={() => setSsoTypeTab('oidc')}
                     className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
                       ssoTypeTab === 'oidc'
-                        ? 'bg-white text-text-main shadow-sm'
+                        ? 'bg-surface text-text-main shadow-soft'
                         : 'text-text-muted hover:text-text-main'
                     )}
                   >
@@ -1102,7 +1102,7 @@ export default function ProfilePage() {
 
               {/* Auth Mode selection */}
               <div className="flex flex-col gap-2">
-                <label className="font-medium text-sm sm:text-base">Auth Mode</label>
+                <label className="font-medium text-sm">Auth Mode</label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {[
                     {
@@ -1137,12 +1137,12 @@ export default function ProfilePage() {
                         onClick={() => updateOidcForm('authMode', option.value)}
                         className={cn('focus-ring text-left rounded-lg border p-3 transition-colors',
                           active
-                            ? 'border-primary bg-primary/5'
+                            ? 'border-brand bg-brand-soft'
                             : 'border-border bg-bg hover:bg-surface-2'
                         )}
                         disabled={loading || oidcLoading || samlLoading}
                       >
-                        <p className="font-medium text-sm sm:text-base">{option.title}</p>
+                        <p className="font-medium text-sm">{option.title}</p>
                         <p className="text-xs sm:text-sm text-text-muted mt-1">{option.desc}</p>
                       </button>
                     );
@@ -1161,14 +1161,14 @@ export default function ProfilePage() {
                       className="focus-ring w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-lg">
+                        <span className="material-symbols-outlined text-brand text-lg">
                           menu_book
                         </span>
                         <div>
                           <p className="font-semibold text-xs sm:text-sm text-text-main">
                             IdP Setup Guidelines & Provider Configuration Instructions
                           </p>
-                          <p className="text-[11px] text-text-muted">
+                          <p className="text-xs text-text-muted">
                             Click to view setup steps for AWS IAM Identity Center, Okta, Entra ID,
                             Keycloak, & Authentik
                           </p>
@@ -1184,11 +1184,11 @@ export default function ProfilePage() {
 
                     {showSamlGuide && (
                       <div className="p-4 border-t border-border bg-surface/30 text-xs text-text-main flex flex-col gap-3">
-                        <div className="p-2.5 rounded border border-primary/20 bg-primary/5 text-primary text-xs">
+                        <div className="p-2.5 rounded border border-brand-line bg-brand-soft text-brand text-xs">
                           <p className="font-semibold mb-1">
                             🔑 Required Service Provider (SP) Values for your IdP Setup:
                           </p>
-                          <ul className="list-disc pl-4 space-y-1 font-mono text-[11px]">
+                          <ul className="list-disc pl-4 space-y-1 font-mono text-xs">
                             <li>
                               <b>Assertion Consumer Service (ACS) URL:</b>{' '}
                               <code className="bg-bg px-1 py-0.5 rounded break-all">
@@ -1327,7 +1327,7 @@ export default function ProfilePage() {
                   </div>
 
                   {/* Quick Import Card */}
-                  <div className="p-3 rounded-lg border border-dashed border-primary/40 bg-primary/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="p-3 rounded-lg border border-dashed border-brand-line bg-brand-soft flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <p className="font-medium text-sm text-text-main">
                         1-Click IdP Metadata XML Import
@@ -1356,7 +1356,7 @@ export default function ProfilePage() {
 
                   <div className="grid grid-cols-1 gap-4">
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">
+                      <label className="font-medium text-sm">
                         Single Sign-On Service URL (samlEntryPoint)
                       </label>
                       <Input
@@ -1368,7 +1368,7 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">
+                      <label className="font-medium text-sm">
                         SP Entity ID / Audience (samlIssuer)
                       </label>
                       <Input
@@ -1381,7 +1381,7 @@ export default function ProfilePage() {
 
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between">
-                        <label className="font-medium text-sm sm:text-base">
+                        <label className="font-medium text-sm">
                           IdP X.509 Certificate (samlCert)
                         </label>
                         <Button
@@ -1406,7 +1406,7 @@ export default function ProfilePage() {
                         placeholder="-----BEGIN CERTIFICATE-----&#10;MIIC...&#10;-----END CERTIFICATE-----"
                         value={samlForm.samlCert}
                         onChange={(e) => updateSamlForm('samlCert', e.target.value)}
-                        className="focus-ring w-full p-2.5 rounded-lg border border-border bg-bg text-xs font-mono text-text-main focus:border-primary"
+                        className="focus-ring w-full p-2.5 rounded-lg border border-border bg-bg text-xs font-mono text-text-main focus:border-brand"
                         disabled={loading || samlLoading}
                       />
                       <p className="text-xs text-text-muted">
@@ -1416,7 +1416,7 @@ export default function ProfilePage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="flex flex-col gap-2">
-                        <label className="font-medium text-sm sm:text-base">
+                        <label className="font-medium text-sm">
                           Login Button Label
                         </label>
                         <Input
@@ -1428,7 +1428,7 @@ export default function ProfilePage() {
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        <label className="font-medium text-sm sm:text-base">
+                        <label className="font-medium text-sm">
                           Email Claim Attribute
                         </label>
                         <Input
@@ -1440,7 +1440,7 @@ export default function ProfilePage() {
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        <label className="font-medium text-sm sm:text-base">
+                        <label className="font-medium text-sm">
                           Display Name Claim
                         </label>
                         <Input
@@ -1485,7 +1485,7 @@ export default function ProfilePage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         download="9router-sp-metadata.xml"
-                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
                       >
                         <span className="material-symbols-outlined text-[16px]">download</span>
                         Download XML
@@ -1535,7 +1535,7 @@ export default function ProfilePage() {
                 <div className="flex flex-col gap-4 pt-2 border-t border-border/50">
                   <div className="grid grid-cols-1 gap-4">
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">Issuer URL</label>
+                      <label className="font-medium text-sm">Issuer URL</label>
                       <Input
                         placeholder="https://auth.example.com/application/o/9router/"
                         value={oidcForm.oidcIssuerUrl}
@@ -1545,7 +1545,7 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">Client ID</label>
+                      <label className="font-medium text-sm">Client ID</label>
                       <Input
                         placeholder="9router-dashboard"
                         value={oidcForm.oidcClientId}
@@ -1555,7 +1555,7 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">Client Secret</label>
+                      <label className="font-medium text-sm">Client Secret</label>
                       <Input
                         type="password"
                         placeholder="Leave blank to keep existing secret"
@@ -1569,7 +1569,7 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">Scopes</label>
+                      <label className="font-medium text-sm">Scopes</label>
                       <Input
                         placeholder="openid profile email"
                         value={oidcForm.oidcScopes}
@@ -1579,7 +1579,7 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="font-medium text-sm sm:text-base">Login Button Label</label>
+                      <label className="font-medium text-sm">Login Button Label</label>
                       <Input
                         placeholder="Sign in with OIDC"
                         value={oidcForm.oidcLoginLabel}
@@ -1658,12 +1658,12 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
               <span className="material-symbols-outlined text-[20px]">model_training</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Model</h3>
+            <h3 className="text-sm font-semibold">Model</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Expose Combo Only</p>
+                <p className="font-medium text-sm">Expose Combo Only</p>
                 <p className="text-xs sm:text-sm text-text-muted">
                   Only configured Combo models exposed through{' '}
                   <code className="bg-bg px-1 rounded text-xs">/v1/models</code>
@@ -1684,12 +1684,12 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-info-soft text-info shrink-0">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Routing Strategy</h3>
+            <h3 className="text-sm font-semibold">Routing Strategy</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Round Robin</p>
+                <p className="font-medium text-sm">Round Robin</p>
                 <p className="text-xs sm:text-sm text-text-muted">
                   Cycle through accounts to distribute load
                 </p>
@@ -1709,7 +1709,7 @@ export default function ProfilePage() {
             {settings.fallbackStrategy === 'round-robin' && (
               <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm sm:text-base">Sticky Limit</p>
+                  <p className="font-medium text-sm">Sticky Limit</p>
                   <p className="text-xs sm:text-sm text-text-muted">
                     Calls per account before switching
                   </p>
@@ -1729,7 +1729,7 @@ export default function ProfilePage() {
             {/* Combo Round Robin */}
             <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Combo Round Robin</p>
+                <p className="font-medium text-sm">Combo Round Robin</p>
                 <p className="text-xs sm:text-sm text-text-muted">
                   Cycle through providers in combos instead of always starting with first
                 </p>
@@ -1795,13 +1795,13 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span className="material-symbols-outlined text-[20px]">wifi</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Network</h3>
+            <h3 className="text-sm font-semibold">Network</h3>
           </div>
 
           <div className="flex flex-col gap-4">
             <div className="flex items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Outbound Proxy</p>
+                <p className="font-medium text-sm">Outbound Proxy</p>
                 <p className="text-xs sm:text-sm text-text-muted">
                   Enable proxy for OAuth + provider outbound requests.
                 </p>
@@ -1821,7 +1821,7 @@ export default function ProfilePage() {
                 className="flex flex-col gap-4 pt-2 border-t border-border/50"
               >
                 <div className="flex flex-col gap-2">
-                  <label className="font-medium text-sm sm:text-base">Proxy URL</label>
+                  <label className="font-medium text-sm">Proxy URL</label>
                   <Input
                     placeholder="http://127.0.0.1:7897"
                     value={proxyForm.outboundProxyUrl}
@@ -1836,7 +1836,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-                  <label className="font-medium text-sm sm:text-base">No Proxy</label>
+                  <label className="font-medium text-sm">No Proxy</label>
                   <Input
                     placeholder="localhost,127.0.0.1"
                     value={proxyForm.outboundNoProxy}
@@ -1889,11 +1889,11 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
               <span className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Observability</h3>
+            <h3 className="text-sm font-semibold">Observability</h3>
           </div>
           <div className="flex items-start sm:items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm sm:text-base">Enable Observability</p>
+              <p className="font-medium text-sm">Enable Observability</p>
               <p className="text-xs sm:text-sm text-text-muted">
                 Record request details for inspection in the logs view
               </p>
@@ -1912,7 +1912,7 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span className="material-symbols-outlined text-[20px]">visibility_off</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Claude Code Minimal Mode</h3>
+            <h3 className="text-sm font-semibold">Claude Code Minimal Mode</h3>
           </div>
           <p className="text-xs sm:text-sm text-text-muted mb-3">
             Toggle which sidebar menu entries are hidden. Hidden entries can be restored here at any
@@ -1929,7 +1929,7 @@ export default function ProfilePage() {
                   className={cn('focus-ring inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer',
                     hidden
                       ? 'border-border bg-bg text-text-muted line-through opacity-70'
-                      : 'border-primary/40 bg-primary/5 text-text-main hover:border-primary'
+                      : 'border-brand-line bg-brand-soft text-text-main hover:border-brand'
                   )}
                 >
                   <span className="material-symbols-outlined text-[14px]">
@@ -1968,11 +1968,11 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
               <span className="material-symbols-outlined text-[20px]">privacy_tip</span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold">Privacy</h3>
+            <h3 className="text-sm font-semibold">Privacy</h3>
           </div>
           <div className="flex items-start sm:items-center justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm sm:text-base">Anonymous Usage Analytics</p>
+              <p className="font-medium text-sm">Anonymous Usage Analytics</p>
               <p className="text-xs sm:text-sm text-text-muted">
                 Send anonymous page-view analytics to Google Analytics. Off by default.
               </p>

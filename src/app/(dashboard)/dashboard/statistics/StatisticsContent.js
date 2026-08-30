@@ -170,7 +170,7 @@ export default function StatisticsContent({ initialData }) {
   const hasFilter = provider.length || account.length || model.length || period !== "all" || customRange;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-6">
       {/* Filter bar */}
       <Card padding="md">
         <div className="flex flex-wrap items-end gap-3">
@@ -240,7 +240,7 @@ export default function StatisticsContent({ initialData }) {
               </div>
               <button
                 onClick={applyCustomRange}
-                className="focus-ring h-9 px-4 rounded-lg bg-primary text-white text-sm font-medium transition-colors hover:opacity-90 cursor-pointer"
+                className="focus-ring h-9 px-4 rounded-lg bg-brand-solid text-brand-on text-sm font-medium transition-colors hover:opacity-90 cursor-pointer"
               >
                 Apply
               </button>
@@ -280,7 +280,7 @@ export default function StatisticsContent({ initialData }) {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${viewMode === mode ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text-main"}`}
+                className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${viewMode === mode ? "bg-brand-solid text-brand-on shadow-soft" : "text-text-muted hover:text-text-main"}`}
               >
                 {mode === "tokens" ? "Tokens" : "Hit Rate"}
               </button>

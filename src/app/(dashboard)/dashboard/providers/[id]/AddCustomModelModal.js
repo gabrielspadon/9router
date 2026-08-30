@@ -68,7 +68,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
               onChange={(e) => { setModelId(e.target.value); setTestStatus(null); setTestError(""); }}
               onKeyDown={handleKeyDown}
               placeholder="e.g. claude-opus-4-5"
-              className="focus-ring flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-primary"
+              className="focus-ring flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand"
               autoFocus
             />
             <Button
@@ -89,13 +89,13 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
         {/* Test result */}
         {testStatus === "ok" && (
           <div className="flex items-center gap-2 text-sm text-success">
-            <span className="material-symbols-outlined text-base">check_circle</span>
+            <span className="material-symbols-outlined text-sm">check_circle</span>
             Model is reachable
           </div>
         )}
         {testStatus === "error" && (
           <div className="flex items-start gap-2 text-sm text-danger">
-            <span className="material-symbols-outlined text-base shrink-0">cancel</span>
+            <span className="material-symbols-outlined text-sm shrink-0">cancel</span>
             <span>{testError || "Model not reachable"}</span>
           </div>
         )}

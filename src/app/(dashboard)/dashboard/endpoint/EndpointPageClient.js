@@ -707,7 +707,7 @@ export default function APIPageClient({ machineId }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -717,11 +717,11 @@ export default function APIPageClient({ machineId }) {
   const currentEndpoint = baseUrl;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       {/* Endpoint Card */}
       <Card>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">api</span>
+          <span className="material-symbols-outlined text-brand">api</span>
           API Endpoint
         </h2>
 
@@ -738,7 +738,7 @@ export default function APIPageClient({ machineId }) {
           {/* Cloudflare Tunnel */}
           <div className="flex items-center gap-2">
             <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-              tunnelEnabled ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
+              tunnelEnabled ? "bg-brand-soft text-brand" : "bg-surface-2 text-text-muted"
             }`}>Tunnel</span>
             {tunnelEnabled && !tunnelLoading && tunnelReachable ? (
               <>
@@ -747,7 +747,7 @@ export default function APIPageClient({ machineId }) {
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
                   title={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
                   aria-label={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
-                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
                 </button>
@@ -832,7 +832,7 @@ export default function APIPageClient({ machineId }) {
           {/* Tailscale */}
           <div className="flex items-center gap-2">
             <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-              tsEnabled ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
+              tsEnabled ? "bg-brand-soft text-brand" : "bg-surface-2 text-text-muted"
             }`}>Tailscale</span>
             {tsEnabled && !tsLoading && tsReachable ? (
               <>
@@ -841,7 +841,7 @@ export default function APIPageClient({ machineId }) {
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
                   title={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
                   aria-label={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
-                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "ts_url" ? "check" : "content_copy"}</span>
                 </button>
@@ -970,7 +970,7 @@ export default function APIPageClient({ machineId }) {
       <Card id="require-api-key">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">vpn_key</span>
+            <span className="material-symbols-outlined text-brand">vpn_key</span>
             API Keys
           </h2>
           <Button icon="add" onClick={() => setShowAddModal(true)}>
@@ -999,7 +999,7 @@ export default function APIPageClient({ machineId }) {
 
         {keys.length === 0 ? (
           <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-soft text-brand mb-4">
               <span className="material-symbols-outlined text-[32px]">vpn_key</span>
             </div>
             <p className="text-text-main font-medium mb-1">No API keys yet</p>
@@ -1023,7 +1023,7 @@ export default function APIPageClient({ machineId }) {
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
+                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-all"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                       aria-label={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
@@ -1035,7 +1035,7 @@ export default function APIPageClient({ machineId }) {
                       onClick={() => copy(key.key, key.id)}
                       title={copied === key.id ? "Copied" : "Copy API key"}
                       aria-label={copied === key.id ? "Copied" : "Copy API key"}
-                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
+                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-all"
                     >
                       <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                         {copied === key.id ? "check" : "content_copy"}
@@ -1162,7 +1162,7 @@ export default function APIPageClient({ machineId }) {
         <div className="flex flex-col gap-4">
           <div className="bg-surface-2 border border-border-subtle rounded-lg p-4">
             <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-primary">cloud_upload</span>
+              <span className="material-symbols-outlined text-brand">cloud_upload</span>
               <div>
                 <p className="text-sm text-text-main font-medium mb-1">
                   Cloudflare Tunnel
@@ -1177,7 +1177,7 @@ export default function APIPageClient({ machineId }) {
           <div className="grid grid-cols-2 gap-3">
             {TUNNEL_BENEFITS.map((benefit) => (
               <div key={benefit.title} className="flex flex-col items-center text-center p-3 rounded-lg bg-sidebar/50">
-                <span className="material-symbols-outlined text-xl text-primary mb-1">{benefit.icon}</span>
+                <span className="material-symbols-outlined text-xl text-brand mb-1">{benefit.icon}</span>
                 <p className="text-xs font-semibold">{benefit.title}</p>
                 <p className="text-xs text-text-muted">{benefit.desc}</p>
               </div>

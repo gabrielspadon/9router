@@ -53,13 +53,13 @@ export default function UsageChart({ period = "7d", refreshKey = 0 }) {
       <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-border bg-surface-2 p-1 sm:w-auto sm:self-start">
         <button
           onClick={() => setViewMode("tokens")}
-          className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-surface-2"}`}
+          className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-brand-solid text-brand-on shadow-soft" : "text-text-muted hover:text-text-main hover:bg-surface-2"}`}
         >
           Tokens
         </button>
         <button
           onClick={() => setViewMode("cost")}
-          className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-surface-2"}`}
+          className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-brand-solid text-brand-on shadow-soft" : "text-text-muted hover:text-text-main hover:bg-surface-2"}`}
         >
           Cost
         </button>

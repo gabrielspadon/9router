@@ -416,7 +416,7 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -440,7 +440,7 @@ export default function ProvidersPage() {
     }`;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-6">
       {/* Grid filters — top-right of the page */}
       <div className="flex justify-end gap-2">
         <button
@@ -516,7 +516,7 @@ export default function ProvidersPage() {
               variant="secondary"
               icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
-              className="w-full !bg-white !text-black hover:!bg-surface-2 sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Add OpenAI Compatible
             </Button>
@@ -565,8 +565,8 @@ export default function ProvidersPage() {
               disabled={!!testingMode}
               className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
                 testingMode === "oauth"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                  ? "bg-brand-soft border-brand-line text-brand animate-pulse"
+                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
               }`}
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
@@ -613,8 +613,8 @@ export default function ProvidersPage() {
             disabled={!!testingMode}
             className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
               testingMode === "free"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                ? "bg-brand-soft border-brand-line text-brand animate-pulse"
+                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
             }`}
             title="Test all Free connections"
             aria-label="Test all Free provider connections"
@@ -674,8 +674,8 @@ export default function ProvidersPage() {
             disabled={!!testingMode}
             className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
               testingMode === "apikey"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                ? "bg-brand-soft border-brand-line text-brand animate-pulse"
+                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
             }`}
             title="Test all API Key connections"
             aria-label="Test all API Key connections"
@@ -703,7 +703,7 @@ export default function ProvidersPage() {
         {!isApikeySearching && !showAllApikey && hiddenApikeyCount > 0 && (
           <button
             onClick={() => setShowAllApikey(true)}
-            className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
+            className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2.5 text-sm font-medium text-brand transition-colors hover:border-brand hover:bg-brand-soft"
           >
             <span className="material-symbols-outlined text-[16px]">expand_more</span>
             Show all {apikeyEntries.length} providers
@@ -769,7 +769,7 @@ export default function ProvidersPage() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl"
+            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-elev"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
@@ -862,8 +862,8 @@ function FreeModelSyncCard() {
     <Card padding="sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="size-9 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary text-[20px]">auto_awesome</span>
+          <div className="size-9 shrink-0 rounded-lg bg-brand-soft flex items-center justify-center">
+            <span className="material-symbols-outlined text-brand text-[20px]">auto_awesome</span>
           </div>
           <div className="min-w-0">
             <h3 className="font-semibold leading-tight">Auto-fetch free models</h3>
@@ -890,8 +890,8 @@ function FreeModelSyncCard() {
             disabled={running}
             className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
               running
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                ? "bg-brand-soft border-brand-line text-brand animate-pulse"
+                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
             }`}
             title="Run a free-model sync immediately"
           >

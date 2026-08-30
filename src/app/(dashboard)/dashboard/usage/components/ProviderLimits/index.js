@@ -940,7 +940,7 @@ export default function ProviderLimits() {
                       setProviderFilter("all");
                       setProviderMenuOpen(false);
                     }}
-                    className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-primary/10 text-primary" : "text-text-main hover:bg-surface-2"}`}
+                    className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
                   >
                     <span className="material-symbols-outlined text-[22px]">
                       apps
@@ -965,7 +965,7 @@ export default function ProviderLimits() {
                           setProviderFilter(provider);
                           setProviderMenuOpen(false);
                         }}
-                        className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-primary/10 text-primary" : "text-text-main hover:bg-surface-2"}`}
+                        className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
                       >
                         <ProviderIcon
                           src={`/providers/${provider}.png`}
@@ -1070,7 +1070,7 @@ export default function ProviderLimits() {
           >
             <span
               className={`material-symbols-outlined text-[14px] ${
-                autoRefresh ? "text-primary" : "text-text-muted"
+                autoRefresh ? "text-brand" : "text-text-muted"
               }`}
             >
               {autoRefresh ? "toggle_on" : "toggle_off"}
@@ -1079,7 +1079,7 @@ export default function ProviderLimits() {
               Auto-refresh
             </span>
             {autoRefresh && (
-              <span className="text-[10px] text-text-muted metric">
+              <span className="text-xs text-text-muted metric">
                 ({countdown}s)
               </span>
             )}
@@ -1159,7 +1159,7 @@ export default function ProviderLimits() {
                         </p>
                       ) : null}
                       {getConnectionSecondaryLabel(conn) ? (
-                        <p className="text-[11px] text-text-muted/80 truncate">
+                        <p className="text-xs text-text-subtle truncate">
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
@@ -1183,23 +1183,23 @@ export default function ProviderLimits() {
                         if (!rawPlan && !fmt) return null;
                         return (
                           <div className="mt-1 flex flex-wrap items-center gap-2">
-                            {rawPlan ? <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{String(rawPlan)}</span> : null}
-                            {fmt ? <time dateTime={fmt.dateTime} className="text-[11px] text-text-muted">Subscription active until {fmt.display}</time> : null}
+                            {rawPlan ? <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand">{String(rawPlan)}</span> : null}
+                            {fmt ? <time dateTime={fmt.dateTime} className="text-xs text-text-muted">Subscription active until {fmt.display}</time> : null}
                           </div>
                         );
                       })()}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
-                          <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
+                          <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-semibold text-brand-600 dark:text-brand-300">
                             {kiroMethodLabel(conn)}
                           </span>
                           {kiroRegion(conn) && (
-                            <span className="rounded-full bg-info-soft px-2 py-0.5 text-[10px] font-semibold text-info">
+                            <span className="rounded-full bg-info-soft px-2 py-0.5 text-xs font-semibold text-info">
                               {kiroRegion(conn)}
                             </span>
                           )}
                           <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                               isInactive
                                 ? "bg-surface-2 text-text-muted"
                                 : conn.testStatus === "active" || conn.testStatus === "success"
@@ -1216,7 +1216,7 @@ export default function ProviderLimits() {
                               type="button"
                               onClick={() => copy(conn.providerSpecificData.profileArn, conn.id)}
                               title={conn.providerSpecificData.profileArn}
-                              className="focus-ring inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:text-primary"
+                              className="focus-ring inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-xs text-text-muted transition-colors hover:text-brand"
                             >
                               <span className="material-symbols-outlined text-[12px]">
                                 {copied === conn.id ? "check" : "content_copy"}
@@ -1250,9 +1250,9 @@ export default function ProviderLimits() {
                                 ? `Use one Codex reset credit. ${resetCreditCount} available.`
                                 : "No Codex reset credits available"
                             }
-                            className={`focus-ring flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium metric transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            className={`focus-ring flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-xs font-medium metric transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                               resetCreditCount > 0
-                                ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                                ? "border-brand-line bg-brand-soft text-brand hover:bg-brand-soft"
                                 : "border-border bg-surface-2 text-text-muted"
                             }`}
                           >
@@ -1268,7 +1268,7 @@ export default function ProviderLimits() {
                             onClick={() => handleViewCodexResetCredits(conn)}
                             disabled={isLoading || rowBusy}
                             aria-label="View Codex reset credit expiry"
-                            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:bg-surface-2 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:bg-surface-2 hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <span className="material-symbols-outlined text-[17px]">schedule</span>
                           </button>
@@ -1281,7 +1281,7 @@ export default function ProviderLimits() {
                           type="button"
                           onClick={() => toggleAutoPing(conn.id, conn.provider, !(autoPingMaps[conn.provider]?.[conn.id] === true))}
                           aria-label="Toggle auto-ping"
-                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-primary" : "text-text-muted"}`}
+                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-brand" : "text-text-muted"}`}
                         >
                           <span className="material-symbols-outlined text-[18px]">bolt</span>
                         </button>
@@ -1309,7 +1309,7 @@ export default function ProviderLimits() {
                           onClick={() => handleHotReloadConnection(conn)}
                           disabled={isLoading || rowBusy}
                           aria-label="Hot reload quota countdown"
-                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-primary transition-colors disabled:opacity-50 ${isHotReloading ? "text-primary" : ""}`}
+                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors disabled:opacity-50 ${isHotReloading ? "text-brand" : ""}`}
                         >
                           <span className={`material-symbols-outlined text-[18px] ${isHotReloading ? "animate-spin" : ""}`}>
                             {isHotReloading ? "progress_activity" : "rocket_launch"}
@@ -1326,7 +1326,7 @@ export default function ProviderLimits() {
                         }}
                         disabled={rowBusy}
                         aria-label="Edit connection"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors disabled:opacity-50"
                       >
                         <span className="material-symbols-outlined text-[18px]">
                           edit
@@ -1400,7 +1400,7 @@ export default function ProviderLimits() {
                     />
                     {conn.lastQuotaSnapshot?.windows?.length > 0 && (
                       <div className="mt-2 border-t border-border pt-2">
-                        <p className="mb-1 text-[10px] text-text-muted">
+                        <p className="mb-1 text-xs text-text-muted">
                           Pause buffer — pause this account when a window&apos;s remaining % ≤
                         </p>
                         <div className="flex flex-col gap-1">
@@ -1409,17 +1409,17 @@ export default function ProviderLimits() {
                           return (
                             <div key={w.key} className="flex items-center gap-2">
                               <span
-                                className="min-w-0 flex-1 truncate text-[11px] text-text-muted"
+                                className="min-w-0 flex-1 truncate text-xs text-text-muted"
                                 title={w.key}
                               >
                                 {w.key}
                               </span>
-                              <span className="w-10 text-right text-[10px] metric text-text-muted">
+                              <span className="w-10 text-right text-xs metric text-text-muted">
                                 {typeof w.remainingPercentage === "number"
                                   ? `${w.remainingPercentage}%`
                                   : "—"}
                               </span>
-                              <span className="text-[10px] text-text-muted">≤</span>
+                              <span className="text-xs text-text-muted">≤</span>
                               <input
                                 type="number"
                                 min={0}
@@ -1432,10 +1432,10 @@ export default function ProviderLimits() {
                                     Number.parseInt(e.target.value, 10) || 0,
                                   )
                                 }
-                                className="focus-ring w-14 rounded border border-border bg-bg px-1 py-0.5 text-[11px] focus:border-primary"
+                                className="focus-ring w-14 rounded border border-border bg-bg px-1 py-0.5 text-xs focus:border-brand"
                                 aria-label={`Pause buffer for ${w.key}`}
                               />
-                              <span className="text-[10px] text-text-muted">%</span>
+                              <span className="text-xs text-text-muted">%</span>
                             </div>
                           );
                         })}
@@ -1445,7 +1445,7 @@ export default function ProviderLimits() {
                 </>
                 )}
                 {hiddenQuotaRows.length > 0 && (
-                  <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-border pt-2 text-[10px] text-text-muted">
+                  <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-border pt-2 text-xs text-text-muted">
                     <span className="material-symbols-outlined shrink-0 text-[14px]">
                       visibility_off
                     </span>
@@ -1618,7 +1618,7 @@ export default function ProviderLimits() {
           <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-surface shadow-elev">
             <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-text-main">Codex Reset Credit Expiry</h3>
+                <h3 className="text-sm font-semibold text-text-main">Codex Reset Credit Expiry</h3>
                 <p className="mt-0.5 truncate text-xs text-text-muted">
                   {getConnectionLabel(resetCreditsState.connection) || "Codex account"}
                 </p>
@@ -1663,7 +1663,7 @@ export default function ProviderLimits() {
                         {resetCreditsState.data.credits.map((credit, index) => (
                           <tr key={`${credit.status}-${credit.expiresAt || index}`} className="border-t border-border">
                             <td className="px-3 py-2">
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                              <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">
                                 {credit.status || "unknown"}
                               </span>
                             </td>

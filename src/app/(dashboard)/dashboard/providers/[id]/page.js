@@ -1091,7 +1091,7 @@ export default function ProviderDetailPage() {
                 type="checkbox"
                 checked={isSelected(conn.id)}
                 onChange={() => toggleSelectConnection(conn.id)}
-                className="focus-ring h-4 w-4 rounded border-border text-primary"
+                className="focus-ring h-4 w-4 rounded border-border text-brand"
               />
             </div>
             <div className="flex-1 min-w-0">
@@ -1185,7 +1185,7 @@ export default function ProviderDetailPage() {
               <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
               <span className="truncate text-sm text-text-main">{pool.name}</span>
               {pool.isActive !== true && (
-                <span className="text-[10px] text-text-muted">(inactive)</span>
+                <span className="text-xs text-text-muted">(inactive)</span>
               )}
             </button>
           ))}
@@ -1315,7 +1315,7 @@ export default function ProviderDetailPage() {
         {/* Add model button — inline, same style as model chips */}
         <button
           onClick={() => setShowAddCustomModel(true)}
-          className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
+          className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2 text-xs text-brand transition-colors hover:border-brand hover:bg-brand-soft sm:w-auto"
         >
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
@@ -1356,7 +1356,7 @@ export default function ProviderDetailPage() {
                     onClick={async () => {
                       await handleAddCustomModel(m.id, "llm", providerStorageAlias);
                     }}
-                    className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors"
                     title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
                   >
                     <span className="material-symbols-outlined text-[13px]">add</span>
@@ -1377,7 +1377,7 @@ export default function ProviderDetailPage() {
                 <button
                   key={m.id}
                   onClick={() => handleEnableModel(m.id)}
-                  className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors"
                   title="Restore model"
                 >
                   <span className="material-symbols-outlined text-[13px]">add</span>
@@ -1393,7 +1393,7 @@ export default function ProviderDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -1404,7 +1404,7 @@ export default function ProviderDetailPage() {
     return (
       <div className="text-center py-20">
         <p className="text-text-muted">Provider not found</p>
-        <Link href="/dashboard/providers" className="text-primary mt-4 inline-block">
+        <Link href="/dashboard/providers" className="text-brand mt-4 inline-block">
           Back to Providers
         </Link>
       </div>
@@ -1424,12 +1424,12 @@ export default function ProviderDetailPage() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:gap-8 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-6">
       {/* Header */}
       <div className="min-w-0">
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
@@ -1462,13 +1462,13 @@ export default function ProviderDetailPage() {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{providerInfo.name}</h1>
+              <h1 className="truncate text-lg font-semibold tracking-tight">{providerInfo.name}</h1>
               {(providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website) && (
                 <a
                   href={providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="focus-ring text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  className="focus-ring text-xs text-brand hover:underline inline-flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-sm">open_in_new</span>
                   {providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
@@ -1498,7 +1498,7 @@ export default function ProviderDetailPage() {
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="focus-ring inline-flex justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-info-solid sm:py-0.5"
+              className="focus-ring inline-flex justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors hover:bg-info-solid sm:py-0.5"
             >
               Get API Key →
             </a>
@@ -1718,7 +1718,7 @@ export default function ProviderDetailPage() {
                       }}
                       disabled={providerStrategySaving}
                       placeholder="1"
-                      className="focus-ring w-14 px-2 py-1 text-xs border border-border rounded-md bg-bg focus:border-primary"
+                      className="focus-ring w-14 px-2 py-1 text-xs border border-border rounded-md bg-bg focus:border-brand"
                     />
                   </div>
                 )}
@@ -1735,7 +1735,7 @@ export default function ProviderDetailPage() {
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary shrink-0">
+                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-brand-soft text-brand shrink-0">
                   <span className="material-symbols-outlined text-[18px]">{isOAuth ? "lock" : "key"}</span>
                 </div>
                 <div className="min-w-0">
@@ -1786,12 +1786,12 @@ export default function ProviderDetailPage() {
               <RunSummary summary={hotReloadSummary} running={hotReloadRunning} currentId={hotReloadCurrentConnectionId} connections={connections} />
               {connections.length > 0 && (
                 <div className="mb-3 flex items-center gap-2 border-b border-border pb-2">
-                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-brand">
                     <input
                       type="checkbox"
                       checked={allSelected}
                       onChange={toggleSelectAllConnections}
-                      className="focus-ring h-3.5 w-3.5 rounded border-border text-primary"
+                      className="focus-ring h-3.5 w-3.5 rounded border-border text-brand"
                     />
                     Select All
                   </label>
@@ -1873,7 +1873,7 @@ export default function ProviderDetailPage() {
                 value={thinkingMode}
                 onChange={(e) => handleThinkingModeChange(e.target.value)}
                 title="Appends (level) suffix to copied model names"
-                className="focus-ring rounded-md border border-border bg-bg px-2 py-1 text-xs focus:border-primary"
+                className="focus-ring rounded-md border border-border bg-bg px-2 py-1 text-xs focus:border-brand"
               >
                 {providerThinkingLevels.map((opt) => (
                   <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>

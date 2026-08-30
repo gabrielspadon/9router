@@ -202,7 +202,7 @@ export default function UsageTable({
                       <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}>
                         chevron_right
                       </span>
-                      <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
+                      <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-brand" : ""}`}>
                         {group.groupKey}
                       </span>
                     </div>

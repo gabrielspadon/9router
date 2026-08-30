@@ -7,12 +7,12 @@ export default function EndpointRow({ label, url, copyId, copied, onCopy, badge,
   return (
     <div className="flex items-center gap-2">
       <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-          (badge === "CF" || badge === "TS") ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
+          (badge === "CF" || badge === "TS") ? "bg-brand-soft text-brand" : "bg-surface-2 text-text-muted"
         }`}>{label}</span>
       <Input value={url} readOnly className="flex-1 font-mono text-sm" />
       <button
         onClick={() => onCopy(url, copyId)}
-        className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+        className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors shrink-0"
         title={copied === copyId ? "Copied" : "Copy endpoint URL"}
         aria-label={copied === copyId ? "Copied" : "Copy endpoint URL"}
       >
