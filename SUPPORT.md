@@ -14,9 +14,10 @@ answer quickly.
 | Report a vulnerability | The private route in [SECURITY.md](SECURITY.md). Never a public issue |
 | Change the code yourself | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
-Read the [README](README.md) and the documentation site first. Setup, provider
-support and the deployment options are covered there, and a question already
-answered in the docs waits behind questions that are not.
+Read the [README](README.md) and the [documentation index](docs/README.md)
+first. Setup, provider support, OAuth flows, the token savers and the
+troubleshooting page are covered there, and a question already answered in the
+docs waits behind questions that are not.
 
 If you are unsure whether something is a bug, open a discussion. Turning a
 discussion into an issue is easy; closing a stream of issues that were really

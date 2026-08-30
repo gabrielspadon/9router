@@ -192,8 +192,9 @@ carries the full feature set, the provider list and the setup instructions.
 
 `README.zh-CN.md` and the files under `i18n/` are short localised summaries.
 Each states what 9Router is, gets a reader started, and links back to the
-canonical `README.md` and to the documentation index at `docs/README.md` for
-everything else. They are deliberately not full translations.
+canonical [`README.md`](README.md) and to the documentation index at
+[`docs/README.md`](docs/README.md) for everything else. They are deliberately
+not full translations.
 
 The reason is maintenance honesty. The front page moves with every provider
 added, and a full translation of a moving page drifts within weeks into
