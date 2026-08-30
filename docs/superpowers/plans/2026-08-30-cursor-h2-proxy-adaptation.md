@@ -4,7 +4,7 @@
 
 **Goal:** Route Cursor AgentService Run and GetUsableModels through the selected effective egress without weakening strict proxy policy, response-header timing, caller abort, cache isolation, or Cursor protobuf behavior.
 
-**Architecture:** Keep durable pool selection, effective-route resolution, HTTP/2 socket construction, Cursor streaming, and Cursor catalog caching isolated. The connection resolver returns usable selection or typed required-unavailable. The Node-only adapter owns one session lease and exposes the effective route that established it.
+**Architecture:** Keep durable pool selection, effective-route resolution, HTTP/2 socket construction, Cursor streaming, and Cursor catalog caching isolated. The connection resolver returns a discriminated selected, explicit-direct, unselected, or required-unavailable result. The Node-only adapter owns one session lease and exposes the effective route that established it.
 
 **Tech Stack:** Node ESM, Node http2/net/tls, installed socks-proxy-agent, SQLite adapter repositories, Next route handlers, Vitest 4.
 
@@ -13,7 +13,7 @@
 - Adapt upstream PR 3276 behavior only. Do not apply its patch or change generic fetch, proxy rotation, dashboard, registries, dependency manifests, production services, or tracking.
 - Accept only http, https, socks, socks4, socks4a, socks5, and socks5h tunnel URLs.
 - Relay is not a TCP tunnel. Relay and required-unavailable make zero calls to environment proxy resolution, net, TLS, SOCKS, HTTP CONNECT, http2.connect, catalog cache, or catalog post.
-- Strict selected routes never fall back to environment or direct egress. A non-strict proxy failure closes failed resources exactly once before direct fallback.
+- Strict selected routes never fall back to environment or direct egress. Only an explicit selected connectionNoProxy match produces direct from selected provenance. A non-strict established proxy failure closes failed resources exactly once before direct fallback.
 - Preserve existing header deadlines as ConnectTimeoutError. Preserve exact caller abort reasons before and after headers. Header deadline ends at headers, caller-abort lifetime remains until stream cleanup.
 - SessionLease owns exactly one returned H2 session and tunnel. close is idempotent. Catalog http2Post borrows session and never closes it.
 - Cache identity derives only from effective route. Hash normalized proxy URL internally and never log, return, or expose userinfo or a raw URL as a cache key.
@@ -67,11 +67,16 @@ Expected: no tracked dependency or lockfile changes.
 - Produces resolveEffectiveProxyRoute(targetUrl, proxyOptions).
 
 ~~~js
-// Internal-only route values. cacheIdentity contains no raw URL or userinfo.
+// Connection provenance is discriminated before egress. cacheIdentity contains no raw URL or userinfo.
+{ resolutionKind: "selected-proxy", proxyUrl, strictProxy: boolean }
+{ resolutionKind: "intentional-direct", reason: "connection-no-proxy" }
+{ resolutionKind: "unselected" }
+{ resolutionKind: "required-unavailable", reason, strictProxy: true }
+// Effective Route values consumed by the H2 adapter.
 { kind: "direct", strictProxy: false, cacheIdentity: "direct" }
 { kind: "proxy", strictProxy: true, proxyUrl, cacheIdentity: "proxy:" + sha256(normalizedProxyUrl) }
 { kind: "relay", strictProxy: true, cacheIdentity: null }
-{ kind: "required-unavailable", strictProxy: true, reason, cacheIdentity: null }
+{ kind: "required-unavailable", strictProxy: boolean, reason, cacheIdentity: null }
 ~~~
 
 Add Node crypto to this module and define the cache digest in the same task.
@@ -96,15 +101,17 @@ it("selects connection proxy before environment and redacts cache identity", () 
   expect(route.cacheIdentity).not.toContain("proxy.test");
 });
 
-it("returns required-unavailable without environment resolution", () => {
+it("returns strict selected malformed route as required-unavailable before environment", () => {
   expect(resolveEffectiveProxyRoute("https://agent.api5.cursor.sh/run", {
-    resolutionKind: "required-unavailable", strictProxy: true,
+    resolutionKind: "selected-proxy",
+    connectionProxyUrl: "smtp://proxy.test:25",
+    strictProxy: true,
   })).toMatchObject({ kind: "required-unavailable" });
   expect(getEnvProxyUrl).not.toHaveBeenCalled();
 });
 ~~~
 
-Add relay precedence, intentional selected NO_PROXY direct route, unsupported scheme, and selected strict invalid URL cases.
+Add relay precedence, explicit connectionNoProxy direct route, pairless required-unavailable, missing selected strict pool, invalid selected strict URL, unsupported selected strict scheme, and non-strict malformed selected route cases. Every unavailable selected case proves zero environment lookup. Add one non-strict established proxy failure case separately in Task 2 because direct fallback is permitted only after that real attempt.
 
 - [ ] **Step 2: Run the RED test.**
 
@@ -117,17 +124,34 @@ Expected: FAIL because the resolver is absent.
 ~~~js
 export function resolveEffectiveProxyRoute(targetUrl, proxyOptions = {}) {
   if (proxyOptions.resolutionKind === "required-unavailable") {
-    return { kind: "required-unavailable", strictProxy: true, reason: proxyOptions.reason || "selected-proxy-unavailable", cacheIdentity: null };
+    return { kind: "required-unavailable", strictProxy: proxyOptions.strictProxy === true, reason: proxyOptions.reason || "selected-proxy-unavailable", cacheIdentity: null };
   }
-  if (normalizeString(proxyOptions.vercelRelayUrl)) return { kind: "relay", strictProxy: proxyOptions.strictProxy === true, cacheIdentity: null };
-  const selected = resolveConnectionProxyUrl(targetUrl, proxyOptions);
-  const proxyUrl = selected || normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+  if (proxyOptions.resolutionKind === "intentional-direct") return { kind: "direct", strictProxy: false, cacheIdentity: "direct" };
+  if (proxyOptions.resolutionKind === "selected-proxy") {
+    if (normalizeString(proxyOptions.vercelRelayUrl)) return { kind: "relay", strictProxy: proxyOptions.strictProxy === true, cacheIdentity: null };
+    if (shouldBypassByNoProxy(targetUrl, proxyOptions.connectionNoProxy)) {
+      return { kind: "direct", strictProxy: false, cacheIdentity: "direct" };
+    }
+    const selected = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+    if (!selected || !isSupportedTunnelScheme(selected)) {
+      return { kind: "required-unavailable", strictProxy: proxyOptions.strictProxy === true, reason: "selected-proxy-invalid", cacheIdentity: null };
+    }
+    if (selected && isSupportedTunnelScheme(selected)) return { kind: "proxy", strictProxy: proxyOptions.strictProxy === true, proxyUrl: selected, cacheIdentity: "proxy:" + hashRouteUrl(selected) };
+  }
+  // Only no selected provenance may consult environment policy.
+  const proxyUrl = normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   if (!proxyUrl) return { kind: "direct", strictProxy: false, cacheIdentity: "direct" };
-  return { kind: "proxy", strictProxy: selected ? proxyOptions.strictProxy === true : false, proxyUrl, cacheIdentity: "proxy:" + hashRouteUrl(proxyUrl) };
+  return { kind: "proxy", strictProxy: false, proxyUrl, cacheIdentity: "proxy:" + hashRouteUrl(proxyUrl) };
 }
 ~~~
 
-Call it from proxyAwareFetch so existing fetch behavior retains selected-proxy precedence and ordinary non-strict direct fallback. Do not call environment resolution for required-unavailable.
+Call it from proxyAwareFetch so existing fetch behavior retains selected-proxy precedence and ordinary non-strict direct fallback only after an egress-capable proxy route attempted transport. Never call environment resolution for required-unavailable, relay, malformed or unsupported selected selection, or an explicit connectionNoProxy direct decision.
+
+~~~js
+function isSupportedTunnelScheme(proxyUrl) {
+  return ["http:", "https:", "socks:", "socks4:", "socks4a:", "socks5:", "socks5h:"].includes(new URL(proxyUrl).protocol);
+}
+~~~
 
 - [ ] **Step 4: Run route regression tests.**
 
@@ -361,6 +385,13 @@ const response = await http2Post(lease.session, headers, new Uint8Array(), { sig
 - [ ] **Step 1: Replace global fetch assumptions with failing seam tests.**
 
 ~~~js
+function protoResponse(models) {
+  return { status: 200, body: encodeUsableModels(models) };
+}
+function encodeUsableModels(models) {
+  return concat(...models.map(({ id, name }) => model(id, name)));
+}
+
 it("separates direct and proxied cache entries", async () => {
   await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: post });
   await resolveCursorModels(credentials, { proxyOptions: proxyA, connectHttp2: connector, http2Post: post });
@@ -373,9 +404,20 @@ it("closes fallback-to-direct lease on direct cache hit without posting", async 
   expect(post).toHaveBeenCalledTimes(1);
   expect(proxyFailsThenDirect.lease.close).toHaveBeenCalledTimes(1);
 });
+
+it("forceRefresh bypasses a seeded direct cache and overwrites its effective-route entry", async () => {
+  const oldModels = [{ id: "old", name: "Old" }];
+  const newModels = [{ id: "new", name: "New" }];
+  const seedPost = vi.fn().mockResolvedValue(protoResponse(oldModels));
+  const forcedPost = vi.fn().mockResolvedValue(protoResponse(newModels));
+  await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: seedPost });
+  await resolveCursorModels(credentials, { forceRefresh: true, proxyOptions: direct, connectHttp2: connector, http2Post: forcedPost });
+  expect(forcedPost).toHaveBeenCalledTimes(1);
+  await expect(resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: vi.fn() })).resolves.toEqual({ models: newModels });
+});
 ~~~
 
-Add direct and strict fixed-route hits, successful proxy hit, two proxy identities, relay/unavailable zero connector/post/cache-read, and ordinary catalog failure returning null for static fallback.
+Add direct and strict fixed-route hits, successful proxy hit, two proxy identities, relay/unavailable zero connector/post/cache-read, and ordinary catalog failure returning null for static fallback. Add a seeded strict-proxy forceRefresh and a non-strict proxy-to-direct forceRefresh case. Each forced request must call post, bypass every cache read, close its returned lease once, and overwrite only the adapter-returned effective-route key. The catalog suite therefore grows from its current three explicit tests by at least seven named cache-contract tests before it may be green.
 
 - [ ] **Step 2: Run the RED catalog suite.**
 
@@ -389,22 +431,25 @@ Expected: FAIL because current catalog uses raw http2.connect and a credential-o
 if (route.kind === "relay" || route.kind === "required-unavailable") {
   return { unavailable: true, reason: route.reason || route.kind };
 }
-if (route.kind === "direct" || route.strictProxy) {
+const cacheReadable = options.forceRefresh !== true;
+if (cacheReadable && (route.kind === "direct" || route.strictProxy)) {
   const cached = readFresh(cacheKey(credentials, route.cacheIdentity));
   if (cached) return { models: cached.models };
 }
 const lease = await connectHttp2(url, { route, signal });
 try {
   const key = cacheKey(credentials, lease.effectiveRoute.cacheIdentity);
-  const cached = readFresh(key);
+  const cached = cacheReadable ? readFresh(key) : null;
   if (cached) return { models: cached.models };
-  return storeParsedModels(key, await http2Post(lease.session, headers, body, { signal }));
+  const models = await parseCatalogResponse(await http2Post(lease.session, headers, body, { signal }));
+  storeCatalog(key, models);
+  return { models };
 } finally {
   lease.close();
 }
 ~~~
 
-The key hashes cursor, machine ID, access token, and effective route identity. Direct/strict routes may read cache before transport. Non-strict proxy routes establish first, then use the adapter-returned route. A failed proxy attempt is adapter-owned and cannot warm/read proxy cache. Do not turn ordinary catalog errors into typed unavailable.
+The key hashes cursor, machine ID, access token, and effective route identity. Direct/strict routes may read cache before transport only when forceRefresh is false. A forced call never reads any direct, selected-proxy, or fallback effective-route cache, always posts, then replaces the entry for its effective route. Non-strict proxy routes establish first, then use the adapter-returned route. A failed proxy attempt is adapter-owned and cannot warm/read proxy cache. Do not turn ordinary catalog errors into typed unavailable.
 
 - [ ] **Step 4: Run cache and adapter tests.**
 
@@ -537,8 +582,8 @@ git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 log --onel
 
 ~~~js
 export async function resolveConnectionProxyConfig(data, { persistPoolSnapshot } = {}) {
-  // { kind: "usable", ...proxy fields } or
-  // { kind: "required-unavailable", proxyPoolId, strictProxy: true, reason }
+  // { kind: "usable", resolutionKind: "selected-proxy" | "unselected", ...proxy fields } or
+  // { kind: "required-unavailable", proxyPoolId, strictProxy: boolean, reason }
 }
 export function toConnectionProxyOptions(config) {
   if (config.kind !== "usable") throw new RequiredProxyUnavailableError(config.reason);
@@ -548,29 +593,37 @@ export function toConnectionProxyOptions(config) {
     connectionNoProxy: config.connectionNoProxy || "",
     vercelRelayUrl: config.vercelRelayUrl || "",
     strictProxy: config.strictProxy === true,
-    resolutionKind: "usable",
+    resolutionKind: config.resolutionKind,
   };
 }
+export class RequiredProxyUnavailableError extends Error {
+  constructor(reason) {
+    super("Required proxy is unavailable");
+    this.name = "RequiredProxyUnavailableError";
+    this.code = "required_proxy_unavailable";
+    this.status = 503;
+    this.reason = reason;
+  }
+}
+export const isRequiredProxyUnavailableError = error => error?.code === "required_proxy_unavailable";
 ~~~
 
-Define the control helpers in connectionProxy.js. They preserve a persisted
-strict snapshot when lookup fails and make the non-strict fallback explicit.
+Define the control helpers in connectionProxy.js. They preserve selected
+provenance when lookup fails. A missing or malformed selected route is not
+rewritten to unselected, so it cannot become direct by accident.
 
 ~~~js
-function requiredUnavailable(reason, proxyPoolId) {
-  return { kind: "required-unavailable", reason, proxyPoolId, strictProxy: true };
+function requiredUnavailable(reason, proxyPoolId, strictProxy = true) {
+  return { kind: "required-unavailable", reason, proxyPoolId, strictProxy, resolutionKind: "required-unavailable" };
 }
 function usableConfigFromPool(pool, pair) {
   return {
-    kind: "usable", source: "pool", proxyPoolId: pair.proxyPoolId,
+    kind: "usable", resolutionKind: "selected-proxy", source: "pool", proxyPoolId: pair.proxyPoolId,
     connectionProxyEnabled: pool.type !== "vercel" && pool.type !== "cloudflare",
     connectionProxyUrl: pool.proxyUrl || "", connectionNoProxy: pool.noProxy || "",
     vercelRelayUrl: pool.type === "vercel" || pool.type === "cloudflare" ? pool.proxyUrl : "",
     strictProxy: pair.strictProxy,
   };
-}
-function legacyNonStrictFallback(data) {
-  return { kind: "usable", ...normalizeLegacyProxy(data), strictProxy: false };
 }
 ~~~
 
@@ -618,13 +671,11 @@ if (proxyPoolId && typeof storedStrict !== "boolean") {
   return usableConfigFromPool(activePool, pair);
 }
 if (proxyPoolId && (!activePool || activePool.isActive !== true || !proxyUrl)) {
-  return storedStrict === true
-    ? requiredUnavailable("selected-pool-unavailable", proxyPoolId)
-    : legacyNonStrictFallback();
+  return requiredUnavailable("selected-pool-unavailable", proxyPoolId, storedStrict === true);
 }
 ~~~
 
-Auth supplies conditional normal-connection and no-auth strategy persistence owners. It returns null before handing unavailable credentials to transports and copies trusted pair into provider data/options. Token refresh starts from existing providerSpecificData so neither field is erased. Keep __none__ as intentional direct selection.
+Auth supplies conditional normal-connection and no-auth strategy persistence owners. It returns null before handing unavailable credentials to transports and copies trusted pair into provider data/options. Token refresh starts from existing providerSpecificData so neither field is erased. Keep __none__ as intentional direct selection. A non-strict direct retry remains legal only after Task 2 receives an egress-capable proxy Route and its proxy transport actually fails.
 
 - [ ] **Step 4: Run auth adjacency tests.**
 
@@ -726,14 +777,31 @@ git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 log --onel
 **Files:**
 
 - Modify: src/app/api/v1/models/route.js
+- Modify: src/app/api/v1/models/[kind]/route.js
 - Modify: src/app/api/providers/[id]/models/route.js
+- Modify: src/app/api/models/new/route.js
+- Modify: src/app/api/model-context/route.js
 - Modify: tests/unit/cursor-models.test.js
 - Modify: tests/unit/required-unavailable-callers.test.js
+- Create: tests/unit/models-list-required-unavailable.test.js
 
 **Interfaces:**
 
 - Consumes Tasks 4 and 6.
-- Produces both model routes passing resolver-derived Cursor proxyOptions or returning typed unavailable before catalog discovery.
+- Produces resolver-derived Cursor proxyOptions and one required_proxy_unavailable error contract. buildModelsList keeps its successful Model[] return type but throws that typed error. Every current consumer translates that error to HTTP 503 and never replaces it with static models or a generic 500.
+
+~~~js
+import {
+  RequiredProxyUnavailableError,
+  isRequiredProxyUnavailableError,
+  resolveConnectionProxyConfig,
+  toConnectionProxyOptions,
+} from "@/lib/network/connectionProxy";
+import {
+  getProviderConnections,
+  updateConnectionProxyPoolSnapshotIfBound,
+} from "@/lib/localDb";
+~~~
 
 - [ ] **Step 1: Add failing model-route handoff tests.**
 
@@ -752,13 +820,33 @@ it.each([runV1Models, runConnectionModels])("returns unavailable before Cursor c
   await expect(route(unavailableCursorConnection)).resolves.toMatchObject({ status: 503 });
   expect(resolveCursorModels).not.toHaveBeenCalled();
 });
+
+it.each([getV1Models, getModelsByKind, getNewModels, getModelContext])(
+  "propagates required Cursor proxy unavailable as 503 without static fallback or cache write",
+  async route => {
+    const response = await route();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "required_proxy_unavailable" });
+    expect(resolveCursorModels).toHaveBeenCalled();
+    expect(setCachedResult).not.toHaveBeenCalled();
+  },
+);
+
+it("does not let a seeded new-model cache hide required Cursor proxy unavailable", async () => {
+  getCachedResult.mockReturnValue({ groups: [{ providerAlias: "cursor" }], total: 1 });
+  const response = await getNewModels();
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ code: "required_proxy_unavailable" });
+});
 ~~~
+
+Use the new model-list test file for imported route handlers and mocked dependencies. It starts at zero tests and gains the four consumer assertions above, the seeded-cache assertion, and one direct buildModelsList propagation test. The focused model command below therefore covers current cursor-model tests, existing generic caller checks, and six new typed model-list assertions.
 
 - [ ] **Step 2: Run RED model handoff tests.**
 
-Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/cursor-models.test.js unit/required-unavailable-callers.test.js --reporter=dot
+Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/cursor-models.test.js unit/required-unavailable-callers.test.js unit/models-list-required-unavailable.test.js --reporter=dot
 
-Expected: FAIL because current Cursor model resolvers receive no proxy provenance.
+Expected: FAIL because current Cursor resolvers receive no proxy provenance, buildModelsList catches live failures into static models, and consumers return normal/static or generic 500 responses.
 
 - [ ] **Step 3: Thread safe resolved options only.**
 
@@ -779,6 +867,13 @@ const requiredUnavailableResult = () => ({
   status: 503,
   code: "required_proxy_unavailable",
 });
+export async function assertCursorModelEgressAvailable() {
+  const connections = (await getProviderConnections()).filter(connection => connection.isActive !== false && connection.provider === "cursor");
+  for (const connection of connections) {
+    const config = await resolveConnectionProxyConfig(connection.providerSpecificData, connectionOwner(connection));
+    if (config.kind === "required-unavailable") throw new RequiredProxyUnavailableError(config.reason);
+  }
+}
 const proxyConfig = await resolveConnectionProxyConfig(
   connection.providerSpecificData,
   connectionOwner(connection),
@@ -793,11 +888,11 @@ const result = await resolveCursorModels(cursorCredentials(connection), {
 if (result?.unavailable) return requiredUnavailableResult(result);
 ~~~
 
-Keep static fallback only for ordinary null catalog failure. Do not send unrelated provider fetches through the new H2 adapter. Missing, inactive, or throwing strict pool state must retain provenance and call no catalog seam.
+For the v1 live Cursor resolver, throw new RequiredProxyUnavailableError when the resolver or catalog result is unavailable. In buildModelsList, rethrow that exact error from the live-resolver catch before the static-model code runs. Export assertCursorModelEgressAvailable from the v1 module and call it in models/new before getCachedResult, so a stale new-model cache cannot hide a strict required-unavailable selection. In the direct provider models resolver return the existing error/status shape with status 503 rather than its Cursor static warning. In GET handlers for v1 models, v1 model kinds, models/new, and model-context, recognize the typed error and serialize error Required proxy is unavailable with code required_proxy_unavailable and status 503. The model-context inner default-visibility catch rethrows this typed error to its outer HTTP handler. models/new does not populate its new-model cache on this error. Keep static fallback only for ordinary null catalog failure. Do not send unrelated provider fetches through the new H2 adapter. Missing, inactive, or throwing strict pool state must retain provenance and call no catalog seam.
 
 - [ ] **Step 4: Run complete focused campaign gate.**
 
-Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/http2-connect.test.js unit/cursor-connect-timeout.test.js unit/cursor-models.test.js unit/cursor-agent-proto.test.js unit/cursor-agent-exec-request.test.js unit/cursor-composer-thinking.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js unit/proxy-pool-strict-snapshot.test.js unit/required-unavailable-callers.test.js --reporter=dot
+Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/http2-connect.test.js unit/cursor-connect-timeout.test.js unit/cursor-models.test.js unit/cursor-agent-proto.test.js unit/cursor-agent-exec-request.test.js unit/cursor-composer-thinking.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js unit/proxy-pool-strict-snapshot.test.js unit/required-unavailable-callers.test.js unit/models-list-required-unavailable.test.js --reporter=dot
 
 Expected: all selected files pass. Record Vitest actual expanded count in implementation handoff.
 
@@ -805,7 +900,7 @@ Expected: all selected files pass. Record Vitest actual expanded count in implem
 
 ~~~bash
 cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276
-npx eslint open-sse/utils/proxyFetch.js open-sse/utils/http2Connect.js open-sse/executors/cursor.js open-sse/services/cursorModels.js src/lib/network/connectionProxy.js src/lib/db/repos/connectionsRepo.js src/lib/db/repos/settingsRepo.js src/lib/db/repos/proxyPoolsRepo.js src/app/api/providers/route.js src/app/api/providers/[id]/route.js src/app/api/settings/route.js src/app/api/proxy-pools/[id]/route.js src/sse/services/auth.js open-sse/services/tokenRefresh.js src/sse/services/quotaGuard.js src/shared/services/quotaAutoPing.js src/app/api/usage/[connectionId]/route.js src/app/api/usage/[connectionId]/codex-reset-credits/route.js src/app/api/providers/[id]/hotreload/route.js src/app/api/providers/[id]/test/testUtils.js src/app/api/v1/models/route.js src/app/api/providers/[id]/models/route.js
+npx eslint open-sse/utils/proxyFetch.js open-sse/utils/http2Connect.js open-sse/executors/cursor.js open-sse/services/cursorModels.js src/lib/network/connectionProxy.js src/lib/db/repos/connectionsRepo.js src/lib/db/repos/settingsRepo.js src/lib/db/repos/proxyPoolsRepo.js src/app/api/providers/route.js src/app/api/providers/[id]/route.js src/app/api/settings/route.js src/app/api/proxy-pools/[id]/route.js src/sse/services/auth.js open-sse/services/tokenRefresh.js src/sse/services/quotaGuard.js src/shared/services/quotaAutoPing.js src/app/api/usage/[connectionId]/route.js src/app/api/usage/[connectionId]/codex-reset-credits/route.js src/app/api/providers/[id]/hotreload/route.js src/app/api/providers/[id]/test/testUtils.js src/app/api/v1/models/route.js src/app/api/v1/models/[kind]/route.js src/app/api/providers/[id]/models/route.js src/app/api/models/new/route.js src/app/api/model-context/route.js
 npm run qa:regression
 npm run build
 ~~~
@@ -815,7 +910,7 @@ Expected: lint clean, no new baseline regression, and production build succeeds.
 - [ ] **Step 6: Commit and scope check.**
 
 ~~~bash
-git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 add src/app/api/v1/models/route.js src/app/api/providers/[id]/models/route.js tests/unit/cursor-models.test.js tests/unit/required-unavailable-callers.test.js
+git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 add src/app/api/v1/models/route.js src/app/api/v1/models/[kind]/route.js src/app/api/providers/[id]/models/route.js src/app/api/models/new/route.js src/app/api/model-context/route.js tests/unit/cursor-models.test.js tests/unit/required-unavailable-callers.test.js tests/unit/models-list-required-unavailable.test.js
 git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 commit -m "fix(cursor): preserve proxy route for live models"
 git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 log --oneline -1
 git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 status --short
