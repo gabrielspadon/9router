@@ -115,7 +115,7 @@ export default function PxpipeClient() {
           PXPIPE Dashboard
         </h2>
         <div className="flex items-center gap-2">
-          <a href="/dashboard/token-saver" className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80">
+          <a href="/dashboard/token-saver" className="focus-ring rounded-sm text-xs text-brand underline hover:no-underline">
             Token Saver settings
           </a>
           <Button size="sm" variant="ghost" onClick={refresh} disabled={loading}>

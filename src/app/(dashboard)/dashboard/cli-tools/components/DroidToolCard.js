@@ -319,7 +319,7 @@ export default function DroidToolCard({
                 {/* Models */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                    Models {modelList.length > 0 && <span className="text-primary metric">({modelList.length})</span>}
+                    Models {modelList.length > 0 && <span className="text-brand metric">({modelList.length})</span>}
                   </span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-1">

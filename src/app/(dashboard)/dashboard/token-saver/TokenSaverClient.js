@@ -564,7 +564,7 @@ export default function TokenSaverClient() {
                 href="https://github.com/rtk-ai/rtk"
                 target="_blank"
                 rel="noreferrer"
-                className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
               >
                 (RTK)
               </a>
@@ -587,7 +587,7 @@ export default function TokenSaverClient() {
                   href="https://github.com/chopratejas/headroom"
                   target="_blank"
                   rel="noreferrer"
-                  className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
+                  className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
                 >
                   (Headroom)
                 </a>
@@ -603,7 +603,7 @@ export default function TokenSaverClient() {
               <button
                 type="button"
                 onClick={() => setShowHeadroomInstallModal(true)}
-                className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs text-brand underline hover:no-underline"
               >
                 {headroomRunning ? "Manage" : "Setup"}
               </button>
@@ -651,7 +651,7 @@ export default function TokenSaverClient() {
                         type="button"
                         onClick={() => handleRemoveExtra(extra)}
                         disabled={removingExtra === extra}
-                        className="focus-ring rounded-sm ml-1 text-danger underline hover:opacity-80 disabled:opacity-50"
+                        className="focus-ring rounded-sm ml-1 text-danger underline hover:no-underline disabled:opacity-50"
                         title={`Uninstall [${extra}]`}
                       >
                         {removingExtra === extra ? "Uninstalling…" : "Uninstall"}
@@ -723,7 +723,7 @@ export default function TokenSaverClient() {
                 href="https://github.com/JuliusBrussee/caveman"
                 target="_blank"
                 rel="noreferrer"
-                className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
               >
                 (Caveman)
               </a>
@@ -774,7 +774,7 @@ export default function TokenSaverClient() {
                 href="https://github.com/DietrichGebert/ponytail"
                 target="_blank"
                 rel="noreferrer"
-                className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
               >
                 (Ponytail)
               </a>
@@ -870,7 +870,7 @@ export default function TokenSaverClient() {
                   href="https://github.com/teamchong/pxpipe"
                   target="_blank"
                   rel="noreferrer"
-                  className="focus-ring rounded-sm text-xs font-normal text-primary underline hover:opacity-80"
+                  className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
                 >
                   (PXPIPE)
                 </a>
@@ -884,13 +884,13 @@ export default function TokenSaverClient() {
               <button
                 type="button"
                 onClick={() => setShowPxpipeModal(true)}
-                className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs text-brand underline hover:no-underline"
               >
                 {pxpipeStatus.installed ? "Manage" : "Setup"}
               </button>
               <a
                 href="/dashboard/pxpipe"
-                className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs text-brand underline hover:no-underline"
               >
                 Dashboard
               </a>
@@ -1022,7 +1022,7 @@ export default function TokenSaverClient() {
             <button
               type="button"
               onClick={refreshDisclosureStats}
-              className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80"
+              className="focus-ring rounded-sm text-xs text-brand underline hover:no-underline"
             >
               Refresh
             </button>

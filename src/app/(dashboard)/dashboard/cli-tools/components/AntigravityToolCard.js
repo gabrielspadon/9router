@@ -271,13 +271,13 @@ export default function AntigravityToolCard({
                 <div key={key} className="flex items-center">
                   <div className="flex items-center gap-1 px-2 py-1 rounded-md">
                     {isLoading ? (
-                      <span className="material-symbols-outlined text-[14px] text-primary animate-spin">progress_activity</span>
+                      <span className="material-symbols-outlined text-[14px] text-brand animate-spin">progress_activity</span>
                     ) : (
                       <span className={`material-symbols-outlined text-[14px] ${ok ? "text-success" : "text-text-muted"}`}>
                         {ok ? "check_circle" : "radio_button_unchecked"}
                       </span>
                     )}
-                    <span className={`text-xs font-medium ${isLoading ? "text-primary" : ok ? "text-success" : "text-text-muted"}`}>
+                    <span className={`text-xs font-medium ${isLoading ? "text-brand" : ok ? "text-success" : "text-text-muted"}`}>
                       {label}
                     </span>
                   </div>

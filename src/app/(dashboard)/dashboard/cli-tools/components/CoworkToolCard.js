@@ -384,7 +384,7 @@ export default function CoworkToolCard({
                     <div className="flex items-center gap-2 mt-0.5">
                       <Button variant="secondary" size="sm" onClick={() => setMarketplaceOpen(true)}>+ Browse</Button>
                       <Button variant="secondary" size="sm" onClick={() => { setAddMcpForm({ name: "", url: "" }); setAddMcpOpen(true); }}>+ Custom</Button>
-                      <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="ml-auto rounded-[4px] text-xs text-text-muted hover:text-primary underline focus-ring">Find MCPs →</a>
+                      <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="ml-auto rounded-[4px] text-xs text-text-muted hover:text-brand underline focus-ring">Find MCPs →</a>
                     </div>
                   </div>
                 </div>
@@ -430,7 +430,7 @@ export default function CoworkToolCard({
                             <div className="text-xs font-medium">Browser Control (Browser MCP)</div>
                             <p className="text-xs text-text-muted leading-snug">
                               Controls your running Chrome. Auto-strips Cowork&apos;s built-in browser tools.{" "}
-                              <a href={browserDef.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-primary underline focus-ring">Install Chrome extension</a>
+                              <a href={browserDef.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-brand underline focus-ring">Install Chrome extension</a>
                             </p>
                           </div>
                         </label>
@@ -462,10 +462,10 @@ export default function CoworkToolCard({
                                 </div>
                                 <p className="text-xs text-text-muted leading-snug">{p.description}</p>
                                 {p.extensionUrl && (
-                                  <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-xs text-primary underline focus-ring">Install Chrome extension</a>
+                                  <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-xs text-brand underline focus-ring">Install Chrome extension</a>
                                 )}
                                 {p.setupUrl && (
-                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-xs text-primary underline focus-ring">{p.setupLabel || "Setup guide"}</a>
+                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-xs text-brand underline focus-ring">{p.setupLabel || "Setup guide"}</a>
                                 )}
                               </div>
                             </label>
@@ -556,7 +556,7 @@ export default function CoworkToolCard({
                   placeholder="my-mcp"
                   value={addMcpForm.name}
                   onChange={(e) => setAddMcpForm((f) => ({ ...f, name: e.target.value.replace(/\s+/g, "-").toLowerCase() }))}
-                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs focus-ring focus:border-primary"
+                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs focus-ring focus:border-brand-solid"
                 />
               </div>
               <div className="flex flex-col gap-1">
@@ -566,7 +566,7 @@ export default function CoworkToolCard({
                   placeholder="https://your-mcp-server.com/sse"
                   value={addMcpForm.url}
                   onChange={(e) => setAddMcpForm((f) => ({ ...f, url: e.target.value }))}
-                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs focus-ring focus:border-primary"
+                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs focus-ring focus:border-brand-solid"
                 />
               </div>
             </div>

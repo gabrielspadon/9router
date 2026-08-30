@@ -59,7 +59,7 @@ function SkillRow({ skill }) {
           href={getSkillBlobUrl(skill.id)}
           target="_blank"
           rel="noreferrer"
-          className="focus-ring rounded-sm text-xs text-text-muted hover:text-primary transition-colors duration-150 mt-1 inline-flex items-center gap-1 break-all"
+          className="focus-ring rounded-sm text-xs text-text-muted hover:text-brand transition-colors duration-150 mt-1 inline-flex items-center gap-1 break-all"
         >
           {url}
           <span className="material-symbols-outlined text-[12px]" aria-hidden="true">open_in_new</span>
@@ -99,7 +99,7 @@ export default function SkillsPage() {
             href={`${SKILLS_REPO_URL}/tree/master/skills`}
             target="_blank"
             rel="noreferrer"
-            className="focus-ring rounded-sm text-sm text-primary hover:underline inline-flex items-center gap-1"
+            className="focus-ring rounded-sm text-sm text-brand hover:underline inline-flex items-center gap-1"
           >
             <span className="material-symbols-outlined text-[16px]" aria-hidden="true">open_in_new</span>
             View on GitHub

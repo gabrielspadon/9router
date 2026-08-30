@@ -762,7 +762,7 @@ function ModelContextPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <Button variant="bare" size="icon-sm" onClick={() => startEdit(r)} aria-label="编辑生效窗口" title="编辑生效窗口" className="hover:bg-surface-2 text-text-muted hover:text-primary">
+                      <Button variant="bare" size="icon-sm" onClick={() => startEdit(r)} aria-label="编辑生效窗口" title="编辑生效窗口" className="hover:bg-surface-2 text-text-muted hover:text-brand">
                         <span className="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
                       </Button>
                       {r.src?.type === "scoped" ? (
@@ -774,7 +774,7 @@ function ModelContextPage() {
                           <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
                         </span>
                       ) : null}
-                      <Button variant="bare" size="icon-sm" onClick={() => toggleHideRow(r)} aria-label={hiddenView ? "取消隐藏" : "隐藏此行"} title={hiddenView ? "取消隐藏" : "隐藏此行"} className="hover:bg-surface-2 text-text-muted hover:text-primary">
+                      <Button variant="bare" size="icon-sm" onClick={() => toggleHideRow(r)} aria-label={hiddenView ? "取消隐藏" : "隐藏此行"} title={hiddenView ? "取消隐藏" : "隐藏此行"} className="hover:bg-surface-2 text-text-muted hover:text-brand">
                         <span className="material-symbols-outlined text-sm" aria-hidden="true">{hiddenView ? "visibility" : "visibility_off"}</span>
                       </Button>
                     </td>
@@ -792,7 +792,7 @@ function ModelContextPage() {
             {coveredCount > 0 && hiddenView === false && ` · 已覆盖 ${coveredCount} 项`}
           </span>
           {!hiddenView && !showAll && filtered.length > ROW_CAP && (
-            <button onClick={() => setShowAll(true)} className="focus-ring rounded-sm shrink-0 text-primary hover:underline cursor-pointer">
+            <button onClick={() => setShowAll(true)} className="focus-ring rounded-sm shrink-0 text-brand hover:underline cursor-pointer">
               显示全部 {filtered.length} 行
             </button>
           )}

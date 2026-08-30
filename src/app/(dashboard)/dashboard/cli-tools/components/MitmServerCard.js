@@ -133,12 +133,12 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
   return (
     <>
-      <Card padding="sm" className="border-primary/20 bg-primary/5">
+      <Card padding="sm" className="border-brand-line bg-brand-soft!">
         <div className="flex flex-col gap-3">
           {/* Header */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-[20px]">security</span>
+              <span className="material-symbols-outlined text-brand text-[20px]">security</span>
               <span className="font-semibold text-sm text-text-main">MITM Server</span>
               {isRunning ? (
                 <Badge variant="success" size="md">Running</Badge>

@@ -262,7 +262,7 @@ export function GenericExampleCard({ providerId, kind }) {
                 onClick={() => setUseTunnel((v) => !v)}
                 title={useTunnel ? "Using tunnel" : "Using local"}
                 className={`focus-ring flex items-center gap-1 text-xs px-2 py-1.5 rounded-[var(--radius-brand)] border shrink-0 transition-colors duration-150 ${
-                  useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-primary"
+                  useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-brand"
                 }`}
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">wifi_tethering</span>
@@ -316,7 +316,7 @@ export function GenericExampleCard({ providerId, kind }) {
                 type="button"
                 onClick={() => setInput("")}
                 aria-label="Clear input"
-                className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
               </Button>
@@ -341,7 +341,7 @@ export function GenericExampleCard({ providerId, kind }) {
                     type="button"
                     onClick={() => setRefImage("")}
                     aria-label="Clear reference image"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
                   >
                     <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
                   </Button>
@@ -378,7 +378,7 @@ export function GenericExampleCard({ providerId, kind }) {
                     type="button"
                     onClick={() => setMaskImage("")}
                     aria-label="Clear mask"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
                   >
                     <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
                   </Button>
@@ -456,7 +456,7 @@ export function GenericExampleCard({ providerId, kind }) {
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <button
                 onClick={() => copyCurl(curlSnippet)}
-                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedCurl ? "check" : "content_copy"}</span>
                 {copiedCurl ? "Copied" : "Copy"}
@@ -516,7 +516,7 @@ export function GenericExampleCard({ providerId, kind }) {
             {result && (
               <button
                 onClick={() => copyRes(resultJson)}
-                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedRes ? "check" : "content_copy"}</span>
                 {copiedRes ? "Copied" : "Copy"}
@@ -532,7 +532,7 @@ export function GenericExampleCard({ providerId, kind }) {
                 <a
                   href={binaryImageUrl || (result?.data?.data?.[0]?.b64_json ? `data:image/png;base64,${result.data.data[0].b64_json}` : result?.data?.data?.[0]?.url || "")}
                   download="image.png"
-                  className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                  className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
                 >
                   <span className="material-symbols-outlined text-[14px]" aria-hidden="true">download</span>
                   Download

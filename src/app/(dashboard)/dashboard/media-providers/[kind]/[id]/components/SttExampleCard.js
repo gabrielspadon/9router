@@ -144,7 +144,7 @@ export function SttExampleCard({ providerId }) {
                 onClick={() => setUseTunnel((v) => !v)}
                 title={useTunnel ? "Using tunnel" : "Using local"}
                 className={`focus-ring flex items-center gap-1 text-xs px-2 py-1.5 rounded-[var(--radius-brand)] border shrink-0 transition-colors duration-150 ${
-                  useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-primary"
+                  useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-brand"
                 }`}
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">wifi_tethering</span>
@@ -242,7 +242,7 @@ export function SttExampleCard({ providerId }) {
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <button
                 onClick={() => copyCurl(curlSnippet)}
-                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedCurl ? "check" : "content_copy"}</span>
                 {copiedCurl ? "Copied" : "Copy"}
@@ -274,7 +274,7 @@ export function SttExampleCard({ providerId }) {
             {result && (
               <button
                 onClick={() => copyRes(resultStr)}
-                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedRes ? "check" : "content_copy"}</span>
                 {copiedRes ? "Copied" : "Copy"}

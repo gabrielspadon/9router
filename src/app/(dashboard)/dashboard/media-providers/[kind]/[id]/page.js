@@ -74,7 +74,7 @@ export default function MediaProviderDetailPage() {
       <div>
         <Link
           href={`/dashboard/media-providers/${kind}`}
-          className="focus-ring rounded-sm inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors duration-150 mb-4"
+          className="focus-ring rounded-sm inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors duration-150 mb-4"
         >
           <span className="material-symbols-outlined text-[18px]" aria-hidden="true">arrow_back</span>
           {kindConfig.label}
@@ -100,7 +100,7 @@ export default function MediaProviderDetailPage() {
                   href={provider.notice.apiKeyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="focus-ring rounded-sm text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  className="focus-ring rounded-sm text-xs text-brand hover:underline inline-flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-sm" aria-hidden="true">open_in_new</span>
                   Get API Key
@@ -147,7 +147,7 @@ export default function MediaProviderDetailPage() {
               href={provider.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="focus-ring inline-flex shrink-0 justify-center rounded-[var(--radius-brand)] bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-opacity duration-150 hover:opacity-90 sm:py-0.5"
+              className="focus-ring inline-flex shrink-0 justify-center rounded-[var(--radius-brand)] bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors duration-150 hover:bg-info-solid-hover sm:py-0.5"
             >
               Get API Key →
             </a>

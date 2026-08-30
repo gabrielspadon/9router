@@ -186,7 +186,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
               {showInstallGuide && (
                 <div className="p-4 bg-surface border border-border rounded-lg">
                   <h4 className="font-medium mb-3">Installation Guide</h4>
-                  <p className="text-sm text-text-muted">Install Kilo Code from <a className="rounded-[4px] text-primary underline focus-ring" href="https://kilocode.ai" target="_blank" rel="noreferrer">kilocode.ai</a> or VS Code extension marketplace.</p>
+                  <p className="text-sm text-text-muted">Install Kilo Code from <a className="rounded-[4px] text-brand underline focus-ring" href="https://kilocode.ai" target="_blank" rel="noreferrer">kilocode.ai</a> or VS Code extension marketplace.</p>
                 </div>
               )}
             </div>

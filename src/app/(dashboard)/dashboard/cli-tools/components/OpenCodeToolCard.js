@@ -347,7 +347,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                             }}
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
                               model === activeModel
-                                ? "bg-primary/10 text-primary border border-primary"
+                                ? "bg-brand-soft text-brand border border-brand-solid"
                                 : "bg-surface-2 text-text-muted border border-transparent hover:border-border"
                             }`}
                             title={model === activeModel ? "Click to clear active model" : "Click to set as active"}
@@ -383,7 +383,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                       <Button variant="secondary" size="sm" onClick={() => setModalOpen(true)} disabled={!activeProviders?.length}>Add Model</Button>
                       <span className="text-xs text-text-muted">
                         {selectedModels.length > 0 && activeModel ? (
-                          <>Active: <span className="text-primary">{activeModel}</span></>
+                          <>Active: <span className="text-brand">{activeModel}</span></>
                         ) : selectedModels.length > 0 ? (
                           <span className="text-warning">Click a model to set/clear active</span>
                         ) : (

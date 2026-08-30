@@ -331,7 +331,7 @@ export default function OpenClawToolCard({
                 {/* Per-agent model overrides */}
                 {(openclawStatus.agents || []).filter(a => a.agentDir).map((agent) => (
                   <div key={agent.id} className="flex items-center gap-2 pl-4">
-                    <span className="w-32 shrink-0 text-xs text-primary break-words sm:text-right" title={agent.name || agent.id}>Agent {agent.name || agent.id}</span>
+                    <span className="w-32 shrink-0 text-xs text-brand break-words sm:text-right" title={agent.name || agent.id}>Agent {agent.name || agent.id}</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <div className="relative w-full min-w-0">
                       <input

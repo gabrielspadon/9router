@@ -951,7 +951,7 @@ export default function BasicChatPageClient() {
                         <span className="material-symbols-outlined text-[16px]" aria-hidden="true">stop</span>
                       </Button>
                     ) : null}
-                    <Button variant="bare" size="icon" onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`rounded-full transition-opacity ${canSend ? 'bg-brand-solid text-brand-on hover:opacity-90' : 'bg-surface-3 text-text-muted cursor-not-allowed'}`}>
+                    <Button variant="bare" size="icon" onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`rounded-full transition-colors ${canSend ? 'bg-brand-solid text-brand-on hover:bg-brand-solid-hover' : 'bg-surface-3 text-text-muted cursor-not-allowed'}`}>
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_upward</span>
                     </Button>
                   </div>

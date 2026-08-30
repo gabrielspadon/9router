@@ -244,7 +244,7 @@ export default function ComboDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href={backHref} aria-label="Back" className="focus-ring rounded-sm text-text-muted hover:text-primary transition-colors duration-150">
+          <Link href={backHref} aria-label="Back" className="focus-ring rounded-sm text-text-muted hover:text-brand transition-colors duration-150">
             <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
           </Link>
           <div className="size-10 rounded-[var(--radius-brand)] bg-surface-2 flex items-center justify-center shrink-0">
@@ -312,10 +312,10 @@ export default function ComboDetailPage() {
                     {model && <code className="text-xs text-text-muted font-mono truncate block">{model}</code>}
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
-                    <Button variant="bare" size="icon-sm" onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={idx === 0 ? "text-text-muted" : "text-text-muted hover:text-primary hover:bg-surface-3"} aria-label="Move up" title="Move up">
+                    <Button variant="bare" size="icon-sm" onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={idx === 0 ? "text-text-muted" : "text-text-muted hover:text-brand hover:bg-surface-3"} aria-label="Move up" title="Move up">
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_upward</span>
                     </Button>
-                    <Button variant="bare" size="icon-sm" onClick={() => handleMove(idx, 1)} disabled={idx === providers.length - 1} className={idx === providers.length - 1 ? "text-text-muted" : "text-text-muted hover:text-primary hover:bg-surface-3"} aria-label="Move down" title="Move down">
+                    <Button variant="bare" size="icon-sm" onClick={() => handleMove(idx, 1)} disabled={idx === providers.length - 1} className={idx === providers.length - 1 ? "text-text-muted" : "text-text-muted hover:text-brand hover:bg-surface-3"} aria-label="Move down" title="Move down">
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_downward</span>
                     </Button>
                     <Button variant="bare" size="icon-sm" onClick={() => handleRemoveProvider(idx)} className="text-text-muted hover:text-danger hover:bg-danger-soft" aria-label="Remove" title="Remove">
@@ -355,7 +355,7 @@ export default function ComboDetailPage() {
               {testResult.imageUrl && (
                 <div>
                   <div className="flex items-center justify-end mb-1.5">
-                    <a href={testResult.imageUrl} download="image.png" className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150">
+                    <a href={testResult.imageUrl} download="image.png" className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150">
                       <span className="material-symbols-outlined text-[14px]" aria-hidden="true">download</span>
                       Download
                     </a>
@@ -366,7 +366,7 @@ export default function ComboDetailPage() {
               {testResult.audioUrl && (
                 <div>
                   <div className="flex items-center justify-end mb-1.5">
-                    <a href={testResult.audioUrl} download="speech.mp3" className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150">
+                    <a href={testResult.audioUrl} download="speech.mp3" className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150">
                       <span className="material-symbols-outlined text-[14px]" aria-hidden="true">download</span>
                       Download
                     </a>

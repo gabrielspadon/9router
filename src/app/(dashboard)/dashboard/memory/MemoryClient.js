@@ -86,7 +86,7 @@ export default function MemoryClient() {
                 href="https://github.com/akitaonrails/ai-memory"
                 target="_blank"
                 rel="noreferrer"
-                className="focus-ring rounded-sm text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-brand underline hover:no-underline"
               >
                 ai-memory
               </a>

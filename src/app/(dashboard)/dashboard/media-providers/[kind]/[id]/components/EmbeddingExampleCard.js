@@ -145,7 +145,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
                 onClick={() => setUseTunnel((v) => !v)}
                 title={useTunnel ? "Using tunnel" : "Using local"}
                 className={`focus-ring flex items-center gap-1 text-xs px-2 py-1.5 rounded-[var(--radius-brand)] border shrink-0 transition-colors duration-150 ${
-                  useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-primary"
+                  useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-brand"
                 }`}
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">wifi_tethering</span>
@@ -180,7 +180,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
                 type="button"
                 onClick={() => setInput("")}
                 aria-label="Clear input"
-                className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
               </Button>
@@ -207,7 +207,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <button
                 onClick={() => copyCurl(curlSnippet)}
-                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedCurl ? "check" : "content_copy"}</span>
                 {copiedCurl ? "Copied" : "Copy"}
@@ -240,7 +240,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
             {result && (
               <button
                 onClick={() => copyRes(resultJson)}
-                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors duration-150"
+                className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedRes ? "check" : "content_copy"}</span>
                 {copiedRes ? "Copied" : "Copy"}

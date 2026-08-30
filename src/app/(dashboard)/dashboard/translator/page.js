@@ -244,7 +244,7 @@ export default function TranslatorPage() {
                   aria-expanded={isExpanded}
                   className="focus-ring rounded-[var(--radius-brand)] flex min-w-0 items-center gap-2 flex-1 text-left group"
                 >
-                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors duration-150" aria-hidden="true">
+                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-brand transition-colors duration-150" aria-hidden="true">
                     {isExpanded ? "expand_more" : "chevron_right"}
                   </span>
                   <span className="text-xs font-mono text-text-muted metric">{step.id}</span>

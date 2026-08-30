@@ -201,7 +201,7 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
                 <div className="p-4 bg-surface border border-border rounded-lg">
                   <h4 className="font-medium mb-3">Installation Guide</h4>
                   <div className="space-y-3 text-sm">
-                    <p className="text-text-muted">Install Cline VS Code extension or CLI from <a className="rounded-[4px] text-primary underline focus-ring" href="https://docs.cline.bot/" target="_blank" rel="noreferrer">docs.cline.bot</a>.</p>
+                    <p className="text-text-muted">Install Cline VS Code extension or CLI from <a className="rounded-[4px] text-brand underline focus-ring" href="https://docs.cline.bot/" target="_blank" rel="noreferrer">docs.cline.bot</a>.</p>
                   </div>
                 </div>
               )}
