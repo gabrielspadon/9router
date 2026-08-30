@@ -1,5 +1,19 @@
 # Upstream PRs — closed (processed)
 
+## PR #3268 — feat(codex): support fast service tier for image generation
+
+- url: https://github.com/decolua/9router/pull/3268
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: review/pr3268-codex-fast-image-tier
+- local-ref: a7803b699
+- disposition: rejected
+- validation: upstream head 015de35e applies cleanly, but no controlled live image proof; current Fast policy and UI remain chat-only
+- notes: maintainer reported no image speed change with service_tier and requested closure; no product change justified
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: rejected after upstream discussion and live fork-shape review. Its request serialization tests do not establish endpoint benefit, while its executor normalization broadens exact fast/priority behavior. Reconsider only after an authoritative controlled image-endpoint experiment.
+
 ## PR #3635 — Adding a link to verify your antigravity account
 
 - url: https://github.com/decolua/9router/pull/3635

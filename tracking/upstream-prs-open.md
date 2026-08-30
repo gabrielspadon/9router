@@ -41,17 +41,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3268 — feat(codex): support fast service tier for image generation
-
-- url: https://github.com/decolua/9router/pull/3268
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3261 — fix(proxy): rotate no-auth pools after rate limits
 
 - url: https://github.com/decolua/9router/pull/3261

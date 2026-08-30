@@ -245,3 +245,8 @@ Run an idempotent final upstream sync, require zero reachable PR and issue entri
 - Adapted strict Antigravity account verification rather than the upstream global usage-banner design. The merged implementation validates official structured signals, keeps sensitive challenge links connection-scoped and bounded, protects state transitions against stale callbacks, and exposes an authenticated, CSRF-protected dashboard action in all supported locales.
 - Merge composition retained B31 caller-abort/body-deadline/typed-terminal guarantees, PR3319 classifier validation, and PR3210's persisted plan badge. Whole-branch review approved after the final 616-pass, six-skip composed gate.
 - Branch `integration/task6-pr3635` fast-forwarded to master at `a885318bc`; PR #3635 was moved to the closed ledger. Fork publication follows the tracking checkpoint.
+
+### 2026-08-30 — PR #3268 rejected with upstream evidence
+
+- PR #3268 was mechanically applicable but not integrated. Its author had no tested Plus account, and the maintainer reported no image-speed gain from `service_tier` and requested closure.
+- Fork policy intentionally keeps automatic Fast chat-only and Sol-only. Adding an image request field without a controlled endpoint result would broaden tier parsing and claim an unproven benefit. The PR is closed as rejected pending authoritative live evidence.
