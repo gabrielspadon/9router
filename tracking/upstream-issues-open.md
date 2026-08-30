@@ -11042,3 +11042,13 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## Issue #3636 — fix(commandcode): catch upstream stream termination and `[CommandCode error:` text to trigger combo fallback
+
+- url: https://github.com/decolua/9router/issues/3636
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:

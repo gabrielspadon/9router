@@ -4115,81 +4115,56 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3631
 - upstream-state: open (discovered 2026-08-30)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-
-## PR #3630 — feat(security): comprehensive OWASP ASVS v5.0.0 security hardening
-
-- url: https://github.com/decolua/9router/pull/3630
-- upstream-state: open (discovered 2026-08-30)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
+- local-status: in-progress
+- branch: integration/task6-pr3631
+- local-ref: f656847fc
+- disposition: adapt and split
+- validation: .superpowers/sdd/PLAN/task-6-b29-pr3631-review.md
+- notes: post-translation Sol Fast policy and Codex-local orphan-output filtering only; reject bundled capability, random ID, and arbitrary tier changes
 
 
 ## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
 
 - url: https://github.com/decolua/9router/pull/3629
 - upstream-state: open (discovered 2026-08-30)
-- local-status: queued
+- local-status: in-progress
 - branch: 
 - local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-
-## PR #3626 — feat(cline): live model catalog for free Cline connections
-
-- url: https://github.com/decolua/9router/pull/3626
-- upstream-state: open (discovered 2026-08-30)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-6-b29-pr3629-review.md
+- notes: retain provider auth mutex, dispatcher eviction cleanup, and index-based SSE parsing; reject indefinite caches and content chunk arrays
 
 
 ## PR #3625 — feat(kiro): flatten top-level tool schema combinators + degrade overs…
 
 - url: https://github.com/decolua/9router/pull/3625
 - upstream-state: open (discovered 2026-08-30)
-- local-status: queued
+- local-status: in-progress
 - branch: 
 - local-ref: 
-- disposition: 
-- validation: 
-- notes: 
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-6-b29-pr3625-review.md
+- notes: schema and payload tasks require separate strict TDD; exact patch corrupts tool histories, image order, byte accounting, and error classification
 
 
 ## PR #3624 — feat(fetch): add Ollama Cloud web fetch provider
 
 - url: https://github.com/decolua/9router/pull/3624
 - upstream-state: open (discovered 2026-08-30)
-- local-status: queued
+- local-status: in-progress
 - branch: 
 - local-ref: 
-- disposition: 
-- validation: 
-- notes: 
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-6-b29-pr3624-review.md
+- notes: official Ollama web-fetch contract retained; implementation must honor proxy policy, routing, format, size, timeout, and independent capability state
 
+## PR #3635 — Adding a link to verify your antigravity account
 
-## PR #3623 — fix(models): expose only configured custom-compatible models
-
-- url: https://github.com/decolua/9router/pull/3623
+- url: https://github.com/decolua/9router/pull/3635
 - upstream-state: open (discovered 2026-08-30)
-- local-status: queued
+- local-status: in-progress
 - branch: 
 - local-ref: 
-- disposition: 
-- validation: 
-- notes: 
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-6-b29-pr3635-review.md
+- notes: retain strict structured validation detection and connection-scoped verification; reject sensitive general-SSE/global-banner design and fingerprint regressions

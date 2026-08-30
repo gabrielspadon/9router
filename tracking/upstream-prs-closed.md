@@ -6439,3 +6439,45 @@
 - final-disposition: superseded
 - closed: 2026-08-30
 - detail: accepted commit e4b2f0d7c already pins 12.10.1 with bounded postinstall-only fallback logic; focused Batch 28 supersession set passed 21/21
+
+## PR #3630 — feat(security): comprehensive OWASP ASVS v5.0.0 security hardening
+
+- url: https://github.com/decolua/9router/pull/3630
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: exact patch rejected after exhaustive ASVS review; broken OIDC and SAML allowlist, self-rejected logged password, fail-open non-migratable crypto, replay-cache failure, SSRF regression, and live-credential test risk
+
+## PR #3626 — feat(cline): live model catalog for free Cline connections
+
+- url: https://github.com/decolua/9router/pull/3626
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commit 4cbbd4ac2; official public recommended plus free feed, ClinePass exclusion, proxy-aware deadline cleanup, static fallback, and explicit precedence passed 245 focused and adjacent tests; independent review approved
+
+## PR #3623 — fix(models): expose only configured custom-compatible models
+
+- url: https://github.com/decolua/9router/pull/3623
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commit f7166ddce; compatible public model lists now expose only saved custom models and aliases, preserve explicit import discovery, and pass independent review
