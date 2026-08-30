@@ -14,6 +14,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { resolveClineModels } from "open-sse/services/clineModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
@@ -78,6 +79,20 @@ const LIVE_MODEL_RESOLVERS = {
     const result = await resolveClinepassModels({
       accessToken: conn.accessToken,
       apiKey: conn.apiKey,
+    });
+    return result?.models?.length ? { models: result.models } : null;
+  },
+  cline: async (conn) => {
+    const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
+    const result = await resolveClineModels({
+      log: console,
+      proxyOptions: {
+        connectionProxyEnabled: proxy?.connectionProxyEnabled === true,
+        connectionProxyUrl: proxy?.connectionProxyUrl || "",
+        connectionNoProxy: proxy?.connectionNoProxy || "",
+        vercelRelayUrl: proxy?.vercelRelayUrl || "",
+        strictProxy: proxy?.strictProxy === true,
+      },
     });
     return result?.models?.length ? { models: result.models } : null;
   },
