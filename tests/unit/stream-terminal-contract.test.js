@@ -288,4 +288,76 @@ describe("post-transform SSE terminal contract", () => {
     expect(events).toEqual([["disconnect", "client left"]]);
     expect(onIncompleteStream).not.toHaveBeenCalled();
   });
+
+  it("treats an in-flight caller abort as a disconnect without a synthetic terminal", async () => {
+    const caller = new AbortController();
+    const { controller, events } = trackingController();
+    const onIncompleteStream = vi.fn();
+    const output = pipeWithDisconnect(
+      new Response(new ReadableStream({ start() {} })),
+      passthroughTransform(),
+      controller,
+      {
+        ...terminalOptions(FORMATS.OPENAI, onIncompleteStream),
+        callerSignal: caller.signal,
+        ttftTimeoutMs: 25,
+      },
+    );
+    const reader = output.getReader();
+    const pendingRead = reader.read();
+
+    caller.abort("request closed");
+
+    await expect(pendingRead).resolves.toMatchObject({ done: true });
+    expect(events).toEqual([["disconnect", "caller_aborted"]]);
+    expect(onIncompleteStream).not.toHaveBeenCalled();
+  });
+
+  it("passes a caller abort through the streaming handler without an incomplete terminal", async () => {
+    const caller = new AbortController();
+    const { controller, events } = trackingController();
+    let upstream;
+    const providerResponse = new Response(new ReadableStream({
+      start(streamController) {
+        upstream = streamController;
+        streamController.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "partial" }, finish_reason: null }] })}\n\n`));
+        caller.signal.addEventListener("abort", () => {
+          upstream.error(new DOMException("request closed", "AbortError"));
+        }, { once: true });
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } });
+    const onStreamComplete = vi.fn();
+    const result = await handleStreamingResponse({
+      providerResponse,
+      provider: "openai",
+      model: "gpt-4o",
+      sourceFormat: FORMATS.OPENAI,
+      targetFormat: FORMATS.OPENAI,
+      body: { stream: true },
+      stream: true,
+      requestStartTime: Date.now(),
+      connectionId: "terminal-caller-abort",
+      apiKey: null,
+      onRequestSuccess: vi.fn(),
+      reqLogger: { appendProviderChunk() {}, appendConvertedChunk() {} },
+      streamController: controller,
+      onStreamComplete,
+      streamDetailId: "terminal-caller-abort",
+      streamState: {},
+      callerSignal: caller.signal,
+    });
+    const reader = result.response.body.getReader();
+
+    expect((await reader.read()).done).toBe(false);
+    caller.abort("request closed");
+
+    await expect(reader.read()).resolves.toMatchObject({ done: true });
+    expect(events).toEqual([["disconnect", "caller_aborted"]]);
+    expect(onStreamComplete).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.any(Number),
+      { aborted: true },
+    );
+  });
 });

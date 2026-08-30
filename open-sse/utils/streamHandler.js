@@ -129,6 +129,7 @@ export function createDisconnectAwareStream(
     terminalObserver = null,
     onIncompleteStream = null,
     onTerminalFailureReady = null,
+    callerSignal = null,
   } = {},
 ) {
   const reader = transformStream.readable.getReader();
@@ -138,6 +139,8 @@ export function createDisconnectAwareStream(
   let downstreamCancelled = false;
   let outputController = null;
   let outputClosed = false;
+  let callerAbortHandled = false;
+  let removeCallerAbortListener = null;
 
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
@@ -178,7 +181,19 @@ export function createDisconnectAwareStream(
   const closeOutput = (controller) => {
     if (outputClosed) return;
     outputClosed = true;
+    removeCallerAbortListener?.();
+    removeCallerAbortListener = null;
     controller.close();
+  };
+
+  const terminateCallerAbort = () => {
+    if (callerAbortHandled) return;
+    callerAbortHandled = true;
+    streamController.handleDisconnect("caller_aborted");
+    terminalObserver?.release?.();
+    reader.cancel(callerSignal?.reason).catch(() => {});
+    writer.abort(callerSignal?.reason).catch(() => {});
+    if (outputController) closeOutput(outputController);
   };
 
   const terminateIncomplete = (error) => {
@@ -203,9 +218,23 @@ export function createDisconnectAwareStream(
   return new ReadableStream({
     start(controller) {
       outputController = controller;
+      if (callerSignal) {
+        const onCallerAbort = () => terminateCallerAbort();
+        if (callerSignal.aborted) {
+          onCallerAbort();
+        } else {
+          callerSignal.addEventListener("abort", onCallerAbort, { once: true });
+          removeCallerAbortListener = () => callerSignal.removeEventListener("abort", onCallerAbort);
+        }
+      }
     },
 
     async pull(controller) {
+      if (callerAbortHandled || callerSignal?.aborted) {
+        terminateCallerAbort();
+        return;
+      }
+
       if (!streamController.isConnected()) {
         if (terminalObserver && !downstreamCancelled && !terminalObserver.sawTerminal()) {
           terminateIncomplete(new Error("stream ended before terminal event"));
@@ -233,6 +262,10 @@ export function createDisconnectAwareStream(
         terminalObserver?.observe?.(value);
         controller.enqueue(value);
       } catch (error) {
+        if (callerAbortHandled || callerSignal?.aborted) {
+          terminateCallerAbort();
+          return;
+        }
         const wasConnected = streamController.isConnected();
         // Controller already closed = downstream ended; not an upstream error, skip noisy log.
         const msg0 = error?.message || "";
@@ -291,6 +324,8 @@ export function createDisconnectAwareStream(
 
     cancel(reason) {
       downstreamCancelled = true;
+      removeCallerAbortListener?.();
+      removeCallerAbortListener = null;
       streamController.handleDisconnect(reason || "cancelled");
       terminalObserver?.release?.();
       reader.cancel();
@@ -317,6 +352,7 @@ function normalizePipeOptions(
       keepaliveMs: onAbortTerminalOrOptions.keepaliveMs ?? SSE_KEEPALIVE_MS,
       terminalObserver: onAbortTerminalOrOptions.terminalObserver ?? null,
       onIncompleteStream: onAbortTerminalOrOptions.onIncompleteStream ?? null,
+      callerSignal: onAbortTerminalOrOptions.callerSignal ?? null,
     };
   }
 
@@ -327,6 +363,7 @@ function normalizePipeOptions(
     keepaliveMs,
     terminalObserver: null,
     onIncompleteStream: null,
+    callerSignal: null,
   };
 }
 
@@ -366,7 +403,7 @@ export function pipeWithDisconnect(
     keepaliveMs,
   );
   ({ stallTimeoutMs, ttftTimeoutMs, keepaliveMs } = options);
-  const { onAbortTerminal, terminalObserver, onIncompleteStream } = options;
+  const { onAbortTerminal, terminalObserver, onIncompleteStream, callerSignal } = options;
   let terminateWithTerminal = null;
   let stallTimer = null;
   let firstChunkTimer = null;
@@ -551,6 +588,7 @@ export function pipeWithDisconnect(
     {
       terminalObserver,
       onIncompleteStream,
+      callerSignal,
       onTerminalFailureReady: (terminate) => {
         terminateWithTerminal = terminate;
       },

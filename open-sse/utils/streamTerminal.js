@@ -102,17 +102,25 @@ export function createSseTerminalObserver(emittedFormat) {
 
     if (emittedFormat === FORMATS.CLAUDE) {
       try {
-        return JSON.parse(dataLines.join("\n"))?.type === "message_stop";
+        const payloadType = JSON.parse(dataLines.join("\n"))?.type;
+        return eventName === null
+          ? payloadType === "message_stop"
+          : eventName === "message_stop" && payloadType === "message_stop";
       } catch {
         return false;
       }
     }
 
-    if (RESPONSES_TERMINAL_TYPES.has(eventName)) return true;
     try {
-      return RESPONSES_TERMINAL_TYPES.has(JSON.parse(dataLines.join("\n"))?.type);
+      const payloadType = JSON.parse(dataLines.join("\n"))?.type;
+      if (eventName !== null && typeof payloadType === "string") {
+        return eventName === payloadType && RESPONSES_TERMINAL_TYPES.has(eventName);
+      }
+      return eventName === null
+        ? RESPONSES_TERMINAL_TYPES.has(payloadType)
+        : RESPONSES_TERMINAL_TYPES.has(eventName);
     } catch {
-      return false;
+      return RESPONSES_TERMINAL_TYPES.has(eventName);
     }
   };
 

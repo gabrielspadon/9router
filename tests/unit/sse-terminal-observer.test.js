@@ -58,6 +58,36 @@ describe("bounded typed SSE terminal observer", () => {
     expect(responses.sawTerminal()).toBe(false);
   });
 
+  it("requires an explicit SSE event and JSON type to agree while accepting data-only terminals", () => {
+    const responsesMismatch = createSseTerminalObserver(FORMATS.OPENAI_RESPONSES);
+    observeInChunks(
+      responsesMismatch,
+      `event: response.completed\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: "partial" })}\n\n`,
+    );
+    expect(responsesMismatch.sawTerminal()).toBe(false);
+
+    const responsesEmptyType = createSseTerminalObserver(FORMATS.OPENAI_RESPONSES);
+    observeInChunks(
+      responsesEmptyType,
+      `event: response.completed\ndata: ${JSON.stringify({ type: "" })}\n\n`,
+    );
+    expect(responsesEmptyType.sawTerminal()).toBe(false);
+
+    const claudeMismatch = createSseTerminalObserver(FORMATS.CLAUDE);
+    observeInChunks(
+      claudeMismatch,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`,
+    );
+    expect(claudeMismatch.sawTerminal()).toBe(false);
+
+    const dataOnlyResponsesTerminal = createSseTerminalObserver(FORMATS.OPENAI_RESPONSES);
+    observeInChunks(
+      dataOnlyResponsesTerminal,
+      `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed" } })}\n\n`,
+    );
+    expect(dataOnlyResponsesTerminal.sawTerminal()).toBe(true);
+  });
+
   it("discards records beyond either hard limit and still accepts a later typed terminal", () => {
     const byBytes = createSseTerminalObserver(FORMATS.OPENAI);
     const oversized = `data: ${"x".repeat(MAX_SSE_TERMINAL_RECORD_BYTES + 1)}\n\n`;
