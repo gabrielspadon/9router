@@ -2,6 +2,41 @@ export function buildProviderStrategyPatch(providerId, values) {
   return { providerStrategyPatch: { providerId, values } };
 }
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+
+function isPlainMap(value) {
+  if (value === null || typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+export function assertProviderStrategyPatchConfirmation(
+  data,
+  providerId,
+  values,
+  message = "Settings API did not confirm the provider strategy patch",
+) {
+  if (
+    !isPlainMap(data)
+    || !hasOwn(data, "providerStrategies")
+    || !isPlainMap(data.providerStrategies)
+  ) {
+    throw new Error(message);
+  }
+  const strategies = data.providerStrategies;
+  const hasProvider = hasOwn(strategies, providerId);
+  const confirmed = hasProvider ? strategies[providerId] : Object.create(null);
+  if (hasProvider && !isPlainMap(confirmed)) throw new Error(message);
+
+  for (const [key, value] of Object.entries(values)) {
+    const owns = hasOwn(confirmed, key);
+    if ((value === null && owns) || (value !== null && (!owns || confirmed[key] !== value))) {
+      throw new Error(message);
+    }
+  }
+  return confirmed;
+}
+
 export async function saveProviderStrategyPatch({ fetchImpl = fetch, providerId, values }) {
   const response = await fetchImpl("/api/settings", {
     method: "PATCH",
@@ -10,13 +45,7 @@ export async function saveProviderStrategyPatch({ fetchImpl = fetch, providerId,
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Failed to save provider strategy");
-  const confirmed = data.providerStrategies?.[providerId] || {};
-  for (const [key, value] of Object.entries(values)) {
-    const owns = Object.prototype.hasOwnProperty.call(confirmed, key);
-    if ((value === null && owns) || (value !== null && (!owns || confirmed[key] !== value))) {
-      throw new Error("Settings API did not confirm the provider strategy patch");
-    }
-  }
+  assertProviderStrategyPatchConfirmation(data, providerId, values);
   return data;
 }
 

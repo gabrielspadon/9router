@@ -180,6 +180,85 @@ describe("provider strategy atomic patch helper", () => {
     });
   });
 
+  it("rejects a deletion confirmation that retains the field as own null", async () => {
+    const { saveProviderStrategyPatch } = await loadHelper();
+    const fetchImpl = vi.fn().mockResolvedValue(
+      Response.json({
+        providerStrategies: { qoder: { stickyRoundRobinLimit: null } },
+      }),
+    );
+
+    await expect(
+      saveProviderStrategyPatch({
+        fetchImpl,
+        providerId: "qoder",
+        values: { stickyRoundRobinLimit: null },
+      }),
+    ).rejects.toThrow("did not confirm");
+  });
+
+  it.each([
+    ["missing", {}],
+    ["null", { providerStrategies: null }],
+    ["array", { providerStrategies: [] }],
+    ["null provider", { providerStrategies: { qoder: null } }],
+    ["array provider", { providerStrategies: { qoder: [] } }],
+  ])("rejects a %s confirmation envelope for deletion-only patches", async (_label, data) => {
+    const { saveProviderStrategyPatch } = await loadHelper();
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json(data));
+
+    await expect(
+      saveProviderStrategyPatch({
+        fetchImpl,
+        providerId: "qoder",
+        values: { stickyRoundRobinLimit: null },
+      }),
+    ).rejects.toThrow("did not confirm");
+  });
+
+  it("rejects inherited provider and field confirmations", async () => {
+    const { saveProviderStrategyPatch } = await loadHelper();
+    const inheritedProviderStrategies = Object.create({
+      qoder: { stickyRoundRobinLimit: null },
+    });
+    const inheritedField = Object.create({ stickyRoundRobinLimit: null });
+
+    for (const providerStrategies of [
+      inheritedProviderStrategies,
+      { qoder: inheritedField },
+    ]) {
+      const fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ providerStrategies }),
+      });
+      await expect(
+        saveProviderStrategyPatch({
+          fetchImpl,
+          providerId: "qoder",
+          values: { stickyRoundRobinLimit: null },
+        }),
+      ).rejects.toThrow("did not confirm");
+    }
+  });
+
+  it("accepts absent-key deletion while preserving unrelated sibling fields", async () => {
+    const { saveProviderStrategyPatch } = await loadHelper();
+    const data = {
+      providerStrategies: {
+        qoder: { fallbackStrategy: "round-robin", connectTimeoutMs: 8000 },
+      },
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json(data));
+
+    await expect(
+      saveProviderStrategyPatch({
+        fetchImpl,
+        providerId: "qoder",
+        values: { stickyRoundRobinLimit: null },
+      }),
+    ).resolves.toEqual(data);
+  });
+
   it("serializes same-field writes and keeps busy true through the final confirmation", async () => {
     const { createProviderStrategySaveQueue, saveProviderStrategyPatch } = await loadHelper();
     const firstResponse = deferred();

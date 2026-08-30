@@ -2,6 +2,7 @@ import {
   CONNECT_TIMEOUT_DEFAULT_MS,
   isValidConnectTimeoutMs,
 } from "../../../open-sse/config/connectTimeout.js";
+import { assertProviderStrategyPatchConfirmation } from "./providerStrategyPatch.js";
 
 export function parseConnectTimeoutDraft(draft, { provider = false } = {}) {
   const text = String(draft ?? "").trim();
@@ -42,6 +43,14 @@ export async function saveConnectTimeout({ fetchImpl = fetch, providerId, value 
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Failed to save connect timeout");
+  if (providerId) {
+    assertProviderStrategyPatchConfirmation(
+      data,
+      providerId,
+      { connectTimeoutMs: value },
+      "Settings API did not confirm the requested connect timeout",
+    );
+  }
   const confirmed = extractConfirmedConnectTimeout(data, providerId);
   if (confirmed !== value) {
     throw new Error("Settings API did not confirm the requested connect timeout");

@@ -117,6 +117,39 @@ describe("connect timeout input contract", () => {
     ).resolves.toMatchObject({ confirmed: null });
   });
 
+  it("rejects a provider unset when the server retains an own null field", async () => {
+    const retainedNullFetch = vi.fn().mockResolvedValue(
+      Response.json({
+        connectTimeoutMs: 15000,
+        providerStrategies: { qoder: { connectTimeoutMs: null } },
+      }),
+    );
+
+    await expect(
+      saveConnectTimeout({
+        fetchImpl: retainedNullFetch,
+        providerId: "qoder",
+        value: null,
+      }),
+    ).rejects.toThrow("did not confirm");
+  });
+
+  it.each([
+    ["missing", {}],
+    ["null", { providerStrategies: null }],
+    ["array", { providerStrategies: [] }],
+  ])("rejects a %s provider strategy envelope", async (_label, data) => {
+    const malformedFetch = vi.fn().mockResolvedValue(Response.json(data));
+
+    await expect(
+      saveConnectTimeout({
+        fetchImpl: malformedFetch,
+        providerId: "qoder",
+        value: null,
+      }),
+    ).rejects.toThrow("did not confirm");
+  });
+
   it("keeps request execution out of the component and commits only on blur", () => {
     const componentSource = readFileSync(
       new URL("../../src/shared/components/ConnectTimeoutInput.js", import.meta.url),
