@@ -7,8 +7,12 @@ import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.
 import { evaluateQuota } from "./quotaGuard.js";
 import * as log from "../utils/logger.js";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// Serialize account selection per canonical provider without blocking unrelated providers.
+const providerSelectionQueues = new Map();
+
+export function _getProviderSelectionQueueSize() {
+  return providerSelectionQueues.size;
+}
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
@@ -45,16 +49,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
-  let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
+  // Resolve aliases before queue acquisition so alias and canonical requests share one lock.
+  const providerId = resolveProviderId(provider);
+  const currentQueue = providerSelectionQueues.get(providerId) || Promise.resolve();
+  let releaseQueue;
+  const nextQueue = new Promise(resolve => { releaseQueue = resolve; });
+  providerSelectionQueues.set(providerId, nextQueue);
 
   try {
-    await currentMutex;
-
-    // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
-    const providerId = resolveProviderId(provider);
+    await currentQueue;
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -245,7 +248,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       _connection: connection
     };
   } finally {
-    if (resolveMutex) resolveMutex();
+    releaseQueue();
+    if (providerSelectionQueues.get(providerId) === nextQueue) {
+      providerSelectionQueues.delete(providerId);
+    }
   }
 }
 
