@@ -1,5 +1,9 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import {
+  CONNECT_TIMEOUT_DEFAULT_MS,
+  isValidConnectTimeoutMs,
+} from "../../../../open-sse/config/connectTimeout.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL =
@@ -15,6 +19,7 @@ const DEFAULT_SETTINGS = {
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
+  connectTimeoutMs: CONNECT_TIMEOUT_DEFAULT_MS,
   quotaVisibility: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
@@ -123,6 +128,23 @@ export function mergeWithDefaults(raw) {
       }
     }
   }
+  if (!isValidConnectTimeoutMs(merged.connectTimeoutMs)) {
+    merged.connectTimeoutMs = CONNECT_TIMEOUT_DEFAULT_MS;
+  }
+  const providerStrategies = { ...(merged.providerStrategies || {}) };
+  for (const [providerId, rawOverride] of Object.entries(providerStrategies)) {
+    if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+      delete providerStrategies[providerId];
+      continue;
+    }
+    const override = { ...rawOverride };
+    if (Object.prototype.hasOwnProperty.call(override, "connectTimeoutMs")
+        && !isValidConnectTimeoutMs(override.connectTimeoutMs)) {
+      delete override.connectTimeoutMs;
+    }
+    providerStrategies[providerId] = override;
+  }
+  merged.providerStrategies = providerStrategies;
   return merged;
 }
 
@@ -160,6 +182,33 @@ export async function updateSettings(updates) {
       }
     }
     next = { ...mergedCurrent, ...updates };
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(next)],
+    );
+  });
+  return mergeWithDefaults(next);
+}
+
+export async function updateProviderStrategy(providerId, values) {
+  const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
+  if (dangerousKeys.has(providerId) || Object.keys(values).some((key) => dangerousKeys.has(key))) {
+    throw new TypeError("Invalid provider strategy key");
+  }
+  const db = await getAdapter();
+  let next;
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const strategies = { ...(current.providerStrategies || {}) };
+    const provider = { ...(strategies[providerId] || {}) };
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null) delete provider[key];
+      else provider[key] = value;
+    }
+    if (Object.keys(provider).length === 0) delete strategies[providerId];
+    else strategies[providerId] = provider;
+    next = { ...current, providerStrategies: strategies };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],

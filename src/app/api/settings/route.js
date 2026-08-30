@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateProviderStrategy, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { isValidConnectTimeoutMs } from "open-sse/config/connectTimeout.js";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +14,32 @@ const SETTINGS_RESPONSE_HEADERS = {
 
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+const DANGEROUS_STRATEGY_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+function isPlainObject(value) {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function toSafeSettings(settings) {
+  const safeSettings = { ...settings };
+  const oidcClientSecret = safeSettings.oidcClientSecret;
+  delete safeSettings.password;
+  delete safeSettings.oidcClientSecret;
+  safeSettings.oidcConfigured = !!(
+    safeSettings.oidcIssuerUrl
+    && safeSettings.oidcClientId
+    && oidcClientSecret
+  );
+  return safeSettings;
+}
 
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
-    safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    const safeSettings = toSafeSettings(settings);
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
@@ -27,7 +48,7 @@ export async function GET() {
       ...safeSettings, 
       enableRequestLogs,
       enableTranslator,
-      hasPassword: !!password
+      hasPassword: !!settings.password
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error getting settings:", error);
@@ -38,6 +59,71 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const body = await request.json();
+
+    if (Object.prototype.hasOwnProperty.call(body, "providerStrategyPatch")) {
+      if (Object.keys(body).length !== 1) {
+        return NextResponse.json(
+          { error: "providerStrategyPatch cannot be combined with other settings" },
+          { status: 400 },
+        );
+      }
+      const patch = body.providerStrategyPatch;
+      const providerId = typeof patch?.providerId === "string" ? patch.providerId.trim() : "";
+      const values = patch?.values;
+      if (
+        !providerId
+        || providerId.length > 128
+        || DANGEROUS_STRATEGY_KEYS.has(providerId)
+        || !isPlainObject(values)
+      ) {
+        return NextResponse.json({ error: "Invalid provider strategy patch" }, { status: 400 });
+      }
+      if ([...DANGEROUS_STRATEGY_KEYS].some((key) =>
+        Object.prototype.hasOwnProperty.call(values, key))) {
+        return NextResponse.json({ error: "Invalid provider strategy key" }, { status: 400 });
+      }
+      if (Object.prototype.hasOwnProperty.call(values, "connectTimeoutMs")
+          && values.connectTimeoutMs !== null
+          && !isValidConnectTimeoutMs(values.connectTimeoutMs)) {
+        return NextResponse.json(
+          { error: "connectTimeoutMs must be an integer from 1000 through 120000" },
+          { status: 400 },
+        );
+      }
+      const settings = await updateProviderStrategy(providerId, values);
+      return NextResponse.json(toSafeSettings(settings), { headers: SETTINGS_RESPONSE_HEADERS });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "connectTimeoutMs")
+        && !isValidConnectTimeoutMs(body.connectTimeoutMs)) {
+      return NextResponse.json(
+        { error: "connectTimeoutMs must be an integer from 1000 through 120000" },
+        { status: 400 },
+      );
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "providerStrategies")) {
+      const strategies = body.providerStrategies;
+      if (!isPlainObject(strategies)) {
+        return NextResponse.json({ error: "Invalid provider strategies" }, { status: 400 });
+      }
+      for (const [providerId, values] of Object.entries(strategies)) {
+        if (DANGEROUS_STRATEGY_KEYS.has(providerId) || !isPlainObject(values)) {
+          return NextResponse.json({ error: "Invalid provider strategy" }, { status: 400 });
+        }
+        if ([...DANGEROUS_STRATEGY_KEYS].some((key) =>
+          Object.prototype.hasOwnProperty.call(values, key))) {
+          return NextResponse.json({ error: "Invalid provider strategy key" }, { status: 400 });
+        }
+        if (Object.prototype.hasOwnProperty.call(values, "connectTimeoutMs")
+            && !isValidConnectTimeoutMs(values.connectTimeoutMs)) {
+          return NextResponse.json(
+            { error: "connectTimeoutMs must be an integer from 1000 through 120000" },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
@@ -129,9 +215,7 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[FreeModelSync] settings update failed:", error.message));
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
-    safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
-    return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
+    return NextResponse.json(toSafeSettings(settings), { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
