@@ -72,7 +72,7 @@ export default function MultiSelect({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-[10px] border border-border bg-surface shadow-lg max-h-64 overflow-auto py-1">
+        <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-[10px] border border-border bg-surface shadow-elev max-h-64 overflow-auto py-1">
           <button
             type="button"
             onClick={() => { onChange([]); }}
