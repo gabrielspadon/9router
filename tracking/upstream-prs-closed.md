@@ -98,6 +98,20 @@
 - closed: 2026-08-30
 - detail: chat-only policy enforcement leaves all other billable routes bypassable, post-response accounting is non-atomic under concurrency, migration version conflicts with current schema, export/import loses controls, and the model-access endpoint is absent.
 
+## PR #3197 — feat(combos): add per-model test button in combo create/edit modal
+
+- url: https://github.com/decolua/9router/pull/3197
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref: 76d03df2f
+- disposition: superseded
+- validation: current ComboFormModal, ComboTestModal, API route review, and focused 9/9 test receipt
+- notes: closed without product change
+- final-disposition: superseded
+- closed: 2026-08-30
+- detail: master already supports create, free-create, and edit full diagnostic tests with sequential per-member latency, error, and preview. The raw positional result IDs race reorders and it permits unbounded concurrent paid probes.
+
 ## PR #3635 — Adding a link to verify your antigravity account
 
 - url: https://github.com/decolua/9router/pull/3635

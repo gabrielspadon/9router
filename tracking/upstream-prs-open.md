@@ -118,17 +118,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3197 — feat(combos): add per-model test button in combo create/edit modal
-
-- url: https://github.com/decolua/9router/pull/3197
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3196 — feat(commandcode): support Muse reasoning effort
 
 - url: https://github.com/decolua/9router/pull/3196
