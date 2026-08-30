@@ -4032,7 +4032,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - local-ref: 
 - disposition: adapt
 - validation: .superpowers/sdd/PLAN/task-6-b29-pr3625-review.md
-- notes: schema and payload tasks require separate strict TDD; exact patch corrupts tool histories, image order, byte accounting, and error classification
+- notes: schema normalization is integrated on master through fbbb42ce with independent review, focused 97/97, baseline verifier, and build. Payload degradation remains separately unstarted because the upstream patch corrupts tool histories, image order, byte accounting, and error classification.
 
 
 ## PR #3624 — feat(fetch): add Ollama Cloud web fetch provider
