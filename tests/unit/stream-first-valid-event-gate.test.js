@@ -106,6 +106,92 @@ describe("Streaming first-valid-event gate (Issue 2951 Finding 3)", () => {
     expect(onRequestSuccess).not.toHaveBeenCalled();
   });
 
+  it("returns typed 499 without an account error when the caller aborts the non-SSE body drain", async () => {
+    const caller = new AbortController();
+    const streamController = {
+      ...baseParams.streamController,
+      handleError: vi.fn(),
+    };
+    const mockProviderResponse = {
+      status: 500,
+      headers: new Map([["content-type", "text/html"]]),
+      text: () => new Promise((_, reject) => {
+        caller.signal.addEventListener("abort", () => {
+          reject(new DOMException("caller disconnected", "AbortError"));
+        }, { once: true });
+        caller.abort("caller disconnected");
+      }),
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/html" : null);
+
+    const result = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      streamController,
+      callerSignal: caller.signal,
+    });
+
+    expect(result).toMatchObject({ success: false, clientAborted: true, status: 499 });
+    expect(streamController.handleError).not.toHaveBeenCalled();
+  });
+
+  it("returns typed 499 without an account error when the caller aborts the first reader read", async () => {
+    const caller = new AbortController();
+    const streamController = {
+      ...baseParams.streamController,
+      handleError: vi.fn(),
+    };
+    const reader = {
+      read: () => new Promise((_, reject) => {
+        caller.signal.addEventListener("abort", () => {
+          reject(new DOMException("caller disconnected", "AbortError"));
+        }, { once: true });
+        caller.abort("caller disconnected");
+      }),
+      releaseLock: vi.fn(),
+    };
+    const mockProviderResponse = {
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: { getReader: () => reader },
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null);
+
+    const result = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      streamController,
+      callerSignal: caller.signal,
+    });
+
+    expect(result).toMatchObject({ success: false, clientAborted: true, status: 499 });
+    expect(streamController.handleError).not.toHaveBeenCalled();
+  });
+
+  it("keeps an ordinary first reader failure as a 502 account error", async () => {
+    const streamController = {
+      ...baseParams.streamController,
+      handleError: vi.fn(),
+    };
+    const readError = new Error("upstream socket reset");
+    const mockProviderResponse = {
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: { getReader: () => ({ read: async () => { throw readError; } }) },
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null);
+
+    const result = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      streamController,
+    });
+
+    expect(result).toMatchObject({ success: false, status: 502 });
+    expect(result.clientAborted).toBeUndefined();
+    expect(streamController.handleError).toHaveBeenCalledWith(readError);
+  });
+
   it("Case 4: Valid stream with data returns success=true and calls onRequestSuccess", async () => {
     const onRequestSuccess = vi.fn();
     const sseChunk = 'data: {"id":"1","choices":[{"delta":{"content":"Hi"}}]}\n\n';

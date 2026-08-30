@@ -115,6 +115,30 @@ describe("handleVideoCreate", () => {
     expect(await res.json()).toEqual({ request_id: "r1" });
   });
 
+  it("round-trips the exposed create pin header through a GET poll", async () => {
+    authMocks.getProviderCredentials
+      .mockResolvedValueOnce(account({ connectionId: "conn-roundtrip" }))
+      .mockResolvedValueOnce(account({ connectionId: "conn-roundtrip" }));
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse({ request_id: "r-roundtrip" }))
+      .mockResolvedValueOnce(jsonResponse({ status: "pending" }));
+
+    const created = await handleVideoCreate(makeRequest({ prompt: "x" }), "generations");
+    const connectionHeader = created.headers.get("x-9router-connection-id");
+    const poll = await handleVideoGet(new Request("http://localhost/v1/videos/r-roundtrip", {
+      headers: { "x-9router-connection-id": connectionHeader },
+    }), "r-roundtrip");
+
+    expect(created.headers.get("access-control-expose-headers")).toContain("x-9router-connection-id");
+    expect(poll.status).toBe(200);
+    expect(authMocks.getProviderCredentials).toHaveBeenLastCalledWith(
+      "xai", null, null, expect.objectContaining({
+        preferredConnectionId: "conn-roundtrip",
+        strictPreferredConnection: true,
+      })
+    );
+  });
+
   it("honors preferred x-connection-id when selecting the account", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account());
     global.fetch.mockResolvedValueOnce(jsonResponse({ request_id: "r1" }));
