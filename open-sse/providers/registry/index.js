@@ -127,6 +127,7 @@ import p121 from "./alitp-intl.js";
 import p123 from "./nous.js";
 import p124 from "./meta.js";
 import p126 from "./chenzk.js";
+import p127 from "./nube.js";
 
 export default [
   p0,
@@ -255,4 +256,5 @@ export default [
   p123,
   p124,
   p126,
+  p127,
 ];
