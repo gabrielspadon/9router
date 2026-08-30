@@ -457,31 +457,40 @@ function ModelContextPage() {
     setter((prev) => (prev === v ? "all" : v));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold">Model Context</h1>
+        <h1 className="text-lg font-semibold text-text-main">Model Context</h1>
         <p className="text-sm text-text-muted mt-1">
           核对每个模型的上下文窗口，不对就直接改。「启用中」的供应商模型排在最前，即 <code>/v1/models</code> 当前对外可见的集合；改动立即生效于路由与 <code>/v1/models</code>。
         </p>
       </div>
 
       {error && (
-        <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError("")} title="关闭">
-            <span className="material-symbols-outlined text-sm">close</span>
+        <div className="text-xs text-danger bg-danger-soft border border-danger-line rounded-[var(--radius-brand)] p-4 flex items-start justify-between gap-3">
+          <span className="inline-flex min-w-0 items-start gap-2">
+            <span className="material-symbols-outlined text-[16px] shrink-0" aria-hidden="true">error</span>
+            {error}
+          </span>
+          <button
+            onClick={() => setError("")}
+            aria-label="关闭"
+            title="关闭"
+            className="focus-ring rounded-sm shrink-0"
+          >
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">close</span>
           </button>
         </div>
       )}
       {notice && (
-        <div className="text-xs text-green-600 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+        <div className="text-xs text-success bg-success-soft border border-success-line rounded-[var(--radius-brand)] p-4 inline-flex items-start gap-2">
+          <span className="material-symbols-outlined text-[16px] shrink-0" aria-hidden="true">check_circle</span>
           {notice}
         </div>
       )}
 
       <Card padding="none" className="min-w-0">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border-subtle">
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border-subtle">
           <Input
             placeholder="搜索模型 / 供应商…"
             icon="search"
@@ -525,14 +534,14 @@ function ModelContextPage() {
               placeholder="窗口 ≥"
               value={minW}
               onChange={(e) => setMinW(e.target.value)}
-              className="h-9 w-24 rounded-lg border border-border bg-surface-2 px-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+              className="focus-ring h-9 w-24 rounded-[var(--radius-brand)] border border-border bg-surface-2 px-2.5 text-sm text-text-main metric focus:outline-none"
             />
             <input
               type="number"
               placeholder="≤"
               value={maxW}
               onChange={(e) => setMaxW(e.target.value)}
-              className="h-9 w-16 rounded-lg border border-border bg-surface-2 px-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+              className="focus-ring h-9 w-16 rounded-[var(--radius-brand)] border border-border bg-surface-2 px-2.5 text-sm text-text-main metric focus:outline-none"
             />
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -549,14 +558,14 @@ function ModelContextPage() {
 
         {/* Batch bar */}
         {selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-brand-500/10 border-b border-border-subtle">
-            <span className="text-sm font-medium">已选 {selected.size} 项</span>
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-brand-soft border-b border-border-subtle">
+            <span className="text-sm font-medium text-text-main">已选 <span className="metric">{selected.size}</span> 项</span>
             <input
               type="text"
               placeholder="如 200k / 1m"
               value={batchVal}
               onChange={(e) => setBatchVal(e.target.value)}
-              className="h-8 w-28 rounded-lg border border-border bg-surface-2 px-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+              className="focus-ring h-8 w-28 rounded-[var(--radius-brand)] border border-border bg-surface-2 px-2.5 text-sm text-text-main metric focus:outline-none"
             />
             <Button size="sm" onClick={handleBatchSet} disabled={saving}>设为</Button>
             <Button size="sm" variant="ghost" onClick={handleBatchClear} disabled={saving}>
@@ -567,14 +576,14 @@ function ModelContextPage() {
 
         {/* Add override panel */}
         {addOpen && (
-          <div className="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-border-subtle bg-sidebar/40">
+          <div className="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-border-subtle bg-surface-2">
             <div className="flex-1 min-w-[240px]">
               <label className="block text-xs text-text-muted mb-1">
                 Key(裸名全局生效,provider/model 限单供应商,* 通配)
               </label>
               <input
                 list="mc-key-options"
-                className="w-full h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                className="focus-ring w-full h-9 rounded-[var(--radius-brand)] border border-border bg-surface-2 px-3 text-sm text-text-main focus:outline-none"
                 placeholder="e.g. zhipu/glm-5.3 或 glm-*"
                 value={formKey}
                 onChange={(e) => setFormKey(e.target.value)}
@@ -585,8 +594,11 @@ function ModelContextPage() {
                 ))}
               </datalist>
               {formPreview && (
-                <p className={`text-[11px] mt-1 ${formPreview.count > 0 ? "text-text-muted" : "text-amber-500"}`}>
-                  将命中 {formPreview.count} 个模型{formPreview.count === 0 && " — 检查拼写"}
+                <p className={`text-xs mt-1 inline-flex items-center gap-1 ${formPreview.count > 0 ? "text-text-muted" : "text-warning"}`}>
+                  {formPreview.count === 0 && (
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">warning</span>
+                  )}
+                  将命中 <span className="metric">{formPreview.count}</span> 个模型{formPreview.count === 0 && " — 检查拼写"}
                 </p>
               )}
             </div>
@@ -600,7 +612,7 @@ function ModelContextPage() {
 
         {/* Override keys panel (audit + orphan management) */}
         {keysOpen && (
-          <div className="px-4 py-3 border-b border-border-subtle bg-sidebar/40">
+          <div className="px-4 py-3 border-b border-border-subtle bg-surface-2">
             {Object.keys(overrides).length === 0 ? (
               <p className="text-sm text-text-muted">还没有覆盖配置。</p>
             ) : (
@@ -608,23 +620,27 @@ function ModelContextPage() {
                 {Object.entries(overrides).map(([k, v]) => {
                   const hitCount = rowsData.hits[k] || 0;
                   return (
-                    <div key={k} className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-border-subtle bg-background">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <code className="text-xs font-mono bg-sidebar px-1.5 py-0.5 rounded">{k}</code>
-                        <span className="text-sm font-mono">{fmtInt(v)}</span>
+                    <div key={k} className="flex items-center justify-between gap-3 px-4 py-3 rounded-[var(--radius-brand)] border border-border-subtle bg-surface">
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <code className="text-xs font-mono bg-surface-2 text-text-main px-1.5 py-0.5 rounded">{k}</code>
+                        <span className="text-sm font-mono text-text-main metric">{fmtInt(v)}</span>
                         {hitCount === 0 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500">未命中任何模型</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-danger-soft text-danger">
+                            <span className="material-symbols-outlined text-[12px]" aria-hidden="true">error</span>
+                            未命中任何模型
+                          </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-text-muted/60">{hitCount} models</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-text-subtle metric">{hitCount} models</span>
                         <button
                           onClick={() => deleteKeysBulk([k])}
                           disabled={saving}
-                          className="p-1 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500"
+                          className="focus-ring p-1 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-colors duration-150"
+                          aria-label="删除此覆盖"
                           title="删除此覆盖"
                         >
-                          <span className="material-symbols-outlined text-sm">close</span>
+                          <span className="material-symbols-outlined text-sm" aria-hidden="true">close</span>
                         </button>
                       </div>
                     </div>
@@ -640,20 +656,26 @@ function ModelContextPage() {
           <table className="w-full text-sm min-w-[880px]">
             <thead>
               <tr className="border-b border-border-subtle text-left text-xs text-text-muted">
-                <th className="pl-4 pr-2 py-2 w-8">
-                  <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} className="h-4 w-4 cursor-pointer" />
+                <th scope="col" className="px-4 py-3 w-8">
+                  <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} aria-label="全选本页" className="focus-ring h-4 w-4 cursor-pointer accent-brand-500" />
                 </th>
-                <th className="px-2 py-2 font-medium cursor-pointer hover:text-text-main" onClick={() => toggleSort("provider")}>
-                  供应商{sortIcon("provider")}
+                <th scope="col" aria-sort={sort.key === "provider" ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className="px-4 py-3 font-medium">
+                  <button className="focus-ring rounded-sm hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("provider")}>
+                    供应商{sortIcon("provider")}
+                  </button>
                 </th>
-                <th className="px-2 py-2 font-medium cursor-pointer hover:text-text-main" onClick={() => toggleSort("model")}>
-                  模型{sortIcon("model")}
+                <th scope="col" aria-sort={sort.key === "model" ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className="px-4 py-3 font-medium">
+                  <button className="focus-ring rounded-sm hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("model")}>
+                    模型{sortIcon("model")}
+                  </button>
                 </th>
-                <th className="px-2 py-2 font-medium cursor-pointer hover:text-text-main" onClick={() => toggleSort("eff")}>
-                  生效窗口{sortIcon("eff")}
+                <th scope="col" aria-sort={sort.key === "eff" ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className="px-4 py-3 font-medium">
+                  <button className="focus-ring rounded-sm hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("eff")}>
+                    生效窗口{sortIcon("eff")}
+                  </button>
                 </th>
-                <th className="px-2 py-2 font-medium">来源</th>
-                <th className="pl-2 pr-4 py-2 font-medium text-right">操作</th>
+                <th scope="col" className="px-4 py-3 font-medium">来源</th>
+                <th scope="col" className="px-4 py-3 font-medium text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -665,27 +687,27 @@ function ModelContextPage() {
                 </td></tr>
               ) : (
                 visible.map((r) => (
-                  <tr key={r.fullKey} className="border-b border-border-subtle last:border-b-0 hover:bg-sidebar/50">
-                    <td className="pl-4 pr-2 py-2">
-                      <input type="checkbox" checked={selected.has(r.fullKey)} onChange={() => toggleRow(r.fullKey)} className="h-4 w-4 cursor-pointer" />
+                  <tr key={r.fullKey} className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2 transition-colors duration-150">
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selected.has(r.fullKey)} onChange={() => toggleRow(r.fullKey)} aria-label={`选择 ${r.fullKey}`} className="focus-ring h-4 w-4 cursor-pointer accent-brand-500" />
                     </td>
-                    <td className="px-2 py-2 whitespace-nowrap">
-                      <span>{r.providerName}</span>
+                    <td className="px-4 py-3 min-w-0">
+                      <span className="text-text-main">{r.providerName}</span>
                       {!r.enabledModel && (
                         <span
                           title={r.providerActive ? "供应商已有启用的连接，但该模型不在 /v1/models 中（未勾选）" : "该供应商没有启用的连接"}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-text-muted/60 ml-1"
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-text-subtle ml-1"
                         >
                           未启用
                         </span>
                       )}
-                      <code className="text-[10px] font-mono bg-sidebar px-1 py-0.5 rounded text-text-muted/60 ml-1">{r.provider}</code>
+                      <code className="text-[10px] font-mono bg-surface-2 px-1 py-0.5 rounded text-text-subtle ml-1">{r.provider}</code>
                     </td>
-                    <td className="px-2 py-2 max-w-[260px]">
-                      <code className="text-xs font-mono bg-sidebar px-1.5 py-0.5 rounded truncate block">{r.model}</code>
-                      {r.name && r.name !== r.model ? <span className="text-[10px] text-text-muted/70 truncate block">{r.name}</span> : null}
+                    <td className="px-4 py-3 max-w-[260px]">
+                      <code className="text-xs font-mono bg-surface-2 text-text-main px-1.5 py-0.5 rounded truncate block">{r.model}</code>
+                      {r.name && r.name !== r.model ? <span className="text-[10px] text-text-subtle truncate block">{r.name}</span> : null}
                     </td>
-                    <td className="px-2 py-2 whitespace-nowrap tabular-nums">
+                    <td className="px-4 py-3 whitespace-nowrap metric">
                       {editing?.rowKey === r.fullKey ? (
                         <div className="flex items-center gap-1">
                           <input
@@ -694,57 +716,62 @@ function ModelContextPage() {
                             value={editing.value}
                             onChange={(e) => setEditing({ rowKey: r.fullKey, value: e.target.value })}
                             onKeyDown={(e) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditing(null); }}
-                            className="h-7 w-24 rounded border border-border bg-surface-2 px-2 text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                            className="focus-ring h-7 w-24 rounded-[var(--radius-brand)] border border-border bg-surface-2 px-2 text-xs text-text-main metric focus:outline-none"
                           />
                           <button
                             onClick={commitEdit}
+                            aria-label="确认（Enter）"
                             title="确认（Enter）"
-                            className="h-7 w-7 flex items-center justify-center rounded bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 shrink-0"
+                            className="focus-ring h-7 w-7 flex items-center justify-center rounded-[var(--radius-brand)] bg-brand-solid text-brand-on hover:opacity-90 disabled:opacity-40 shrink-0 transition-opacity duration-150"
                             disabled={saving || editing.value.trim() === ""}
                           >
-                            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>check</span>
+                            <span className="material-symbols-outlined" style={{ fontSize: 16 }} aria-hidden="true">check</span>
                           </button>
                           <button
                             onClick={() => setEditing(null)}
+                            aria-label="取消（Esc）"
                             title="取消（Esc）"
-                            className="h-7 w-7 flex items-center justify-center rounded border border-border text-text-muted hover:bg-surface-2 hover:text-text-main shrink-0"
+                            className="focus-ring h-7 w-7 flex items-center justify-center rounded-[var(--radius-brand)] border border-border text-text-muted hover:bg-surface-2 hover:text-text-main shrink-0 transition-colors duration-150"
                           >
-                            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
+                            <span className="material-symbols-outlined" style={{ fontSize: 16 }} aria-hidden="true">close</span>
                           </button>
                         </div>
                       ) : r.src ? (
                         <div>
-                          <span className="text-amber-600 font-medium">{fmtInt(r.eff)}</span>{" "}
-                          <s className="text-text-muted/50">{fmtInt(r.base)}</s>
+                          <span className="text-text-main font-semibold">{fmtInt(r.eff)}</span>{" "}
+                          <s className="text-text-subtle">{fmtInt(r.base)}</s>
                         </div>
                       ) : (
-                        <span>{fmtInt(r.eff)}</span>
+                        <span className="text-text-main">{fmtInt(r.eff)}</span>
                       )}
                     </td>
-                    <td className="px-2 py-2 whitespace-nowrap">
+                    <td className="px-4 py-3">
                       {r.src ? (
-                        <span title={r.src.key} className={r.src.type === "scoped" ? "text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600" : "text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-600"}>
+                        <span title={r.src.key} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border bg-surface-2 text-text-muted">
+                          <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                            {r.src.type === "scoped" ? "edit" : "public"}
+                          </span>
                           {r.src.type === "scoped" ? "手动" : r.src.type === "bare" ? "全局" : "glob"}
                         </span>
                       ) : (
-                        <span className="text-text-muted/40">—</span>
+                        <span className="text-text-subtle">—</span>
                       )}
                     </td>
-                    <td className="pl-2 pr-4 py-2 text-right whitespace-nowrap">
-                      <button onClick={() => startEdit(r)} title="编辑生效窗口" className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary">
-                        <span className="material-symbols-outlined text-sm">edit</span>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button onClick={() => startEdit(r)} aria-label="编辑生效窗口" title="编辑生效窗口" className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors duration-150">
+                        <span className="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
                       </button>
                       {r.src?.type === "scoped" ? (
-                        <button onClick={() => revertRow(r)} disabled={saving} title="恢复默认（移除此行的覆盖）" className="p-1 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500">
-                          <span className="material-symbols-outlined text-sm">restart_alt</span>
+                        <button onClick={() => revertRow(r)} disabled={saving} aria-label="恢复默认（移除此行的覆盖）" title="恢复默认（移除此行的覆盖）" className="focus-ring p-1 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-colors duration-150">
+                          <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
                         </button>
                       ) : r.src ? (
-                        <span title="由此行的覆盖键控制，可在「覆盖键」面板管理" className="inline-block p-1 text-text-muted/30">
-                          <span className="material-symbols-outlined text-sm">restart_alt</span>
+                        <span title="由此行的覆盖键控制，可在「覆盖键」面板管理" className="inline-block p-1 text-text-subtle">
+                          <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
                         </span>
                       ) : null}
-                      <button onClick={() => toggleHideRow(r)} title={hiddenView ? "取消隐藏" : "隐藏此行"} className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary">
-                        <span className="material-symbols-outlined text-sm">{hiddenView ? "visibility" : "visibility_off"}</span>
+                      <button onClick={() => toggleHideRow(r)} aria-label={hiddenView ? "取消隐藏" : "隐藏此行"} title={hiddenView ? "取消隐藏" : "隐藏此行"} className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors duration-150">
+                        <span className="material-symbols-outlined text-sm" aria-hidden="true">{hiddenView ? "visibility" : "visibility_off"}</span>
                       </button>
                     </td>
                   </tr>
@@ -755,13 +782,13 @@ function ModelContextPage() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border-subtle text-xs text-text-muted">
-          <span>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border-subtle text-xs text-text-muted">
+          <span className="metric">
             {hiddenView ? `已隐藏 ${filtered.length} 项` : `显示 ${visible.length} / ${filtered.length} 项`}
             {coveredCount > 0 && hiddenView === false && ` · 已覆盖 ${coveredCount} 项`}
           </span>
           {!hiddenView && !showAll && filtered.length > ROW_CAP && (
-            <button onClick={() => setShowAll(true)} className="text-primary hover:underline cursor-pointer">
+            <button onClick={() => setShowAll(true)} className="focus-ring rounded-sm shrink-0 text-primary hover:underline cursor-pointer">
               显示全部 {filtered.length} 行
             </button>
           )}
