@@ -3,7 +3,8 @@
 import { cn } from "@/shared/utils/cn";
 
 // Closed variant set. Brand carries primary action, danger carries destruction,
-// and nothing else is coloured. See .unlazy/TOKEN-CONTRACT.md section 1.
+// and nothing else is coloured; `bare` colours nothing at all. See
+// .unlazy/TOKEN-CONTRACT.md section 1.
 const variants = {
   primary:
     "bg-brand-solid text-brand-on hover:bg-brand-solid/90 shadow-soft disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",
