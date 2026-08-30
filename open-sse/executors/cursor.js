@@ -357,10 +357,10 @@ export class CursorExecutor extends BaseExecutor {
         envTimeout: FETCH_CONNECT_TIMEOUT_MS,
         signal,
       });
-      const client = http2.connect(`https://${urlObj.host}`);
       const chunks = [];
       let responseHeaders = {};
       let settled = false;
+      let client;
       let req;
       let hangTimeout;
 
@@ -376,45 +376,51 @@ export class CursorExecutor extends BaseExecutor {
         deadline.signal.removeEventListener("abort", onHeaderAbort);
         signal?.removeEventListener("abort", onCallerAbort);
         try { req?.destroy(); } catch {}
-        try { client.close(); } catch {}
+        try { client?.close(); } catch {}
         fn(...args);
       };
 
-      // Hard timeout: close session if server never responds
-      hangTimeout = setTimeout(finish(() => {
-        reject(new Error("HTTP/2 request timed out"));
-      }), HTTP2_TIMEOUT_MS);
+      try {
+        client = http2.connect(`https://${urlObj.host}`);
 
-      client.on("error", finish(reject));
+        // Hard timeout: close session if server never responds
+        hangTimeout = setTimeout(finish(() => {
+          reject(new Error("HTTP/2 request timed out"));
+        }), HTTP2_TIMEOUT_MS);
 
-      req = client.request({
-        ":method": "POST",
-        ":path": urlObj.pathname,
-        ":authority": urlObj.host,
-        ":scheme": "https",
-        ...headers
-      });
+        client.on("error", finish(reject));
 
-      deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
-      signal?.addEventListener("abort", onCallerAbort, { once: true });
-
-      req.on("response", (hdrs) => {
-        responseHeaders = hdrs;
-        deadline.clear();
-        deadline.signal.removeEventListener("abort", onHeaderAbort);
-      });
-      req.on("data", (chunk) => { chunks.push(chunk); });
-      req.on("end", finish(() => {
-        resolve({
-          status: responseHeaders[":status"],
-          headers: responseHeaders,
-          body: Buffer.concat(chunks)
+        req = client.request({
+          ":method": "POST",
+          ":path": urlObj.pathname,
+          ":authority": urlObj.host,
+          ":scheme": "https",
+          ...headers
         });
-      }));
-      req.on("error", finish(reject));
 
-      req.write(body);
-      req.end();
+        deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
+        signal?.addEventListener("abort", onCallerAbort, { once: true });
+
+        req.on("response", (hdrs) => {
+          responseHeaders = hdrs;
+          deadline.clear();
+          deadline.signal.removeEventListener("abort", onHeaderAbort);
+        });
+        req.on("data", (chunk) => { chunks.push(chunk); });
+        req.on("end", finish(() => {
+          resolve({
+            status: responseHeaders[":status"],
+            headers: responseHeaders,
+            body: Buffer.concat(chunks)
+          });
+        }));
+        req.on("error", finish(reject));
+
+        req.write(body);
+        req.end();
+      } catch (error) {
+        finish(reject)(error);
+      }
     });
   }
 
@@ -437,16 +443,18 @@ export class CursorExecutor extends BaseExecutor {
       envTimeout: FETCH_CONNECT_TIMEOUT_MS,
       signal,
     });
-    const client = http2.connect(`https://${urlObj.host}`);
     const chunkQueue = [];
     let waiting = null;
     let ended = false;
     let streamError = null;
+    let client = null;
     let req = null;
     let closed = false;
     let headersSettled = false;
     let resolveHeaders;
     let rejectHeaders;
+    let onHeaderAbort;
+    let onCallerAbort;
 
     const wake = (result) => {
       if (!waiting) return;
@@ -459,10 +467,10 @@ export class CursorExecutor extends BaseExecutor {
       if (closed) return;
       closed = true;
       deadline.clear();
-      deadline.signal.removeEventListener("abort", onHeaderAbort);
-      signal?.removeEventListener("abort", onCallerAbort);
+      if (onHeaderAbort) deadline.signal.removeEventListener("abort", onHeaderAbort);
+      if (onCallerAbort) signal?.removeEventListener("abort", onCallerAbort);
       try { req?.destroy(); } catch {}
-      try { client.close(); } catch {}
+      try { client?.close(); } catch {}
     };
 
     const fail = (error) => {
@@ -477,44 +485,50 @@ export class CursorExecutor extends BaseExecutor {
       close();
     };
 
-    const onHeaderAbort = () => fail(deadline.classify(deadline.signal.reason));
-    const onCallerAbort = () => fail(signal.reason || new DOMException("Request aborted", "AbortError"));
+    onHeaderAbort = () => fail(deadline.classify(deadline.signal.reason));
+    onCallerAbort = () => fail(signal.reason || new DOMException("Request aborted", "AbortError"));
 
     const responseHeaders = new Promise((resolve, reject) => {
       resolveHeaders = resolve;
       rejectHeaders = reject;
     });
 
-    client.on("error", fail);
+    try {
+      client = http2.connect(`https://${urlObj.host}`);
+      client.on("error", fail);
 
-    req = client.request({
-      ":method": "POST",
-      ":path": urlObj.pathname,
-      ":authority": urlObj.host,
-      ":scheme": "https",
-      ...headers,
-    });
+      req = client.request({
+        ":method": "POST",
+        ":path": urlObj.pathname,
+        ":authority": urlObj.host,
+        ":scheme": "https",
+        ...headers,
+      });
 
-    req.on("error", fail);
-    req.on("response", (hdrs) => {
-      if (headersSettled) return;
-      headersSettled = true;
-      deadline.clear();
-      deadline.signal.removeEventListener("abort", onHeaderAbort);
-      resolveHeaders(hdrs);
-    });
-    req.on("data", (chunk) => {
-      if (waiting) wake({ value: chunk, done: false });
-      else chunkQueue.push(chunk);
-    });
-    req.on("end", () => {
-      ended = true;
-      wake({ value: undefined, done: true });
+      req.on("error", fail);
+      req.on("response", (hdrs) => {
+        if (headersSettled) return;
+        headersSettled = true;
+        deadline.clear();
+        deadline.signal.removeEventListener("abort", onHeaderAbort);
+        resolveHeaders(hdrs);
+      });
+      req.on("data", (chunk) => {
+        if (waiting) wake({ value: chunk, done: false });
+        else chunkQueue.push(chunk);
+      });
+      req.on("end", () => {
+        ended = true;
+        wake({ value: undefined, done: true });
+        close();
+      });
+
+      deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
+      signal?.addEventListener("abort", onCallerAbort, { once: true });
+    } catch (error) {
       close();
-    });
-
-    deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
-    signal?.addEventListener("abort", onCallerAbort, { once: true });
+      throw error;
+    }
 
     return {
       responseHeaders,
@@ -569,6 +583,7 @@ export class CursorExecutor extends BaseExecutor {
       };
       session.write(buildAgentRunFrame(body.messages || [], model));
     } catch (error) {
+      session?.close();
       removeParentAbort();
       if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
@@ -592,7 +607,10 @@ export class CursorExecutor extends BaseExecutor {
           if (done) break;
           errorText += Buffer.from(value).toString("utf8");
         }
-      } catch {}
+      } catch (error) {
+        session.close();
+        if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
+      }
       session.close();
       return {
         response: new Response(JSON.stringify({

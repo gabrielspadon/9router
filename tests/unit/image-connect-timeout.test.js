@@ -132,6 +132,20 @@ describe("image connect timeout propagation", () => {
     expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
   });
 
+  it("stops an image combo after caller cancellation", async () => {
+    mocks.getComboModels.mockResolvedValue([
+      "antigravity/gemini-3.1-flash-image-a",
+      "antigravity/gemini-3.1-flash-image-b",
+    ]);
+    mocks.execute.mockRejectedValue(new DOMException("combo caller left", "AbortError"));
+
+    const response = await handleImageGeneration(request("image-combo"));
+
+    expect(response.status).toBe(499);
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+  });
+
   it("maps a typed timeout to 502 and enters the existing account fallback path", async () => {
     mocks.execute.mockRejectedValue(new ConnectTimeoutError(8000));
 

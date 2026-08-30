@@ -535,6 +535,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         continue;
       }
 
+      if (result.status === 499) return result;
+
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;

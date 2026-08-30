@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { http2Connect, proxyFetch } = vi.hoisted(() => ({
@@ -74,6 +75,18 @@ function agentArgs(extra = {}) {
 async function flush() {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function expectAbortListenersRemoved(addSpy, removeSpy) {
+  const listeners = addSpy.mock.calls
+    .filter(([type]) => type === "abort")
+    .map(([, listener]) => listener);
+  expect(listeners.length).toBeGreaterThan(0);
+  for (const listener of listeners) {
+    expect(removeSpy.mock.calls.filter(
+      ([type, removed]) => type === "abort" && removed === listener,
+    )).toHaveLength(1);
+  }
 }
 
 describe("Cursor response-header deadlines", () => {
@@ -320,4 +333,98 @@ describe("Cursor response-header deadlines", () => {
     expect(removeSpy.mock.calls.filter(([type, listener]) => type === "abort" && listener === forwardingListener)).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("AgentService preserves caller abort while a non-200 body is pending", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("caller left during Agent error body", "AbortError");
+    const pending = new CursorExecutor().execute(agentArgs({
+      signal: controller.signal,
+      connectTimeout: { globalTimeout: 15000 },
+    }));
+    await flush();
+    sessions[0].request.emit("response", { ":status": 401 });
+    await flush();
+
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(http2Connect).toHaveBeenCalledTimes(1);
+    expect(sessions[0].request.destroy).toHaveBeenCalled();
+    expect(sessions[0].client.close).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["connect", "request", "write", "end"])(
+    "standard HTTP/2 cleans up a synchronous %s failure",
+    async (stage) => {
+      const controller = new AbortController();
+      const addSpy = vi.spyOn(controller.signal, "addEventListener");
+      const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+      const failure = new Error(`standard ${stage} failed`);
+      if (stage === "connect") {
+        http2Connect.mockImplementationOnce(() => { throw failure; });
+      } else {
+        http2Connect.mockImplementationOnce(() => {
+          const client = fakeHttp2Session(sessions);
+          if (stage === "request") client.request.mockImplementationOnce(() => { throw failure; });
+          if (stage === "write") sessions.at(-1).request.write.mockImplementationOnce(() => { throw failure; });
+          if (stage === "end") sessions.at(-1).request.end.mockImplementationOnce(() => { throw failure; });
+          return client;
+        });
+      }
+
+      const result = await new CursorExecutor().execute(legacyArgs({
+        signal: controller.signal,
+        connectTimeout: { globalTimeout: 15000 },
+      }));
+
+      expect(result.response.status).toBe(500);
+      expect(await result.response.text()).toContain(failure.message);
+      if (stage !== "connect") expect(sessions[0].client.close).toHaveBeenCalled();
+      if (stage === "write" || stage === "end") expect(sessions[0].request.destroy).toHaveBeenCalled();
+      expectAbortListenersRemoved(addSpy, removeSpy);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(["connect", "request", "frame", "write"])(
+    "AgentService cleans up a synchronous %s failure",
+    async (stage) => {
+      const controller = new AbortController();
+      const addSpy = vi.spyOn(controller.signal, "addEventListener");
+      const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+      const failure = new Error(`agent ${stage} failed`);
+      if (stage === "connect") {
+        http2Connect.mockImplementationOnce(() => { throw failure; });
+      } else {
+        http2Connect.mockImplementationOnce(() => {
+          const client = fakeHttp2Session(sessions);
+          if (stage === "request") client.request.mockImplementationOnce(() => { throw failure; });
+          if (stage === "write") sessions.at(-1).request.write.mockImplementationOnce(() => { throw failure; });
+          return client;
+        });
+      }
+      if (stage === "frame") {
+        const realRandomUUID = crypto.randomUUID.bind(crypto);
+        let uuidCalls = 0;
+        vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
+          uuidCalls += 1;
+          if (uuidCalls === 4) throw failure;
+          return realRandomUUID();
+        });
+      }
+
+      const result = await new CursorExecutor().execute(agentArgs({
+        signal: controller.signal,
+        connectTimeout: { globalTimeout: 15000 },
+      }));
+
+      expect(result.response.status).toBe(500);
+      expect(await result.response.text()).toContain(failure.message);
+      if (stage !== "connect") expect(sessions[0].client.close).toHaveBeenCalled();
+      if (stage === "frame" || stage === "write") expect(sessions[0].request.destroy).toHaveBeenCalled();
+      expectAbortListenersRemoved(addSpy, removeSpy);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 });
