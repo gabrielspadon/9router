@@ -36,9 +36,12 @@ and the repository's existing CLI pack script.
   trailing-slash normalization before the `/v1` decision.
 - No files, API routes, project roots, global YAML writer, filesystem read, or
   filesystem write are added.
-- No OMP status probe, model fetch, credential validation, remote request,
-  automatic model choice, role persistence, package dependency, installer
-  invocation, process launch, startup detection, or `cli/` change is allowed.
+- The OMP entry adds no OMP-specific request, status probe, model fetch,
+  credential validation, remote call, automatic model choice, role persistence,
+  package dependency, installer invocation, process launch, startup detection,
+  or `cli/` change.
+- Existing `ToolDetailClient` dashboard reads for providers, settings, tunnel
+  status, and keys remain unchanged and are outside this OMP guide scope.
 - Do not start a dashboard server or install OMP during verification.
 
 ## File Map
@@ -173,9 +176,9 @@ const replaceVars = (text) => replaceGuideVariables(text, {
 });
 ```
 
-Do not add an OMP branch, fetch, state, effect, filesystem call, YAML parser,
-or copy behavior. The card still owns selection state and calls `replaceVars`
-for guide values and code blocks exactly as before.
+Do not add an OMP branch, OMP-specific fetch, state, effect, filesystem call,
+YAML parser, or copy behavior. The card still owns selection state and calls
+`replaceVars` for guide values and code blocks exactly as before.
 
 - [ ] **Step 4: Run GREEN and the existing guide regression**
 
@@ -359,9 +362,11 @@ omp: {
 },
 ```
 
-The guide is a user-visible copy aid only. It does not make a network request
-when opened. Since no status adapter exists, the summary card remains `Unknown`
-and must not claim OMP is installed, connected, or unavailable.
+The guide is a user-visible copy aid only. Opening this route keeps the existing
+`ToolDetailClient` dashboard reads unchanged, while OMP adds no OMP-specific
+request, probe, writer, status adapter, or remote call. Since no status adapter
+exists, the summary card remains `Unknown` and must not claim OMP is installed,
+connected, or unavailable.
 
 - [ ] **Step 4: Run GREEN with the generic guide regressions**
 
@@ -429,8 +434,10 @@ npx eslint src/shared/constants/cliTools.js \
 git diff --check "$implementation_base"..HEAD
 ```
 
-Expected result: both commands exit zero. Do not run a dashboard server because
-the guide has no runtime, filesystem, or network behavior to exercise.
+Expected result: both commands exit zero. Do not run a dashboard server for
+this focused verification. The existing dashboard reads are unchanged, and the
+guide adds no OMP-specific request, probe, writer, status adapter, or remote
+call to exercise.
 
 - [ ] **Step 3: Verify the packaged-dashboard boundary**
 
