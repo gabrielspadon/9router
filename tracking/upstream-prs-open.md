@@ -107,17 +107,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3205 — feat(keys): per-key rate limits, budget, model allowlist and expiry
-
-- url: https://github.com/decolua/9router/pull/3205
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3203 — feat(fallback): per-account RPM cap, default 40 for NVIDIA
 
 - url: https://github.com/decolua/9router/pull/3203

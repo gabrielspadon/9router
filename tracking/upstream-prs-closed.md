@@ -84,6 +84,20 @@
 - closed: 2026-08-30
 - detail: reverses the deliberate production-to-daily chat fallback, silently mutates tool schemas and system authority, and lacks strict-proxy, validation-gate, retry, or test evidence. Revisit request-size failures only as a bounded fail-closed 413 design.
 
+## PR #3205 — feat(keys): per-key rate limits, budget, model allowlist and expiry
+
+- url: https://github.com/decolua/9router/pull/3205
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref: 39d67c0b5
+- disposition: rejected
+- validation: read-only route-matrix, concurrency, migration, and import/export audit
+- notes: rejected, no product change
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: chat-only policy enforcement leaves all other billable routes bypassable, post-response accounting is non-atomic under concurrency, migration version conflicts with current schema, export/import loses controls, and the model-access endpoint is absent.
+
 ## PR #3635 — Adding a link to verify your antigravity account
 
 - url: https://github.com/decolua/9router/pull/3635
