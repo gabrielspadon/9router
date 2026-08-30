@@ -12,7 +12,10 @@ vi.mock("@/app/api/usage/[connectionId]/route", () => ({ refreshAndUpdateCredent
 vi.mock("open-sse/executors/index.js", () => ({ getExecutor: vi.fn() }));
 vi.mock("@/lib/network/connectionProxy", () => ({ resolveConnectionProxyConfig: vi.fn() }));
 vi.mock("open-sse/services/usage.js", () => ({ getUsageForProvider: vi.fn() }));
-vi.mock("open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: vi.fn() }));
+vi.mock("open-sse/utils/proxyFetch.js", () => ({
+  installGlobalProxyFetch: vi.fn(),
+  proxyAwareFetch: vi.fn(),
+}));
 vi.mock("@/lib/antigravityVerification", () => ({
   createAntigravityVerificationHooks: vi.fn(),
   runAntigravityUsageProbe: vi.fn(),
