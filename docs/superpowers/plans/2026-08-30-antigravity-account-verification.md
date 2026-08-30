@@ -38,7 +38,7 @@
 
 - `open-sse/services/antigravityValidation.js` owns pure classification, URL validation, and redaction.
 - `tests/unit/antigravity-validation.test.js` contains 48 classifier, URL, and redaction tests.
-- `tests/unit/antigravity-project-outcome.test.js` contains 10 typed-outcome and deduplicated-callback tests.
+- `tests/unit/antigravity-project-outcome.test.js` contains 11 typed-outcome, deduplicated-callback, and replacement-safe cleanup tests.
 - `tests/unit/antigravity-usage-validation.test.js` contains 12 single-read usage and callback tests.
 - `tests/unit/antigravity-retry-response.test.js` contains 6 complete retry-replacement tests.
 - `tests/unit/antigravity-terminal-verification.test.js` contains 14 terminal-success tests.
@@ -58,17 +58,17 @@
 
 ### Created in Phase 2
 
-- `src/lib/antigravityVerification.js` owns the bounded store, URL-free event emitter, hook factory, and one-attempt usage wrapper.
+- `src/lib/antigravityVerification.js` owns the bounded store, URL-free event emitter, invalidatable connection lifetimes, hook factory, and one-attempt usage wrapper.
 - `src/lib/auth/antigravityVerificationAccess.js` owns the sensitive route inventory, identity matrix, CSRF gate, and security headers.
 - `src/app/api/providers/antigravity/verification/stream/route.js` serves sanitized SSE snapshot and deltas.
 - `src/app/api/providers/antigravity/verification/[connectionId]/route.js` serves authenticated detail and compare-dismissal.
 - `src/app/api/providers/antigravity/verification/[connectionId]/recheck/route.js` runs one exact-connection forced usage probe.
 - `tests/fixtures/antigravity-verification-access.js` owns the shared seven-row identity table and 14-case mutation matrix used by helper and route tests.
-- `tests/unit/antigravity-verification-state.test.js` contains 16 bounded-state and race tests.
+- `tests/unit/antigravity-verification-state.test.js` contains 19 bounded-state, connection-lifetime, and race tests.
 - `tests/unit/antigravity-verification-access.test.js` contains 28 identity, inventory, and CSRF tests.
 - `tests/unit/antigravity-verification-routes.test.js` contains 23 route, header, cleanup, and outcome tests.
-- `tests/unit/antigravity-verification-callers.test.js` contains 13 exhaustive caller-wiring tests.
-- `tests/unit/antigravity-verification-privacy.test.js` contains 8 URL-exclusion tests.
+- `tests/unit/antigravity-verification-callers.test.js` contains 14 exhaustive caller-wiring and deletion-invalidation tests.
+- `tests/unit/antigravity-verification-privacy.test.js` contains 10 URL-exclusion and sink-ordering tests.
 
 ### Modified in Phase 2
 
@@ -77,12 +77,12 @@
 - `src/sse/services/quotaGuard.js` uses the app usage wrapper while preserving the three-second race and fail-open result.
 - `src/app/api/providers/[id]/hotreload/route.js` uses the wrapper for every quota attempt and classifies a direct 403 body once.
 - `src/app/api/usage/[connectionId]/route.js` uses a fresh wrapper call for initial, forced, and post-refresh Antigravity usage.
-- `src/app/api/providers/[id]/route.js` clears verification state only after connection deletion succeeds.
+- `src/app/api/providers/[id]/route.js` invalidates the deleted connection lifetime only after connection deletion succeeds.
 
 ### Created in Phase 3
 
-- `src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js` owns the status-visible auth preflight, one page-scoped EventSource, authenticated detail fetches, client URL revalidation, expiry, races, and recheck POST.
-- `tests/unit/antigravity-verification-client.test.js` contains 12 client transport and race tests.
+- `src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js` owns the status-visible auth preflight, one page-scoped EventSource, authoritative snapshot reconciliation, authenticated detail fetches, client URL revalidation, expiry, races, and recheck POST.
+- `tests/unit/antigravity-verification-client.test.js` contains 16 client transport, authoritative-snapshot, and race tests.
 - `tests/unit/antigravity-verification-ui.test.js` contains 8 rendered row, translation, and accessibility tests.
 - `tests/unit/antigravity-verification-locales.test.js` contains 3 exact 34-catalog literal tests.
 
@@ -94,15 +94,15 @@
 
 ## Test Arithmetic
 
-The implementation adds exactly 201 tests.
+The implementation adds exactly 212 tests.
 
 | Phase | New tests | Measured existing adjacency | Focused GREEN total |
 | --- | ---: | ---: | ---: |
-| Phase 1 | 90 | 98 | 188 |
-| Phase 2 | 88 | 104 | 282, including all 90 Phase 1 tests |
-| Phase 3 | 23 | 43 | 244, including all 201 feature tests |
+| Phase 1 | 91 | 98 | 189 |
+| Phase 2 | 94 | 104 | 289, including all 91 Phase 1 tests |
+| Phase 3 | 27 | 43 | 255, including all 212 feature tests |
 
-The fork base at plan authoring has 3,498 tests. With 201 new tests and no deleted test, the final full-suite result must report 3,699 total tests. The repository baseline permits the existing 60 known failures and 57 pending tests. Any additional failure is a regression.
+The fork base at plan authoring has 3,498 tests. With 212 new tests and no deleted test, the final full-suite result must report 3,710 total tests. The repository baseline permits the existing 60 known failures and 57 pending tests. Any additional failure is a regression.
 
 ## Interfaces
 
@@ -172,15 +172,17 @@ createAntigravityVerificationHooks(connectionId, expectedChallengeId) -> Verific
 runAntigravityUsageProbe(connection, proxyOptions, { force, expectedChallengeId }) -> Promise<object>
 getAntigravityVerificationSnapshot() -> Array<{ connectionId, challengeId, expiresAt }>
 getAntigravityVerification(connectionId) -> { connectionId, challengeId, expiresAt, href } | null
-recordAntigravityValidation(connectionId, { validation, observationId }) -> boolean
-clearAntigravityVerificationIfCurrent(connectionId, challengeId) -> boolean
-removeAntigravityVerification(connectionId) -> boolean
+recordAntigravityValidation(connectionId, { validation, observationId }, connectionLifetime) -> boolean
+clearAntigravityVerificationIfCurrent(connectionId, challengeId, connectionLifetime = undefined) -> boolean
+invalidateAntigravityVerificationConnection(connectionId) -> boolean
 subscribeAntigravityVerification(listener) -> () => void
 
 // Sanitized emitted values
 { type: "upsert", connectionId, challengeId, expiresAt }
 { type: "remove", connectionId, challengeId }
 ```
+
+The opaque `connectionLifetime` is module-private and is supplied only by closures returned from `createAntigravityVerificationHooks`. Callback paths always supply it. The token-free `clearAntigravityVerificationIfCurrent` form is reserved for the already-authorized route-local dismissal path. No caller can obtain, serialize, or log a lifetime token.
 
 ```js
 // src/lib/auth/antigravityVerificationAccess.js
@@ -222,23 +224,34 @@ useAntigravityVerification({ enabled }) -> {
 The plan commit must be the clean implementation snapshot.
 
 ```bash
+set -euo pipefail
 pr3635_plan_head=$(git log -1 --format=%H -- docs/superpowers/plans/2026-08-30-antigravity-account-verification.md)
 test -n "$pr3635_plan_head"
 test "$(git rev-parse HEAD)" = "$pr3635_plan_head"
+test "$(git log -1 --format=%s)" = "docs(antigravity): fix verification implementation plan"
 test -z "$(git status --porcelain)"
 ```
 
-Stop without stashing, resetting, reverting, or editing if any assertion fails. Dependency installation is coordinator-owned because it can change lockfiles. Run this preflight from the worktree root before tests or lint.
+Stop without stashing, resetting, reverting, or editing if any assertion fails. Dependency provisioning is coordinator-owned because it can change manifests or lockfiles. An implementation worker runs this preflight from the worktree root before any test, lint, or build and stops with exit 2 if it fails.
 
 ```bash
-test -d node_modules
-test -x node_modules/.bin/eslint
-test -x node_modules/.bin/next
-test -d tests/node_modules
-test -x tests/node_modules/.bin/vitest
+set -euo pipefail
+if ! test -d node_modules \
+  || ! test -x node_modules/.bin/eslint \
+  || ! test -x node_modules/.bin/next \
+  || ! test -d tests/node_modules \
+  || ! test -x tests/node_modules/.bin/vitest; then
+  printf '%s\n' 'dependency preflight failed; coordinator provisioning required' >&2
+  exit 2
+fi
+test -z "$(git status --porcelain)"
 ```
 
-Do not run `npm install`, `npm ci`, snapshot update mode, or a baseline generator. Before and after every test, lint, and build command, run `git status --short`. If a command creates or changes a path not owned by the current phase, stop and report it. In particular, never stage, edit, or reverse generated churn in a worker. Return control to the coordinator if any of these paths change.
+The worker never runs `npm install` or `npm ci`. After an exit 2, the coordinator may provision dependencies in this worktree using the repository-approved immutable install. Before handing control back, the coordinator must re-run the preflight, prove `git diff --exit-code -- package.json package-lock.json`, and prove clean porcelain. Snapshot update mode and baseline generators remain forbidden to both roles.
+
+Before and after every test, lint, and build command, run `git status --short` and compare the paths to the current phase ownership list. Dirty owned RED/GREEN work is expected before its phase commit. At the initial snapshot, after every commit, before Task 4, and after Task 4, assert `test -z "$(git status --porcelain)"`. If a command creates or changes a path not owned by the current phase, stop and report it. Never stage, edit, or reverse generated churn in a worker. Return control to the coordinator if any of these paths change.
+
+Every Bash fence is a fail-fast gate and already begins with `set -euo pipefail`. The default cwd is `/home/spadon/Codebases/9router/.claude/worktrees/task-6-pr3635`; only fences explicitly labeled `tests/` run from `/home/spadon/Codebases/9router/.claude/worktrees/task-6-pr3635/tests`. Run fences separately unless a task explicitly says they share one shell. Do not concatenate unrelated fences. A deliberately expected nonzero program is wrapped with `set +e`, its exit code is captured immediately, and `set -e` is restored before assertions. Every pipeline therefore fails when any leg fails. A forbidden `rg` search uses an explicit inverted `if`, while a required-match `rg` remains a normal positive assertion.
 
 ```text
 package.json
@@ -280,7 +293,7 @@ tests/translator/__snapshots__/golden-url-header.test.js.snap
 
 **Interfaces:**
 - Consumes: the exact classifier, `VerificationContext`, and callback contracts above; current executor results `{ response, url, headers, transformedBody, responseFormat? }`.
-- Produces: 90 deterministic feature tests, URL-free typed errors, `ProjectOutcome` multicast, complete retry replacement, and terminal verification success.
+- Produces: 91 deterministic feature tests, URL-free typed errors, replacement-safe `ProjectOutcome` multicast, complete retry replacement, and terminal verification success.
 - Preserves: public project and usage return values, account-health `onRequestSuccess`, first-valid-event timing, current provider error annotations, and all current transport and fingerprint behavior.
 
 **Step group 1: Record the clean snapshot and Phase 1 baseline**
@@ -292,6 +305,7 @@ tests/translator/__snapshots__/golden-url-header.test.js.snap
 Run the snapshot and dependency rules. Then run the measured Phase 1 adjacency command from `tests/`.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/gemini-36-integration.test.js \
   unit/antigravity-retry-hook.test.js \
@@ -352,6 +366,11 @@ const load = (overrides = {}) => ({
   ineligibleTiers: [{ reasonCode: "VALIDATION_REQUIRED", validationUrl: URL }],
   ...overrides,
 });
+
+const REALISTIC_VALIDATION_URLS = [
+  "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fcloudcode-pa.googleapis.com%2Fv1internal%3AloadCodeAssist&flowName=GlifWebSignIn&opaque=project-secret",
+  "https://accounts.google.com/v3/signin/challenge/pwd?continue=https%3A%2F%2Fcloudcode-pa.googleapis.com%2Fv1internal%3AonboardUser&flowName=GlifWebSignIn&opaque=onboard-secret",
+];
 ```
 
 The 48-test inventory is exact.
@@ -366,16 +385,16 @@ The 48-test inventory is exact.
 
 Every rejection asserts `null`. Every successful classification asserts the exact canonical URL and source. Every redaction assertion scans both the full URL and `opaque-secret`.
 
-**Step group 3: Write the remaining 42 Phase 1 tests**
+**Step group 3: Write the remaining 43 Phase 1 tests**
 
 - [ ] **Step 3a:** Add `onceTextResponse` and trusted-hook fixtures.
-- [ ] **Step 3b:** Add the 10 project-outcome cases.
+- [ ] **Step 3b:** Add the 11 project-outcome cases, including replacement-safe cleanup.
 - [ ] **Step 3c:** Add usage cases 1 through 6, including both single-read assertions.
 - [ ] **Step 3d:** Add usage cases 7 through 12, including every negative success case.
 - [ ] **Step 3e:** Add the 6 complete retry-replacement cases.
 - [ ] **Step 3f:** Add terminal cases 1 through 7 for non-stream and forced conversion.
 - [ ] **Step 3g:** Add terminal cases 8 through 14 for stream completion and negative terminals.
-- [ ] **Step 3h:** Run the exact five-file RED command and record 39 failed plus 51 passed.
+- [ ] **Step 3h:** Run the exact five-file RED command and record 40 failed plus 51 passed.
 
 Use callback spies that reject independently and response fixtures whose `.text()` throws on a second read.
 
@@ -408,14 +427,17 @@ The exact remaining inventory is as follows.
 
 | Test file | Count | Exact behaviors |
 | --- | ---: | --- |
-| `antigravity-project-outcome.test.js` | 10 | cache hit has no callback; validation reaches initiator; late waiter receives same outcome and observation; throwing waiter isolation; success reaches every waiter; success uses first challenge snapshot; failure has no callbacks; removal abort has no success; different connections are independent; project success still caches |
+| `antigravity-project-outcome.test.js` | 11 | cache hit has no callback; validation reaches initiator; late waiter receives same outcome and observation; throwing waiter isolation; success reaches every waiter; success uses first challenge snapshot; failure has no callbacks; removal abort has no success; different connections are independent; project success still caches; an old pending operation's `finally` cannot delete a replacement entry for the same connection |
 | `antigravity-usage-validation.test.js` | 12 | subscription success challenge; subscription 403; quota 403; usable `models` success; subscription single read; quota single read; callback rejection fail-open and redacted; message result no success; subscription-only no success; malformed 2xx no success; HTTP error no success; transport failure no success |
 | `antigravity-retry-response.test.js` | 6 | retry success replaces response, URL, headers, body, format, and last target log; retry 403 does the same and classifies retry body; generic retry HTTP error replaces original; typed timeout maps retry; abort maps retry; other transport failure maps retry and never resurrects original 401 |
-| `antigravity-terminal-verification.test.js` | 14 | usable non-stream; malformed non-stream; disguised 200 error; empty non-stream; usable forced SSE-to-JSON; malformed forced conversion; first stream event only account success; terminal text; terminal thinking; terminal output tokens; empty EOF; aborted completion; abandonment; duplicate terminal callback |
+| `antigravity-terminal-verification.test.js` | 14 | usable non-stream; malformed non-stream; disguised HTTP-200 structured error containing both `REALISTIC_VALIDATION_URLS`; empty non-stream; usable forced SSE-to-JSON; malformed forced conversion; first stream event only account success; terminal text; terminal thinking; terminal output tokens; empty EOF; aborted completion; abandonment; duplicate terminal callback |
+
+The project validation cases embed `REALISTIC_VALIDATION_URLS[0]` in loadCodeAssist and `REALISTIC_VALIDATION_URLS[1]` in onboardUser. Before production edits, their sink assertions are RED. The disguised HTTP-200 fixture uses a strict RPC-shaped body with both real-looking Help links but an HTTP status of 200. It must not classify or clear verification. Both full URLs, both opaque markers, and all query values must be absent from non-stream output, forced SSE-to-JSON output, serialized public responses, captured console calls, and a temporary mocked disk-log sink. Tests write only the sink capture under `/tmp` and remove it in `afterEach`.
 
 Before production edits, run only the five new files from `tests/`.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/antigravity-validation.test.js \
   unit/antigravity-project-outcome.test.js \
@@ -424,7 +446,7 @@ Before production edits, run only the five new files from `tests/`.
   unit/antigravity-terminal-verification.test.js
 ```
 
-Expected RED is exactly 39 failed and 51 passed. The failures are 14 positive classifier or redaction assertions, 8 typed-project assertions, 7 usage callback or single-read assertions, 4 retry-replacement assertions, and 6 positive terminal-success assertions. Negative and preservation cases account for the 51 passes.
+Expected RED is exactly 40 failed and 51 passed. The failures are 14 positive classifier or redaction assertions, 9 typed-project assertions, 7 usage callback or single-read assertions, 4 retry-replacement assertions, and 6 positive terminal-success assertions. Negative and preservation cases account for the 51 passes.
 
 **Step group 4: Implement the pure classifier and redactor**
 
@@ -468,7 +490,7 @@ Reject an unknown `source`. Accept the successful ineligible-tier contract only 
 
 - [ ] **Step 5a:** Convert the pending project entry to the executable typed-outcome shape below.
 - [ ] **Step 5b:** Add one continuation per waiter with isolated callback catches.
-- [ ] **Step 5c:** Single-read and classify load/onboard bodies, then run `./node_modules/.bin/vitest run unit/antigravity-project-outcome.test.js` from `tests/` for 10 passed.
+- [ ] **Step 5c:** Single-read and classify load/onboard bodies, identity-check pending cleanup, then run `./node_modules/.bin/vitest run unit/antigravity-project-outcome.test.js` from `tests/` for 11 passed.
 - [ ] **Step 5d:** Single-read and classify subscription/quota bodies without changing public JSON shapes.
 - [ ] **Step 5e:** Add the private `WeakSet` usability marker and terminal usage callback.
 - [ ] **Step 5f:** Run `./node_modules/.bin/vitest run unit/antigravity-usage-validation.test.js` from `tests/` for 12 passed.
@@ -488,7 +510,11 @@ pendingFetches.set(connectionId, pendingEntry);
 
 Every caller, including a late waiter, attaches its own continuation to the same typed promise. Validation invokes each waiter with the pending entry's one observation ID. Project success invokes each waiter with the pending entry's first `challengeIdAtStart`. Wrap each callback independently. Cache hits invoke neither callback. A callback error logs only callback type plus a connection ID prefix.
 
-Read each load, onboard, subscription, and quota body exactly once with `text()`, parse from that text, classify before creating diagnostics, and redact before logging. `getProjectIdForConnection` projects `{ kind: "project" }` to the string and every other outcome to `null` only after waiter callbacks observe the typed result.
+Every completion, rejection, timeout, and abort cleanup is identity-safe. The operation's `finally` deletes only when `pendingFetches.get(connectionId) === pendingEntry`. The RED starts operation A, calls the existing `removeConnection(connectionId)` so A is aborted and removed, starts replacement B under the same connection ID, releases A, and proves A cannot delete B. A subsequent waiter must still join B and receive B's single typed outcome.
+
+Classify each raw load and onboard body before constructing any diagnostic. Apply `redactAntigravityValidationText` before values cross project callback-error logging, request logging, thrown errors, public errors, or serialized responses. The raw body and raw validation URL never reach those sinks even when classification is rejected because the transport status is disguised as HTTP 200.
+
+Read each load, onboard, subscription, and quota body exactly once with `text()`, parse from that text, classify before creating diagnostics, and redact before logging or serializing. `getProjectIdForConnection` projects `{ kind: "project" }` to the string and every other outcome to `null` only after waiter callbacks observe the typed result.
 
 For Antigravity usage, preserve current headers, proxy options, 401 and 403 messages, and current JSON result shapes. Keep successful formatted result objects in a module-private `WeakSet`; this makes usability observable to the dedicated server route without adding a serializable field or changing the result object returned by the engine.
 
@@ -514,6 +540,8 @@ Read and parse the raw quota payload once. Only when the 2xx parsed payload has 
 Add `AntigravityExecutor.parseError(response, bodyText)` after current request transformation methods. Call `super.parseError`, parse the already-read text, classify with source `chat`, redact the message, and return `validation` as an internal sibling field.
 
 `parseUpstreamError` must copy `parsed.validation` to its internal return value. `createErrorResult` remains unchanged and never receives the validation object or URL. `handleChatCore` invokes `onValidationRequired` before building the normal error result and catches callback failure without logging the URL.
+
+Redaction occurs before every chat sink. `AntigravityExecutor.parseError` redacts the already-read text even when strict classification returns `null`, then only the redacted diagnostic can reach streaming handlers, non-streaming handlers, `createErrorResult`, `mapTransportError`, request logs, console logs, or JSON serialization. Do not rely on a downstream UI or serializer to remove the URL.
 
 Replace the refresh retry block regardless of `response.ok`.
 
@@ -562,15 +590,16 @@ Pass that callback through `sharedCtx` without replacing `onRequestSuccess`.
 
 **Step group 8: Run Phase 1 GREEN, static gates, and review gate**
 
-- [ ] **Step 8a:** Run the exact 188-test combined command below from `tests/`.
+- [ ] **Step 8a:** Run the exact 189-test combined command below from `tests/`.
 - [ ] **Step 8b:** Run each `node --check` command below from the worktree root.
 - [ ] **Step 8c:** Run the Phase 1 ESLint command and `git diff --check`.
 - [ ] **Step 8d:** Prove the fingerprint constant files are unchanged and inspect the executor zero-context diff.
 - [ ] **Step 8e:** Request a fresh Phase 1 review and resolve every Critical or Important finding before commit.
 
-Run the five new files plus the measured 98-test adjacency list from `tests/`. Expected result is exactly 188 passed and zero failed.
+Run the five new files plus the measured 98-test adjacency list from `tests/`. Expected result is exactly 189 passed and zero failed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/antigravity-validation.test.js \
   unit/antigravity-project-outcome.test.js \
@@ -592,6 +621,7 @@ Run the five new files plus the measured 98-test adjacency list from `tests/`. E
 Run syntax and lint from the worktree root.
 
 ```bash
+set -euo pipefail
 node --check open-sse/services/antigravityValidation.js
 node --check open-sse/executors/antigravity.js
 node --check open-sse/services/projectId.js
@@ -612,9 +642,11 @@ Inspect `git diff --unified=0 9d8193182 -- open-sse/executors/antigravity.js`. B
 - [ ] **Step 9: Commit Phase 1**
 
 ```bash
+set -euo pipefail
 git add open-sse/services/antigravityValidation.js open-sse/executors/antigravity.js open-sse/services/projectId.js open-sse/services/usage/google.js open-sse/services/usage.js open-sse/utils/error.js open-sse/handlers/chatCore.js open-sse/handlers/chatCore/nonStreamingHandler.js open-sse/handlers/chatCore/sseToJsonHandler.js open-sse/handlers/chatCore/streamingHandler.js tests/unit/antigravity-validation.test.js tests/unit/antigravity-project-outcome.test.js tests/unit/antigravity-usage-validation.test.js tests/unit/antigravity-retry-response.test.js tests/unit/antigravity-terminal-verification.test.js tests/unit/chat-connect-timeout-propagation.test.js
 git commit -m "feat(antigravity): classify account verification"
-git log -1 --oneline
+test "$(git log -1 --format=%s)" = "feat(antigravity): classify account verification"
+test -z "$(git status --porcelain)"
 ```
 
 Expected subject is exactly `feat(antigravity): classify account verification`. Worktree must be clean before Task 2.
@@ -644,17 +676,20 @@ Expected subject is exactly `feat(antigravity): classify account verification`. 
 
 **Interfaces:**
 - Consumes: Phase 1 typed callbacks, validator, redactor, usable-usage predicate, current database access, proxy resolution, and current credential refresh.
-- Produces: connection-scoped bounded state, URL-free multicast, trusted hook factory, 4 sensitive route methods, exact auth and CSRF policy, and 88 tests.
+- Produces: connection-scoped bounded state, URL-free multicast, invalidatable trusted hook lifetimes, 4 sensitive route methods, exact auth and CSRF policy, and 94 tests.
 - Preserves: caller credential refresh, proxy options, quota persistence, three-second routing timeout, hot-reload retry and result handling, and all non-Antigravity usage calls.
 
 **Step group 1: Record the Phase 2 baseline**
 
 - [ ] **Step 1a:** Re-run the clean-status and dependency assertions.
 - [ ] **Step 1b:** Run the measured Phase 2 adjacency command from `tests/` and record 104 passed.
+- [ ] **Step 1c:** Write the 10 privacy preservation tests from Step group 7.
+- [ ] **Step 1d:** Run the privacy command on the committed Phase 1 baseline and record 10 passed.
 
 Run from `tests/`.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/background-token-refresh.test.js \
   unit/token-refresh-generic.test.js \
@@ -675,12 +710,13 @@ Expected result is exactly 104 passed and zero failed.
 - [ ] **Step 2b:** Add lazy-expiry, sweep-expiry, and timer-unref fake-clock cases.
 - [ ] **Step 2c:** Add live-cap, restart-empty, ledger-cap, ledger-expiry, and ledger-deletion cases.
 - [ ] **Step 2d:** Add stale dismissal, matching clear, and older-success race cases.
-- [ ] **Step 2e:** Run the state command and record the missing-module RED.
-- [ ] **Step 2f:** Implement private maps, generation, lazy/sweep cleanup, and unreferenced timer.
-- [ ] **Step 2g:** Implement synchronous record, sanitized emission, caps, and compare-removal.
-- [ ] **Step 2h:** Re-run the state command and record 16 passed.
+- [ ] **Step 2e:** Add late chat, project, and usage callback cases across successful deletion and same-ID replacement.
+- [ ] **Step 2f:** Run the state command and record the missing-module RED.
+- [ ] **Step 2g:** Implement private maps, generation, lazy/sweep cleanup, and unreferenced timer.
+- [ ] **Step 2h:** Implement synchronous record, sanitized emission, caps, compare-removal, and lifetime invalidation.
+- [ ] **Step 2i:** Re-run the state command and record 19 passed.
 
-Write the 16 state tests before creating `src/lib/antigravityVerification.js`. Initial RED is one suite collection failure naming the missing module.
+Write the 19 state tests before creating `src/lib/antigravityVerification.js`. Initial RED is one suite collection failure naming the missing module.
 
 | Count | Exact state cases |
 | ---: | --- |
@@ -690,6 +726,7 @@ Write the 16 state tests before creating `src/lib/antigravityVerification.js`. I
 | 2 | 256 live-entry cap with oldest-observed eviction; restart or module reload begins empty |
 | 3 | 1,024 ledger cap and oldest-seen eviction; ledger expires at ten minutes; connection deletion clears entry and ledger pairs |
 | 3 | stale dismissal rejects; matching clear succeeds; older success cannot clear newer challenge |
+| 3 | one table-driven case each for old chat, project, and usage hook sets; after deletion and same-ID replacement, each old set invokes both validation and success callbacks and can neither resurrect deleted state nor clear or evict the replacement, while the fresh hook set can record and clear it |
 
 Use `vi.useFakeTimers()`, `vi.setSystemTime()`, and `vi.resetModules()` rather than adding a public test clock. The URL-free event assertion is part of every record and remove case.
 
@@ -698,6 +735,7 @@ The module-private data structures are exact.
 ```js
 const liveByConnection = new Map();
 const seenObservations = new Map();
+const activeLifetimeByConnection = new Map();
 const events = new EventEmitter();
 let generation = 0;
 
@@ -710,13 +748,16 @@ let generation = 0;
 
 Validate the callback URL again before storing it. Mark the observation pair and update the map synchronously before emitting. Repeated observation delivery must not refresh TTL, increment generation, emit, resurrect, or replace. Expiry, capacity eviction, dismissal, success clear, and connection deletion emit only sanitized removal values.
 
+`createAntigravityVerificationHooks` captures a module-private `Symbol()` lifetime shared by hooks created while the connection is live. Callback closures pass that opaque token into record and success-clear operations. `invalidateAntigravityVerificationConnection` deletes the active token before it removes the live entry and ledger pairs. A callback carrying a missing or mismatched token is a no-op, so hooks captured before successful deletion cannot record, clear, evict, or resurrect anything. Creating hooks later for a newly created connection with the same ID allocates a new token and remains functional. No token crosses `VerificationContext`, an event, a response, a log, or serialized state.
+
 Run this command from `tests/` before and after production implementation.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-state.test.js
 ```
 
-Initial RED is the named missing-module collection failure. GREEN is exactly 16 passed.
+Initial RED is the named missing-module collection failure. GREEN is exactly 19 passed.
 
 **Step group 3: Write auth and CSRF RED, then implement the dedicated boundary**
 
@@ -768,12 +809,13 @@ Every helper-generated success or error response gets all security headers.
 The helper exports the four-entry `sensitive-verification` route inventory and never calls `isLocalRequest`. Run this command from `tests/` before and after helper implementation.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-access.test.js
 ```
 
 Initial RED is the named missing-module collection failure. GREEN is exactly 28 passed.
 
-**Step group 4: Write the 13 exhaustive caller RED tests**
+**Step group 4: Write the 14 exhaustive caller RED tests**
 
 - [ ] **Step 4a:** Add the two exact source-inventory assertions.
 - [ ] **Step 4b:** Add the three chat and proactive-project caller cases.
@@ -781,9 +823,10 @@ Initial RED is the named missing-module collection failure. GREEN is exactly 28 
 - [ ] **Step 4d:** Add the two hot-reload wrapper and direct-poke cases.
 - [ ] **Step 4e:** Add the two usage-route snapshot cases.
 - [ ] **Step 4f:** Add the recheck and wrapper-allowlist cases.
-- [ ] **Step 4g:** Run the caller command and record 13 failed.
+- [ ] **Step 4g:** Add successful and failed provider-deletion invalidation cases.
+- [ ] **Step 4h:** Run the caller command and record 14 failed.
 
-Use module mocks plus a source inventory assertion. All 13 tests must fail before call-site edits because each requires a named explicit hook path.
+Use module mocks plus a source inventory assertion. All 14 tests must fail before call-site edits because each requires a named explicit hook path.
 
 | Count | Exact caller cases |
 | ---: | --- |
@@ -794,6 +837,7 @@ Use module mocks plus a source inventory assertion. All 13 tests must fail befor
 | 2 | every hot-reload quota attempt uses a fresh wrapper; direct 403 poke reads once and records while 2xx, 429, 5xx, abort, and timeout do not clear |
 | 2 | initial and post-refresh usage calls each snapshot independently; existing `force=1` stays explicit |
 | 2 | dedicated recheck uses the wrapper with submitted challenge ID; wrapper forwards only `force` and trusted hook fields |
+| 1 | provider deletion invalidates the connection only after a deleted row is returned; a rejected or empty deletion leaves the lifetime and state intact |
 
 The static inventory command used by the test is conceptually exact.
 
@@ -825,6 +869,7 @@ expect(usageCallers).toEqual([
 
 ```js
 export function createAntigravityVerificationHooks(connectionId, expectedChallengeId) {
+  const connectionLifetime = getOrCreateConnectionLifetime(connectionId);
   const current = getAntigravityVerification(connectionId);
   const challengeIdAtStart = expectedChallengeId === undefined
     ? current?.challengeId ?? null
@@ -833,9 +878,9 @@ export function createAntigravityVerificationHooks(connectionId, expectedChallen
   return {
     verificationContext: { connectionId, observationId, challengeIdAtStart },
     onValidationRequired: ({ validation, observationId: observedId }) =>
-      recordAntigravityValidation(connectionId, { validation, observationId: observedId }),
+      recordAntigravityValidation(connectionId, { validation, observationId: observedId }, connectionLifetime),
     onVerificationSuccess: ({ challengeId }) =>
-      clearAntigravityVerificationIfCurrent(connectionId, challengeId),
+      clearAntigravityVerificationIfCurrent(connectionId, challengeId, connectionLifetime),
   };
 }
 ```
@@ -849,15 +894,18 @@ Wire the exact inventory.
 - Quota guard races the wrapper promise without aborting or suppressing the losing promise's callbacks.
 - Hot reload calls the wrapper for each verification attempt. A direct 403 reads `text()` once, parses once, classifies with source `chat`, invokes its fresh validation callback, then returns the existing failed-auth result. Other direct poke outcomes never invoke verification success.
 - Usage route calls the wrapper for initial and retry Antigravity reads. Each call allocates its own snapshot. Other providers call the engine directly as before.
-- Provider deletion calls `removeAntigravityVerification(id)` only after `deleteProviderConnection(id)` returns a deleted row.
+- Provider deletion calls `invalidateAntigravityVerificationConnection(id)` only after `deleteProviderConnection(id)` returns a deleted row. Invalidation happens before returning the successful response. A thrown deletion or an empty result does not invalidate.
+
+The deletion RED retains old hook closures for chat, proactive project lookup, and usage, deletes the provider successfully, creates a replacement connection with the same ID and fresh hook lifetime, and releases the old promises. Late old validation callbacks cannot recreate the deleted entry, late old success callbacks cannot clear or evict the replacement entry, and the fresh replacement hooks still work. The failed-deletion branch proves the current hooks remain valid.
 
 Run this command from `tests/` before and after call-site implementation.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-callers.test.js
 ```
 
-RED is exactly 13 failed. After this step, expect 12 passed and the one route-owned dedicated-recheck assertion still RED. Do not weaken it. Step 6 implements the recheck route and must make all 13 caller tests GREEN.
+RED is exactly 14 failed. After this step, expect 13 passed and the one route-owned dedicated-recheck assertion still RED. Do not weaken it. Step 6 implements the recheck route and must make all 14 caller tests GREEN.
 
 **Step group 6: Write route RED and implement all four sensitive methods**
 
@@ -869,7 +917,7 @@ RED is exactly 13 failed. After this step, expect 12 passed and the one route-ow
 - [ ] **Step 6f:** Implement stream framing, heartbeat, headers, and idempotent cleanup.
 - [ ] **Step 6g:** Implement exact detail and compare-dismissal outcomes.
 - [ ] **Step 6h:** Implement forced recheck, usability marker evaluation, repeated challenge, and sanitized failures.
-- [ ] **Step 6i:** Run route GREEN for 23 passed, then route plus caller GREEN for 36 passed.
+- [ ] **Step 6i:** Run route GREEN for 23 passed, then route plus caller GREEN for 37 passed.
 
 Write the 23 route tests before the three route modules. Initial RED is one suite collection failure naming the first missing route.
 
@@ -907,24 +955,27 @@ Recheck calls `runAntigravityUsageProbe(connection, proxyOptions, { force: true,
 Run this command from `tests/` before and after route implementation.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-routes.test.js
 ```
 
 Initial RED is the named missing-route collection failure. GREEN is exactly 23 passed.
 
-Then run the route and caller suites together. Expected GREEN is exactly 36 passed.
+Then run the route and caller suites together. Expected GREEN is exactly 37 passed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-routes.test.js unit/antigravity-verification-callers.test.js
 ```
 
-**Step group 7: Add the 8 privacy preservation tests**
+**Step group 7: Re-run the 10 privacy preservation tests**
 
-- [ ] **Step 7a:** Add active-request, usage-stats, general-SSE, and request-detail exclusions.
-- [ ] **Step 7b:** Add public-error, process-global, sensitive-SSE, and header/log exclusions.
-- [ ] **Step 7c:** Run the privacy command and record 8 passed.
+- [ ] **Step 7a:** Re-run active-request, usage-stats, general-SSE, and request-detail exclusions.
+- [ ] **Step 7b:** Re-run public-error, process-global, sensitive-SSE, and header/log exclusions.
+- [ ] **Step 7c:** Re-run OAuth project/onboard and disguised HTTP-200 sink-ordering exclusions.
+- [ ] **Step 7d:** Record 10 passed after every Phase 2 path is integrated.
 
-These tests are expected to pass on the pre-feature baseline and remain green after implementation. They guard against leakage rather than introduce behavior.
+The original eight exclusion tests pass on the pre-feature baseline. The two sink-ordering behaviors are first recorded RED in Task 1 inside the project-outcome and terminal-verification suites, before the Phase 1 production edits. This Phase 2 privacy suite repeats those realistic fixtures as independent preservation coverage and must pass on the committed Phase 1 baseline before Phase 2 edits, then remain green.
 
 | Count | Exact exclusion |
 | ---: | --- |
@@ -936,26 +987,32 @@ These tests are expected to pass on the pre-feature baseline and remain green af
 | 1 | `globalThis` and known global aliases |
 | 1 | sensitive SSE snapshot and deltas |
 | 1 | route headers, logs, and `Location` |
+| 1 | loadCodeAssist and onboardUser raw diagnostics never reach console, a mocked disk-log sink, callback errors, or serialized public responses |
+| 1 | disguised HTTP-200 chat errors never reach streaming or non-streaming response JSON, console, request logs, or a mocked disk-log sink |
 
-Seed every assertion with `https://accounts.google.com/verify?opaque=do-not-leak` and scan for both the full URL and `do-not-leak`.
+Use both `REALISTIC_VALIDATION_URLS` values from Task 1, repeated locally in this isolated test module, rather than a toy `/verify` URL. The project fixture embeds the AccountChooser URL in loadCodeAssist and the `/v3/signin/challenge/pwd` URL in an onboardUser RPC body. The chat fixture embeds each URL in a strict RPC-shaped body delivered with HTTP status 200. Scan every disk-log write, captured console call, request-detail payload, public error object, and `JSON.stringify` result for the full URLs, `project-secret`, `onboard-secret`, `continue=`, and `flowName=`. Each scan must be empty. Temporary disk-log captures live under `/tmp`, are opened only by an injected test logger, and are removed in `afterEach`.
 
-Run from `tests/` before and after integrating the final Phase 2 paths. Both runs must report exactly 8 passed.
+The implementation contract is ordering, not cleanup after exposure. Classify and redact raw project load/onboard, usage, retry, streaming, and non-streaming bodies before invoking any public-error constructor, response serializer, request logger, console logger, callback-error logger, or stream writer. The URL-bearing validation object remains internal only long enough to invoke the trusted hook and never becomes a sibling on a public object.
+
+Run from `tests/` first in Step 1d and again here after integrating every Phase 2 path. Both runs must report exactly 10 passed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-privacy.test.js
 ```
 
 **Step group 8: Run Phase 2 GREEN, static gates, and review gate**
 
-- [ ] **Step 8a:** Run the exact 282-test combined command below from `tests/`.
+- [ ] **Step 8a:** Run the exact 289-test combined command below from `tests/`.
 - [ ] **Step 8b:** Run every route, service, and caller `node --check` command.
 - [ ] **Step 8c:** Run Phase 2 ESLint and `git diff --check`.
 - [ ] **Step 8d:** Prove every excluded ownership path stayed unchanged.
 - [ ] **Step 8e:** Request a fresh Phase 2 review and resolve every Critical or Important finding.
 
-Run all 10 Phase 1 and Phase 2 feature files plus the measured 104-test adjacency list from `tests/`. Expected result is exactly 282 passed and zero failed.
+Run all 10 Phase 1 and Phase 2 feature files plus the measured 104-test adjacency list from `tests/`. Expected result is exactly 289 passed and zero failed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/antigravity-validation.test.js \
   unit/antigravity-project-outcome.test.js \
@@ -981,6 +1038,7 @@ Run all 10 Phase 1 and Phase 2 feature files plus the measured 104-test adjacenc
 Run from the worktree root.
 
 ```bash
+set -euo pipefail
 node --check src/lib/antigravityVerification.js
 node --check src/lib/auth/antigravityVerificationAccess.js
 node --check src/app/api/providers/antigravity/verification/stream/route.js
@@ -999,6 +1057,7 @@ git diff --check
 Prove excluded ownership stayed untouched.
 
 ```bash
+set -euo pipefail
 git diff --exit-code 9d8193182 -- src/dashboardGuard.js src/lib/db/repos/usageRepo.js src/lib/usageDb.js src/app/api/usage/stream/route.js src/shared/components/UsageStats.js src/shared/components/layouts/DashboardLayout.js package.json package-lock.json
 ```
 
@@ -1007,9 +1066,11 @@ Request a fresh Phase 2 review. Stop on any Critical or Important finding.
 - [ ] **Step 9: Commit Phase 2**
 
 ```bash
+set -euo pipefail
 git add src/lib/antigravityVerification.js src/lib/auth/antigravityVerificationAccess.js src/app/api/providers/antigravity/verification/stream/route.js 'src/app/api/providers/antigravity/verification/[connectionId]/route.js' 'src/app/api/providers/antigravity/verification/[connectionId]/recheck/route.js' src/sse/handlers/chat.js src/sse/services/tokenRefresh.js src/sse/services/quotaGuard.js 'src/app/api/providers/[id]/hotreload/route.js' 'src/app/api/usage/[connectionId]/route.js' 'src/app/api/providers/[id]/route.js' tests/fixtures/antigravity-verification-access.js tests/unit/antigravity-verification-state.test.js tests/unit/antigravity-verification-access.test.js tests/unit/antigravity-verification-routes.test.js tests/unit/antigravity-verification-callers.test.js tests/unit/antigravity-verification-privacy.test.js
 git commit -m "feat(antigravity): secure account verification"
-git log -1 --oneline
+test "$(git log -1 --format=%s)" = "feat(antigravity): secure account verification"
+test -z "$(git status --porcelain)"
 ```
 
 Expected subject is exactly `feat(antigravity): secure account verification`. Worktree must be clean before Task 3.
@@ -1029,7 +1090,7 @@ Expected subject is exactly `feat(antigravity): secure account verification`. Wo
 
 **Interfaces:**
 - Consumes: sanitized SSE, authenticated detail, compare-dismissal, recheck route, runtime `translate`, and the exact hook return shape above.
-- Produces: one page-scoped EventSource, URL only in component memory, one matching row anchor, one explicit recheck button, accessible authorization failure, and 23 tests.
+- Produces: one page-scoped EventSource, authoritative snapshot reconciliation, URL only in component memory, one matching row anchor, one explicit recheck button, accessible authorization failure, and 27 tests.
 - Preserves: every current row prop, hot reload, auto-ping, proxy controls, edit, delete, toggle, settings queues, model discovery, provider navigation, and all non-Antigravity pages.
 
 **Step group 1: Record the Phase 3 baseline**
@@ -1040,6 +1101,7 @@ Expected subject is exactly `feat(antigravity): secure account verification`. Wo
 Run from `tests/`.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/provider-quota-visibility.test.js unit/quota-auto-ping.test.js unit/provider-strategy-writers.test.js unit/commandcode-zdr-ui.test.js
 ```
 
@@ -1051,13 +1113,15 @@ Expected result is exactly 43 passed and zero failed.
 - [ ] **Step 2b:** Add snapshot, upsert, and matching-remove cases.
 - [ ] **Step 2c:** Add expiry, detail failure, and access-denial cases.
 - [ ] **Step 2d:** Add stop/navigation, stale-response, and exact recheck cases.
-- [ ] **Step 2e:** Run the client command and record the missing-module RED.
-- [ ] **Step 2f:** Implement the dependency-injected controller and status-visible preflight.
-- [ ] **Step 2g:** Implement sanitized event handling, exact detail reads, URL validation, and race checks.
-- [ ] **Step 2h:** Implement expiry/error cleanup and exact recheck POST.
-- [ ] **Step 2i:** Wrap the controller in one hook effect and run 12 GREEN tests.
+- [ ] **Step 2e:** Add authoritative snapshot removal, mismatch, old-detail invalidation, and reconnect-clearing cases.
+- [ ] **Step 2f:** Run the client command and record the missing-module RED.
+- [ ] **Step 2g:** Implement the dependency-injected controller and status-visible preflight.
+- [ ] **Step 2h:** Implement sanitized event handling, exact detail reads, URL validation, and race checks.
+- [ ] **Step 2i:** Implement authoritative snapshot reconciliation and one-source reconnect clearing.
+- [ ] **Step 2j:** Implement expiry/error cleanup and exact recheck POST.
+- [ ] **Step 2k:** Wrap the controller in one hook effect and run 16 GREEN tests.
 
-Write 12 tests before creating the hook. Initial RED is one suite collection failure naming the missing module.
+Write 16 tests before creating the hook. Initial RED is one suite collection failure naming the missing module.
 
 | Count | Exact client cases |
 | ---: | --- |
@@ -1066,6 +1130,7 @@ Write 12 tests before creating the hook. Initial RED is one suite collection fai
 | 3 | expiry clears href; failed detail clears href; 401 or 403 from preflight or detail sets access denial and no href or EventSource |
 | 2 | unmount or provider navigation closes source and timers; stale detail response cannot overwrite newer challenge |
 | 2 | recheck sends same-origin JSON POST with exact challenge ID; it never uses GET, general usage, `window.open`, or `/api/usage/stream` |
+| 4 | authoritative snapshot removes an absent local entry; mismatched snapshot challenge clears the old href and timer before replacement detail; every snapshot invalidates older detail promises even for the same challenge; stream error and reconnect clear all hrefs and timers while retaining exactly one EventSource and accepting the next authoritative snapshot |
 
 Export a small dependency-injected client controller from the same file for Node tests. The React hook wraps it in one `useEffect`; no second store is introduced.
 
@@ -1082,15 +1147,20 @@ createAntigravityVerificationClient({
 
 `start()` first performs a same-origin credentialed `fetch` to the dedicated stream URL so 401 and 403 remain observable. For 200 it immediately cancels the response body, waits for server cleanup, then creates one `EventSource` to that same URL. It never parses snapshot data from the preflight. For 401 or 403 it sets `accessDenied` and opens no EventSource. Other preflight failures expose only `Unable to load verification link`. This extra GET is read-only and never uses the general usage stream.
 
-Client URL validation repeats the server rules, including UTF-8 and canonical href bounds, exact HTTPS host, empty normalized port, no credentials, no controls, and no surrounding whitespace. It is defense in depth only. State updates compare both `connectionId` and `challengeId` before applying a detail response. Href, timers, preflight body, and pending state disappear on expiry, remove, failure, navigation, and stop.
+Client URL validation repeats the server rules, including UTF-8 and canonical href bounds, exact HTTPS host, empty normalized port, no credentials, no controls, and no surrounding whitespace. It is defense in depth only. State updates compare `connectionId`, `challengeId`, and the current detail-request epoch before applying a response.
+
+Treat every SSE `snapshot` as the complete authoritative server set, never as a merge. Parse its sanitized entries into one new map. In one state transition, remove every local connection absent from the snapshot, remove every local entry whose challenge ID mismatches, clear those hrefs and expiry timers, increment the detail epoch for every prior entry, and then schedule exact detail reads for the snapshot entries. Even a same-ID and same-challenge snapshot invalidates a detail promise started before that snapshot. An older detail promise can never write after reconciliation.
+
+The single EventSource is the only live stream source. Its `error` handler immediately invalidates every detail epoch, clears all hrefs and timers, and publishes URL-free empty state. It does not close and recreate the source. Native EventSource reconnect remains on that same object, and the next snapshot repopulates from one authoritative server source. Upserts and removes between snapshots remain exact deltas. Href, timers, preflight body, and pending state also disappear on expiry, remove, detail failure, navigation, and stop.
 
 Run this command from `tests/` before and after hook implementation.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-client.test.js
 ```
 
-Initial RED is the named missing-module collection failure. GREEN is exactly 12 passed.
+Initial RED is the named missing-module collection failure. GREEN is exactly 16 passed.
 
 **Step group 3: Write rendered UI and locale RED**
 
@@ -1139,6 +1209,7 @@ Write the 3 locale tests before editing catalogs. Expected RED is exactly 3 fail
 Run the UI test alone before row or page edits and record exactly 8 failed. Run the locale test alone before catalog edits and record exactly 3 failed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-ui.test.js
 ./node_modules/.bin/vitest run unit/antigravity-verification-locales.test.js
 ```
@@ -1237,20 +1308,22 @@ Use the exact reviewed catalog values below. Columns A through F correspond to t
 Run both suites from `tests/`. Expected GREEN is exactly 11 passed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run unit/antigravity-verification-ui.test.js unit/antigravity-verification-locales.test.js
 ```
 
 **Step group 5: Run Phase 3 GREEN, static gates, and review gate**
 
-- [ ] **Step 5a:** Run the exact 244-test combined command below from `tests/`.
+- [ ] **Step 5a:** Run the exact 255-test combined command below from `tests/`.
 - [ ] **Step 5b:** Run Phase 3 ESLint from the worktree root.
 - [ ] **Step 5c:** Parse all 34 JSON catalogs and run `git diff --check`.
 - [ ] **Step 5d:** Run the forbidden client-integration search and require empty output.
 - [ ] **Step 5e:** Request a fresh Phase 3 review and resolve every Critical or Important finding.
 
-Run all 13 feature files from Phases 1 through 3 plus the measured 43-test UI adjacency list from `tests/`. Expected result is exactly 244 passed and zero failed.
+Run all 13 feature files from Phases 1 through 3 plus the measured 43-test UI adjacency list from `tests/`. Expected result is exactly 255 passed and zero failed.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/antigravity-validation.test.js \
   unit/antigravity-project-outcome.test.js \
@@ -1274,6 +1347,7 @@ Run all 13 feature files from Phases 1 through 3 plus the measured 43-test UI ad
 Run from the worktree root.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/eslint 'src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js' 'src/app/(dashboard)/dashboard/providers/[id]/page.js' 'src/app/(dashboard)/dashboard/providers/[id]/ConnectionRow.js' tests/unit/antigravity-verification-client.test.js tests/unit/antigravity-verification-ui.test.js tests/unit/antigravity-verification-locales.test.js
 node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const dir="public/i18n/literals"; const files=fs.readdirSync(dir).filter((f)=>f.endsWith(".json")).sort(); if(files.length!==34) throw new Error(`expected 34 catalogs, got ${files.length}`); for(const file of files) JSON.parse(fs.readFileSync(path.join(dir,file),"utf8"));'
 git diff --check
@@ -1282,7 +1356,10 @@ git diff --check
 Search forbidden client integration.
 
 ```bash
-rg -n 'api/usage/stream|window\.open|DashboardLayout|UsageStats|zustand' 'src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js' 'src/app/(dashboard)/dashboard/providers/[id]/page.js' 'src/app/(dashboard)/dashboard/providers/[id]/ConnectionRow.js'
+set -euo pipefail
+if rg -n 'api/usage/stream|window\.open|DashboardLayout|UsageStats|zustand' 'src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js' 'src/app/(dashboard)/dashboard/providers/[id]/page.js' 'src/app/(dashboard)/dashboard/providers/[id]/ConnectionRow.js'; then
+  exit 1
+fi
 ```
 
 Expected output is empty. Request a fresh Phase 3 review. Stop on any Critical or Important finding.
@@ -1292,10 +1369,14 @@ Expected output is empty. Request a fresh Phase 3 review. Stop on any Critical o
 Stage the three code files, three tests, and the exact catalog set. Use the explicit generated file list only after verifying it contains 34 paths.
 
 ```bash
-fd -t f '\.json$' public/i18n/literals | sort
+set -euo pipefail
+pr3635_locale_files="$(fd -t f '\.json$' public/i18n/literals | sort)"
+test "$(printf '%s\n' "$pr3635_locale_files" | sed '/^$/d' | wc -l)" -eq 34
+printf '%s\n' "$pr3635_locale_files"
 git add 'src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js' 'src/app/(dashboard)/dashboard/providers/[id]/page.js' 'src/app/(dashboard)/dashboard/providers/[id]/ConnectionRow.js' tests/unit/antigravity-verification-client.test.js tests/unit/antigravity-verification-ui.test.js tests/unit/antigravity-verification-locales.test.js public/i18n/literals/ar.json public/i18n/literals/bn.json public/i18n/literals/cs.json public/i18n/literals/da.json public/i18n/literals/de.json public/i18n/literals/el.json public/i18n/literals/es.json public/i18n/literals/fa.json public/i18n/literals/fi.json public/i18n/literals/fr.json public/i18n/literals/he.json public/i18n/literals/hi.json public/i18n/literals/hu.json public/i18n/literals/id.json public/i18n/literals/it.json public/i18n/literals/ja.json public/i18n/literals/km.json public/i18n/literals/ko.json public/i18n/literals/nl.json public/i18n/literals/no.json public/i18n/literals/pl.json public/i18n/literals/pt-BR.json public/i18n/literals/pt-PT.json public/i18n/literals/ro.json public/i18n/literals/ru.json public/i18n/literals/sv.json public/i18n/literals/th.json public/i18n/literals/tl.json public/i18n/literals/tr.json public/i18n/literals/uk.json public/i18n/literals/ur.json public/i18n/literals/vi.json public/i18n/literals/zh-CN.json public/i18n/literals/zh-TW.json
 git commit -m "feat(antigravity): add verification action"
-git log -1 --oneline
+test "$(git log -1 --format=%s)" = "feat(antigravity): add verification action"
+test -z "$(git status --porcelain)"
 ```
 
 Expected subject is exactly `feat(antigravity): add verification action`. Worktree must be clean before Task 4.
@@ -1322,18 +1403,24 @@ Expected subject is exactly `feat(antigravity): add verification action`. Worktr
 Run from the worktree root.
 
 ```bash
+set -euo pipefail
 git status --short --branch
+test -z "$(git status --porcelain)"
+test "$(git log -1 --format=%s)" = "feat(antigravity): add verification action"
+test "$(git log -1 --skip=1 --format=%s)" = "feat(antigravity): secure account verification"
+test "$(git log -1 --skip=2 --format=%s)" = "feat(antigravity): classify account verification"
+test "$(git log -1 --skip=3 --format=%s)" = "docs(antigravity): fix verification implementation plan"
 git log --oneline -4
 git diff --name-only 9d8193182..HEAD
 git diff --check 9d8193182..HEAD
 git diff --exit-code 9d8193182..HEAD -- open-sse/providers/shared.js open-sse/config/appConstants.js src/dashboardGuard.js src/lib/db/repos/usageRepo.js src/lib/usageDb.js src/app/api/usage/stream/route.js src/shared/components/UsageStats.js src/shared/components/layouts/DashboardLayout.js package.json package-lock.json
 ```
 
-Expected history is the plan commit followed by the three exact implementation commits. The excluded-path diff exits 0. The worktree is clean.
+Expected history is the exact corrected-plan subject `docs(antigravity): fix verification implementation plan` followed by the three exact implementation subjects asserted above. The excluded-path diff exits 0. Porcelain is empty.
 
-**Step group 2: Run the 201 feature tests and all measured adjacency**
+**Step group 2: Run the 212 feature tests and all measured adjacency**
 
-- [ ] **Step 2a:** Run the exact 201-test feature command below from `tests/`.
+- [ ] **Step 2a:** Run the exact 212-test feature command below from `tests/`.
 - [ ] **Step 2b:** Re-run Phase 1 adjacency and require 98 passed.
 - [ ] **Step 2c:** Re-run Phase 2 adjacency and require 104 passed.
 - [ ] **Step 2d:** Re-run Phase 3 adjacency and require 43 passed.
@@ -1341,6 +1428,7 @@ Expected history is the plan commit followed by the three exact implementation c
 Run the 13 new feature files from `tests/`.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/vitest run \
   unit/antigravity-validation.test.js \
   unit/antigravity-project-outcome.test.js \
@@ -1357,25 +1445,27 @@ Run the 13 new feature files from `tests/`.
   unit/antigravity-verification-locales.test.js
 ```
 
-Expected result is exactly 201 passed and zero failed. Then run each phase adjacency command from its documented `tests/` cwd. Phase totals remain 188, 282, and 244 as documented.
+Expected result is exactly 212 passed and zero failed. Then run each phase adjacency command from its documented `tests/` cwd. Phase totals remain 189, 289, and 255 as documented.
 
 **Step group 3: Run full repository no-regression verification**
 
 - [ ] **Step 3a:** Run full Vitest JSON output to the exact `/tmp` path.
 - [ ] **Step 3b:** Run the repository no-regression verifier against that JSON.
-- [ ] **Step 3c:** Assert exact 3,699 total, 60 failed, and 57 pending counts.
+- [ ] **Step 3c:** Assert exact 3,710 total, 60 failed, and 57 pending counts.
 - [ ] **Step 3d:** Check worktree status and stop on any generated churn.
 
 From `tests/`, write JSON only under `/tmp`.
 
 ```bash
+set -euo pipefail
 set +e
 ./node_modules/.bin/vitest run --reporter=json --outputFile=/tmp/9router-pr3635-results.json
 PR3635_VITEST_EXIT=$?
 set -e
 test "$PR3635_VITEST_EXIT" -eq 1
 node __baseline__/verify-no-regression.mjs /tmp/9router-pr3635-results.json
-node --input-type=module -e 'import fs from "node:fs"; const r=JSON.parse(fs.readFileSync("/tmp/9router-pr3635-results.json","utf8")); if(r.numTotalTests!==3699) throw new Error(`expected 3699 tests, got ${r.numTotalTests}`); if(r.numFailedTests!==60) throw new Error(`expected 60 known failures, got ${r.numFailedTests}`); if(r.numPendingTests!==57) throw new Error(`expected 57 pending, got ${r.numPendingTests}`);'
+node --input-type=module -e 'import fs from "node:fs"; const r=JSON.parse(fs.readFileSync("/tmp/9router-pr3635-results.json","utf8")); if(r.numTotalTests!==3710) throw new Error(`expected 3710 tests, got ${r.numTotalTests}`); if(r.numFailedTests!==60) throw new Error(`expected 60 known failures, got ${r.numFailedTests}`); if(r.numPendingTests!==57) throw new Error(`expected 57 pending, got ${r.numPendingTests}`);'
+test -z "$(git status --porcelain)"
 ```
 
 The Vitest command must exit 1 because the 60 known failures remain. Any other exit code stops the plan. Expected verifier output reports no regression with 60 current failures. Immediately run `git status --short`. If any generated or unowned file changed, stop and return to the coordinator without editing, reverting, or staging it.
@@ -1389,10 +1479,12 @@ The Vitest command must exit 1 because the 60 known failures remain. Any other e
 From the worktree root.
 
 ```bash
+set -euo pipefail
 ./node_modules/.bin/eslint open-sse/services/antigravityValidation.js open-sse/executors/antigravity.js open-sse/services/projectId.js open-sse/services/usage/google.js open-sse/services/usage.js open-sse/utils/error.js open-sse/handlers/chatCore.js open-sse/handlers/chatCore/nonStreamingHandler.js open-sse/handlers/chatCore/sseToJsonHandler.js open-sse/handlers/chatCore/streamingHandler.js src/lib/antigravityVerification.js src/lib/auth/antigravityVerificationAccess.js src/sse/handlers/chat.js src/sse/services/tokenRefresh.js src/sse/services/quotaGuard.js 'src/app/api/providers/[id]/hotreload/route.js' 'src/app/api/usage/[connectionId]/route.js' 'src/app/api/providers/[id]/route.js' src/app/api/providers/antigravity/verification/stream/route.js 'src/app/api/providers/antigravity/verification/[connectionId]/route.js' 'src/app/api/providers/antigravity/verification/[connectionId]/recheck/route.js' 'src/app/(dashboard)/dashboard/providers/[id]/useAntigravityVerification.js' 'src/app/(dashboard)/dashboard/providers/[id]/page.js' 'src/app/(dashboard)/dashboard/providers/[id]/ConnectionRow.js' tests/fixtures/antigravity-verification-access.js tests/unit/antigravity-validation.test.js tests/unit/antigravity-project-outcome.test.js tests/unit/antigravity-usage-validation.test.js tests/unit/antigravity-retry-response.test.js tests/unit/antigravity-terminal-verification.test.js tests/unit/antigravity-verification-state.test.js tests/unit/antigravity-verification-access.test.js tests/unit/antigravity-verification-routes.test.js tests/unit/antigravity-verification-callers.test.js tests/unit/antigravity-verification-privacy.test.js tests/unit/antigravity-verification-client.test.js tests/unit/antigravity-verification-ui.test.js tests/unit/antigravity-verification-locales.test.js
 npm run build
 git diff --check
 git status --short
+test -z "$(git status --porcelain)"
 ```
 
 Expected ESLint has no new warning, the production build exits 0, and the build reports the three new dynamic route files covering four methods. The worktree remains clean.
@@ -1408,9 +1500,12 @@ Expected ESLint has no new warning, the production build exits 0, and the build 
 
 Do not use `scripts/dev-test-server.sh`; it hardcodes occupied port 20129. Use loopback port 29135 and a SQLite online backup of the live database so all test writes stay isolated. Disable proactive refresh and remove refresh tokens from the copy before boot. This prevents the isolated server from rotating an external OAuth refresh token that the live database still owns.
 
+Run every Bash fence in Task 4 Step groups 5 through 7 sequentially in the same fail-fast shell rooted at the worktree. They intentionally share the exported variables, cleanup function, and traps established below. Do not close that shell until Step 7 completes or an error invokes the EXIT trap.
+
 Set task-specific environment in the executing shell.
 
 ```bash
+set -euo pipefail
 export PR3635_DATA_DIR PR3635_CONNECTION_ID PR3635_JWT_SECRET
 PR3635_DATA_DIR=$(mktemp -d /tmp/9router-pr3635-verification.XXXXXX)
 PR3635_JWT_SECRET=$(openssl rand -hex 32)
@@ -1435,6 +1530,7 @@ tmux new-session -d -s 9router-pr3635-verification -c /home/spadon/Codebases/9ro
 Confirm the isolated process and never act on 20127 through 20129.
 
 ```bash
+set -euo pipefail
 curl -q -sS --retry 20 --retry-connrefused --retry-delay 1 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:29135/dashboard
 ss -ltnp 'sport = :29135'
 ```
@@ -1467,6 +1563,7 @@ Save screenshot, accessibility, console, and network receipts outside Git under 
 Use the eligible Antigravity connection selected before boot without printing email or tokens. Its access token had more than 30 minutes remaining when selected, and every copied refresh token is absent. Direct loopback requests authenticate through the tested trusted-peer no-login exception. Use the existing usage operation with `force=1` to provoke the real structured response. Never print the connection row or detail JSON.
 
 ```bash
+set -euo pipefail
 test -n "$PR3635_CONNECTION_ID"
 curl -q -sS "http://127.0.0.1:29135/api/usage/$PR3635_CONNECTION_ID?force=1" | jq -e 'type == "object"' >/dev/null
 ```
@@ -1486,12 +1583,14 @@ clear outcome
 Fetch detail through the authenticated route and pipe it directly to a boolean validator that prints only `true`.
 
 ```bash
+set -euo pipefail
 curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -e '.href | type == "string" and startswith("https://accounts.google.com/") and (utf8bytelength <= 8192)'
 ```
 
 Exercise compare-dismissal once without printing detail. The browser must lose the anchor through the sanitized remove event, while the copied provider row remains. Then run one new usage attempt so a new observation can create a new challenge for the real completion path.
 
 ```bash
+set -euo pipefail
 export PR3635_CHALLENGE_ID
 PR3635_CHALLENGE_ID=$(curl -q -sS "http://127.0.0.1:29135/api/providers/antigravity/verification/$PR3635_CONNECTION_ID" | jq -r '.challengeId')
 test -n "$PR3635_CHALLENGE_ID"
@@ -1512,12 +1611,14 @@ If no copied connection currently receives a real `VALIDATION_REQUIRED` response
 Verify the tmux target before stopping it.
 
 ```bash
+set -euo pipefail
 tmux list-sessions -F '#{session_name}' | rg '^9router-pr3635-verification$'
 cleanup_pr3635_verification
 trap - EXIT INT TERM
 test ! -e "$PR3635_DATA_DIR"
 git status --short --branch
-git log -1 --oneline
+test -z "$(git status --porcelain)"
+test "$(git log -1 --format=%s)" = "feat(antigravity): add verification action"
 ```
 
-Run this cleanup step even when a browser or credentialed probe gate fails. Expected final state is a clean `integration/task6-pr3635`, three reviewed implementation commits after the plan, all deterministic gates green, production build green, browser evidence complete, and a redacted real-path receipt or an explicitly unavailable credentialed gate. Do not push or deploy from this plan.
+Run this cleanup step even when a browser or credentialed probe gate fails. Expected final state is a clean `integration/task6-pr3635`, three reviewed implementation commits after the corrected-plan commit, all deterministic gates green, production build green, browser evidence complete, and a redacted real-path receipt or an explicitly unavailable credentialed gate. Do not push or deploy from this plan.
