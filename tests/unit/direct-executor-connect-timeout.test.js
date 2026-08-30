@@ -8,6 +8,9 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 import { DevinExecutor } from "../../open-sse/executors/devin.js";
 import { GithubExecutor } from "../../open-sse/executors/github.js";
+import { GrokWebExecutor } from "../../open-sse/executors/grok-web.js";
+import { MimoFreeExecutor, __test__ as mimoTest } from "../../open-sse/executors/mimo-free.js";
+import { PerplexityWebExecutor } from "../../open-sse/executors/perplexity-web.js";
 import { VertexExecutor } from "../../open-sse/executors/vertex.js";
 import { WindsurfExecutor } from "../../open-sse/executors/windsurf.js";
 import ZedExecutor from "../../open-sse/executors/zed.js";
@@ -19,13 +22,13 @@ function stringField(field, value) {
   return Buffer.concat([Buffer.from([field << 3 | 2, bytes.length]), bytes]);
 }
 
-function hangingFetch(signals) {
+function hangingFetch(signals, safetyMs = 8000) {
   return vi.fn((url, init = {}) => {
     signals.push({ url: String(url), signal: init.signal });
     return new Promise((resolve, reject) => {
       const safetyTimer = setTimeout(
         () => reject(new Error("transport remained pending past the configured deadline")),
-        8000,
+        safetyMs,
       );
       if (init.signal?.aborted) {
         clearTimeout(safetyTimer);
@@ -132,14 +135,18 @@ async function invokeZed({ suffix, connectTimeout, signal }) {
 }
 
 describe("direct executor response-header deadlines", () => {
+  const originalFetch = global.fetch;
+
   beforeEach(() => {
     vi.useFakeTimers();
     fetchMock.mockReset();
+    mimoTest.resetJwtCache();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    global.fetch = originalFetch;
   });
 
   it.each(directCases())("$name uses provider override and clears", async (entry) => {
@@ -406,6 +413,160 @@ describe("direct executor response-header deadlines", () => {
       throw failure;
     });
     await expect(invokeZed({ suffix: "failure", connectTimeout: { globalTimeout: 15000 } })).rejects.toBe(failure);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  const webCases = [
+    {
+      name: "Grok Web",
+      invoke: (connectTimeout, signal) => new GrokWebExecutor().execute({
+        model: "grok-4.1-fast",
+        body: { messages: [{ role: "user", content: "hi" }] },
+        stream: true,
+        credentials: { apiKey: "sso-cookie" },
+        connectTimeout,
+        signal,
+      }),
+    },
+    {
+      name: "Perplexity Web",
+      invoke: (connectTimeout, signal) => new PerplexityWebExecutor().execute({
+        model: "sonar",
+        body: { messages: [{ role: "user", content: "hi" }] },
+        stream: true,
+        credentials: { accessToken: "session-token" },
+        connectTimeout,
+        signal,
+      }),
+    },
+  ];
+
+  it.each(webCases)("$name applies the provider override to its generation fetch", async (entry) => {
+    const calls = [];
+    global.fetch = hangingFetch(calls);
+    const pending = entry.invoke({ providerOverride: 8000, globalTimeout: 15000 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "ConnectTimeoutError", timeoutMs: 8000 });
+    await vi.advanceTimersByTimeAsync(8000);
+    await assertion;
+    expect(calls).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(webCases)("$name preserves exact caller cancellation", async (entry) => {
+    const calls = [];
+    global.fetch = hangingFetch(calls);
+    const controller = new AbortController();
+    const reason = new DOMException(`${entry.name} caller left`, "AbortError");
+    const pending = entry.invoke({ globalTimeout: 15000 }, controller.signal);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(calls[0].signal.reason).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(webCases)("$name clears on success and retains unrelated 502 conversion", async (entry) => {
+    global.fetch = vi.fn().mockResolvedValue(okStreamResponse());
+    const success = await entry.invoke({ providerOverride: 8000, globalTimeout: 15000 });
+    expect(success.response.status).toBe(200);
+    expect(vi.getTimerCount()).toBe(0);
+
+    global.fetch = vi.fn().mockRejectedValue(new Error(`${entry.name} network failed`));
+    const failure = await entry.invoke({ providerOverride: 8000, globalTimeout: 15000 });
+    expect(failure.response.status).toBe(502);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  function mimoArgs(connectTimeout, signal, fetchImpl) {
+    return new MimoFreeExecutor().execute({
+      model: "mimo-v2-flash",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true,
+      credentials: { connectionId: "mimo-session" },
+      connectTimeout,
+      signal,
+      proxyOptions: null,
+      fetchImpl,
+    });
+  }
+
+  it("MiMo leaves bootstrap outside the deadline and times chat", async () => {
+    const calls = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      calls.push({ url: String(url), signal: init.signal });
+      if (String(url).includes("/bootstrap")) return zedJsonResponse({ jwt: "mimo-jwt" });
+      return hangingFetch([])(url, init);
+    });
+    const pending = mimoArgs({ providerOverride: 8000, globalTimeout: 15000 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "ConnectTimeoutError", timeoutMs: 8000 });
+    await vi.advanceTimersByTimeAsync(8000);
+    await assertion;
+    expect(calls.map(({ url }) => url)).toEqual([
+      expect.stringContaining("/bootstrap"),
+      expect.stringContaining("/chat"),
+    ]);
+    expect(calls[0].signal).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("MiMo auth retry creates a fresh deadline", async () => {
+    const calls = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      calls.push({ url: String(url), signal: init.signal });
+      if (String(url).includes("/bootstrap")) return zedJsonResponse({ jwt: `mimo-jwt-${calls.length}` });
+      const chatCalls = calls.filter((call) => call.url.includes("/chat"));
+      if (chatCalls.length === 1) return new Response("unauthorized", { status: 401 });
+      return hangingFetch([], 15000)(url, init);
+    });
+    const pending = mimoArgs({ globalTimeout: 15000 });
+    await vi.waitFor(() => expect(calls.filter(({ url }) => url.includes("/chat"))).toHaveLength(2));
+    const chats = calls.filter(({ url }) => url.includes("/chat"));
+    expect(chats[0].signal.aborted).toBe(false);
+    expect(chats[0].signal).not.toBe(chats[1].signal);
+    const assertion = expect(pending).rejects.toMatchObject({ name: "ConnectTimeoutError", timeoutMs: 15000 });
+    await vi.advanceTimersByTimeAsync(15000);
+    await assertion;
+    expect(calls.map(({ url }) => url)).toEqual([
+      expect.stringContaining("/bootstrap"),
+      expect.stringContaining("/chat"),
+      expect.stringContaining("/bootstrap"),
+      expect.stringContaining("/chat"),
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("MiMo preserves caller abort and clears on success or unrelated rejection", async () => {
+    const calls = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      calls.push({ url: String(url), signal: init.signal });
+      if (String(url).includes("/bootstrap")) return zedJsonResponse({ jwt: "mimo-jwt-abort" });
+      return hangingFetch([])(url, init);
+    });
+    const controller = new AbortController();
+    const reason = new DOMException("MiMo caller left", "AbortError");
+    const pending = mimoArgs({ globalTimeout: 15000 }, controller.signal);
+    await vi.waitFor(() => expect(calls.filter(({ url }) => url.includes("/chat"))).toHaveLength(1));
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(calls.find(({ url }) => url.includes("/chat")).signal.reason).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
+
+    mimoTest.resetJwtCache();
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(zedJsonResponse({ jwt: "mimo-jwt-success" }))
+      .mockResolvedValueOnce(okStreamResponse());
+    const success = await mimoArgs({ globalTimeout: 15000 });
+    expect(success.response.status).toBe(200);
+    expect(vi.getTimerCount()).toBe(0);
+
+    mimoTest.resetJwtCache();
+    const failure = new Error("MiMo network failed");
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(zedJsonResponse({ jwt: "mimo-jwt-failure" }))
+      .mockRejectedValueOnce(failure);
+    await expect(mimoArgs({ globalTimeout: 15000 })).rejects.toBe(failure);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

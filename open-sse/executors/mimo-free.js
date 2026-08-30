@@ -3,6 +3,8 @@ import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { createHash } from "crypto";
 import os from "os";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { createExecutorResponseHeaderTimeout } from "../utils/responseHeaderTimeout.js";
 
 const BOOTSTRAP_URL = "https://api.xiaomimimo.com/api/free-ai/bootstrap";
 const CHAT_URL = PROVIDERS["mimo-free"].baseUrl;
@@ -128,7 +130,7 @@ export class MimoFreeExecutor extends BaseExecutor {
     return injectSystemMarker(body);
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     let jwt;
     try {
       jwt = await bootstrapJwt(proxyOptions);
@@ -143,15 +145,35 @@ export class MimoFreeExecutor extends BaseExecutor {
     const bodyStr = JSON.stringify(transformedBody);
     log?.debug?.("FETCH", `MIMO-FREE → ${url} | body=${bodyStr.length}B`);
 
-    const response = await proxyAwareFetch(url, { method: "POST", headers, body: bodyStr, signal }, proxyOptions);
+    const sendChat = async (jwtValue) => {
+      headers.Authorization = `Bearer ${jwtValue}`;
+      const deadline = createExecutorResponseHeaderTimeout({
+        connectTimeout,
+        registryTimeout: this.config?.timeoutMs,
+        envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+        signal,
+      });
+      try {
+        return await proxyAwareFetch(
+          url,
+          { method: "POST", headers, body: bodyStr, signal: deadline.signal },
+          proxyOptions,
+        );
+      } catch (error) {
+        throw deadline.classify(error);
+      } finally {
+        deadline.clear();
+      }
+    };
+
+    const response = await sendChat(jwt);
 
     // On auth failure, invalidate cache and retry once with a fresh JWT
     if (response.status === 401 || response.status === 403) {
       log?.debug?.("AUTH", `MiMo auth failed (${response.status}), re-bootstrapping...`);
       resetJwtCache();
       jwt = await bootstrapJwt(proxyOptions);
-      headers["Authorization"] = `Bearer ${jwt}`;
-      const retryResponse = await proxyAwareFetch(url, { method: "POST", headers, body: bodyStr, signal }, proxyOptions);
+      const retryResponse = await sendChat(jwt);
       return { response: retryResponse, url, headers, transformedBody };
     }
 
