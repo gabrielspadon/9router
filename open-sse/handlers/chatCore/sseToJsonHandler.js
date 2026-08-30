@@ -8,6 +8,12 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { stripJsonFence, unfenceJsonChoices, wantsJsonOutput } from "../../utils/jsonFence.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import {
+  CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+  ClaudeClassifierValidationError,
+  isClaudeClassifierRequest,
+  validateClaudeClassifierMessage,
+} from "./claudeClassifier.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -280,6 +286,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
 
+  const classifierMode = sourceFormat === FORMATS.CLAUDE
+    && isClaudeClassifierRequest(body);
+
   trackDone();
 
   const ctx = {
@@ -435,8 +444,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
+      if (classifierMode && !isGeminiSse) {
+        finalResp = validateClaudeClassifierMessage(body, finalResp, null);
+      }
+
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
+      if (err instanceof ClaudeClassifierValidationError) {
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+        );
+      }
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
     }
