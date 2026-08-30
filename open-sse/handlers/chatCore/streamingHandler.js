@@ -2,6 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
+import { createSseTerminalObserver } from "../../utils/streamTerminal.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
@@ -31,14 +32,23 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
+    return {
+      transformStream: createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState),
+      emittedFormat: codexTarget,
+    };
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
+    return {
+      transformStream: createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState),
+      emittedFormat: sourceFormat,
+    };
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState);
+  return {
+    transformStream: createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState),
+    emittedFormat: sourceFormat,
+  };
 }
 
 /**
@@ -205,10 +215,31 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     });
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, streamState });
+  let pendingCompletion = null;
+  let completionDelivered = false;
+  const captureTransformCompletion = (...args) => {
+    if (args[3]?.aborted) {
+      onStreamComplete?.(...args);
+      return;
+    }
+    pendingCompletion = args;
+  };
+  const deliverNormalCompletion = () => {
+    if (completionDelivered || !pendingCompletion) return;
+    completionDelivered = true;
+    onStreamComplete?.(...pendingCompletion);
+  };
+  const completionAwareController = {
+    ...streamController,
+    handleComplete: () => {
+      streamController.handleComplete();
+      deliverNormalCompletion();
+    },
+  };
+  const { transformStream, emittedFormat } = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: captureTransformCompletion, apiKey, streamState });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
-  const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
+  const isResponsesPassthrough = emittedFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const wrappedResponse = {
@@ -216,7 +247,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     body: responseBodyStream,
     headers: providerResponse.headers,
   };
-  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, completionAwareController, {
+    onAbortTerminal,
+    stallTimeoutMs,
+    terminalObserver: createSseTerminalObserver(emittedFormat),
+  });
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

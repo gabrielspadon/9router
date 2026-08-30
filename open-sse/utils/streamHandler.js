@@ -125,10 +125,19 @@ export function createDisconnectAwareStream(
   transformStream,
   streamController,
   onAbortTerminal = null,
+  {
+    terminalObserver = null,
+    onIncompleteStream = null,
+    onTerminalFailureReady = null,
+  } = {},
 ) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
+  let incompleteHandled = false;
+  let downstreamCancelled = false;
+  let outputController = null;
+  let outputClosed = false;
 
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
@@ -142,11 +151,69 @@ export function createDisconnectAwareStream(
     }
   };
 
+  const emitIncompleteTerminal = (controller) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    try {
+      const bytes = terminalObserver?.buildIncompleteTerminal?.() || onAbortTerminal?.();
+      if (bytes) controller.enqueue(bytes);
+    } catch {
+      /* best-effort terminal */
+    }
+  };
+
+  const handleIncomplete = (controller, error) => {
+    if (incompleteHandled) return;
+    incompleteHandled = true;
+    emitIncompleteTerminal(controller);
+    try {
+      onIncompleteStream?.(error);
+    } catch {
+      /* existing lifecycle errors must not hide the terminal */
+    }
+    streamController.handleError(error);
+    terminalObserver?.release?.();
+  };
+
+  const closeOutput = (controller) => {
+    if (outputClosed) return;
+    outputClosed = true;
+    controller.close();
+  };
+
+  const terminateIncomplete = (error) => {
+    if (
+      !terminalObserver
+      || downstreamCancelled
+      || incompleteHandled
+      || terminalObserver.sawTerminal()
+      || !outputController
+    ) {
+      return false;
+    }
+    handleIncomplete(outputController, error);
+    closeOutput(outputController);
+    reader.cancel().catch(() => {});
+    writer.abort().catch(() => {});
+    return true;
+  };
+
+  onTerminalFailureReady?.(terminateIncomplete);
+
   return new ReadableStream({
+    start(controller) {
+      outputController = controller;
+    },
+
     async pull(controller) {
       if (!streamController.isConnected()) {
-        emitTerminal(controller);
-        controller.close();
+        if (terminalObserver && !downstreamCancelled && !terminalObserver.sawTerminal()) {
+          terminateIncomplete(new Error("stream ended before terminal event"));
+        } else {
+          emitTerminal(controller);
+          terminalObserver?.release?.();
+        }
+        closeOutput(controller);
         return;
       }
 
@@ -154,10 +221,16 @@ export function createDisconnectAwareStream(
         const { done, value } = await reader.read();
 
         if (done) {
-          streamController.handleComplete();
-          controller.close();
+          if (terminalObserver && !terminalObserver.sawTerminal()) {
+            terminateIncomplete(new Error("stream ended before terminal event"));
+          } else {
+            streamController.handleComplete();
+            terminalObserver?.release?.();
+          }
+          closeOutput(controller);
           return;
         }
+        terminalObserver?.observe?.(value);
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
@@ -165,9 +238,26 @@ export function createDisconnectAwareStream(
         const msg0 = error?.message || "";
         const isControllerClosed =
           msg0.includes("already closed") || msg0.includes("Invalid state");
-        if (!isControllerClosed) streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
+
+        if (terminalObserver) {
+          if (terminalObserver.sawTerminal()) {
+            streamController.handleComplete();
+            terminalObserver.release();
+            closeOutput(controller);
+            return;
+          }
+          if (!isControllerClosed && !downstreamCancelled) {
+            terminateIncomplete(error);
+          } else {
+            terminalObserver.release();
+          }
+          closeOutput(controller);
+          return;
+        }
+
+        if (!isControllerClosed) streamController.handleError(error);
 
         // Treat network resets / socket hang up / abort as graceful close
         const msg = error?.message || "";
@@ -200,11 +290,44 @@ export function createDisconnectAwareStream(
     },
 
     cancel(reason) {
+      downstreamCancelled = true;
       streamController.handleDisconnect(reason || "cancelled");
+      terminalObserver?.release?.();
       reader.cancel();
       writer.abort();
     },
   });
+}
+
+function normalizePipeOptions(
+  onAbortTerminalOrOptions,
+  stallTimeoutMs,
+  ttftTimeoutMs,
+  keepaliveMs,
+) {
+  if (
+    onAbortTerminalOrOptions
+    && typeof onAbortTerminalOrOptions === "object"
+    && !Array.isArray(onAbortTerminalOrOptions)
+  ) {
+    return {
+      onAbortTerminal: onAbortTerminalOrOptions.onAbortTerminal ?? null,
+      stallTimeoutMs: onAbortTerminalOrOptions.stallTimeoutMs ?? STREAM_STALL_TIMEOUT_MS,
+      ttftTimeoutMs: onAbortTerminalOrOptions.ttftTimeoutMs ?? 30000,
+      keepaliveMs: onAbortTerminalOrOptions.keepaliveMs ?? SSE_KEEPALIVE_MS,
+      terminalObserver: onAbortTerminalOrOptions.terminalObserver ?? null,
+      onIncompleteStream: onAbortTerminalOrOptions.onIncompleteStream ?? null,
+    };
+  }
+
+  return {
+    onAbortTerminal: onAbortTerminalOrOptions ?? null,
+    stallTimeoutMs,
+    ttftTimeoutMs,
+    keepaliveMs,
+    terminalObserver: null,
+    onIncompleteStream: null,
+  };
 }
 
 /**
@@ -231,11 +354,20 @@ export function pipeWithDisconnect(
   providerResponse,
   transformStream,
   streamController,
-  onAbortTerminal = null,
+  onAbortTerminalOrOptions = null,
   stallTimeoutMs = STREAM_STALL_TIMEOUT_MS,
   ttftTimeoutMs = 30000,
   keepaliveMs = SSE_KEEPALIVE_MS,
 ) {
+  const options = normalizePipeOptions(
+    onAbortTerminalOrOptions,
+    stallTimeoutMs,
+    ttftTimeoutMs,
+    keepaliveMs,
+  );
+  ({ stallTimeoutMs, ttftTimeoutMs, keepaliveMs } = options);
+  const { onAbortTerminal, terminalObserver, onIncompleteStream } = options;
+  let terminateWithTerminal = null;
   let stallTimer = null;
   let firstChunkTimer = null;
   let keepaliveTimer = null;
@@ -261,7 +393,7 @@ export function pipeWithDisconnect(
       firstChunkTimer = null;
       dbg(tag, `TTFT TIMEOUT ${ttftTimeoutMs}ms | no bytes received`);
       clearKeepalive();
-      streamController.handleError?.(
+      wrappedController.handleError(
         new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`),
       );
       streamController.abort?.();
@@ -291,7 +423,7 @@ export function pipeWithDisconnect(
         tag,
         `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`,
       );
-      streamController.handleError?.(new Error("stream stall timeout"));
+      wrappedController.handleError(new Error("stream stall timeout"));
       streamController.abort?.();
     }, stallTimeoutMs);
   };
@@ -321,6 +453,7 @@ export function pipeWithDisconnect(
       clearFirstChunk();
       clearStall();
       clearKeepalive();
+      if (terminalObserver && terminateWithTerminal?.(e)) return;
       streamController.handleError(e);
     },
     handleDisconnect: (r) => {
@@ -415,5 +548,12 @@ export function pipeWithDisconnect(
     },
     wrappedController,
     onAbortTerminal,
+    {
+      terminalObserver,
+      onIncompleteStream,
+      onTerminalFailureReady: (terminate) => {
+        terminateWithTerminal = terminate;
+      },
+    },
   );
 }
