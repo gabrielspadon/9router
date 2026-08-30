@@ -914,6 +914,33 @@ describe("Claude Code response classifier validation", () => {
     expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
   });
 
+  it.each([
+    ["explicit event", (data) => frame("response.created", data)],
+    ["data-only JSON type", (data) => `data: ${JSON.stringify(data)}\n\n`],
+  ])("accepts empty response.output metadata from %s", async (_name, metadataFrame) => {
+    const safeItem = {
+      id: "msg_classifier_safe",
+      ...textItem("<block>no</block>"),
+    };
+    const result = await handleForcedSSEToJson(
+      forcedResponsesContext(STAGE_ONE_BODY, [
+        metadataFrame({
+          type: "response.created",
+          response: { id: "resp_classifier_1700000000", output: [] },
+        }),
+        doneFrame(safeItem),
+        terminalFrame([safeItem]),
+      ]),
+    );
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toMatchObject({
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "<block>no</block>" }],
+    });
+  });
+
   it("rejects a blank explicit SSE event instead of falling back to JSON type", async () => {
     const safeItem = {
       id: "msg_classifier_safe",

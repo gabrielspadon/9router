@@ -217,11 +217,14 @@ function parseSseFrame(rawFrame) {
 
 function exposesResponsePayload(parsed) {
   if (!parsed || typeof parsed !== "object") return false;
-  return Object.hasOwn(parsed, "item")
-    || Object.hasOwn(parsed, "content")
-    || (parsed.response
-      && typeof parsed.response === "object"
-      && Object.hasOwn(parsed.response, "output"));
+  if (Object.hasOwn(parsed, "item") || Object.hasOwn(parsed, "content")) {
+    return true;
+  }
+  const response = parsed.response;
+  if (!response || typeof response !== "object" || !Object.hasOwn(response, "output")) {
+    return false;
+  }
+  return !Array.isArray(response.output) || response.output.length > 0;
 }
 
 function successfulTerminal(eventType, parsed) {
