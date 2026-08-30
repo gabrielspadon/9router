@@ -71,6 +71,24 @@ describe("Antigravity verification state", () => {
     expect(store.getAntigravityVerification("conn-a").challengeId).toBe(current.challengeId);
   });
 
+  it("rejects an older hook callback after a newer hook has observed its challenge", async () => {
+    const store = await loadStore();
+    const olderA = store.createAntigravityVerificationHooks("conn-a");
+    const newerB = store.createAntigravityVerificationHooks("conn-a");
+
+    expect(newerB.onValidationRequired({
+      validation,
+      observationId: newerB.verificationContext.observationId,
+    })).toBe(true);
+    const current = store.getAntigravityVerification("conn-a");
+
+    expect(olderA.onValidationRequired({
+      validation,
+      observationId: olderA.verificationContext.observationId,
+    })).toBe(false);
+    expect(store.getAntigravityVerification("conn-a").challengeId).toBe(current.challengeId);
+  });
+
   it("does not let a dismissed observation resurrect a challenge", async () => {
     const store = await loadStore();
     record(store, "conn-a", "obs-a");

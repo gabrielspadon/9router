@@ -29,6 +29,7 @@ const VALIDATION_URL = "https://accounts.google.com/AccountChooser?token=usage-s
 const MIXED_ACTION_URL = "https://accounts.google.com/v3/signin/challenge/pwd?opaque=mixed-action-secret";
 const MIXED_OPAQUE_VALUE = "mixed-subscription-opaque-secret";
 const RAW_QUOTA_BODY = 'prefix: {"diagnostic":"raw-opaque-secret"}';
+const OPAQUE_QUOTA_ERROR = "upstream-opaque-quota-secret";
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -349,5 +350,35 @@ describe("Antigravity usage verification", () => {
     });
     expect(serialized).not.toContain(RAW_QUOTA_BODY);
     expect(serialized).not.toContain("raw-opaque-secret");
+  });
+
+  it("does not expose an arbitrary quota exception through the usage endpoint", async () => {
+    const google = await loadGoogle([jsonResponse({ currentTier: { name: "Premium" } })]);
+    fetchWithTimeout.mockRejectedValueOnce(new Error(OPAQUE_QUOTA_ERROR));
+    const usage = await google.getAntigravityUsage("token", {});
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage",
+      provider: "antigravity",
+      authType: "oauth",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.getUsageForProvider.mockResolvedValue(usage);
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(
+      new Request("http://localhost:20128/api/usage/conn-usage"),
+      { params: Promise.resolve({ connectionId: "conn-usage" }) },
+    );
+    const payload = await response.json();
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toEqual({
+      message: "Antigravity usage is temporarily unavailable.",
+      quotas: {},
+    });
+    expect(serialized).not.toContain(OPAQUE_QUOTA_ERROR);
   });
 });

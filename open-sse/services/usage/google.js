@@ -119,7 +119,7 @@ export async function getGeminiUsage(accessToken, providerSpecificData, proxyOpt
     }
 
     return { plan, quotas };
-  } catch (error) {
+  } catch {
     return { message: `Gemini CLI error: ${error.message}` };
   }
 }
@@ -285,9 +285,11 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     });
     return result;
   } catch (error) {
-    const message = redactAntigravityValidationText(error?.message || "unknown error");
-    console.error("[Antigravity Usage] Error:", message);
-    return { message: `Antigravity error: ${message}` };
+    console.error("[Antigravity Usage] Error");
+    return {
+      message: "Antigravity usage is temporarily unavailable.",
+      quotas: {},
+    };
   }
 }
 

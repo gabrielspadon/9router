@@ -11,8 +11,10 @@ const LEDGER_CAP = 1024;
 const liveByConnection = new Map();
 const seenObservations = new Map();
 const activeLifetimeByConnection = new Map();
+const latestHookIssuanceByConnection = new Map();
 const events = new EventEmitter();
 let generation = 0;
+let hookIssuance = 0;
 
 function ledgerKey(connectionId, observationId) {
   return `${connectionId}\u0000${observationId}`;
@@ -78,6 +80,17 @@ function nextGeneration() {
   return generation;
 }
 
+function issueHook(connectionId) {
+  if (hookIssuance >= Number.MAX_SAFE_INTEGER) throw new Error("Antigravity verification hook issuance exhausted");
+  hookIssuance += 1;
+  latestHookIssuanceByConnection.set(connectionId, hookIssuance);
+  return hookIssuance;
+}
+
+function hookIssuanceIsCurrent(connectionId, issuance) {
+  return issuance === undefined || latestHookIssuanceByConnection.get(connectionId) === issuance;
+}
+
 export function getAntigravityVerificationSnapshot() {
   evictExpired();
   return [...liveByConnection.values()].map(publicEntry);
@@ -102,8 +115,13 @@ export function subscribeAntigravityVerification(listener) {
   return () => events.off("change", listener);
 }
 
-export function recordAntigravityValidation(connectionId, { validation, observationId } = {}, connectionLifetime = undefined) {
-  if (!connectionId || !observationId || !lifetimeIsCurrent(connectionId, connectionLifetime)) return false;
+export function recordAntigravityValidation(connectionId, { validation, observationId } = {}, connectionLifetime = undefined, issuance = undefined) {
+  if (
+    !connectionId
+    || !observationId
+    || !lifetimeIsCurrent(connectionId, connectionLifetime)
+    || !hookIssuanceIsCurrent(connectionId, issuance)
+  ) return false;
   const url = validateAntigravityVerificationUrl(validation?.url);
   if (!url || validation?.kind !== "antigravity_validation_required") return false;
 
@@ -131,8 +149,13 @@ export function recordAntigravityValidation(connectionId, { validation, observat
   return true;
 }
 
-export function clearAntigravityVerificationIfCurrent(connectionId, challengeId, connectionLifetime = undefined) {
-  if (!connectionId || !challengeId || !lifetimeIsCurrent(connectionId, connectionLifetime)) return false;
+export function clearAntigravityVerificationIfCurrent(connectionId, challengeId, connectionLifetime = undefined, issuance = undefined) {
+  if (
+    !connectionId
+    || !challengeId
+    || !lifetimeIsCurrent(connectionId, connectionLifetime)
+    || !hookIssuanceIsCurrent(connectionId, issuance)
+  ) return false;
   evictExpired();
   const current = liveByConnection.get(connectionId);
   if (!current || current.challengeId !== challengeId) return false;
@@ -142,6 +165,7 @@ export function clearAntigravityVerificationIfCurrent(connectionId, challengeId,
 export function invalidateAntigravityVerificationConnection(connectionId) {
   if (!connectionId) return false;
   const hadLifetime = activeLifetimeByConnection.delete(connectionId);
+  const hadHookIssuance = latestHookIssuanceByConnection.delete(connectionId);
   const hadLive = removeLiveEntry(connectionId);
   let hadLedger = false;
   for (const [key, entry] of seenObservations) {
@@ -150,22 +174,23 @@ export function invalidateAntigravityVerificationConnection(connectionId) {
       hadLedger = true;
     }
   }
-  return hadLifetime || hadLive || hadLedger;
+  return hadLifetime || hadHookIssuance || hadLive || hadLedger;
 }
 
 export function createAntigravityVerificationHooks(connectionId, expectedChallengeId) {
   const connectionLifetime = getOrCreateConnectionLifetime(connectionId);
+  const issuance = issueHook(connectionId);
   const current = getAntigravityVerification(connectionId);
   const challengeIdAtStart = expectedChallengeId === undefined
     ? current?.challengeId ?? null
     : expectedChallengeId;
   const observationId = crypto.randomUUID();
   return {
-    verificationContext: { connectionId, observationId, challengeIdAtStart },
+    verificationContext: { connectionId, observationId, challengeIdAtStart, issuance },
     onValidationRequired: ({ validation, observationId: observedId }) =>
-      recordAntigravityValidation(connectionId, { validation, observationId: observedId }, connectionLifetime),
+      recordAntigravityValidation(connectionId, { validation, observationId: observedId }, connectionLifetime, issuance),
     onVerificationSuccess: ({ challengeId }) =>
-      clearAntigravityVerificationIfCurrent(connectionId, challengeId, connectionLifetime),
+      clearAntigravityVerificationIfCurrent(connectionId, challengeId, connectionLifetime, issuance),
   };
 }
 
