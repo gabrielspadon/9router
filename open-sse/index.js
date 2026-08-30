@@ -1,5 +1,7 @@
-// Patch global fetch with proxy support (must be first)
-import "./utils/proxyFetch.js";
+// Patch global fetch with proxy support at this explicit side-effect entrypoint.
+import { installGlobalProxyFetch } from "./utils/proxyFetch.js";
+
+installGlobalProxyFetch();
 
 // Config
 export { PROVIDERS } from "./config/providers.js";
