@@ -181,3 +181,42 @@ single real defect.
 **Verification note.** Nineteen further failures seen in a parallel run were
 worker crashes under contention, not defects. They pass on a serial re-run. Only
 run this suite serially when judging it.
+
+---
+
+## 7. The provider model-catalog fetch logs 401 and 404 on load, unchanged by this work
+
+**Files.** `src/app/(dashboard)/dashboard/providers/[id]/page.js:549` and
+`src/app/(dashboard)/dashboard/providers/[id]/CompatibleModelsSection.js:139`
+call `/api/providers/<connectionId>/models`, served by
+`src/app/api/providers/[id]/models/route.js`.
+
+**What happens.** Across the 168 audited views, the console carries 21 responses
+of 401 Unauthorized and 14 of 404 Not Found. The message set is identical before
+and after this work, and this branch introduces none, which the audit gate now
+asserts by comparing message sets rather than totals.
+
+**Why it is not fixed here.** Both classes are request behaviour. Changing which
+requests are made, or how their failures are handled, is exactly what the
+behavioural contract forbids.
+
+**Why it is worth fixing.** A console that is already noisy on every page load
+is a console nobody reads, so the next real error is invisible. It also reads
+badly to a developer evaluating whether to trust the project with credentials,
+which is one of the two audiences this redesign serves.
+
+**Which requests.** Traced by driving all 24 routes and recording every 4xx
+response: three stored connections answer 401 on
+`/api/providers/<id>/models` and two answer 404. The connection identifiers
+differ per installation, so the counts above are for the seeded snapshot and
+the shape is what matters, not the number.
+
+**Recommended owner.** Backend session. A 401 here means a stored credential no
+longer authenticates upstream, and a 404 means the connection resolves to
+nothing; both are states the interface should be able to show as provider
+health rather than states that only reach the console. This is the same data
+gap as finding 2: if these outcomes were reported in the providers payload, the
+health matrix could render them and the console would fall quiet.
+
+**Evidence.** `node docs/design/verification/check-reports.mjs --console-network`
+prints the full message set with counts.

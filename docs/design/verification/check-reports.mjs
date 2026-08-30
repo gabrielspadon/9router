@@ -65,8 +65,26 @@ writeFileSync("docs/design/evidence/audit-report.md", md);
 
 const regressed = rows.filter((r) => r.regressed);
 if (consoleNetworkOnly) {
-  const bad = rows.filter((r) => ["console errors", "failed or 5xx requests"].includes(r.name) && r.after > 0);
-  if (bad.length) { bad.forEach((r) => console.log(`  ${r.name}: ${r.after}`)); process.exit(1); }
+  // The contract is no regression, not zero. The application already logs
+  // resource-load failures on some routes; introducing none is what this work
+  // is answerable for, so compare the message sets rather than the totals.
+  const msgs = (d) => {
+    const m = new Map();
+    for (const r of Object.values(d.routes)) {
+      for (const e of r.consoleErrors || []) m.set(e.slice(0, 90), (m.get(e.slice(0, 90)) || 0) + 1);
+      for (const e of r.failedRequests || []) m.set("net:" + e.slice(0, 90), (m.get("net:" + e.slice(0, 90)) || 0) + 1);
+    }
+    return m;
+  };
+  const B = msgs(before), A = msgs(after);
+  const introduced = [...A.entries()].filter(([k, n]) => n > (B.get(k) || 0));
+  console.log(`distinct console and network messages: ${B.size} before, ${A.size} after`);
+  for (const [k, n] of A) console.log(`  ${String(n).padStart(3)} x ${k}`);
+  if (introduced.length) {
+    console.log(`INTRODUCED=${introduced.length}`);
+    introduced.forEach(([k, n]) => console.log(`  ${(B.get(k) || 0)} -> ${n}  ${k}`));
+    process.exit(1);
+  }
   console.log("CONSOLE NETWORK OK");
   process.exit(0);
 }
