@@ -69,6 +69,17 @@ function combineSignals(clientSignal, timeoutMs) {
   return { signal: clientSignal || timeoutSignal, timeoutSignal };
 }
 
+function classifyTransportError(error, { clientSignal, timeoutSignal, provider, label, credentials, phase }) {
+  if (clientSignal?.aborted) {
+    return { success: false, clientAborted: true, response: new Response(null, { status: 499 }) };
+  }
+  if (timeoutSignal?.aborted) {
+    return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `[${provider}] ${label} upstream timed out`);
+  }
+  const message = sanitizeSecrets(error?.message || "Upstream request failed", credentials);
+  return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}] ${label} upstream ${phase} failed: ${message}`);
+}
+
 /**
  * Proxy a JSON-only provider endpoint whose request and response schemas are
  * already native to the client. The application-side handler owns auth,
@@ -105,17 +116,29 @@ export async function handleJsonProxyCore({
   try {
     upstream = await proxyAwareFetch(config.baseUrl, fetchOptions, buildProxyOptions(credentials));
   } catch (error) {
-    if (clientSignal?.aborted) {
-      return { success: false, clientAborted: true, response: new Response(null, { status: 499 }) };
-    }
-    if (timeoutSignal?.aborted) {
-      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `[${provider}] ${label} upstream timed out`);
-    }
-    const message = sanitizeSecrets(error?.message || "Upstream request failed", credentials);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}] ${label} upstream fetch failed: ${message}`);
+    return classifyTransportError(error, {
+      clientSignal,
+      timeoutSignal,
+      provider,
+      label,
+      credentials,
+      phase: "fetch",
+    });
   }
 
-  const responseBody = await upstream.text().catch(() => "");
+  let responseBody;
+  try {
+    responseBody = await upstream.text();
+  } catch (error) {
+    return classifyTransportError(error, {
+      clientSignal,
+      timeoutSignal,
+      provider,
+      label,
+      credentials,
+      phase: "response body",
+    });
+  }
   if (!upstream.ok) {
     const message = sanitizeSecrets(responseBody || `HTTP ${upstream.status}`, credentials);
     return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);

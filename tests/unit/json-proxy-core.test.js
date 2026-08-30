@@ -84,4 +84,46 @@ describe("handleJsonProxyCore transport safety", () => {
     expect(result.clientAborted).toBeUndefined();
     expect(transportMocks.proxyAwareFetch).toHaveBeenCalledTimes(1);
   });
+
+  it("classifies a body-phase client cancellation without treating it as an upstream success", async () => {
+    const controller = new AbortController();
+    transportMocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      text: async () => {
+        controller.abort();
+        throw new DOMException("client disconnected", "AbortError");
+      },
+    });
+
+    const result = await handleJsonProxyCore({ ...request, signal: controller.signal });
+
+    expect(result).toMatchObject({ success: false, clientAborted: true });
+    expect(result.response.status).toBe(499);
+  });
+
+  it("classifies a body-phase timeout as a retryable gateway timeout", async () => {
+    transportMocks.proxyAwareFetch.mockImplementationOnce((_url, options) => Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      text: () => new Promise((_, reject) => {
+        if (options.signal.aborted) {
+          reject(new DOMException("timed out", "TimeoutError"));
+          return;
+        }
+        options.signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("timed out", "TimeoutError")),
+          { once: true },
+        );
+      }),
+    }));
+
+    const result = await handleJsonProxyCore({ ...request, timeoutMs: 1 });
+
+    expect(result).toMatchObject({ success: false, status: 504 });
+    expect(result.clientAborted).toBeUndefined();
+  });
 });

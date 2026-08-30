@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe("handleJsonProxy cancellation and timeout behavior", () => {
-  it("returns a client cancellation without marking or rotating the selected account", async () => {
+  it("returns a body-phase client cancellation without marking or rotating the selected account", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account("conn-1"));
     coreMocks.handleJsonProxyCore.mockResolvedValueOnce({
       success: false,
@@ -59,7 +59,7 @@ describe("handleJsonProxy cancellation and timeout behavior", () => {
     expect(authMocks.getProviderCredentials).toHaveBeenCalledTimes(1);
   });
 
-  it("allows a server-side timeout to use the ordinary next-account fallback", async () => {
+  it("keeps a body-phase server-side timeout eligible for next-account fallback", async () => {
     authMocks.getProviderCredentials
       .mockResolvedValueOnce(account("conn-1"))
       .mockResolvedValueOnce(account("conn-2"));

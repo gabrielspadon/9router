@@ -45,10 +45,11 @@ const account = (overrides = {}) => ({
 });
 const jsonResponse = (body, status = 200, contentType = "application/json") =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": contentType } });
-const requestFor = (path, body) => new Request(`http://localhost${path}`, {
+const requestFor = (path, body, signal) => new Request(`http://localhost${path}`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
+  signal,
 });
 
 beforeEach(() => {
@@ -135,6 +136,29 @@ describe("Mistral OCR and moderation handlers", () => {
       model: "mistral-moderation-latest",
       input: ["safe", "also safe"],
     });
+  });
+
+  it("returns a body-phase client cancellation without marking or rotating its account", async () => {
+    const controller = new AbortController();
+    authMocks.getProviderCredentials.mockResolvedValueOnce(account());
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      text: async () => {
+        controller.abort();
+        throw new DOMException("client disconnected", "AbortError");
+      },
+    });
+
+    const response = await handleOcr(requestFor("/v1/ocr", {
+      model: "mistral/mistral-ocr-latest",
+      document: { type: "document_url", document_url: "https://example.test/document.pdf" },
+    }, controller.signal));
+
+    expect(response.status).toBe(499);
+    expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
+    expect(authMocks.getProviderCredentials).toHaveBeenCalledTimes(1);
   });
 
   it("redacts the serving credential when an upstream moderation error echoes it", async () => {
