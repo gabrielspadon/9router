@@ -149,13 +149,37 @@ export class AntigravityExecutor extends BaseExecutor {
 
       // Build simplified contents with allowlisted text and image parts.
       const contents = [];
-      const srcContents = body.request?.contents || body.contents || [];
+      const nestedContents = body.request?.contents;
+      const srcContents = Array.isArray(nestedContents)
+        ? nestedContents
+        : (Array.isArray(body.contents) ? body.contents : []);
       for (const c of srcContents) {
-        const validParts = (c.parts || []).flatMap(p => {
-          if (p.text !== undefined) return [{ text: p.text }];
-          if (p.inlineData !== undefined) return [{ inlineData: p.inlineData }];
-          return [];
-        });
+        if (!c || typeof c !== "object" || Array.isArray(c) || !Array.isArray(c.parts)) continue;
+
+        const validParts = [];
+        for (const p of c.parts) {
+          if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+          if (typeof p.text === "string" && p.text.length > 0) {
+            validParts.push({ text: p.text });
+            continue;
+          }
+
+          const inlineData = p.inlineData;
+          if (
+            inlineData
+            && typeof inlineData === "object"
+            && !Array.isArray(inlineData)
+            && Object.getPrototypeOf(inlineData) === Object.prototype
+            && typeof inlineData.mimeType === "string"
+            && inlineData.mimeType.length > 0
+            && typeof inlineData.data === "string"
+            && inlineData.data.length > 0
+          ) {
+            validParts.push({
+              inlineData: { mimeType: inlineData.mimeType, data: inlineData.data },
+            });
+          }
+        }
         if (validParts.length > 0) {
           contents.push({ role: c.role || "user", parts: validParts });
         }

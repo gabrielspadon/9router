@@ -98,4 +98,68 @@ describe("Antigravity image editing requests", () => {
       ],
     }]);
   });
+
+  it.each([
+    ["a non-array contents wrapper", { contents: { role: "user", parts: [] } }],
+    ["a non-array nested contents wrapper", { request: { contents: { role: "user", parts: [] } } }],
+    ["non-object messages", { contents: [null, "message", 7, []] }],
+    ["non-array message parts", { contents: [{ role: "user", parts: { text: "invalid" } }] }],
+    ["non-object parts", { contents: [{ role: "user", parts: [null, "part", 7, []] }] }],
+  ])("drops %s without throwing", (_label, body) => {
+    let output;
+
+    expect(() => {
+      output = transformImageRequest(body);
+    }).not.toThrow();
+    expect(output.request.contents).toEqual([]);
+  });
+
+  it("drops invalid text and inline image payloads", () => {
+    const output = transformImageRequest({
+      contents: [{
+        role: "user",
+        parts: [
+          { text: "" },
+          { text: 42 },
+          { text: null },
+          { inlineData: null },
+          { inlineData: "not-an-object" },
+          { inlineData: [] },
+          { inlineData: {} },
+          { inlineData: { mimeType: "image/png", data: "" } },
+          { inlineData: { mimeType: "", data: "aW1hZ2U=" } },
+          { inlineData: { mimeType: 42, data: "aW1hZ2U=" } },
+          { inlineData: { mimeType: "image/png", data: 42 } },
+          { inlineData: { mime_type: "image/png", data: "aW1hZ2U=" } },
+        ],
+      }],
+    });
+
+    expect(output.request.contents).toEqual([]);
+  });
+
+  it("sanitizes nested inline data while preferring valid request contents", () => {
+    const output = transformImageRequest({
+      request: {
+        contents: [{
+          role: "user",
+          parts: [{
+            inlineData: {
+              mimeType: "image/png",
+              data: "bmVzdGVk",
+              mime_type: "image/gif",
+              privateMetadata: { source: "drop" },
+            },
+            extra: "drop",
+          }],
+        }],
+      },
+      contents: [{ role: "user", parts: [{ text: "fallback must not leak" }] }],
+    });
+
+    expect(output.request.contents).toEqual([{
+      role: "user",
+      parts: [{ inlineData: { mimeType: "image/png", data: "bmVzdGVk" } }],
+    }]);
+  });
 });
