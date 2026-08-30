@@ -201,10 +201,26 @@ async function _getAccessTokenInternal(provider, credentials, log) {
   return handler(credentials, log);
 }
 
+export function mergeRefreshedProviderSpecificData(existing, refreshed) {
+  if (!existing || typeof existing !== "object") return refreshed;
+  if (!refreshed || typeof refreshed !== "object") return existing;
+  return { ...existing, ...refreshed };
+}
+
 export async function refreshTokenByProvider(provider, credentials, log) {
   if (!credentials.refreshToken) return null;
   const handler = REFRESH_HANDLERS[provider];
-  return handler ? handler(credentials, log) : refreshAccessToken(provider, credentials.refreshToken, credentials, log);
+  const refreshed = await (handler
+    ? handler(credentials, log)
+    : refreshAccessToken(provider, credentials.refreshToken, credentials, log));
+  if (!refreshed || typeof refreshed !== "object" || !refreshed.providerSpecificData) return refreshed;
+  return {
+    ...refreshed,
+    providerSpecificData: mergeRefreshedProviderSpecificData(
+      credentials.providerSpecificData,
+      refreshed.providerSpecificData,
+    ),
+  };
 }
 
 export function formatProviderCredentials(provider, credentials, log) {

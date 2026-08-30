@@ -338,6 +338,27 @@ describe("connect timeout settings route", () => {
 });
 
 describe("provider strategy proxy-pool snapshots", () => {
+  it("migrates a pairless fixed no-auth selection before returning credentials", async () => {
+    const pool = await proxyPools.createProxyPool({
+      name: "Legacy no-auth Pool",
+      proxyUrl: "https://proxy.example.test:8443",
+      strictProxy: true,
+      isActive: true,
+    });
+    await repository.updateProviderStrategy("mimo-free", { proxyPoolId: pool.id });
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("mimo-free");
+
+    expect(credentials?.providerSpecificData).toMatchObject({
+      connectionProxyPoolId: pool.id,
+      strictProxy: true,
+      resolutionKind: "selected-proxy",
+    });
+    expect((await repository.exportSettings()).providerStrategies["mimo-free"])
+      .toMatchObject({ proxyPoolId: pool.id, strictProxy: true });
+  });
+
   it("derives a fixed no-auth strict snapshot from an active pool", async () => {
     const pool = await proxyPools.createProxyPool({
       name: "Strict Pool",

@@ -1,5 +1,17 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
-import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
+import {
+  getProviderConnections,
+  validateApiKey,
+  updateProviderConnection,
+  updateConnectionProxyPoolSnapshotIfBound,
+  updateProviderStrategyProxyPoolSnapshotIfBound,
+  getSettings,
+  getProxyPools,
+} from "@/lib/localDb";
+import {
+  resolveConnectionProxyConfig,
+  toConnectionProxyOptions,
+  pickProxyPoolId,
+} from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { ACCOUNT_ERROR_MESSAGE_MAX_CHARS } from "open-sse/config/runtimeConfig.js";
@@ -65,12 +77,30 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
       let pickedId = override.proxyPoolId || null;
+      let pickedPool = null;
       if (strategy !== "none") {
         const allPools = await getProxyPools({ isActive: true });
-        const poolIds = allPools.filter(p => p.proxyUrl).map(p => p.id);
+        const availablePools = allPools.filter(p => p.proxyUrl);
+        const poolIds = availablePools.map(p => p.id);
         pickedId = pickProxyPoolId(poolIds, strategy, providerId);
+        pickedPool = availablePools.find((pool) => pool.id === pickedId) || null;
       }
-      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
+      const proxyData = {
+        proxyPoolId: pickedId || "",
+        ...(strategy === "none" && Object.prototype.hasOwnProperty.call(override, "strictProxy")
+          ? { strictProxy: override.strictProxy }
+          : {}),
+        ...(strategy !== "none" && pickedPool
+          ? { strictProxy: pickedPool.strictProxy === true }
+          : {}),
+      };
+      const resolvedProxy = await resolveConnectionProxyConfig(proxyData, {
+        persistPoolSnapshot: strategy === "none" && pickedId
+          ? (pair) => updateProviderStrategyProxyPoolSnapshotIfBound(providerId, pickedId, pair)
+          : undefined,
+      });
+      if (resolvedProxy.kind !== "usable") return null;
+      const proxyOptions = toConnectionProxyOptions(resolvedProxy);
       return {
         id: "noauth",
         // Executors key their upstream session id on connectionId. Without it
@@ -83,12 +113,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         isActive: true,
         accessToken: "public",
         providerSpecificData: {
-          connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
-          connectionProxyUrl: resolvedProxy.connectionProxyUrl,
-          connectionNoProxy: resolvedProxy.connectionNoProxy,
+          connectionProxyEnabled: proxyOptions.connectionProxyEnabled,
+          connectionProxyUrl: proxyOptions.connectionProxyUrl,
+          connectionNoProxy: proxyOptions.connectionNoProxy,
           connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
-          vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
-          strictProxy: resolvedProxy.strictProxy === true,
+          vercelRelayUrl: proxyOptions.vercelRelayUrl,
+          strictProxy: proxyOptions.strictProxy,
+          resolutionKind: proxyOptions.resolutionKind,
         },
       };
     }
@@ -217,7 +248,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       connection = routedConnections[0];
     }
 
-    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const connectionProxyData = connection.providerSpecificData || {};
+    const expectedPoolId = connectionProxyData.proxyPoolId;
+    const resolvedProxy = await resolveConnectionProxyConfig(connectionProxyData, {
+      persistPoolSnapshot: expectedPoolId
+        ? (pair) => updateConnectionProxyPoolSnapshotIfBound(connection.id, expectedPoolId, pair)
+        : undefined,
+    });
+    if (resolvedProxy.kind !== "usable") return null;
+    const proxyOptions = toConnectionProxyOptions(resolvedProxy);
 
     return {
       authType: connection.authType,
@@ -233,12 +272,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       copilotToken: connection.providerSpecificData?.copilotToken,
       providerSpecificData: {
         ...(connection.providerSpecificData || {}),
-        connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
-        connectionProxyUrl: resolvedProxy.connectionProxyUrl,
-        connectionNoProxy: resolvedProxy.connectionNoProxy,
+        connectionProxyEnabled: proxyOptions.connectionProxyEnabled,
+        connectionProxyUrl: proxyOptions.connectionProxyUrl,
+        connectionNoProxy: proxyOptions.connectionNoProxy,
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
-        vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
-        strictProxy: resolvedProxy.strictProxy === true,
+        vercelRelayUrl: proxyOptions.vercelRelayUrl,
+        strictProxy: proxyOptions.strictProxy,
+        resolutionKind: proxyOptions.resolutionKind,
       },
       connectionId: connection.id,
       // Include current status for optimization check
