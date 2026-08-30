@@ -246,9 +246,9 @@ export default function AntigravityToolCard({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
               {isRunning ? (
-                <Badge variant="success" size="sm">Active</Badge>
+                <Badge variant="success" size="md">Active</Badge>
               ) : (
-                <Badge variant="default" size="sm">Inactive</Badge>
+                <Badge variant="neutral" size="md">Inactive</Badge>
               )}
             </div>
             <p className="text-xs text-text-muted">{tool.description}</p>

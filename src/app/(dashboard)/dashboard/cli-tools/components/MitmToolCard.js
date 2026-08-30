@@ -151,11 +151,11 @@ export default function MitmToolCard({
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-medium text-sm">{tool.name}</h3>
                 {!serverRunning ? (
-                  <Badge variant="default" size="sm">Server off</Badge>
+                  <Badge variant="neutral" size="md">Server off</Badge>
                 ) : dnsActive ? (
-                  <Badge variant="success" size="sm">Active</Badge>
+                  <Badge variant="success" size="md">Active</Badge>
                 ) : (
-                  <Badge variant="warning" size="sm">DNS off</Badge>
+                  <Badge variant="warning" size="md">DNS off</Badge>
                 )}
               </div>
               <p className="text-xs text-text-muted sm:truncate">Intercept {tool.name} requests via MITM proxy</p>

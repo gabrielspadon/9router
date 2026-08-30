@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Card } from "@/shared/components";
+import { Card, Badge } from "@/shared/components";
 import Image from "next/image";
 
 /**
@@ -29,7 +29,7 @@ export default function MitmLinkCard({ tool }) {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="font-medium text-sm">{tool.name}</h3>
-                <span className="px-1.5 py-0.5 text-xs font-medium bg-surface-2 text-text-muted border border-border rounded-full">MITM</span>
+                <Badge variant="neutral" size="md">MITM</Badge>
               </div>
               <p className="text-xs text-text-muted">{tool.description}</p>
             </div>

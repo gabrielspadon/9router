@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Card } from "@/shared/components";
+import { Card, Badge } from "@/shared/components";
 
 // Derive simple connected/configured/not-installed status from API payload
 function getStatus(tool, status) {
-  if (tool.unsupported) return { label: "Unsupported", cls: "bg-danger-soft text-danger border border-danger-line" };
-  if (!status) return { label: "Unknown", cls: "bg-surface-2 text-text-muted border border-border" };
-  if (!status.installed) return { label: "Not installed", cls: "bg-surface-2 text-text-muted border border-border" };
-  if (status.has9Router) return { label: "Connected", cls: "bg-success-soft text-success border border-success-line" };
-  return { label: "Not configured", cls: "bg-warning-soft text-warning border border-warning-line" };
+  if (tool.unsupported) return { label: "Unsupported", variant: "danger" };
+  if (!status) return { label: "Unknown", variant: "neutral" };
+  if (!status.installed) return { label: "Not installed", variant: "neutral" };
+  if (status.has9Router) return { label: "Connected", variant: "success" };
+  return { label: "Not configured", variant: "warning" };
 }
 
 export default function ToolSummaryCard({ toolId, tool, status }) {
@@ -29,7 +29,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="font-medium text-sm truncate">{tool.name}</h3>
-              <span className={`inline-block mt-1 px-1.5 py-0.5 text-xs font-medium rounded-full ${s.cls}`}>{s.label}</span>
+              <Badge variant={s.variant} size="md" className="mt-1">{s.label}</Badge>
             </div>
             <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0">chevron_right</span>
           </div>

@@ -141,9 +141,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <span className="material-symbols-outlined text-primary text-[20px]">security</span>
               <span className="font-semibold text-sm text-text-main">MITM Server</span>
               {isRunning ? (
-                <Badge variant="success" size="sm">Running</Badge>
+                <Badge variant="success" size="md">Running</Badge>
               ) : (
-                <Badge variant="default" size="sm">Stopped</Badge>
+                <Badge variant="neutral" size="md">Stopped</Badge>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-1 text-xs text-text-muted" data-i18n-skip="true">
