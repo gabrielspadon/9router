@@ -1081,5 +1081,10 @@
     "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions",
     "headers": {},
     "format": "openai"
+  },
+  "sensenova": {
+    "baseUrl": "https://token.sensenova.cn/v1/chat/completions",
+    "validateUrl": "https://token.sensenova.cn/v1/models",
+    "format": "openai"
   }
 }

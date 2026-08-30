@@ -28,6 +28,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { FETCH_CONNECT_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -691,6 +692,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "novita": {
         const res = await fetchWithConnectionProxy("https://api.novita.ai/openai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "sensenova": {
+        const res = await fetchWithConnectionProxy(PROVIDERS.sensenova.validateUrl, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+          signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS),
+        }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "cohere": {
