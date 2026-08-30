@@ -196,12 +196,12 @@ export default function Sidebar({ onClose }) {
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <div className="flex items-center gap-2">
-                <button
+                <Button
+                  variant="primary" size="sm"
                   onClick={() => setShowUpdateModal(true)}
-                  className="focus-ring px-2 py-1 rounded bg-brand-solid hover:bg-brand-solid/90 text-brand-on text-[11px] font-semibold transition-colors duration-150 cursor-pointer"
                 >
                   Update now
-                </button>
+                </Button>
                 <button
                   onClick={() => copy(INSTALL_CMD)}
                   title="Copy install command"
