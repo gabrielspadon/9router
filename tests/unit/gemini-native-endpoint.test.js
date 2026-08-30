@@ -249,6 +249,27 @@ describe("Gemini native v1beta endpoint", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("preserves an already-aborted caller signal when rebuilding a Gemini request", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    caller.abort(reason);
+    mocks.handleChat.mockResolvedValueOnce(Response.json({
+      id: "chatcmpl-1",
+      model: "gemini-2.5-flash",
+      choices: [{ message: { role: "assistant", content: "hello" }, finish_reason: "stop" }],
+    }));
+
+    await POST(makeGeminiRequest("gemini-2.5-flash:generateContent", {
+      contents: [{ parts: [{ text: "hello" }] }],
+    }, {}, caller.signal), {
+      params: Promise.resolve({ path: ["gemini-2.5-flash:generateContent"] }),
+    });
+
+    const forwardedRequest = mocks.handleChat.mock.calls[0][0];
+    expect(forwardedRequest.signal).not.toBe(caller.signal);
+    expect(forwardedRequest.signal).toMatchObject({ aborted: true, reason });
+  });
+
   it("does not hijack provider-prefixed non-Gemini audio requests", async () => {
     await POST(makeGeminiRequest("openai/gpt-4o-mini-tts:generateContent", audioBody()), {
       params: Promise.resolve({ path: ["openai", "gpt-4o-mini-tts:generateContent"] }),

@@ -22,12 +22,15 @@ import {
 } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
+  createCallerAbortResult,
   createErrorResult,
   parseUpstreamError,
   formatProviderError,
+  isCallerAbortError,
 } from "../utils/error.js";
 import { ANTIGRAVITY_SAFE_ERROR_MESSAGE } from "../services/antigravityValidation.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
+import { isBodyReadTimeoutError } from "../utils/bodyTimeout.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import {
   trackPendingRequest,
@@ -77,6 +80,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
+import { projectClientModelStatus } from "../config/modelErrorClassifier.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -120,6 +124,7 @@ export async function handleChatCore({
   body,
   modelInfo,
   credentials,
+  callerSignal,
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
@@ -682,6 +687,9 @@ export async function handleChatCore({
     model,
     reqTag,
   });
+  const executionSignal = callerSignal
+    ? AbortSignal.any([callerSignal, streamController.signal])
+    : streamController.signal;
 
   const proxyOptions = {
     connectionProxyEnabled:
@@ -745,6 +753,10 @@ export async function handleChatCore({
   const mapTransportError = (error) => {
     const isAntigravity = provider === "antigravity";
     const sinkError = isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : (error.message || String(error));
+    if (callerSignal?.aborted && (isCallerAbortError(error) || error.name === "AbortError")) {
+      trackPendingRequest(model, provider, connectionId, false);
+      return createCallerAbortResult();
+    }
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
       model,
@@ -778,6 +790,12 @@ export async function handleChatCore({
     const errMsg = isAntigravity
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
       : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(
+        HTTP_STATUS.GATEWAY_TIMEOUT,
+        isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream response body timed out",
+      );
+    }
     if (log?.errorLine) {
       log.errorLine(
         reqTag,
@@ -793,7 +811,7 @@ export async function handleChatCore({
       body: translatedBody,
       stream,
       credentials,
-      signal: streamController.signal,
+      signal: executionSignal,
       log,
       proxyOptions,
       sourceFormat,
@@ -853,7 +871,7 @@ export async function handleChatCore({
             body: translatedBody,
             stream,
             credentials,
-            signal: streamController.signal,
+            signal: executionSignal,
             log,
             proxyOptions,
             sourceFormat,
@@ -882,7 +900,7 @@ export async function handleChatCore({
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs, validation } = await parseUpstreamError(
+    const { statusCode, message, resetsAtMs, validation, errorPayload } = await parseUpstreamError(
       providerResponse,
       executor,
     );
@@ -900,6 +918,12 @@ export async function handleChatCore({
         log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
       }
     }
+    const failureMetadata = projectClientModelStatus({
+      provider,
+      requestedModel: model,
+      status: statusCode,
+      payload: errorPayload,
+    });
 
     // Adaptive unsupported-parameter retry: on a 400 naming rejected fields,
     // record them per provider+model, strip, and retry once immediately.
@@ -929,7 +953,7 @@ export async function handleChatCore({
             body: stripped,
             stream,
             credentials,
-            signal: streamController.signal,
+            signal: executionSignal,
             log,
             proxyOptions,
             sourceFormat,
@@ -964,6 +988,7 @@ export async function handleChatCore({
               onValidationRequired,
               notifyTerminalVerificationSuccess,
               pxpipe: pxpipeSummary,
+              callerSignal,
               reqTag,
               log,
             };
@@ -984,7 +1009,7 @@ export async function handleChatCore({
                 appendLog,
               });
               if (s2j) {
-                streamController.handleComplete();
+                if (s2j.success) streamController.handleComplete();
                 return s2j;
               }
             }
@@ -1000,7 +1025,7 @@ export async function handleChatCore({
                 trackDone,
                 appendLog,
               });
-              streamController.handleComplete();
+              if (nr.success) streamController.handleComplete();
               return nr;
             }
             const { onStreamComplete, onStreamAbandoned, streamDetailId, streamState } =
@@ -1079,7 +1104,7 @@ export async function handleChatCore({
       );
     }
     reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
-    return createErrorResult(safeStatusCode, errMsg, resetsAtMs);
+    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata);
   }
 
   const sharedCtx = {
@@ -1099,6 +1124,7 @@ export async function handleChatCore({
     notifyTerminalVerificationSuccess,
     onEmptyStream,
     pxpipe: pxpipeSummary,
+    callerSignal,
     reqTag,
     log,
   };
@@ -1120,7 +1146,7 @@ export async function handleChatCore({
       appendLog,
     });
     if (result) {
-      streamController.handleComplete();
+      if (result.success) streamController.handleComplete();
       return result;
     }
   }
@@ -1138,7 +1164,7 @@ export async function handleChatCore({
       trackDone,
       appendLog,
     });
-    streamController.handleComplete();
+    if (result.success) streamController.handleComplete();
     return result;
   }
 

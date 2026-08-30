@@ -15,6 +15,17 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
+function buildFetchProxyOptions(credentials) {
+  const data = credentials?.providerSpecificData;
+  return {
+    connectionProxyEnabled: data?.connectionProxyEnabled === true,
+    connectionProxyUrl: data?.connectionProxyUrl || "",
+    connectionNoProxy: data?.connectionNoProxy || "",
+    vercelRelayUrl: data?.vercelRelayUrl || "",
+    strictProxy: data?.strictProxy === true,
+  };
+}
+
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
  * Provider IS the model. Mirrors handleEmbeddings auth + fallback flow.
@@ -143,6 +154,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       provider: resolvedProvider.id,
       providerConfig,
       credentials: null,
+      signal: request.signal,
+      proxyOptions: buildFetchProxyOptions(null),
       log
     });
     if (result.success) {
@@ -163,8 +176,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         log.warn("FETCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -187,6 +200,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       provider: resolvedProvider.id,
       providerConfig,
       credentials: refreshedCredentials,
+      signal: request.signal,
+      proxyOptions: buildFetchProxyOptions(refreshedCredentials),
       log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {

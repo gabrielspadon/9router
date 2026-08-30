@@ -1,5 +1,19 @@
 # Upstream PRs — closed (processed)
 
+## PR #3210 — feat(dashboard): show effective Codex plan badges
+
+- url: https://github.com/decolua/9router/pull/3210
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task8-pr3210
+- local-ref: 7aa2ae7e5
+- disposition: adapted
+- validation: 10/10 dedicated TDD, 27/27 Codex badge/UI/route adjacency, scoped ESLint 0 errors, diff check clean
+- notes: persisted safe provider data only, no dashboard fetch/usage refresh/write, no ProviderLimits changes
+- final-disposition: adapted
+- closed: 2026-08-30
+- detail: design and plan were independently reviewed. Adapted only the persisted Codex subscription badge, with precedence and invalid-value fallback, SSR accessible markup, and zero-fetch proof. Branch fast-forwarded to master at 7aa2ae7e5.
+
 ## PR #3608 — Add error message for preventing abuse
 
 - url: https://github.com/decolua/9router/pull/3608
@@ -6509,3 +6523,59 @@
 - final-disposition: adapted and integrated
 - closed: 2026-08-30
 - detail: commits 54c2771c0 through 2a4483c6e; provider-keyed auth selection queues, graceful LRU proxy-dispatcher eviction, and allocation-reduced SSE scanning passed independent review, 132 combined focused tests, a 3,498-test no-regression gate, exact provider/alias/OAuth baselines, and a 140-route production build; indefinite caches and content chunk arrays were rejected
+
+## PR #3319 — fix(claude): hỗ trợ Auto Mode khi dùng model Codex
+
+- url: https://github.com/decolua/9router/pull/3319
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task7-pr3319
+- local-ref: 4e95d3f2e
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-7-pr3319-review.md
+- notes: upstream patch was adapted into a fail-closed, source-format-scoped classifier across all response families
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 3ca10771c through af4e0e76b, merged 4e95d3f2e; classifier validation preserves every actionable response alternative before lossy conversion, rejects malformed or hidden output, keeps 499 terminal, and preserves Codex Fast and real -1m behavior. Independent final review approved; canonical focused replay 216/216.
+
+## PR #3220 — fix(chatCore): bound non-streaming body reads, return 504 on stall
+
+- url: https://github.com/decolua/9router/pull/3220
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as reader-owned body deadline rather than the raw patch
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c preserves caller abort as terminal 499, existing header deadline as 502, and bounded post-header read stall as 504 with one normal fallback. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.
+
+## PR #3221 — fix(chat): key error state to its model, and preserve the upstream status class
+
+- url: https://github.com/decolua/9router/pull/3221
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as model-keyed safe metadata with selected-account projection
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c scopes lock metadata to exact model or __all, retains raw fallback status, prevents cross-model and cross-account stale errors, and pins video polling to its selected account. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.
+
+## PR #3222 — fix(stream): synthesize a terminal when upstream drops mid-response
+
+- url: https://github.com/decolua/9router/pull/3222
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as bounded post-transform typed terminal observation, not the raw tracker port
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c rejects mismatched SSE event/type records, preserves positional TTFT and keepalive compatibility, emits exactly one typed terminal for supported incomplete streams, and emits none for caller cancellation. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.

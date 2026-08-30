@@ -4,8 +4,14 @@ import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { canonicalEchoModel } from "../../services/model.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, claudeUsageToOpenAI, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createCallerAbortResult, createErrorResult, isCallerAbortError } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import {
+  consumeResponseBodyWithDeadline,
+  isBodyReadTimeoutError,
+  readResponseJsonWithDeadline,
+  readResponseTextWithDeadline,
+} from "../../utils/bodyTimeout.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
@@ -22,6 +28,14 @@ import {
   redactAntigravityValidationText,
 } from "../../services/antigravityValidation.js";
 import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
+import {
+  CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+  ClaudeClassifierValidationError,
+  isClaudeClassifierRequest,
+  projectResponsesClassifierOutput,
+  projectResponsesClassifierStream,
+  validateClaudeClassifierMessage,
+} from "./claudeClassifier.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
@@ -408,22 +422,55 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   return responseBody;
 }
 
+function hasLegacyClassifierFunctionCall(responseBody) {
+  return responseBody?.choices?.some((choice) =>
+    Object.hasOwn(choice?.message || {}, "function_call"),
+  );
+}
+
+function hasMultipleClassifierAlternatives(responseBody) {
+  if (Array.isArray(responseBody?.choices) && responseBody.choices.length > 1) {
+    return true;
+  }
+  const geminiResponse = responseBody?.response || responseBody;
+  return Array.isArray(geminiResponse?.candidates)
+    && geminiResponse.candidates.length > 1;
+}
+
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log, callerSignal }) {
   const contentType = providerResponse.headers.get("content-type") || "";
+  const classifierMode = sourceFormat === FORMATS.CLAUDE
+    && isClaudeClassifierRequest(body);
   let responseBody;
   let antigravitySseText = null;
+  let classifierProjection = null;
+  let pendingCleared = false;
+  const trackDoneOnce = () => {
+    if (pendingCleared) return;
+    pendingCleared = true;
+    trackDone();
+  };
+  const bodyReadFailure = (error, context) => {
+    trackDoneOnce();
+    if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
+    }
+    console.error(`[ChatCore] Failed to ${context} from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`);
+  };
 
   if (contentType.includes("text/event-stream")) {
     if (provider === "antigravity") {
       try {
-        antigravitySseText = await providerResponse.text();
-      } catch {
-        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        console.error("[ChatCore] Antigravity SSE read failed:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+        antigravitySseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
+      } catch (err) {
+        const result = bodyReadFailure(err, "read Antigravity SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
       }
       const validation = classifyAntigravitySseValidation(antigravitySseText);
       if (validation) {
@@ -435,7 +482,6 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
       }
     }
-    trackDone();
     // A provider not statically flagged forceStream (e.g. a dynamically-added
     // openai-compatible connection) can still force SSE at the HTTP level —
     // providerRequiresStreaming only catches known providers, so this branch
@@ -446,16 +492,52 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     // aware converter (same one handleForcedSSEToJson uses) in that case.
     if (targetFormat === FORMATS.OPENAI_RESPONSES) {
       try {
-        responseBody = await convertResponsesStreamToJson(antigravitySseText === null ? providerResponse.body : createSseTextStream(antigravitySseText));
+        if (antigravitySseText !== null) {
+          responseBody = await convertResponsesStreamToJson(createSseTextStream(antigravitySseText));
+        } else if (classifierMode && typeof providerResponse.body?.tee === "function") {
+          const [conversionStream, projectionStream] = providerResponse.body.tee();
+          [responseBody, classifierProjection] = await Promise.all([
+            consumeResponseBodyWithDeadline({
+              body: conversionStream,
+              callerSignal,
+              consume: (reader) => convertResponsesStreamToJson(conversionStream, { reader }),
+            }),
+            consumeResponseBodyWithDeadline({
+              body: projectionStream,
+              callerSignal,
+              consume: (reader) => projectResponsesClassifierStream(
+                body,
+                projectionStream,
+                { reader },
+              ),
+            }),
+          ]);
+        } else {
+          responseBody = await consumeResponseBodyWithDeadline({
+            body: providerResponse.body,
+            callerSignal,
+            consume: (reader) => convertResponsesStreamToJson(providerResponse.body, { reader }),
+          });
+        }
       } catch (err) {
-        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err.message);
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Failed to convert streaming response to JSON for ${provider}`);
+        const result = bodyReadFailure(err, "convert Responses SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
       }
     } else {
-      const sseText = antigravitySseText ?? await providerResponse.text();
+      let sseText;
+      if (antigravitySseText !== null) {
+        sseText = antigravitySseText;
+      } else try {
+        sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
+      } catch (err) {
+        const result = bodyReadFailure(err, "read SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
+      }
       const parsed = parseSSEToOpenAIResponse(sseText, model);
       if (!parsed) {
+        trackDoneOnce();
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
         return createErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
@@ -465,13 +547,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       responseBody = parsed;
     }
   } else {
-    trackDone();
     try {
-      responseBody = await providerResponse.json();
+      responseBody = await readResponseJsonWithDeadline({ body: providerResponse.body, callerSignal });
     } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid JSON response from ${provider}`);
+      const result = bodyReadFailure(err, "parse JSON");
+      appendLog({ status: `FAILED ${result.status}` });
+      return result;
     }
   }
 
@@ -490,10 +571,19 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
     }
     if (isAntigravityErrorPayload(responseBody)) {
+      trackDoneOnce();
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
     }
   }
+
+  if (classifierMode
+      && targetFormat === FORMATS.OPENAI_RESPONSES
+      && classifierProjection === null) {
+    classifierProjection = projectResponsesClassifierOutput(body, responseBody);
+  }
+
+  trackDoneOnce();
 
   // Some OpenAI-compatible gateways (e.g. api.cline.bot) wrap the whole completion
   // in { data: {…}, success: true }. Unwrap so the client sees a top-level `choices`.
@@ -508,6 +598,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     provider === "antigravity" ? redactAntigravitySinkValue(responseBody) : responseBody,
   );
 
+  if (onRequestSuccess && provider !== "antigravity") {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  }
+
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
@@ -516,9 +614,36 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+  if (classifierMode && (
+    hasLegacyClassifierFunctionCall(responseBody)
+    || hasMultipleClassifierAlternatives(responseBody)
+  )) {
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+    );
+  }
+
+  let translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
     : responseBody;
+  if (classifierMode) {
+    try {
+      translatedResponse = validateClaudeClassifierMessage(
+        body,
+        translatedResponse,
+        classifierProjection,
+      );
+    } catch (err) {
+      if (err instanceof ClaudeClassifierValidationError) {
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+        );
+      }
+      throw err;
+    }
+  }
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.
@@ -588,11 +713,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     );
   }
 
-  if (onRequestSuccess) {
+  if (onRequestSuccess && provider === "antigravity") {
     Promise.resolve()
       .then(onRequestSuccess)
       .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+        console.error("[ChatCore] onRequestSuccess failed:", provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err?.message || err);
       });
   }
 

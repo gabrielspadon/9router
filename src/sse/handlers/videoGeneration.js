@@ -16,6 +16,8 @@ import * as log from "../utils/logger.js";
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
 const DEFAULT_VIDEO_PROVIDER = "xai";
+const VIDEO_CONNECTION_HEADER = "x-9router-connection-id";
+const LEGACY_VIDEO_CONNECTION_HEADER = "x-connection-id";
 
 // Creation POSTs are billable jobs — only rotate to another account for
 // errors that upstream rejects BEFORE creating a job (auth/quota). A 5xx may
@@ -82,10 +84,20 @@ async function resolveVideoProvider(parsedBody) {
 function withConnectionHeader(response, connectionId) {
   if (!connectionId) return response;
   const headers = new Headers(response.headers);
-  // Video jobs are account-bound upstream — clients echo this back as
-  // `x-connection-id` on GET polls so the same account is used.
-  headers.set("x-9router-connection-id", String(connectionId));
+  // Video jobs are account-bound upstream. The returned header is accepted on
+  // later polls directly; `x-connection-id` remains a compatibility alias.
+  headers.set(VIDEO_CONNECTION_HEADER, String(connectionId));
+  const exposed = headers.get("access-control-expose-headers");
+  if (!exposed?.split(",").some((name) => name.trim().toLowerCase() === VIDEO_CONNECTION_HEADER)) {
+    headers.set("Access-Control-Expose-Headers", exposed ? `${exposed}, ${VIDEO_CONNECTION_HEADER}` : VIDEO_CONNECTION_HEADER);
+  }
   return new Response(response.body, { status: response.status, headers });
+}
+
+function getPreferredVideoConnectionId(request) {
+  return request.headers.get(VIDEO_CONNECTION_HEADER)
+    || request.headers.get(LEGACY_VIDEO_CONNECTION_HEADER)
+    || null;
 }
 
 /**
@@ -109,7 +121,7 @@ export async function handleVideoCreate(request, action) {
     forwardBody = JSON.stringify({ ...bodyInfo.parsed, model });
   }
 
-  const preferredConnectionId = request.headers.get("x-connection-id") || null;
+  const preferredConnectionId = getPreferredVideoConnectionId(request);
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
   const excludeConnectionIds = new Set();
@@ -121,8 +133,8 @@ export async function handleVideoCreate(request, action) {
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         return unavailableResponse(status, `[${provider}/${model || "video"}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
@@ -177,7 +189,7 @@ export async function handleVideoCreate(request, action) {
 /**
  * GET /v1/videos/{request_id} — poll job status.
  * Jobs are account-bound upstream, so no cross-account rotation here: the
- * caller pins the creating account via `x-connection-id` (returned on create).
+ * caller pins the creating account via the returned connection header.
  */
 export async function handleVideoGet(request, requestId) {
   const authError = await requireValidApiKey(request);
@@ -186,11 +198,24 @@ export async function handleVideoGet(request, requestId) {
   if (!requestId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
 
   const provider = DEFAULT_VIDEO_PROVIDER;
-  const preferredConnectionId = request.headers.get("x-connection-id") || null;
+  const preferredConnectionId = getPreferredVideoConnectionId(request);
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
-  if (!credentials || credentials.allRateLimited) {
+  const credentials = await getProviderCredentials(provider, null, null, {
+    preferredConnectionId,
+    strictPreferredConnection: Boolean(preferredConnectionId),
+  });
+  if (!credentials) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+  }
+  if (credentials.allRateLimited) {
+    const errorMsg = credentials.lastError || "Unavailable";
+    const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+    return unavailableResponse(
+      status,
+      `[${provider}/video] ${errorMsg}`,
+      credentials.retryAfter,
+      credentials.retryAfterHuman,
+    );
   }
 
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);

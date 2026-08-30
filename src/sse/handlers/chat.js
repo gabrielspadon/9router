@@ -26,7 +26,11 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel, normalizeClaudeModelName, buildClaudeRoutingIndex, readClaudeCompat } from "@/lib/claudeCompat";
-import { createAntigravityVerificationHooks } from "@/lib/antigravityVerification";
+
+async function createAntigravityVerificationHooks(connectionId) {
+  const { createAntigravityVerificationHooks: createHooks } = await import("@/lib/antigravityVerification");
+  return createHooks(connectionId);
+}
 
 // Simple in-memory sliding-window rate limiter to stop abuse of the expensive AI calls below
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -287,8 +291,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -306,7 +310,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
       const projectVerificationHooks = provider === "antigravity"
-        ? createAntigravityVerificationHooks(credentials.connectionId)
+        ? await createAntigravityVerificationHooks(credentials.connectionId)
         : {};
       const pid = await getProjectIdForConnection(
         credentials.connectionId,
@@ -329,12 +333,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       globalTimeout: chatSettings.connectTimeoutMs,
     };
     const chatVerificationHooks = provider === "antigravity"
-      ? createAntigravityVerificationHooks(credentials.connectionId)
+      ? await createAntigravityVerificationHooks(credentials.connectionId)
       : {};
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
+      callerSignal: request?.signal,
       log,
       clientRawRequest,
       connectionId: credentials.connectionId,
@@ -403,6 +408,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
+    if (result.clientAborted || result.status === 499) return result.response;
     if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
       requestReplayAttempted = true;
       requestReplayConnectionId = credentials.connectionId;
@@ -411,7 +417,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const accountFailureArgs = [
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider,
+      model,
+      result.resetsAtMs,
+    ];
+    if (result.failureMetadata) accountFailureArgs.push(result.failureMetadata);
+    const { shouldFallback } = await markAccountUnavailable(...accountFailureArgs);
 
     if (shouldFallback) {
       lastError = result.error;

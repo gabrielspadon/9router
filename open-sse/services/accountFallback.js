@@ -123,6 +123,9 @@ export function formatRetryAfter(rateLimitedUntil) {
 /** Prefix for model lock flat fields on connection record */
 export const MODEL_LOCK_PREFIX = "modelLock_";
 
+/** Prefix for model-specific failure metadata on connection records */
+export const MODEL_FAILURE_PREFIX = "modelFailure_";
+
 /** Special key used when no model is known (account-level lock) */
 export const MODEL_LOCK_ALL = `${MODEL_LOCK_PREFIX}__all`;
 
@@ -131,17 +134,21 @@ export function getModelLockKey(model) {
   return model ? `${MODEL_LOCK_PREFIX}${model}` : MODEL_LOCK_ALL;
 }
 
+/** Build the flat field key for failure metadata paired with a model lock. */
+export function getModelFailureKey(model) {
+  return model ? `${MODEL_FAILURE_PREFIX}${model}` : `${MODEL_FAILURE_PREFIX}__all`;
+}
+
+function isActiveLockUntil(until, now = Date.now()) {
+  const expiry = new Date(until).getTime();
+  return Number.isFinite(expiry) && expiry > now;
+}
+
 /**
  * Check if a model lock on a connection is still active.
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  const now = Date.now();
-  const stillLocked = (value) => {
-    if (!value) return false;
-    const until = new Date(value).getTime();
-    return Number.isFinite(until) && until > now;
-  };
   // Each key is judged on its own expiry. `a || b` picked the per-model key on the
   // truthiness of the string, so a stale one hid a still-active account-wide lock:
   // the connection then read as free for exactly the model that had just failed,
@@ -149,15 +156,46 @@ export function isModelLockActive(connection, model) {
   // key either -- the lazy cleanup runs only after a successful request, and an
   // account under an `__all` lock never gets one. Same rule the sibling
   // `getEarliestModelLockUntil` already applies when it skips expired entries.
-  return stillLocked(connection[getModelLockKey(model)]) || stillLocked(connection[MODEL_LOCK_ALL]);
+  return isActiveLockUntil(connection[getModelLockKey(model)]) || isActiveLockUntil(connection[MODEL_LOCK_ALL]);
+}
+
+/**
+ * Return the active lock and only its matching metadata. Account-wide state
+ * has precedence. Legacy locks are intentionally non-diagnostic.
+ */
+export function getActiveModelFailure(connection, model) {
+  if (!connection) return null;
+  const models = model ? [null, model] : [null];
+  for (const candidate of models) {
+    const lockKey = getModelLockKey(candidate);
+    const until = connection[lockKey];
+    if (!isActiveLockUntil(until)) continue;
+    const failureKey = getModelFailureKey(candidate);
+    const metadata = connection[failureKey];
+    const matchingMetadata = metadata && typeof metadata === "object" && metadata.until === until
+      ? metadata
+      : null;
+    return {
+      lockKey,
+      failureKey,
+      until,
+      status: matchingMetadata?.status ?? null,
+      message: matchingMetadata?.message ?? null,
+      resetsAt: matchingMetadata?.resetsAt ?? null,
+      clientErrorStatus: matchingMetadata?.clientErrorStatus ?? null,
+      unknownModelVerified: matchingMetadata?.unknownModelVerified === true,
+    };
+  }
+  return null;
 }
 
 /**
  * Get earliest active model lock expiry across all modelLock_* fields.
  * Used for UI cooldown display.
  */
-export function getEarliestModelLockUntil(connection) {
+export function getEarliestModelLockUntil(connection, model) {
   if (!connection) return null;
+  if (arguments.length > 1) return getActiveModelFailure(connection, model)?.until || null;
   let earliest = null;
   const now = Date.now();
   for (const [key, val] of Object.entries(connection)) {
@@ -173,8 +211,41 @@ export function getEarliestModelLockUntil(connection) {
  * Build update object to set a model lock on a connection.
  */
 export function buildModelLockUpdate(model, cooldownMs) {
-  const key = getModelLockKey(model);
-  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+  return buildModelLockUpdateAt(model, new Date(Date.now() + cooldownMs).toISOString());
+}
+
+/** Build update object to set a model lock to an already selected expiry. */
+export function buildModelLockUpdateAt(model, until) {
+  return { [getModelLockKey(model)]: until };
+}
+
+/** Build update object for metadata paired atomically with one model lock. */
+export function buildModelFailureUpdate(model, {
+  status = null,
+  message = null,
+  until,
+  resetsAt = null,
+  clientErrorStatus = null,
+  unknownModelVerified = false,
+} = {}) {
+  return {
+    [getModelFailureKey(model)]: {
+      status,
+      message,
+      until,
+      resetsAt,
+      clientErrorStatus,
+      unknownModelVerified: unknownModelVerified === true,
+    },
+  };
+}
+
+/** Build update object that clears one exact lock and metadata pair. */
+export function buildClearModelFailurePairUpdate(model) {
+  return {
+    [getModelLockKey(model)]: null,
+    [getModelFailureKey(model)]: null,
+  };
 }
 
 /**
@@ -184,6 +255,7 @@ export function buildClearModelLocksUpdate(connection) {
   const cleared = {};
   for (const key of Object.keys(connection)) {
     if (key.startsWith(MODEL_LOCK_PREFIX)) cleared[key] = null;
+    if (key.startsWith(MODEL_FAILURE_PREFIX)) cleared[key] = null;
   }
   return cleared;
 }

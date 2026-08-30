@@ -2,6 +2,8 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
+import { createSseTerminalObserver } from "../../utils/streamTerminal.js";
+import { createCallerAbortResult } from "../../utils/error.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
@@ -43,20 +45,31 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
+    return {
+      transformStream: createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState),
+      emittedFormat: codexTarget,
+    };
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
+    return {
+      transformStream: createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState),
+      emittedFormat: sourceFormat,
+    };
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState);
+  return {
+    transformStream: createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState),
+    emittedFormat: sourceFormat,
+  };
 }
 
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, reqTag, log, callerSignal }) {
+  if (callerSignal?.aborted) return createCallerAbortResult();
+
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -72,7 +85,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     !upstreamContentType.includes('application/x-ndjson') &&
     !upstreamContentType.includes('application/stream+json')
   ) {
-    const bodyText = await providerResponse.text().catch(() => '');
+    let bodyText = '';
+    try {
+      bodyText = await providerResponse.text();
+    } catch {
+      if (callerSignal?.aborted) return createCallerAbortResult();
+    }
+    if (callerSignal?.aborted) return createCallerAbortResult();
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
     const upstreamMessage = sanitizedTitle
@@ -119,6 +138,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   try {
     reader = providerResponse.body.getReader();
     const { done, value } = await reader.read();
+    if (callerSignal?.aborted) {
+      try { reader.releaseLock?.(); } catch {}
+      return createCallerAbortResult();
+    }
     if (done || !value || value.length === 0) {
       try { reader.releaseLock?.(); } catch {}
       const status = 502;
@@ -141,6 +164,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   } catch (readErr) {
     try { await reader?.cancel?.(); } catch {}
     try { reader?.releaseLock?.(); } catch {}
+    if (callerSignal?.aborted) {
+      return createCallerAbortResult();
+    }
     const status = 502;
     const shortMsg = provider === "antigravity"
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
@@ -353,23 +379,43 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   }
 
   let antigravityRequestSuccessNotified = false;
-  const onStreamCompleteAtTerminal = (...args) => {
-    onStreamComplete?.(...args);
+  let pendingCompletion = null;
+  let completionDelivered = false;
+  const notifyAntigravitySuccess = (...args) => {
     if (provider !== "antigravity" || antigravityRequestSuccessNotified || typeof onRequestSuccess !== "function") return;
     const [contentObj, usage, , { aborted = false } = {}] = args;
     if (aborted || !(contentObj?.content?.trim?.() || contentObj?.thinking?.trim?.() || hasOutputTokens(usage))) return;
     antigravityRequestSuccessNotified = true;
     Promise.resolve()
       .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      .catch(() => {
+        console.error("[ChatCore] onRequestSuccess failed:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
       });
   };
-
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: onStreamCompleteAtTerminal, apiKey, streamState });
+  const captureTransformCompletion = (...args) => {
+    if (args[3]?.aborted) {
+      onStreamComplete?.(...args);
+      return;
+    }
+    pendingCompletion = args;
+  };
+  const deliverNormalCompletion = () => {
+    if (completionDelivered || !pendingCompletion) return;
+    completionDelivered = true;
+    onStreamComplete?.(...pendingCompletion);
+    notifyAntigravitySuccess(...pendingCompletion);
+  };
+  const completionAwareController = {
+    ...streamController,
+    handleComplete: () => {
+      streamController.handleComplete();
+      deliverNormalCompletion();
+    },
+  };
+  const { transformStream, emittedFormat } = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: captureTransformCompletion, apiKey, streamState });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
-  const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
+  const isResponsesPassthrough = emittedFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const wrappedResponse = {
@@ -377,7 +423,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     body: responseBodyStream,
     headers: providerResponse.headers,
   };
-  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, completionAwareController, {
+    onAbortTerminal,
+    stallTimeoutMs,
+    terminalObserver: createSseTerminalObserver(emittedFormat),
+    callerSignal,
+  });
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

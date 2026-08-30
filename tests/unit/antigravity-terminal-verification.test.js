@@ -240,6 +240,13 @@ describe("Antigravity terminal verification success", () => {
   it("defers Antigravity account-health success until terminal stream completion", async () => {
     const notify = terminalSpy();
     const accountHealth = vi.fn();
+    const streamController = {
+      signal: new AbortController().signal,
+      isConnected: () => true,
+      handleComplete: vi.fn(),
+      handleDisconnect: vi.fn(),
+      handleError: vi.fn(),
+    };
     const response = {
       status: 200,
       headers: new Headers({ "content-type": "text/event-stream" }),
@@ -255,14 +262,16 @@ describe("Antigravity terminal verification success", () => {
       userAgent: "test", body: { stream: true }, stream: true, translatedBody: {}, finalBody: {}, requestStartTime: Date.now(),
       connectionId: "conn-terminal", apiKey: "key", clientRawRequest: null, onRequestSuccess: accountHealth,
       onVerificationSuccess: notify, reqLogger: { logTargetRequest: vi.fn(), logError: vi.fn() }, toolNameMap: null, customToolNames: null,
-      streamController: { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() }, onStreamComplete: vi.fn(), streamDetailId: "stream-1", streamState: {},
+      streamController, onStreamComplete: vi.fn(), streamDetailId: "stream-1", streamState: {},
       pxpipe: null, reqTag: "TERM", log: { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() },
     });
     await Promise.resolve();
     expect(accountHealth).not.toHaveBeenCalled();
-    await readAvailableStreamText(result.response);
+    const output = await readAvailableStreamText(result.response);
     await Promise.resolve();
-    expect(accountHealth).toHaveBeenCalledOnce();
+    expect(output).toContain("first");
+    expect(streamController.handleError).toHaveBeenCalledOnce();
+    expect(accountHealth).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
