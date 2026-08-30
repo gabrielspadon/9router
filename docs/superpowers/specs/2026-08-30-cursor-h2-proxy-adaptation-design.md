@@ -46,7 +46,8 @@ explicit unsupported-route failure rather than a silent direct Cursor request.
 ### Non-goals
 
 - Changing generic fetch behavior, proxy-pool schema, routing, fallback, or
-  account status policy outside the new structured route resolver.
+  account status policy outside the narrow proxy-selection provenance needed by
+  the new structured route resolver.
 - Implementing a relay TCP tunnel, HTTP/2-over-relay protocol, proxy rotation,
   or a new proxy package.
 - Sending AgentService thinking, KV blob, debug-field, or protocol-version
@@ -56,14 +57,30 @@ explicit unsupported-route failure rather than a silent direct Cursor request.
 
 ## Effective egress route
 
-One pure resolver in `open-sse/utils/proxyFetch.js` will expose a structured
-route, not only a URL. Its result is one of `direct`, `proxy`, `relay`, or
-`required-unavailable`.
+`resolveConnectionProxyConfig()` will preserve proxy-selection provenance before
+it reads a pool. In particular, it retains the selected pool ID and the last
+known `strictProxy` value from `providerSpecificData` if the pool is missing,
+inactive, malformed, or its lookup throws. Its result distinguishes an
+intentional `__none__` from `missing-selected-pool`, `inactive-selected-pool`,
+and `selection-resolution-error`. It must not convert those error states to
+`strictProxy: false`.
+
+The existing credential handoff already carries `connectionProxyPoolId` and
+`strictProxy`; this adaptation makes the stored strict value authoritative when
+the selected pool cannot be read. An active pool still supplies its current
+strict setting. This lets an intentionally strict connection fail closed during
+database or pool state failure instead of escaping through environment or direct
+egress.
+
+One pure resolver in `open-sse/utils/proxyFetch.js` will consume that provenance
+and expose a structured route, not only a URL. Its result is one of `direct`,
+`proxy`, `relay`, or `required-unavailable`.
 
 | Input precedence | Route | HTTP/2 behavior |
 | --- | --- | --- |
 | Selected `vercelRelayUrl` | `relay` | Reject before a socket is opened. The existing relay sends one HTTP request with relay headers and cannot be assumed to carry arbitrary TLS/H2 bytes. |
 | Selected connection/pool proxy | `proxy` | Honor `connectionNoProxy`, then use the normalized connection URL. |
+| Missing, inactive, malformed, or failed selected pool | `required-unavailable` when strict | Reject before socket construction. Non-strict selection follows existing fallback policy. |
 | Environment proxy | `proxy` | Reuse `HTTPS_PROXY` then `ALL_PROXY`, including existing loopback and `NO_PROXY` rules. |
 | No selected proxy | `direct` | Use normal `http2.connect()`. |
 
@@ -75,10 +92,11 @@ failure may use the existing direct fallback only when no relay was selected.
 An explicit `connectionNoProxy` match is an intentional direct route, not a
 proxy failure.
 
-The route resolver will return a non-secret cache identity. The cache key may
-hash the full normalized proxy URL inside the SHA-256 input to distinguish
-credentials that select different egress, but no raw URL or userinfo may reach
-logs, returned errors, or a map key exposed to callers.
+The resolver's route descriptor carries selection provenance plus a non-secret
+cache identity. The cache key may hash the full normalized proxy URL inside the
+SHA-256 input to distinguish credentials that select different egress, but no
+raw URL or userinfo may reach logs, returned errors, or a map key exposed to
+callers.
 
 ## HTTP/2 tunnel adapter
 
@@ -86,13 +104,15 @@ logs, returned errors, or a map key exposed to callers.
 cleanup.
 
 ```js
-connectHttp2(url, { route, signal }) -> Promise<ClientHttp2Session>
+connectHttp2(url, { route, signal })
+  -> Promise<{ session: ClientHttp2Session, effectiveRoute: Route }>
 ```
 
 The caller owns deadline classification. The adapter accepts its composed
 signal, rejects pre-abort with `signal.reason`, and during any pending stage
 destroys the pending socket or session with that same reason. It must remove
-every listener after settlement.
+every listener after settlement. `effectiveRoute` is the route that established
+the returned session, not the initially requested route.
 
 | Route | Socket sequence |
 | --- | --- |
@@ -111,6 +131,12 @@ are prohibited.
 Once a `TLSSocket` is handed to `http2.connect`, only the HTTP/2 session owns
 normal traffic. Session close or error destroys the tunnel socket as a
 best-effort backstop.
+
+For a non-strict proxy route, proxy failure is resolved inside the adapter by a
+new direct connection and returns `effectiveRoute: direct`. A strict route, a
+relay route, and every `required-unavailable` route fail before that fallback.
+No direct dial, SOCKS dial, HTTP CONNECT, or `http2.connect` is allowed for a
+strict unavailable route.
 
 ## Cursor integration
 
@@ -136,9 +162,9 @@ mask credentials.
 
 ### Live catalog
 
-`resolveCursorModels()` receives `proxyOptions` from both existing model
-routes after they call `resolveConnectionProxyConfig`. The unary catalog path
-resolves the same route once, then passes it to the HTTP/2 adapter.
+`resolveCursorModels()` receives `proxyOptions` from both existing model routes
+after they call `resolveConnectionProxyConfig`. The unary catalog path resolves
+the same route once, then passes it to the HTTP/2 adapter.
 
 The five-minute cache becomes:
 
@@ -146,17 +172,27 @@ The five-minute cache becomes:
 SHA-256("cursor:" + machineId + ":" + accessToken + ":" + routeCacheIdentity)
 ```
 
-`routeCacheIdentity` distinguishes direct, each normalized proxy identity, and
-relay. It is hashed before storage and is never logged. This prevents a direct
-regional catalog from satisfying a proxied international-catalog lookup, or
-vice versa. A catalog error still returns `null` so its established static
-catalog fallback remains intact, but strict routing never creates a direct
-attempt first.
+`routeCacheIdentity` comes only from `effectiveRoute`. It distinguishes direct
+and each normalized proxy identity, and it is hashed before storage and never
+logged. This prevents a direct regional catalog from satisfying a proxied
+international-catalog lookup, or vice versa.
+
+For a direct or strict-proxy route, the effective route is fixed and an
+eligible cache entry may be consulted before transport. Relay and
+required-unavailable routes never read a catalog cache and fail before egress.
+For a non-strict proxy route, the catalog must establish the HTTP/2 session
+first. It then consults or warms only the cache key for the returned
+`effectiveRoute`, closing an unused established session on a cache hit. Thus a
+failed proxy followed by direct fallback never reads or warms the selected
+proxy's cache key. A catalog error still returns `null` so its established
+static catalog fallback remains intact, but strict routing never creates a
+direct attempt first.
 
 Catalog transport gets one injected seam:
 
 ```js
-http2Post(url, headers, body, { signal, route }) -> Promise<{ status, body }>
+http2Post(url, headers, body, { signal, route })
+  -> Promise<{ status, body, effectiveRoute }>
 ```
 
 Production defaults to the adapter-backed implementation. Tests use this seam
@@ -193,24 +229,29 @@ tunnelling.
 1. Add `tests/unit/http2-connect.test.js` with injected/fake net, TLS, SOCKS,
    and HTTP/2 primitives. Cover direct, HTTP CONNECT authentication and 200
    validation, HTTPS-proxy TLS/SNI/verification, SOCKS selection, unsupported
-   schemes, partial CONNECT buffering, non-strict direct fallback, strict
-   fail-closed behavior, caller abort at each pending stage, and exactly-once
-   resource cleanup.
+   schemes, partial CONNECT buffering, non-strict direct fallback with returned
+   `effectiveRoute`, strict fail-closed behavior, caller abort at each pending
+   stage, and exactly-once resource cleanup. The strict unavailable cases must
+   prove zero calls to net, TLS, SOCKS, and HTTP/2 connection primitives.
 2. Extend `tests/unit/cursor-connect-timeout.test.js` for asynchronous
    AgentService setup. Prove the existing header deadline and the exact caller
    abort reason survive direct and proxied setup, both before and after
    response headers, with no timers or listeners left behind.
 3. Replace the catalog test's global-fetch assumption in
    `tests/unit/cursor-models.test.js` with `http2Post`. Prove identical route
-   hits cache, direct and two proxy identities do not share cache, strict
-   unavailable/relay routes cause no direct transport, and catalog fallback is
-   still `null` on failure.
+   hits cache, direct and two proxy identities do not share cache, and a
+   failed non-strict proxy fallback neither reads nor warms its selected proxy
+   cache key. Strict unavailable and relay routes must make zero direct or
+   environment transport calls, while catalog fallback remains `null` on
+   failure.
 4. Extend `tests/unit/cursor-agent-proto.test.js` to decode the nested
    `RequestedModel`, assert field 1 only, and cover Fable-fast normalization
    plus non-Fable preservation.
 5. Add focused route tests, or extract a small pure proxy-options builder, to
    prove both `/api/v1/models` and `/api/providers/[id]/models` pass the
    resolved connection proxy and `strictProxy` to Cursor catalog discovery.
+   Cover missing/inactive selected pools and resolver exceptions that retain
+   strict provenance and produce no egress.
 6. Run those focused suites, the Cursor adjacency suites, lint for changed
    files, the repository regression-baseline verifier, and the normal build.
    Live Cursor/proxy tests remain an explicitly unrun external gate unless
@@ -223,6 +264,7 @@ open-sse/utils/http2Connect.js                         new dedicated adapter
 open-sse/utils/proxyFetch.js                           structured route resolver
 open-sse/executors/cursor.js                           AgentService route, deadline, model field
 open-sse/services/cursorModels.js                      catalog route, cache, injected seam
+src/lib/network/connectionProxy.js                     strict selection provenance
 src/app/api/v1/models/route.js                         resolved Cursor catalog options
 src/app/api/providers/[id]/models/route.js             resolved Cursor catalog options
 tests/unit/http2-connect.test.js                       new transport tests
