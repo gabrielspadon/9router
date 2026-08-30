@@ -1,6 +1,6 @@
 name: Provider request
 description: Ask for a new upstream provider to be supported
-title: "feat(providers): "
+title: "[Provider] "
 labels: ["provider request"]
 body:
   - type: markdown
