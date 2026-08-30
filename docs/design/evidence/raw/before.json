@@ -1,0 +1,7758 @@
+{
+  "mode": "before",
+  "base": "http://127.0.0.1:20135",
+  "routes": {
+    "login|light|desktop": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "login|light|laptop": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "login|light|phone": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "login|dark|desktop": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 11,
+        "unnamed": 4,
+        "sequence": [
+          {
+            "tag": "input",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Copy endpoint URL"
+          },
+          {
+            "tag": "button",
+            "name": "Enable"
+          },
+          {
+            "tag": "button",
+            "name": "Enable"
+          },
+          {
+            "tag": "button",
+            "name": "Create Key"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Show key"
+          },
+          {
+            "tag": "button",
+            "name": "Copy API key"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Delete API key"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "login|dark|laptop": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "login|dark|phone": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "login|dark|zoom200": {
+      "path": "/login",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "landing|light|desktop": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 21,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 21,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "span",
+          "bg": "rgb(229, 106, 74)",
+          "w": 8,
+          "h": 8,
+          "cls": "flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"
+        }
+      ]
+    },
+    "landing|light|laptop": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 21,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 21,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "span",
+          "bg": "rgb(229, 106, 74)",
+          "w": 8,
+          "h": 8,
+          "cls": "flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"
+        }
+      ]
+    },
+    "landing|light|phone": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 17,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 17,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "span",
+          "bg": "rgb(229, 106, 74)",
+          "w": 8,
+          "h": 8,
+          "cls": "flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"
+        }
+      ]
+    },
+    "landing|dark|desktop": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 21,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 21,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "span",
+          "bg": "rgb(229, 106, 74)",
+          "w": 8,
+          "h": 8,
+          "cls": "flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"
+        }
+      ],
+      "tabOrder": {
+        "steps": 1,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "landing|dark|laptop": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 21,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 21,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "span",
+          "bg": "rgb(229, 106, 74)",
+          "w": 8,
+          "h": 8,
+          "cls": "flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"
+        }
+      ]
+    },
+    "landing|dark|phone": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 17,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 17,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "span",
+          "bg": "rgb(229, 106, 74)",
+          "w": 8,
+          "h": 8,
+          "cls": "flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"
+        }
+      ]
+    },
+    "landing|dark|zoom200": {
+      "path": "/landing",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "dashboard-home|light|desktop": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "dashboard-home|light|laptop": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "dashboard-home|light|phone": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "dashboard-home|dark|desktop": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 11,
+        "unnamed": 4,
+        "sequence": [
+          {
+            "tag": "input",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Copy endpoint URL"
+          },
+          {
+            "tag": "button",
+            "name": "Enable"
+          },
+          {
+            "tag": "button",
+            "name": "Enable"
+          },
+          {
+            "tag": "button",
+            "name": "Create Key"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Show key"
+          },
+          {
+            "tag": "button",
+            "name": "Copy API key"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Delete API key"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "dashboard-home|dark|laptop": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "dashboard-home|dark|phone": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "dashboard-home|dark|zoom200": {
+      "path": "/dashboard",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "providers|light|desktop": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 93,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers|light|laptop": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 93,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers|light|phone": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 94,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers|dark|desktop": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 93,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 40,
+        "unnamed": 5,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Hide disabled"
+          },
+          {
+            "tag": "button",
+            "name": "Hide unconfigured"
+          },
+          {
+            "tag": "button",
+            "name": "New Models"
+          },
+          {
+            "tag": "button",
+            "name": "Add Multi-protocol"
+          },
+          {
+            "tag": "button",
+            "name": "Add Anthropic Compatible"
+          },
+          {
+            "tag": "button",
+            "name": "Add OpenAI Compatible"
+          },
+          {
+            "tag": "button",
+            "name": "Test all OAuth connections"
+          },
+          {
+            "tag": "a",
+            "name": "Claude Code3 Connected"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "Antigravity2 Connected"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "OpenAI Codex1 Connected"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "QoderNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "GitHub CopilotNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Cursor IDENo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Kilo CodeNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "ClineNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "ClinePassNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "CodeBuddyNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "CodeBuddy CNNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "KimchiNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "KimiNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Grok CLI (Grok Build)No connections"
+          },
+          {
+            "tag": "a",
+            "name": "xAI (Grok)No connections"
+          },
+          {
+            "tag": "a",
+            "name": "DevinNo connections"
+          },
+          {
+            "tag": "button",
+            "name": "Fetch now"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Test all Free provider connections"
+          },
+          {
+            "tag": "a",
+            "name": "OpenCode FreeReady"
+          },
+          {
+            "tag": "a",
+            "name": "Gemini CLINo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Kiro AINo connections"
+          },
+          {
+            "tag": "a",
+            "name": "OpenRouterNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "NVIDIA NIMNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Ollama CloudNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Vertex AINo connections"
+          },
+          {
+            "tag": "a",
+            "name": "GeminiNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "CloudflareNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "PoolsideNo connections"
+          }
+        ]
+      }
+    },
+    "providers|dark|laptop": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 93,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers|dark|phone": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 94,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers|dark|zoom200": {
+      "path": "/dashboard/providers",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "providers-new|light|desktop": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers-new|light|laptop": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers-new|light|phone": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 37,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers-new|dark|desktop": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 12,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "a",
+            "name": "Back to Providers"
+          },
+          {
+            "tag": "select",
+            "name": "Provider"
+          },
+          {
+            "tag": "button",
+            "name": "OAuth"
+          },
+          {
+            "tag": "button",
+            "name": "API key"
+          },
+          {
+            "tag": "button",
+            "name": "Cookie"
+          },
+          {
+            "tag": "input",
+            "name": "API Key"
+          },
+          {
+            "tag": "input",
+            "name": "Display Name"
+          },
+          {
+            "tag": "button",
+            "name": "Active"
+          },
+          {
+            "tag": "a",
+            "name": "Cancel"
+          },
+          {
+            "tag": "button",
+            "name": "Cancel"
+          },
+          {
+            "tag": "button",
+            "name": "Create Provider"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "providers-new|dark|laptop": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers-new|dark|phone": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 37,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "providers-new|dark|zoom200": {
+      "path": "/dashboard/providers/new",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "statistics|light|desktop": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [
+        {
+          "ratio": 3.68,
+          "need": 4.5,
+          "fg": "rgb(59, 130, 246)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Cache Read"
+        },
+        {
+          "ratio": 3.96,
+          "need": 4.5,
+          "fg": "rgb(168, 85, 247)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Cache Write"
+        },
+        {
+          "ratio": 4.47,
+          "need": 4.5,
+          "fg": "rgb(99, 102, 241)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Input"
+        },
+        {
+          "ratio": 2.54,
+          "need": 4.5,
+          "fg": "rgb(16, 185, 129)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Output"
+        }
+      ],
+      "names": {
+        "total": 38,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "statistics|light|laptop": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [
+        {
+          "ratio": 3.68,
+          "need": 4.5,
+          "fg": "rgb(59, 130, 246)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Cache Read"
+        },
+        {
+          "ratio": 3.96,
+          "need": 4.5,
+          "fg": "rgb(168, 85, 247)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Cache Write"
+        },
+        {
+          "ratio": 4.47,
+          "need": 4.5,
+          "fg": "rgb(99, 102, 241)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Input"
+        },
+        {
+          "ratio": 2.54,
+          "need": 4.5,
+          "fg": "rgb(16, 185, 129)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Output"
+        }
+      ],
+      "names": {
+        "total": 38,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "statistics|light|phone": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [
+        {
+          "ratio": 3.68,
+          "need": 4.5,
+          "fg": "rgb(59, 130, 246)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Cache Read"
+        },
+        {
+          "ratio": 3.96,
+          "need": 4.5,
+          "fg": "rgb(168, 85, 247)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Cache Write"
+        },
+        {
+          "ratio": 4.47,
+          "need": 4.5,
+          "fg": "rgb(99, 102, 241)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Input"
+        },
+        {
+          "ratio": 2.54,
+          "need": 4.5,
+          "fg": "rgb(16, 185, 129)",
+          "bg": "rgb(255, 255, 255)",
+          "fontSize": "12px",
+          "sample": "Output"
+        }
+      ],
+      "names": {
+        "total": 39,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "statistics|dark|desktop": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [
+        {
+          "ratio": 4.11,
+          "need": 4.5,
+          "fg": "rgb(59, 130, 246)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Cache Read"
+        },
+        {
+          "ratio": 3.82,
+          "need": 4.5,
+          "fg": "rgb(168, 85, 247)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Cache Write"
+        },
+        {
+          "ratio": 3.39,
+          "need": 4.5,
+          "fg": "rgb(99, 102, 241)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Input"
+        },
+        {
+          "ratio": 3.18,
+          "need": 4.5,
+          "fg": "rgb(100, 116, 139)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Total"
+        }
+      ],
+      "names": {
+        "total": 38,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 15,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "All providers"
+          },
+          {
+            "tag": "button",
+            "name": "All accounts"
+          },
+          {
+            "tag": "button",
+            "name": "All models"
+          },
+          {
+            "tag": "button",
+            "name": "Today"
+          },
+          {
+            "tag": "button",
+            "name": "24h"
+          },
+          {
+            "tag": "button",
+            "name": "7D"
+          },
+          {
+            "tag": "button",
+            "name": "30D"
+          },
+          {
+            "tag": "button",
+            "name": "All"
+          },
+          {
+            "tag": "button",
+            "name": "Custom"
+          },
+          {
+            "tag": "button",
+            "name": "Tokens"
+          },
+          {
+            "tag": "button",
+            "name": "Hit Rate"
+          },
+          {
+            "tag": "svg",
+            "name": "08/30, 13:15:0008/30, 13:18:0008/30, 13:21:0008/30"
+          },
+          {
+            "tag": "div",
+            "name": "TimeProviderAccountModelInputOutputCache ReadCache"
+          },
+          {
+            "tag": "select",
+            "name": "102050"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "statistics|dark|laptop": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [
+        {
+          "ratio": 4.11,
+          "need": 4.5,
+          "fg": "rgb(59, 130, 246)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Cache Read"
+        },
+        {
+          "ratio": 3.82,
+          "need": 4.5,
+          "fg": "rgb(168, 85, 247)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Cache Write"
+        },
+        {
+          "ratio": 3.39,
+          "need": 4.5,
+          "fg": "rgb(99, 102, 241)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Input"
+        },
+        {
+          "ratio": 3.18,
+          "need": 4.5,
+          "fg": "rgb(100, 116, 139)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Total"
+        }
+      ],
+      "names": {
+        "total": 38,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "statistics|dark|phone": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [
+        {
+          "ratio": 4.11,
+          "need": 4.5,
+          "fg": "rgb(59, 130, 246)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Cache Read"
+        },
+        {
+          "ratio": 3.82,
+          "need": 4.5,
+          "fg": "rgb(168, 85, 247)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Cache Write"
+        },
+        {
+          "ratio": 3.39,
+          "need": 4.5,
+          "fg": "rgb(99, 102, 241)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Input"
+        },
+        {
+          "ratio": 3.18,
+          "need": 4.5,
+          "fg": "rgb(100, 116, 139)",
+          "bg": "rgb(38, 38, 38)",
+          "fontSize": "12px",
+          "sample": "Total"
+        }
+      ],
+      "names": {
+        "total": 39,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "statistics|dark|zoom200": {
+      "path": "/dashboard/statistics",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "usage|light|desktop": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 51,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "usage|light|laptop": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 51,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "usage|light|phone": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 52,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "usage|dark|desktop": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 51,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 27,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "Overview"
+          },
+          {
+            "tag": "button",
+            "name": "Details"
+          },
+          {
+            "tag": "button",
+            "name": "Today"
+          },
+          {
+            "tag": "button",
+            "name": "24h"
+          },
+          {
+            "tag": "button",
+            "name": "7D"
+          },
+          {
+            "tag": "button",
+            "name": "30D"
+          },
+          {
+            "tag": "button",
+            "name": "60D"
+          },
+          {
+            "tag": "g",
+            "name": "Edge from router to provider-claude"
+          },
+          {
+            "tag": "g",
+            "name": "Edge from router to provider-antigravity"
+          },
+          {
+            "tag": "g",
+            "name": "Edge from router to provider-codex"
+          },
+          {
+            "tag": "g",
+            "name": "Edge from router to provider-mimo-free"
+          },
+          {
+            "tag": "g",
+            "name": "Edge from router to provider-opencode"
+          },
+          {
+            "tag": "div",
+            "name": "9Router"
+          },
+          {
+            "tag": "div",
+            "name": "Claude Code"
+          },
+          {
+            "tag": "div",
+            "name": "Antigravity"
+          },
+          {
+            "tag": "div",
+            "name": "OpenAI Codex"
+          },
+          {
+            "tag": "div",
+            "name": "MiMo Code Free"
+          },
+          {
+            "tag": "div",
+            "name": "OpenCode Free"
+          },
+          {
+            "tag": "button",
+            "name": "Zoom In"
+          },
+          {
+            "tag": "button",
+            "name": "Zoom Out"
+          },
+          {
+            "tag": "button",
+            "name": "Fit View"
+          },
+          {
+            "tag": "button",
+            "name": "Tokens"
+          },
+          {
+            "tag": "button",
+            "name": "Cost"
+          },
+          {
+            "tag": "select",
+            "name": "Usage by ModelUsage by AccountUsage by API KeyUsag"
+          },
+          {
+            "tag": "button",
+            "name": "Costs"
+          },
+          {
+            "tag": "button",
+            "name": "Tokens"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "usage|dark|laptop": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 51,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "usage|dark|phone": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 52,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "usage|dark|zoom200": {
+      "path": "/dashboard/usage",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "quota|light|desktop": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 92,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "quota|light|laptop": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 92,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "quota|light|phone": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 93,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "quota|dark|desktop": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 92,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 40,
+        "unnamed": 3,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "All providers"
+          },
+          {
+            "tag": "select",
+            "name": "Filter accounts by status"
+          },
+          {
+            "tag": "button",
+            "name": "Expiring first"
+          },
+          {
+            "tag": "button",
+            "name": "Turn off Empty"
+          },
+          {
+            "tag": "button",
+            "name": "Turn on Available"
+          },
+          {
+            "tag": "button",
+            "name": "Auto-refresh(59s)"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Refresh quota"
+          },
+          {
+            "tag": "button",
+            "name": "Hot reload quota countdown"
+          },
+          {
+            "tag": "button",
+            "name": "Edit connection"
+          },
+          {
+            "tag": "button",
+            "name": "Delete connection"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Refresh quota"
+          },
+          {
+            "tag": "button",
+            "name": "Hot reload quota countdown"
+          },
+          {
+            "tag": "button",
+            "name": "Edit connection"
+          },
+          {
+            "tag": "button",
+            "name": "Delete connection"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.7 Flash (High)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.7 Flash (Medium)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.7 Flash (Low)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.6 Flash (High)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.6 Flash (Medium)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.6 Flash (Low)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.5 Flash (Medium)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.5 Flash (Low)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.1 Pro (High)"
+          },
+          {
+            "tag": "button",
+            "name": "Hide quota Gemini 3.1 Pro (Low)"
+          },
+          {
+            "tag": "button",
+            "name": "Next"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.6-flash-high"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gpt-oss-120b-medium"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.7-flash-low"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for claude-sonnet-4-6"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.1-pro-low"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.7-flash-high"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for claude-opus-4-6-thinking"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-pro-agent"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.6-flash-medium"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.7-flash-medium"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.5-flash-low"
+          },
+          {
+            "tag": "input",
+            "name": "Pause buffer for gemini-3.6-flash-low"
+          }
+        ]
+      }
+    },
+    "quota|dark|laptop": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 92,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "quota|dark|phone": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 93,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "quota|dark|zoom200": {
+      "path": "/dashboard/quota",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "endpoint|light|desktop": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "endpoint|light|laptop": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "endpoint|light|phone": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "endpoint|dark|desktop": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 11,
+        "unnamed": 4,
+        "sequence": [
+          {
+            "tag": "input",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Copy endpoint URL"
+          },
+          {
+            "tag": "button",
+            "name": "Enable"
+          },
+          {
+            "tag": "button",
+            "name": "Enable"
+          },
+          {
+            "tag": "button",
+            "name": "Create Key"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Show key"
+          },
+          {
+            "tag": "button",
+            "name": "Copy API key"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Delete API key"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "endpoint|dark|laptop": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "endpoint|dark|phone": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "endpoint|dark|zoom200": {
+      "path": "/dashboard/endpoint",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "combos|light|desktop": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "combos|light|laptop": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "combos|light|phone": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "combos|dark|desktop": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 11,
+        "unnamed": 5,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "Export"
+          },
+          {
+            "tag": "button",
+            "name": "Import"
+          },
+          {
+            "tag": "button",
+            "name": "Create Combo"
+          },
+          {
+            "tag": "button",
+            "name": "Create Combo"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Add Model"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Add Model"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "combos|dark|laptop": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 35,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "combos|dark|phone": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 36,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "combos|dark|zoom200": {
+      "path": "/dashboard/combos",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "cli-tools|light|desktop": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "cli-tools|light|laptop": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "cli-tools|light|phone": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 50,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "cli-tools|dark|desktop": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 25,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "a",
+            "name": "Claude CodeNot configured"
+          },
+          {
+            "tag": "a",
+            "name": "Open ClawNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "OpenAI Codex CLI / AppNot configured"
+          },
+          {
+            "tag": "a",
+            "name": "OpenCodeNot configured"
+          },
+          {
+            "tag": "a",
+            "name": "OpenClaudeUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "Oh My PiUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "Claude CoworkNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "Hermes AgentNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "Factory DroidNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "CursorUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "ClineNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "Kilo CodeNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "RooUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "ContinueUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "Amp CLIUnsupported"
+          },
+          {
+            "tag": "a",
+            "name": "Qwen CodeUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "DeepSeek TUINot installed"
+          },
+          {
+            "tag": "a",
+            "name": "jcodeNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "Grok BuildNot installed"
+          },
+          {
+            "tag": "a",
+            "name": "Devin CLINot installed"
+          },
+          {
+            "tag": "a",
+            "name": "OpenDesignUnknown"
+          },
+          {
+            "tag": "a",
+            "name": "AntigravityMITMGoogle Antigravity IDE with MITM"
+          },
+          {
+            "tag": "a",
+            "name": "GitHub CopilotMITMGitHub Copilot IDE with MITM"
+          },
+          {
+            "tag": "a",
+            "name": "KiroMITMKiro IDE with MITM"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "cli-tools|dark|laptop": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "cli-tools|dark|phone": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 50,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "cli-tools|dark|zoom200": {
+      "path": "/dashboard/cli-tools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "claude-compat|light|desktop": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 44,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "claude-compat|light|laptop": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 44,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "claude-compat|light|phone": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 45,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "claude-compat|dark|desktop": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 44,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 20,
+        "unnamed": 2,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "select",
+            "name": "Off — never addAuto — context ≥ 1MKeywords match"
+          },
+          {
+            "tag": "button",
+            "name": "Fetch models"
+          },
+          {
+            "tag": "button",
+            "name": "Write settings"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "Declare 1M context ([1M] suffix)"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "Declare 1M context ([1M] suffix)"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "Declare 1M context ([1M] suffix)"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "Declare 1M context ([1M] suffix)"
+          },
+          {
+            "tag": "input",
+            "name": "e.g. glm/glm-5.3"
+          },
+          {
+            "tag": "input",
+            "name": "Declare 1M context ([1M] suffix)"
+          },
+          {
+            "tag": "textarea",
+            "name": "{}"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "claude-compat|dark|laptop": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 44,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "claude-compat|dark|phone": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 45,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "claude-compat|dark|zoom200": {
+      "path": "/dashboard/claude-compat",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "basic-chat|light|desktop": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 30,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "basic-chat|light|laptop": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 30,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "basic-chat|light|phone": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 31,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "basic-chat|dark|desktop": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 30,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 6,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "Claude Opus 4.6 (Thinking)antigravity/claude-opus-"
+          },
+          {
+            "tag": "button",
+            "name": "History"
+          },
+          {
+            "tag": "button",
+            "name": "Clear"
+          },
+          {
+            "tag": "textarea",
+            "name": "Message"
+          },
+          {
+            "tag": "button",
+            "name": "Attach image"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "basic-chat|dark|laptop": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 30,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "basic-chat|dark|phone": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 31,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "basic-chat|dark|zoom200": {
+      "path": "/dashboard/basic-chat",
+      "navError": null,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "console-log|light|desktop": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 27,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "console-log|light|laptop": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 27,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "console-log|light|phone": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 28,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "console-log|dark|desktop": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 27,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 3,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "Clear"
+          },
+          {
+            "tag": "div",
+            "name": "Console output"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "console-log|dark|laptop": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 27,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "console-log|dark|phone": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 28,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "console-log|dark|zoom200": {
+      "path": "/dashboard/console-log",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "media-providers|light|desktop": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "media-providers|light|laptop": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "media-providers|light|phone": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 50,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "media-providers|dark|desktop": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 25,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "Create Combo"
+          },
+          {
+            "tag": "a",
+            "name": "OpenAINo connections"
+          },
+          {
+            "tag": "a",
+            "name": "GeminiNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Minimax CodingNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Vercel AI GatewayNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "KimiNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "PerplexityNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Perplexity AgentNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "xAI (Grok)No connections"
+          },
+          {
+            "tag": "a",
+            "name": "SearXNGReady"
+          },
+          {
+            "tag": "a",
+            "name": "Brave SearchNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "ExaNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Google PSENo connections"
+          },
+          {
+            "tag": "a",
+            "name": "LinkupNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "SearchAPINo connections"
+          },
+          {
+            "tag": "a",
+            "name": "SerperNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "TavilyNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "You.com SearchNo connections"
+          },
+          {
+            "tag": "button",
+            "name": "Create Combo"
+          },
+          {
+            "tag": "a",
+            "name": "ExaNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "FirecrawlNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Jina ReaderNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "TavilyNo connections"
+          },
+          {
+            "tag": "a",
+            "name": "Firecrawl (Custom/Local)Ready"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "media-providers|dark|laptop": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 49,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "media-providers|dark|phone": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 50,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "media-providers|dark|zoom200": {
+      "path": "/dashboard/media-providers/web",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "memory|light|desktop": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "memory|light|laptop": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "memory|light|phone": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 33,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "memory|dark|desktop": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 8,
+        "unnamed": 7,
+        "sequence": [
+          {
+            "tag": "a",
+            "name": "ai-memory"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "input",
+            "name": ""
+          },
+          {
+            "tag": "input",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "memory|dark|laptop": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "memory|dark|phone": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 33,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "memory|dark|zoom200": {
+      "path": "/dashboard/memory",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "mitm|light|desktop": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 28,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "mitm|light|laptop": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 28,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "mitm|light|phone": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 29,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "mitm|dark|desktop": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 28,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 4,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "input",
+            "name": "http://localhost:20128"
+          },
+          {
+            "tag": "input",
+            "name": "sk_9router (default)"
+          },
+          {
+            "tag": "button",
+            "name": "Start Server"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "mitm|dark|laptop": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 28,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "mitm|dark|phone": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 29,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "mitm|dark|zoom200": {
+      "path": "/dashboard/mitm",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "model-context|light|desktop": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 84,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "model-context|light|laptop": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 84,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "model-context|light|phone": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 85,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "model-context|dark|desktop": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 84,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 40,
+        "unnamed": 0,
+        "sequence": [
+          {
+            "tag": "input",
+            "name": "搜索模型 / 供应商…"
+          },
+          {
+            "tag": "button",
+            "name": "All providers"
+          },
+          {
+            "tag": "button",
+            "name": "状态"
+          },
+          {
+            "tag": "button",
+            "name": "启用"
+          },
+          {
+            "tag": "button",
+            "name": "未启用"
+          },
+          {
+            "tag": "button",
+            "name": "覆盖"
+          },
+          {
+            "tag": "button",
+            "name": "已覆盖"
+          },
+          {
+            "tag": "button",
+            "name": "未覆盖"
+          },
+          {
+            "tag": "button",
+            "name": "连接"
+          },
+          {
+            "tag": "button",
+            "name": "有"
+          },
+          {
+            "tag": "button",
+            "name": "无"
+          },
+          {
+            "tag": "input",
+            "name": "窗口 ≥"
+          },
+          {
+            "tag": "input",
+            "name": "≤"
+          },
+          {
+            "tag": "button",
+            "name": "覆盖键 (0)"
+          },
+          {
+            "tag": "button",
+            "name": "已隐藏 (0)"
+          },
+          {
+            "tag": "button",
+            "name": "新增"
+          },
+          {
+            "tag": "input",
+            "name": "全选本页"
+          },
+          {
+            "tag": "button",
+            "name": "供应商"
+          },
+          {
+            "tag": "button",
+            "name": "模型"
+          },
+          {
+            "tag": "button",
+            "name": "生效窗口"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.5-flash-high"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          },
+          {
+            "tag": "button",
+            "name": "隐藏此行"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.6-flash-high"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          },
+          {
+            "tag": "button",
+            "name": "隐藏此行"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.6-flash-low"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          },
+          {
+            "tag": "button",
+            "name": "隐藏此行"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.6-flash-medium"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          },
+          {
+            "tag": "button",
+            "name": "隐藏此行"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.7-flash-high"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          },
+          {
+            "tag": "button",
+            "name": "隐藏此行"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.7-flash-low"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          },
+          {
+            "tag": "button",
+            "name": "隐藏此行"
+          },
+          {
+            "tag": "input",
+            "name": "选择 ag/gemini-3.7-flash-medium"
+          },
+          {
+            "tag": "button",
+            "name": "编辑生效窗口"
+          }
+        ]
+      }
+    },
+    "model-context|dark|laptop": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 84,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "model-context|dark|phone": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 85,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "model-context|dark|zoom200": {
+      "path": "/dashboard/model-context",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "profile|light|desktop": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 57,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "profile|light|laptop": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 57,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "profile|light|phone": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 58,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "profile|dark|desktop": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 57,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 33,
+        "unnamed": 8,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "light"
+          },
+          {
+            "tag": "button",
+            "name": "dark"
+          },
+          {
+            "tag": "button",
+            "name": "system"
+          },
+          {
+            "tag": "button",
+            "name": "Download Backup"
+          },
+          {
+            "tag": "button",
+            "name": "Import Backup"
+          },
+          {
+            "tag": "button",
+            "name": "Display language🇺🇸"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "input",
+            "name": "Enter current password"
+          },
+          {
+            "tag": "input",
+            "name": "Enter new password"
+          },
+          {
+            "tag": "input",
+            "name": "Confirm new password"
+          },
+          {
+            "tag": "button",
+            "name": "Update Password"
+          },
+          {
+            "tag": "button",
+            "name": "Single Sign-On (SSO)Optional SSO via Okta, Entra I"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "input",
+            "name": "Response header timeout (ms)"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Combo & Vision Adapter"
+          },
+          {
+            "tag": "button",
+            "name": "Usage"
+          },
+          {
+            "tag": "button",
+            "name": "Quota Tracker"
+          },
+          {
+            "tag": "button",
+            "name": "Token Saver"
+          },
+          {
+            "tag": "button",
+            "name": "CLI Tools"
+          },
+          {
+            "tag": "button",
+            "name": "Media Providers"
+          },
+          {
+            "tag": "button",
+            "name": "Proxy Pools"
+          },
+          {
+            "tag": "button",
+            "name": "Skills"
+          },
+          {
+            "tag": "button",
+            "name": "9Remote"
+          },
+          {
+            "tag": "button",
+            "name": "9English"
+          },
+          {
+            "tag": "button",
+            "name": "Hide All"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": "Shutdown"
+          },
+          {
+            "tag": "button",
+            "name": "Logout"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "profile|dark|laptop": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 57,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "profile|dark|phone": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 58,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "profile|dark|zoom200": {
+      "path": "/dashboard/profile",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "proxy-pools|light|desktop": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 29,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "proxy-pools|light|laptop": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 29,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "proxy-pools|light|phone": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 30,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "proxy-pools|dark|desktop": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 29,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 5,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "Deploy Relay"
+          },
+          {
+            "tag": "button",
+            "name": "Batch Import"
+          },
+          {
+            "tag": "button",
+            "name": "Add Proxy Pool"
+          },
+          {
+            "tag": "button",
+            "name": "Add Proxy Pool"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "proxy-pools|dark|laptop": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 29,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "proxy-pools|dark|phone": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 30,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "proxy-pools|dark|zoom200": {
+      "path": "/dashboard/proxy-pools",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "pxpipe|light|desktop": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "pxpipe|light|laptop": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "pxpipe|light|phone": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 33,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "pxpipe|dark|desktop": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 8,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "a",
+            "name": "Token Saver settings"
+          },
+          {
+            "tag": "button",
+            "name": "Refresh"
+          },
+          {
+            "tag": "button",
+            "name": "Today"
+          },
+          {
+            "tag": "button",
+            "name": "Yesterday"
+          },
+          {
+            "tag": "button",
+            "name": "7 days"
+          },
+          {
+            "tag": "button",
+            "name": "30 days"
+          },
+          {
+            "tag": "button",
+            "name": "All time"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "pxpipe|dark|laptop": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 32,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "pxpipe|dark|phone": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 33,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "pxpipe|dark|zoom200": {
+      "path": "/dashboard/pxpipe",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "skills|light|desktop": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 42,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "skills|light|laptop": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 42,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "skills|light|phone": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 43,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "skills|dark|desktop": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 42,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 18,
+        "unnamed": 1,
+        "sequence": [
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "https://raw.githubusercontent.com/decolua/9router/"
+          },
+          {
+            "tag": "button",
+            "name": "Copy link"
+          },
+          {
+            "tag": "a",
+            "name": "View on GitHub"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "skills|dark|laptop": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 42,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "skills|dark|phone": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 43,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "skills|dark|zoom200": {
+      "path": "/dashboard/skills",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "token-saver|light|desktop": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 39,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "token-saver|light|laptop": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 39,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "token-saver|light|phone": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 40,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "token-saver|dark|desktop": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 39,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 15,
+        "unnamed": 7,
+        "sequence": [
+          {
+            "tag": "a",
+            "name": "(RTK)"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "(Headroom)"
+          },
+          {
+            "tag": "button",
+            "name": "Setup"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "(Caveman)"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "(Ponytail)"
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "button",
+            "name": ""
+          },
+          {
+            "tag": "a",
+            "name": "(PXPIPE)"
+          },
+          {
+            "tag": "button",
+            "name": "Setup"
+          },
+          {
+            "tag": "a",
+            "name": "Dashboard"
+          },
+          {
+            "tag": "(escaped to body)",
+            "name": ""
+          }
+        ]
+      }
+    },
+    "token-saver|dark|laptop": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 39,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "token-saver|dark|phone": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 40,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "token-saver|dark|zoom200": {
+      "path": "/dashboard/token-saver",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    },
+    "translator|light|desktop": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 46,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "translator|light|laptop": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 46,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "translator|light|phone": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 47,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "translator|dark|desktop": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 46,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ],
+      "tabOrder": {
+        "steps": 40,
+        "unnamed": 0,
+        "sequence": [
+          {
+            "tag": "button",
+            "name": "1Client Request1_req_client.json"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          },
+          {
+            "tag": "div",
+            "name": "Editor content"
+          }
+        ]
+      }
+    },
+    "translator|dark|laptop": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 46,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "translator|dark|phone": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "contrast": [],
+      "names": {
+        "total": 47,
+        "unnamed": []
+      },
+      "focus": {
+        "checked": 25,
+        "bad": []
+      },
+      "hueOnly": [
+        {
+          "tag": "div",
+          "bg": "rgb(255, 95, 86)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FF5F56]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(255, 189, 46)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#FFBD2E]"
+        },
+        {
+          "tag": "div",
+          "bg": "rgb(39, 201, 63)",
+          "w": 12,
+          "h": 12,
+          "cls": "w-3 h-3 rounded-full bg-[#27C93F]"
+        }
+      ]
+    },
+    "translator|dark|zoom200": {
+      "path": "/dashboard/translator",
+      "navError": null,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "reflow": {
+        "overflow": 0,
+        "viewport": 640,
+        "offenders": []
+      }
+    }
+  }
+}

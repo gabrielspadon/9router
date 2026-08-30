@@ -5,6 +5,11 @@
 // disclosure. It is "no capability became unreachable, and nothing sits more
 // than one action deep".
 //
+// A capability may still leave the product, but only on the record:
+// docs/design/evidence/capability-dispositions.json names every control that is
+// gone or relabelled and the commit that did it. Anything absent and not listed
+// there is a loss and fails the gate.
+//
 //   node docs/design/verification/check-inventory.mjs --before   before is usable
 //   node docs/design/verification/check-inventory.mjs            before and after reconcile
 import { readFileSync, existsSync } from "node:fs";
@@ -57,7 +62,33 @@ for (const [id, r] of Object.entries(after.routes))
   for (const c of r.controls || [])
     if (c.name && !afterByName.has(c.name)) afterByName.set(c.name, { route: id, depth: c.depth });
 
+// Dispositions: a control that is gone or relabelled on the record is accounted
+// for rather than lost. A relabelled entry still has to be present under its new
+// name, so a rename cannot be used to hide a removal.
+const DISP = "docs/design/evidence/capability-dispositions.json";
+const disp = existsSync(DISP)
+  ? JSON.parse(readFileSync(DISP, "utf8"))
+  : { removed: [], relabelled: [], relabelledPrefix: [], volatile: [] };
+const removedNames = new Set((disp.removed || []).map((d) => d.name));
+const renamed = new Map((disp.relabelled || []).map((d) => [d.was, d.now]));
+const renamedPrefix = (disp.relabelledPrefix || []).map((d) => [d.was, d.now]);
+const volatileRoles = new Set((disp.volatile || []).map((d) => `${d.route}|${d.role}`));
+
+function accountedFor(id, c) {
+  if (c.name && removedNames.has(c.name)) return "removed";
+  if (volatileRoles.has(`${id}|${c.role}`)) return "volatile";
+  if (!c.name) return null;
+  let now = renamed.get(c.name);
+  if (!now) {
+    const pre = renamedPrefix.find(([was]) => c.name.startsWith(was));
+    if (pre) now = pre[1] + c.name.slice(pre[0].length);
+  }
+  // The replacement has to actually be there, or the rename is hiding a removal.
+  return now && afterByName.has(now) ? "relabelled" : null;
+}
+
 const lost = [], moved = [], tooDeep = [];
+const onRecord = { removed: 0, relabelled: 0, volatile: 0 };
 for (const [id, r] of Object.entries(before.routes)) {
   for (const c of r.controls || []) {
     const hit = afterAll.get(c.key);
@@ -68,11 +99,14 @@ for (const [id, r] of Object.entries(before.routes)) {
     }
     const byName = c.name && afterByName.get(c.name);
     if (byName) { moved.push(`${c.name} (role/destination changed): ${id} -> ${byName.route}`); continue; }
+    const why = accountedFor(id, c);
+    if (why) { onRecord[why]++; continue; }
     lost.push(`${id}: ${c.key}`);
   }
 }
 
 console.log(`relocated: ${moved.length}`);
+console.log(`accounted for: ${onRecord.removed} removed on the record, ${onRecord.relabelled} relabelled, ${onRecord.volatile} with a volatile key`);
 console.log(`deeper than one action: ${tooDeep.length}`);
 console.log(`unreachable: ${lost.length}`);
 tooDeep.slice(0, 20).forEach((t) => console.log("  DEEP " + t.slice(0, 150)));

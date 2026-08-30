@@ -1,0 +1,36 @@
+{
+  "note": "Controls present in the before capture and absent from the after capture, with what happened to each. check-inventory.mjs reads this file: a control accounted for here is not a loss, and anything not listed is. The list is the only way a capability may legitimately leave the product, so it is short and every entry names the commit that did it.",
+  "removed": [
+    { "name": "9Remote", "by": "df7693d44", "why": "A rail button and promo modal advertising a separate product. Removed with NineRemoteButton, NineRemotePromoModal and their nav entries; nothing in this product depended on it." },
+    { "name": "9English", "by": "df7693d44", "why": "An outbound link to a separate product, rendered twice per page as a rail button and a header link. Removed with the same change." },
+    { "name": "Donate", "by": "df7693d44", "why": "The donation ask: a header button and DonateModal, plus the donateUrl endpoint constant only that modal read." }
+  ],
+  "relabelled": [
+    { "was": "供应商", "now": "Provider", "route": "model-context", "by": "df7693d44" },
+    { "was": "启用", "now": "Active", "route": "model-context", "by": "df7693d44" },
+    { "was": "未启用", "now": "Inactive", "route": "model-context", "by": "df7693d44" },
+    { "was": "已覆盖", "now": "Covered", "route": "model-context", "by": "df7693d44" },
+    { "was": "未覆盖", "now": "Uncovered", "route": "model-context", "by": "df7693d44" },
+    { "was": "已隐藏 (0)", "now": "Hidden (0)", "route": "model-context", "by": "df7693d44" },
+    { "was": "新增", "now": "Add", "route": "model-context", "by": "df7693d44" },
+    { "was": "无", "now": "No", "route": "model-context", "by": "df7693d44" },
+    { "was": "有", "now": "Yes", "route": "model-context", "by": "df7693d44" },
+    { "was": "模型", "now": "Model", "route": "model-context", "by": "df7693d44" },
+    { "was": "状态", "now": "Status", "route": "model-context", "by": "df7693d44" },
+    { "was": "生效窗口", "now": "Effective window", "route": "model-context", "by": "df7693d44" },
+    { "was": "编辑生效窗口", "now": "Edit effective window", "route": "model-context", "by": "df7693d44" },
+    { "was": "覆盖", "now": "Override", "route": "model-context", "by": "df7693d44" },
+    { "was": "覆盖键 (0)", "now": "Override keys (0)", "route": "model-context", "by": "df7693d44" },
+    { "was": "连接", "now": "Connection", "route": "model-context", "by": "df7693d44" },
+    { "was": "隐藏此行", "now": "Hide this row", "route": "model-context", "by": "df7693d44" },
+    { "was": "全选本页", "now": "Select all rows on this page", "route": "model-context", "by": "df7693d44", "source": "src/app/(dashboard)/dashboard/model-context/page.js:662" },
+    { "was": "窗口 ≥", "now": "Window ≥", "route": "model-context", "by": "df7693d44" },
+    { "was": "搜索模型 / 供应商…", "now": "Search models / providers…", "route": "model-context", "by": "df7693d44" }
+  ],
+  "relabelledPrefix": [
+    { "was": "选择 ", "now": "Select ", "route": "model-context", "by": "df7693d44", "source": "src/app/(dashboard)/dashboard/model-context/page.js:694", "why": "One checkbox per model row, labelled with the row's own model id, so the pair is a prefix rather than a fixed string." }
+  ],
+  "volatile": [
+    { "route": "statistics", "role": "application", "why": "Recharts builds the chart's accessible name from its axis tick text, so the key embeds the timestamps of whatever window was loaded. It changes between two captures of an unchanged page and is not a capability." }
+  ]
+}
