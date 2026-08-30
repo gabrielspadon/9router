@@ -104,8 +104,14 @@ function fingerprint(text) {
     out.push("path:" + m[1]);
   for (const m of text.matchAll(/\bset[A-Z]\w*\s*\(/g))
     out.push("setter:" + m[0].replace(/\s+/g, ""));
-  for (const m of text.matchAll(/from\s+["'](@\/(?:lib|store|models|sse|shared\/utils|shared\/hooks)[^"']*)["']/g))
+  for (const m of text.matchAll(/from\s+["'](@\/(?:lib|store|models|sse|shared\/utils|shared\/hooks)[^"']*)["']/g)) {
+    // `cn` is a pure class-name joiner (filter, join, collapse whitespace, trim:
+    // no state, no I/O, no side effect), so importing it is presentation, not
+    // behaviour. It is the single exclusion; every other module under
+    // shared/utils stays in the signal because some of them do carry behaviour.
+    if (m[1] === "@/shared/utils/cn") continue;
     out.push("import:" + m[1]);
+  }
   for (const m of text.matchAll(/\brouter\.(push|replace|back|refresh)\s*\(\s*([`'"][^`'"]*[`'"])?/g))
     out.push("nav:" + m[1] + ":" + (m[2] || "?"));
   for (const m of text.matchAll(/\bon[A-Z]\w*\s*=\s*\{/g)) {
@@ -122,9 +128,11 @@ function multiset(entries) {
 }
 
 const basePaths = listAt(base);
-// `ls-files` rather than `ls-tree HEAD`: it follows the working tree, so an
-// uncommitted edit or a rename is caught rather than silently read from HEAD.
-const headPaths = (git(["ls-files"]).stdout || "")
+// `ls-files` rather than `ls-tree HEAD`, so an uncommitted edit or a rename is
+// caught rather than silently read from HEAD. `--others --exclude-standard`
+// includes new files that are not yet staged: without it a brand new component
+// full of fetch calls would be invisible to this checker.
+const headPaths = (git(["ls-files", "--cached", "--others", "--exclude-standard"]).stdout || "")
   .split("\n").filter((f) => SOURCE_RE.test(f));
 const baseBlobs = readBaseBlobs(basePaths);
 
