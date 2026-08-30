@@ -83,7 +83,7 @@ describe("Codex persisted plan badge", () => {
     expect(markup).toContain("Pro");
     expect(markup).toContain("Codex subscription plan");
     expect(markup).toContain("sr-only");
-    expect(markup).toContain("bg-brand-500/10");
+    expect(markup).toContain("bg-brand-soft");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

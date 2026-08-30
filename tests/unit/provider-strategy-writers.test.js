@@ -73,7 +73,7 @@ describe("provider strategy writer source contract", () => {
     expect(noAuthProxySource).toContain("disabled={saving}");
     expect(noAuthProxySource).toContain('onStart: () => setError("")');
     expect(noAuthProxySource).toContain("setError(");
-    expect(noAuthProxySource).toContain("text-red-500");
+    expect(noAuthProxySource).toContain("text-danger");
   });
 });
 

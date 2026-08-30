@@ -73,10 +73,12 @@ describe("Antigravity verification row UI", () => {
     expect(html).toContain('aria-label="Vérifier le compte Antigravity Primary account"');
   });
 
-  it("keeps the verification anchor keyboard focusable with the existing focus-visible style", () => {
+  it("keeps the verification anchor keyboard focusable with a painted focus indicator", () => {
     const html = renderRow(verification());
-    expect(html).toContain("focus-visible:ring-2");
-    expect(html).toContain("focus-visible:ring-primary");
+    // Focus indication is the shared `focus-ring` utility defined once in
+    // globals.css, rather than per-call focus-visible:ring-* classes. Asserting
+    // the utility keeps the guarantee without pinning it to Tailwind internals.
+    expect(html).toContain("focus-ring");
   });
 
   it("uses only the supplied callback for the explicit translated recheck action", () => {

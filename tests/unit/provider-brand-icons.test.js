@@ -15,9 +15,7 @@ const NO_BRAND_MARK = [
   'selfhosted-embedding',
   'selfhosted-stt',
   'selfhosted-tts',
-  // firecrawl_custom points at an operator's own Firecrawl instance; kenari has
-  // no upstream mark (upstream ships neither). Both keep the text badge fallback.
-  'firecrawl_custom',
+  // kenari has no upstream mark, so it keeps the text badge fallback.
   'kenari',
 ];
 
