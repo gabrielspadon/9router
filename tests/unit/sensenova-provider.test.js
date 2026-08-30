@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   updateProviderConnection: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
   testProxyUrl: vi.fn(),
+  proxyAwareFetch: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -35,6 +36,11 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 
 vi.mock("@/lib/network/proxyTest", () => ({
   testProxyUrl: mocks.testProxyUrl,
+}));
+
+vi.mock("open-sse/utils/proxyFetch.js", () => ({
+  installGlobalProxyFetch: vi.fn(),
+  proxyAwareFetch: mocks.proxyAwareFetch,
 }));
 
 vi.mock("../../open-sse/utils/kimchiUserAgent.js", () => ({
@@ -237,7 +243,7 @@ describe("SenseNova provider", () => {
   it("tests saved keys with a bounded GET models probe", async () => {
     const probeSignal = new AbortController().signal;
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(probeSignal);
-    global.fetch.mockResolvedValue(new Response(JSON.stringify({ data: [] }), {
+    mocks.proxyAwareFetch.mockResolvedValue(new Response(JSON.stringify({ data: [] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }));
@@ -246,13 +252,14 @@ describe("SenseNova provider", () => {
 
     expect(result.valid).toBe(true);
     expect(timeoutSpy).toHaveBeenCalledWith(FETCH_CONNECT_TIMEOUT_MS);
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
       "https://token.sensenova.cn/v1/models",
       {
         method: "GET",
         headers: { Authorization: "Bearer test-sensenova-key" },
         signal: probeSignal,
       },
+      {},
     );
     expect(mocks.updateProviderConnection).toHaveBeenCalledWith(
       "sensenova-connection",

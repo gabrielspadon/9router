@@ -172,13 +172,13 @@ export function classifyOAuthProbeResult(res, config, bodyText = "") {
   return { valid: true, error: null, soft: false };
 }
 
-async function probeClineAccessToken(accessToken) {
-  const res = await fetch("https://api.cline.bot/api/v1/users/me", {
+async function probeClineAccessToken(accessToken, effectiveProxy = null) {
+  const res = await fetchWithConnectionProxy("https://api.cline.bot/api/v1/users/me", {
     method: "GET",
     headers: buildClineHeaders(accessToken, {
       Accept: "application/json",
     }),
-  });
+  }, effectiveProxy);
 
   return res;
 }
@@ -383,7 +383,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   if (connection.provider === "cline") {
     const tryProbe = async (token) => {
-      const res = await probeClineAccessToken(token);
+      const res = await probeClineAccessToken(token, effectiveProxy);
       if (res.ok) return { valid: true, error: null, refreshed, newTokens };
       if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
       if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
@@ -460,12 +460,6 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 }
 
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
-  // Vercel relay: forward via relay URL
-  if (!effectiveProxy?.vercelRelayUrl
-    && (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl)) {
-    return fetch(url, options);
-  }
-
   const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
   return proxyAwareFetch(url, options, effectiveProxy);
 }

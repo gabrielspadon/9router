@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   updateProviderConnection: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
   testProxyUrl: vi.fn(),
+  proxyAwareFetch: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -41,6 +42,11 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 
 vi.mock("@/lib/network/proxyTest", () => ({
   testProxyUrl: mocks.testProxyUrl,
+}));
+
+vi.mock("open-sse/utils/proxyFetch.js", () => ({
+  installGlobalProxyFetch: vi.fn(),
+  proxyAwareFetch: mocks.proxyAwareFetch,
 }));
 
 const originalFetch = global.fetch;
@@ -143,17 +149,18 @@ describe("Nous API-key route wiring", () => {
   });
 
   it("uses the same authenticated probe for saved connection tests", async () => {
-    global.fetch.mockResolvedValue(makeResponse(200));
+    mocks.proxyAwareFetch.mockResolvedValue(makeResponse(200));
 
     const result = await testSingleConnection("nous-connection");
 
     expect(result.valid).toBe(true);
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
       NOUS_CHAT_COMPLETIONS_URL,
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ Authorization: "Bearer portal-key" }),
       }),
+      {},
     );
     expect(mocks.updateProviderConnection).toHaveBeenCalledWith(
       "nous-connection",
@@ -162,7 +169,7 @@ describe("Nous API-key route wiring", () => {
   });
 
   it("marks a saved connection inactive when Nous rejects its key", async () => {
-    global.fetch.mockResolvedValue(makeResponse(401));
+    mocks.proxyAwareFetch.mockResolvedValue(makeResponse(401));
 
     const result = await testSingleConnection("nous-connection");
 

@@ -117,6 +117,25 @@ const strictProxyOptions = {
   resolutionKind: "selected-proxy",
 };
 
+const intentionalDirectProxy = {
+  kind: "usable",
+  resolutionKind: "intentional-direct",
+  connectionProxyEnabled: false,
+  connectionProxyUrl: "",
+  connectionNoProxy: "",
+  vercelRelayUrl: "",
+  strictProxy: false,
+};
+
+const intentionalDirectOptions = {
+  connectionProxyEnabled: false,
+  connectionProxyUrl: "",
+  connectionNoProxy: "",
+  vercelRelayUrl: "",
+  strictProxy: false,
+  resolutionKind: "intentional-direct",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveConnectionProxyConfig.mockResolvedValue(requiredUnavailable);
@@ -362,5 +381,58 @@ describe("required proxy unavailable caller boundaries", () => {
     expect(result).toMatchObject({ valid: true, error: null });
     expect(mocks.proxyAwareFetch)
       .toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.any(Object), strictProxyOptions);
+  });
+
+  it("Cline provider test dispatches selected strict probes through the effective route", async () => {
+    const clineConnection = { ...connection, provider: "cline" };
+    const originalFetch = globalThis.fetch;
+    const rawFetch = vi.fn().mockRejectedValue(new Error("strict route bypassed"));
+    globalThis.fetch = rawFetch;
+    mocks.getProviderConnectionById.mockResolvedValue(clineConnection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.testProxyUrl.mockResolvedValue({ ok: true });
+    mocks.proxyAwareFetch.mockResolvedValue({ ok: true, status: 200 });
+    try {
+      const { testSingleConnection } = await import("@/app/api/providers/[id]/test/testUtils.js");
+      const result = await testSingleConnection(clineConnection.id);
+
+      expect(result).toMatchObject({ valid: true, error: null });
+      expect(rawFetch).not.toHaveBeenCalled();
+      expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+        "https://api.cline.bot/api/v1/users/me",
+        expect.objectContaining({ method: "GET" }),
+        strictProxyOptions,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("Cline intentional-direct test does not re-enter global environment routing", async () => {
+    const directConnection = {
+      ...connection,
+      provider: "cline",
+      providerSpecificData: { connectionProxyMode: "direct" },
+    };
+    const originalFetch = globalThis.fetch;
+    const rawFetch = vi.fn().mockRejectedValue(new Error("direct route bypassed"));
+    globalThis.fetch = rawFetch;
+    mocks.getProviderConnectionById.mockResolvedValue(directConnection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(intentionalDirectProxy);
+    mocks.proxyAwareFetch.mockResolvedValue({ ok: true, status: 200 });
+    try {
+      const { testSingleConnection } = await import("@/app/api/providers/[id]/test/testUtils.js");
+      const result = await testSingleConnection(directConnection.id);
+
+      expect(result).toMatchObject({ valid: true, error: null });
+      expect(rawFetch).not.toHaveBeenCalled();
+      expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+        "https://api.cline.bot/api/v1/users/me",
+        expect.objectContaining({ method: "GET" }),
+        intentionalDirectOptions,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
