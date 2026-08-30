@@ -15,7 +15,7 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
   return (
     <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-sm" style={iconColor ? { color: iconColor } : undefined}>
+        <span aria-hidden="true" className="material-symbols-outlined text-sm" style={iconColor ? { color: iconColor } : undefined}>
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
         <div className="flex flex-col gap-1">
@@ -45,7 +45,7 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
         {isFree && <span className="text-xs font-semibold text-text-muted bg-surface-2 border border-border px-1.5 py-0.5 rounded">FREE</span>}
         {isCustom && (
           <button onClick={onDeleteAlias} className="focus-ring p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity ml-auto" title="Remove custom model">
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">close</span>
           </button>
         )}
       </div>
@@ -265,7 +265,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
             onClick={() => setShowAddCustomModel(true)}
             className="focus-ring flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line transition-colors"
           >
-            <span className="material-symbols-outlined text-sm">add</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">add</span>
             Add Model
           </button>
         </div>

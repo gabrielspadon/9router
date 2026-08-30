@@ -104,7 +104,7 @@ export default function ModelAvailabilityBadge() {
             : "bg-warning-soft border-warning-line text-warning hover:bg-warning-soft"
         }`}
       >
-        <span className="material-symbols-outlined text-[14px]">
+        <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
           {isHealthy ? "verified" : "warning"}
         </span>
         {isHealthy

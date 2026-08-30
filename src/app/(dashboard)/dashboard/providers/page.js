@@ -448,7 +448,7 @@ export default function ProvidersPage() {
           className={filterBtnCls(hideDisabled)}
           title={hideDisabled ? "Show disabled providers" : "Hide providers with all connections disabled"}
         >
-          <span className="material-symbols-outlined text-[14px]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
             {hideDisabled ? "visibility_off" : "visibility"}
           </span>
           {hideDisabled ? "Showing enabled only" : "Hide disabled"}
@@ -458,7 +458,7 @@ export default function ProvidersPage() {
           className={filterBtnCls(hideUnconfigured)}
           title={hideUnconfigured ? "Show unconfigured providers" : "Hide providers with no connections"}
         >
-          <span className="material-symbols-outlined text-[14px]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
             {hideUnconfigured ? "visibility_off" : "visibility"}
           </span>
           {hideUnconfigured ? "Showing configured only" : "Hide unconfigured"}
@@ -467,7 +467,7 @@ export default function ProvidersPage() {
 
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
-          <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
+          <span aria-hidden="true" className="material-symbols-outlined text-[32px] text-text-muted mb-2">
             search_off
           </span>
           <p className="text-text-muted text-sm">No providers match your search</p>
@@ -526,7 +526,7 @@ export default function ProvidersPage() {
         anthropicCompatibleProviders.length === 0 &&
         multiCompatibleProviders.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[18px]">extension</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">extension</span>
             <span>No custom providers. Use the buttons above to add one.</span>
           </div>
         ) : (
@@ -571,7 +571,7 @@ export default function ProvidersPage() {
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
             >
-              <span
+              <span aria-hidden="true"
                 className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}
               >
                 play_arrow
@@ -619,7 +619,7 @@ export default function ProvidersPage() {
             title="Test all Free connections"
             aria-label="Test all Free provider connections"
           >
-            <span
+            <span aria-hidden="true"
               className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}
             >
               play_arrow
@@ -680,7 +680,7 @@ export default function ProvidersPage() {
             title="Test all API Key connections"
             aria-label="Test all API Key connections"
           >
-            <span
+            <span aria-hidden="true"
               className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}
             >
               play_arrow
@@ -705,7 +705,7 @@ export default function ProvidersPage() {
             onClick={() => setShowAllApikey(true)}
             className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2.5 text-sm font-medium text-brand transition-colors hover:border-brand hover:bg-brand-soft"
           >
-            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">expand_more</span>
             Show all {apikeyEntries.length} providers
           </button>
         )}
@@ -779,7 +779,7 @@ export default function ProvidersPage() {
                 className="focus-ring p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors"
                 aria-label="Close test results"
               >
-                <span className="material-symbols-outlined text-lg">close</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-lg">close</span>
               </button>
             </div>
             <div className="p-5">
@@ -863,7 +863,7 @@ function FreeModelSyncCard() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <div className="size-9 shrink-0 rounded-lg bg-brand-soft flex items-center justify-center">
-            <span className="material-symbols-outlined text-brand text-[20px]">auto_awesome</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-brand text-[20px]">auto_awesome</span>
           </div>
           <div className="min-w-0">
             <h3 className="font-semibold leading-tight">Auto-fetch free models</h3>
@@ -895,7 +895,7 @@ function FreeModelSyncCard() {
             }`}
             title="Run a free-model sync immediately"
           >
-            <span className={`material-symbols-outlined text-[14px]${running ? " animate-spin" : ""}`}>
+            <span aria-hidden="true" className={`material-symbols-outlined text-[14px]${running ? " animate-spin" : ""}`}>
               sync
             </span>
             {running ? "Fetching..." : "Fetch now"}
@@ -959,7 +959,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                 {allDisabled ? (
                   <Badge variant="default" size="sm">
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
                         pause_circle
                       </span>
                       Disabled
@@ -1092,7 +1092,7 @@ function ApiKeyProviderCard({
                 {allDisabled ? (
                   <Badge variant="default" size="sm">
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
                         pause_circle
                       </span>
                       Disabled
@@ -1171,7 +1171,7 @@ function ProviderTestResultsView({ results }) {
   if (results.error && !results.results) {
     return (
       <div className="text-center py-6">
-        <span className="material-symbols-outlined text-danger text-[32px] mb-2 block">
+        <span aria-hidden="true" className="material-symbols-outlined text-danger text-[32px] mb-2 block">
           error
         </span>
         <p className="text-sm text-danger">{results.error}</p>
@@ -1215,7 +1215,7 @@ function ProviderTestResultsView({ results }) {
           key={r.connectionId || i}
           className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs sm:flex-nowrap"
         >
-          <span
+          <span aria-hidden="true"
             className={`material-symbols-outlined text-[16px] ${r.valid ? "text-success" : "text-danger"}`}
           >
             {r.valid ? "check_circle" : "error"}

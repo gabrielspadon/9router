@@ -19,7 +19,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
 
   return (
     <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
-      <span
+      <span aria-hidden="true"
         className="material-symbols-outlined text-sm text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
       >
@@ -69,7 +69,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         className="focus-ring p-1 hover:bg-danger-soft rounded text-danger"
         title="Remove model"
       >
-        <span className="material-symbols-outlined text-sm">delete</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-sm">delete</span>
       </button>
     </div>
   );

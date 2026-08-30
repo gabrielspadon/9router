@@ -116,7 +116,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
           </button>
         </div>
-        <span className="material-symbols-outlined text-sm text-text-muted">{isOAuth ? "lock" : "key"}</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-sm text-text-muted">{isOAuth ? "lock" : "key"}</span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -153,7 +153,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
                 className={`focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-surface-2 transition-colors ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
-                <span className="material-symbols-outlined text-[18px]">{updatingProxy ? "progress_activity" : "lan"}</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{updatingProxy ? "progress_activity" : "lan"}</span>
                 <span className="text-xs leading-tight">Proxy</span>
               </button>
               {showProxyDropdown && (
@@ -167,11 +167,11 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             </div>
           )}
           <button onClick={onEdit} className="focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-surface-2 text-text-muted hover:text-brand">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-xs leading-tight">Edit</span>
           </button>
           <button onClick={onDelete} className="focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-danger-soft text-danger">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
             <span className="text-xs leading-tight">Delete</span>
           </button>
         </div>

@@ -197,7 +197,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
           </button>
         </div>
-        <span className="material-symbols-outlined shrink-0 text-sm text-text-muted">
+        <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-sm text-text-muted">
           {authIcon}
         </span>
         <div className="flex-1 min-w-0">
@@ -311,7 +311,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
-                <span className="material-symbols-outlined text-[18px]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                   {updatingProxy ? "progress_activity" : "lan"}
                 </span>
                 <span className="text-xs leading-tight">Proxy</span>
@@ -343,7 +343,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 onClick={() => autoPing.onToggle(!autoPing.on)}
                 className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${autoPing.on ? "text-brand" : "text-text-muted hover:text-brand"}`}
               >
-                <span className="material-symbols-outlined text-[18px]">bolt</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
                 <span className="text-xs leading-tight">Auto-ping</span>
               </button>
             </Tooltip>
@@ -356,17 +356,17 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 title={hotReloadStatus?.state === "failed" ? hotReloadStatus.error : undefined}
                 className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand"
               >
-                <span className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
+                <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
                 <span className="text-xs leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
               </button>
             </Tooltip>
           )}
           <button onClick={onEdit} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-xs leading-tight">Edit</span>
           </button>
           <button onClick={onDelete} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-danger hover:bg-danger-soft">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
             <span className="text-xs leading-tight">Delete</span>
           </button>
         </div>

@@ -9,7 +9,7 @@ import { Modal } from "@/shared/components";
 
 function ProviderIcon({ name }) {
   return (
-    <span className="material-symbols-outlined text-[16px]">
+    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
       dns
     </span>
   );
@@ -94,17 +94,17 @@ function NewModelsModal({ onClose }) {
       <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-6 text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
             Scanning all providers…
           </div>
         ) : error ? (
           <div className="flex items-center justify-center gap-2 py-6 text-danger text-sm">
-            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">error</span>
             {error}
           </div>
         ) : seeded ? (
           <div className="flex flex-col items-center gap-2 py-8 text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[28px] text-success">check_circle</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-success">check_circle</span>
             <span className="font-medium text-text-main">Baseline created</span>
             <span className="text-center text-xs leading-relaxed">
               Your current models have been recorded.
@@ -114,7 +114,7 @@ function NewModelsModal({ onClose }) {
           </div>
         ) : groups.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[28px]">new_releases</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[28px]">new_releases</span>
             <span className="font-medium text-text-main">No new models</span>
             <span className="text-center text-xs">
               All providers are up to date. New models will appear here when they are added.
@@ -164,7 +164,7 @@ function NewModelsModal({ onClose }) {
               onClick={handleMarkAllRead}
               className="focus-ring mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-brand-line transition-colors"
             >
-              <span className="material-symbols-outlined text-[14px]">done_all</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">done_all</span>
               Mark all as read
             </button>
           </>

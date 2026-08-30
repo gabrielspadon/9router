@@ -18,7 +18,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
   return (
     <div className={`group min-w-0 max-w-full rounded-lg border px-3 py-2 ${borderColor} hover:bg-sidebar/50`}>
       <div className="flex min-w-0 items-start gap-2 sm:items-center">
-        <span
+        <span aria-hidden="true"
           className="material-symbols-outlined shrink-0 text-sm"
           style={iconColor ? { color: iconColor } : undefined}
         >
@@ -70,7 +70,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             className="focus-ring ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-danger-soft hover:text-danger sm:opacity-0 sm:group-hover:opacity-100"
             title="Remove custom model"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">close</span>
           </button>
         ) : onDisable ? (
           <button
@@ -78,7 +78,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             className="focus-ring ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-danger-soft hover:text-danger sm:opacity-0 sm:group-hover:opacity-100"
             title="Disable this model"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">close</span>
           </button>
         ) : null}
       </div>

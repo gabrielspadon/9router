@@ -851,7 +851,7 @@ export default function ProfilePage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="size-10 sm:size-12 rounded-lg bg-success-soft text-success flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
@@ -870,7 +870,7 @@ export default function ProfilePage() {
                       : 'text-text-muted hover:text-text-main'
                   )}
                 >
-                  <span className="material-symbols-outlined text-[18px]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                     {option === 'light'
                       ? 'light_mode'
                       : option === 'dark'
@@ -932,7 +932,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="size-10 rounded-lg bg-info-soft text-info flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-[20px]">language</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">language</span>
             </div>
             <h3 className="text-sm font-semibold">Language</h3>
           </div>
@@ -950,7 +950,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-brand-soft text-brand shrink-0">
-              <span className="material-symbols-outlined text-[20px]">shield</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">shield</span>
             </div>
             <h3 className="text-sm font-semibold">Security</h3>
           </div>
@@ -1046,7 +1046,7 @@ export default function ProfilePage() {
             className="focus-ring w-full flex items-center gap-3 text-left"
           >
             <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
-              <span className="material-symbols-outlined text-[20px]">lock_open</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold">Single Sign-On (SSO)</h3>
@@ -1060,7 +1060,7 @@ export default function ProfilePage() {
                     : 'Optional SSO via Okta, Entra ID, Keycloak, or OIDC'}
               </p>
             </div>
-            <span className="material-symbols-outlined text-text-muted shrink-0">
+            <span aria-hidden="true" className="material-symbols-outlined text-text-muted shrink-0">
               {oidcExpanded ? 'expand_less' : 'expand_more'}
             </span>
           </button>
@@ -1161,7 +1161,7 @@ export default function ProfilePage() {
                       className="focus-ring w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-brand text-lg">
+                        <span aria-hidden="true" className="material-symbols-outlined text-brand text-lg">
                           menu_book
                         </span>
                         <div>
@@ -1174,7 +1174,7 @@ export default function ProfilePage() {
                           </p>
                         </div>
                       </div>
-                      <span
+                      <span aria-hidden="true"
                         className="material-symbols-outlined text-text-muted transition-transform text-lg"
                         style={{ transform: showSamlGuide ? 'rotate(180deg)' : 'none' }}
                       >
@@ -1487,7 +1487,7 @@ export default function ProfilePage() {
                         download="9router-sp-metadata.xml"
                         className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
                       >
-                        <span className="material-symbols-outlined text-[16px]">download</span>
+                        <span aria-hidden="true" className="material-symbols-outlined text-[16px]">download</span>
                         Download XML
                       </a>
                     </div>
@@ -1656,7 +1656,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
-              <span className="material-symbols-outlined text-[20px]">model_training</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">model_training</span>
             </div>
             <h3 className="text-sm font-semibold">Model</h3>
           </div>
@@ -1682,7 +1682,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-info-soft text-info shrink-0">
-              <span className="material-symbols-outlined text-[20px]">route</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">route</span>
             </div>
             <h3 className="text-sm font-semibold">Routing Strategy</h3>
           </div>
@@ -1793,7 +1793,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
-              <span className="material-symbols-outlined text-[20px]">wifi</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">wifi</span>
             </div>
             <h3 className="text-sm font-semibold">Network</h3>
           </div>
@@ -1887,7 +1887,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
-              <span className="material-symbols-outlined text-[20px]">monitoring</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
             <h3 className="text-sm font-semibold">Observability</h3>
           </div>
@@ -1910,7 +1910,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
-              <span className="material-symbols-outlined text-[20px]">visibility_off</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">visibility_off</span>
             </div>
             <h3 className="text-sm font-semibold">Claude Code Minimal Mode</h3>
           </div>
@@ -1932,7 +1932,7 @@ export default function ProfilePage() {
                       : 'border-brand-line bg-brand-soft text-text-main hover:border-brand'
                   )}
                 >
-                  <span className="material-symbols-outlined text-[14px]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
                     {hidden ? 'visibility_off' : 'visibility'}
                   </span>
                   {item.label}
@@ -1966,7 +1966,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
-              <span className="material-symbols-outlined text-[20px]">privacy_tip</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">privacy_tip</span>
             </div>
             <h3 className="text-sm font-semibold">Privacy</h3>
           </div>

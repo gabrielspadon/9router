@@ -1164,7 +1164,7 @@ export default function ProviderDetailPage() {
             disabled={bulkUpdatingProxy || activePools.length === 0}
             className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
             <span className="text-sm text-text-main">One-to-one (rotate)</span>
           </button>
           <button
@@ -1172,7 +1172,7 @@ export default function ProviderDetailPage() {
             disabled={bulkUpdatingProxy}
             className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
             <span className="text-sm text-text-main">None (unbind all)</span>
           </button>
           {proxyPools.map((pool) => (
@@ -1182,7 +1182,7 @@ export default function ProviderDetailPage() {
               disabled={bulkUpdatingProxy || pool.isActive !== true}
               className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
               <span className="truncate text-sm text-text-main">{pool.name}</span>
               {pool.isActive !== true && (
                 <span className="text-xs text-text-muted">(inactive)</span>
@@ -1317,7 +1317,7 @@ export default function ProviderDetailPage() {
           onClick={() => setShowAddCustomModel(true)}
           className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2 text-xs text-brand transition-colors hover:border-brand hover:bg-brand-soft sm:w-auto"
         >
-          <span className="material-symbols-outlined text-sm">add</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
 
@@ -1328,7 +1328,7 @@ export default function ProviderDetailPage() {
             disabled={importingQoderModels}
             className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-info-line px-3 py-2 text-xs text-info transition-colors hover:border-info-line hover:bg-info-soft sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
               {importingQoderModels ? "progress_activity" : "download"}
             </span>
             {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
@@ -1359,7 +1359,7 @@ export default function ProviderDetailPage() {
                     className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors"
                     title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
                   >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[13px]">add</span>
                     {m.id.split("/").pop()}
                   </button>
                 ))}
@@ -1380,7 +1380,7 @@ export default function ProviderDetailPage() {
                   className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors"
                   title="Restore model"
                 >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[13px]">add</span>
                   {m.id}
                 </button>
               ))}
@@ -1431,7 +1431,7 @@ export default function ProviderDetailPage() {
           href="/dashboard/providers"
           className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors mb-4"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
@@ -1470,7 +1470,7 @@ export default function ProviderDetailPage() {
                   rel="noopener noreferrer"
                   className="focus-ring text-xs text-brand hover:underline inline-flex items-center gap-1"
                 >
-                  <span className="material-symbols-outlined text-sm">open_in_new</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-sm">open_in_new</span>
                   {providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
                 </a>
               )}
@@ -1483,22 +1483,22 @@ export default function ProviderDetailPage() {
       </div>
 
       {providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning-soft border border-warning-line">
-          <span className="material-symbols-outlined text-[16px] text-warning mt-0.5 shrink-0">warning</span>
-          <p className="text-xs text-danger leading-relaxed">{providerInfo.deprecationNotice}</p>
+        <div role="alert" className="flex items-start gap-2 px-3 py-2 rounded-lg bg-warning-soft border border-warning-line">
+          <span className="material-symbols-outlined text-[16px] text-warning mt-0.5 shrink-0" aria-hidden="true">warning</span>
+          <p className="min-w-0 text-xs text-warning leading-relaxed">{providerInfo.deprecationNotice}</p>
         </div>
       )}
 
       {providerInfo.notice?.text && !providerInfo.deprecated && (
         <div className="flex flex-col gap-2 rounded-lg border border-info-line bg-info-soft px-3 py-2 sm:flex-row sm:items-center">
-          <span className="material-symbols-outlined text-[16px] text-info shrink-0">info</span>
+          <span className="material-symbols-outlined text-[16px] text-info shrink-0" aria-hidden="true">info</span>
           <p className="min-w-0 flex-1 text-xs leading-relaxed text-info">{providerInfo.notice.text}</p>
           {providerInfo.notice.apiKeyUrl && (
             <a
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="focus-ring inline-flex justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors hover:bg-info-solid sm:py-0.5"
+              className="focus-ring inline-flex shrink-0 justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors duration-150 hover:bg-info-solid/90 sm:py-0.5"
             >
               Get API Key →
             </a>
@@ -1736,7 +1736,7 @@ export default function ProviderDetailPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-brand-soft text-brand shrink-0">
-                  <span className="material-symbols-outlined text-[18px]">{isOAuth ? "lock" : "key"}</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{isOAuth ? "lock" : "key"}</span>
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm text-text-muted">No connections yet</p>

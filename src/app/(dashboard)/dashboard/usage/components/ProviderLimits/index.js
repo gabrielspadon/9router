@@ -852,7 +852,7 @@ export default function ProviderLimits() {
     return (
       <Card padding="lg">
         <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
+          <span aria-hidden="true" className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
             cloud_off
           </span>
           <h3 className="mt-4 text-lg font-semibold text-text-main">
@@ -871,7 +871,7 @@ export default function ProviderLimits() {
     return (
       <Card padding="lg">
         <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
+          <span aria-hidden="true" className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
             {emptyState.icon}
           </span>
           <h3 className="mt-4 text-lg font-semibold text-text-main">
@@ -901,7 +901,7 @@ export default function ProviderLimits() {
             >
               <span className="flex min-w-0 items-center gap-1.5">
                 {providerFilter === "all" ? (
-                  <span className="material-symbols-outlined text-[14px] text-text-muted">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-text-muted">
                     apps
                   </span>
                 ) : (
@@ -917,7 +917,7 @@ export default function ProviderLimits() {
                   {selectedProviderLabel}
                 </span>
               </span>
-              <span className="material-symbols-outlined text-[14px] text-text-muted">
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-text-muted">
                 expand_more
               </span>
             </button>
@@ -942,12 +942,12 @@ export default function ProviderLimits() {
                     }}
                     className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
                   >
-                    <span className="material-symbols-outlined text-[22px]">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[22px]">
                       apps
                     </span>
                     <span className="font-medium">All providers</span>
                     {providerFilter === "all" && (
-                      <span className="material-symbols-outlined ml-auto text-[20px]">
+                      <span aria-hidden="true" className="material-symbols-outlined ml-auto text-[20px]">
                         check
                       </span>
                     )}
@@ -978,7 +978,7 @@ export default function ProviderLimits() {
                           {provider}
                         </span>
                         {providerFilter === provider && (
-                          <span className="material-symbols-outlined ml-auto text-[20px]">
+                          <span aria-hidden="true" className="material-symbols-outlined ml-auto text-[20px]">
                             check
                           </span>
                         )}
@@ -1027,10 +1027,10 @@ export default function ProviderLimits() {
             type="button"
             onClick={() => setExpiringFirst((prev) => !prev)}
             aria-pressed={expiringFirst}
-            className={`focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-warning-line bg-warning-soft text-warning" : "border-border text-text-main hover:bg-surface-2"}`}
+            className={`focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors duration-150 ${expiringFirst ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-main hover:bg-surface-2"}`}
             title="Sort accounts by earliest quota reset time"
           >
-            <span className="material-symbols-outlined text-[14px]">
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
               hourglass_top
             </span>
             <span className="hidden sm:inline">Expiring first</span>
@@ -1041,10 +1041,10 @@ export default function ProviderLimits() {
             type="button"
             onClick={handleDisableDepleted}
             disabled={bulkToggling}
-            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-danger-line px-2 text-xs text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
+            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-danger-line px-2 text-xs text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50"
             title="Disable connections with depleted quota on the current page"
           >
-            <span className="material-symbols-outlined text-[14px]">block</span>
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">block</span>
             <span className="hidden sm:inline">Turn off Empty</span>
           </button>
 
@@ -1053,10 +1053,10 @@ export default function ProviderLimits() {
             type="button"
             onClick={handleEnableAvailable}
             disabled={bulkToggling}
-            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-success-line px-2 text-xs text-success transition-colors hover:bg-success-soft disabled:opacity-50"
+            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:opacity-50"
             title="Enable connections that still have quota on the current page"
           >
-            <span className="material-symbols-outlined text-[14px]">
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
               check_circle
             </span>
             <span className="hidden sm:inline">Turn on Available</span>
@@ -1069,6 +1069,7 @@ export default function ProviderLimits() {
             title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
           >
             <span
+              aria-hidden="true"
               className={`material-symbols-outlined text-[14px] ${
                 autoRefresh ? "text-brand" : "text-text-muted"
               }`}
@@ -1095,6 +1096,7 @@ export default function ProviderLimits() {
             title="Refresh all"
           >
             <span
+              aria-hidden="true"
               className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}
             >
               refresh
@@ -1105,7 +1107,7 @@ export default function ProviderLimits() {
 
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
-        <div className="rounded-xl border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning">
+        <div className="rounded-xl border border-info-line bg-info-soft px-3 py-2 text-xs text-info">
           Expiring-first currently reorders accounts inside the current page.
           Cross-page ordering still follows backend pagination.
         </div>
@@ -1190,7 +1192,7 @@ export default function ProviderLimits() {
                       })()}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
-                          <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-semibold text-brand-600 dark:text-brand-300">
+                          <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand">
                             {kiroMethodLabel(conn)}
                           </span>
                           {kiroRegion(conn) && (
@@ -1218,7 +1220,7 @@ export default function ProviderLimits() {
                               title={conn.providerSpecificData.profileArn}
                               className="focus-ring inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-xs text-text-muted transition-colors hover:text-brand"
                             >
-                              <span className="material-symbols-outlined text-[12px]">
+                              <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
                                 {copied === conn.id ? "check" : "content_copy"}
                               </span>
                               <code className="truncate font-mono">
@@ -1256,7 +1258,7 @@ export default function ProviderLimits() {
                                 : "border-border bg-surface-2 text-text-muted"
                             }`}
                           >
-                            <span className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
+                            <span aria-hidden="true" className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
                               {isResettingLimit ? "progress_activity" : "restart_alt"}
                             </span>
                             <span>{resetCreditCount}</span>
@@ -1270,7 +1272,7 @@ export default function ProviderLimits() {
                             aria-label="View Codex reset credit expiry"
                             className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:bg-surface-2 hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            <span className="material-symbols-outlined text-[17px]">schedule</span>
+                            <span aria-hidden="true" className="material-symbols-outlined text-[17px]">schedule</span>
                           </button>
                         </Tooltip>
                       </>
@@ -1283,7 +1285,7 @@ export default function ProviderLimits() {
                           aria-label="Toggle auto-ping"
                           className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-brand" : "text-text-muted"}`}
                         >
-                          <span className="material-symbols-outlined text-[18px]">bolt</span>
+                          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
                         </button>
                       </Tooltip>
                     )}
@@ -1295,7 +1297,7 @@ export default function ProviderLimits() {
                         aria-label="Refresh quota"
                         className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50"
                       >
-                        <span
+                        <span aria-hidden="true"
                           className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
                         >
                           refresh
@@ -1311,7 +1313,7 @@ export default function ProviderLimits() {
                           aria-label="Hot reload quota countdown"
                           className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors disabled:opacity-50 ${isHotReloading ? "text-brand" : ""}`}
                         >
-                          <span className={`material-symbols-outlined text-[18px] ${isHotReloading ? "animate-spin" : ""}`}>
+                          <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${isHotReloading ? "animate-spin" : ""}`}>
                             {isHotReloading ? "progress_activity" : "rocket_launch"}
                           </span>
                         </button>
@@ -1328,7 +1330,7 @@ export default function ProviderLimits() {
                         aria-label="Edit connection"
                         className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors disabled:opacity-50"
                       >
-                        <span className="material-symbols-outlined text-[18px]">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                           edit
                         </span>
                       </button>
@@ -1341,7 +1343,7 @@ export default function ProviderLimits() {
                         aria-label="Delete connection"
                         className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-danger-soft text-danger transition-colors disabled:opacity-50"
                       >
-                        <span
+                        <span aria-hidden="true"
                           className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
                         >
                           delete
@@ -1372,13 +1374,13 @@ export default function ProviderLimits() {
               <div className="px-2 py-1.5">
                 {isLoading ? (
                   <div className="text-center py-5 text-text-muted">
-                    <span className="material-symbols-outlined text-[28px] animate-spin">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[28px] animate-spin">
                       progress_activity
                     </span>
                   </div>
                 ) : error ? (
                   <div className="text-center py-5">
-                    <span className="material-symbols-outlined text-[28px] text-danger">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-danger">
                       error
                     </span>
                     <p className="mt-1.5 text-xs text-text-muted">{error}</p>
@@ -1446,7 +1448,7 @@ export default function ProviderLimits() {
                 )}
                 {hiddenQuotaRows.length > 0 && (
                   <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-border pt-2 text-xs text-text-muted">
-                    <span className="material-symbols-outlined shrink-0 text-[14px]">
+                    <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[14px]">
                       visibility_off
                     </span>
                     <span className="shrink-0">Hidden:</span>
@@ -1555,7 +1557,7 @@ export default function ProviderLimits() {
                 className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Previous accounts page"
               >
-                <span className="material-symbols-outlined text-[16px]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   chevron_left
                 </span>
               </button>
@@ -1574,7 +1576,7 @@ export default function ProviderLimits() {
                 className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Next accounts page"
               >
-                <span className="material-symbols-outlined text-[16px]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   chevron_right
                 </span>
               </button>
@@ -1629,14 +1631,14 @@ export default function ProviderLimits() {
                 className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
                 aria-label="Close reset credit expiry modal"
               >
-                <span className="material-symbols-outlined text-[18px]">close</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
 
             <div className="max-h-[70vh] overflow-auto bg-surface p-4">
               {resetCreditsState.loading ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-text-muted">
-                  <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+                  <span aria-hidden="true" className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                   Loading reset credits...
                 </div>
               ) : resetCreditsState.error ? (
