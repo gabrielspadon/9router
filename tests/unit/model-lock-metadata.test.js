@@ -123,6 +123,40 @@ describe("model-keyed failure metadata", () => {
     });
   });
 
+  it("keeps a strict preferred connection pinned when another account is available", async () => {
+    const pinned = {
+      id: "video-a",
+      provider: "demo",
+      ...pair(null, {
+        until: future(5),
+        status: 429,
+        message: "video A is locked",
+        clientErrorStatus: 404,
+      }),
+    };
+    const available = {
+      id: "video-b",
+      provider: "demo",
+      authType: "api_key",
+      apiKey: "video-b-key",
+      providerSpecificData: {},
+    };
+    dbMocks.getProviderConnections.mockResolvedValue([pinned, available]);
+
+    await expect(getProviderCredentials(
+      "demo",
+      null,
+      null,
+      { preferredConnectionId: "video-a", strictPreferredConnection: true },
+    )).resolves.toMatchObject({
+      allRateLimited: true,
+      retryAfter: future(5),
+      lastError: "video A is locked",
+      lastErrorCode: 429,
+      clientErrorStatus: 404,
+    });
+  });
+
   it("does not borrow flat error state for a legacy lock without a matching pair", async () => {
     dbMocks.getProviderConnections.mockResolvedValue([{
       id: "legacy",

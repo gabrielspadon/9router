@@ -59,6 +59,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const strictPreferredConnection = Boolean(preferredConnectionId) && options?.strictPreferredConnection === true;
   // Resolve aliases before queue acquisition so alias and canonical requests share one lock.
   const providerId = resolveProviderId(provider);
   const currentQueue = providerSelectionQueues.get(providerId) || Promise.resolve();
@@ -117,6 +118,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // switch), so skip the lock check for that one connection only.
     const ignoreLockConn = options?.ignoreModelLockConnId || null;
     const availableConnections = connections.filter(c => {
+      if (strictPreferredConnection && c.id !== preferredConnectionId) return false;
       if (excludeSet.has(c.id)) return false;
       if (c.id === ignoreLockConn) return true;
       if (isModelLockActive(c, model)) return false;
@@ -150,7 +152,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     if (routedConnections.length === 0) {
       // Find earliest lock expiry across all connections for retry timing
-      const lockedPairs = connections
+      const lockCandidates = strictPreferredConnection
+        ? connections.filter((connection) => connection.id === preferredConnectionId)
+        : connections;
+      const lockedPairs = lockCandidates
         .map((connection) => ({ connection, failure: getActiveModelFailure(connection, model) }))
         .filter((entry) => entry.failure);
       const selected = lockedPairs.sort((a, b) => a.failure.until.localeCompare(b.failure.until))[0];

@@ -188,7 +188,10 @@ export async function handleVideoGet(request, requestId) {
   const provider = DEFAULT_VIDEO_PROVIDER;
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
+  const credentials = await getProviderCredentials(provider, null, null, {
+    preferredConnectionId,
+    strictPreferredConnection: Boolean(preferredConnectionId),
+  });
   if (!credentials) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }
