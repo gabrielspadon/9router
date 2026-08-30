@@ -20,6 +20,7 @@ import { CommandCodeExecutor } from "./commandcode.js";
 import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy-cn.js";
+import { XaiExecutor } from "./xai.js";
 import { CodeBuddyIntlExecutor } from "./codebuddy-intl.js";
 import TraeExecutor from "./trae.js";
 import ZedExecutor from "./zed.js";
@@ -56,6 +57,7 @@ const executors = {
   "mimo-free": new MimoFreeExecutor(),
   mmf: new MimoFreeExecutor(), // Alias for mimo-free
   "codebuddy-cn": new CodeBuddyExecutor(),
+  xai: new XaiExecutor(),
   "codebuddy-intl": new CodeBuddyIntlExecutor(),
   trae: new TraeExecutor(),
   zed: new ZedExecutor(),
@@ -100,6 +102,7 @@ export { CommandCodeExecutor } from "./commandcode.js";
 export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 export { MimoFreeExecutor } from "./mimo-free.js";
 export { CodeBuddyExecutor } from "./codebuddy-cn.js";
+export { XaiExecutor } from "./xai.js";
 export { CodeBuddyIntlExecutor } from "./codebuddy-intl.js";
 export { default as TraeExecutor } from "./trae.js";
 export { default as ZedExecutor } from "./zed.js";
