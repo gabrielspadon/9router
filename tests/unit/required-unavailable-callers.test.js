@@ -435,4 +435,61 @@ describe("required proxy unavailable caller boundaries", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it.each([
+    ["scheduled", usableStrictProxy, strictProxyOptions, { proxyPoolId: "missing-pool", strictProxy: true }],
+    ["scheduled", intentionalDirectProxy, intentionalDirectOptions, { connectionProxyMode: "direct" }],
+    ["401 retry", usableStrictProxy, strictProxyOptions, { proxyPoolId: "missing-pool", strictProxy: true }],
+    ["401 retry", intentionalDirectProxy, intentionalDirectOptions, { connectionProxyMode: "direct" }],
+  ])("Cline %s refresh uses the resolved route for %s", async (flow, proxyConfig, proxyOptions, providerSpecificData) => {
+    const refreshConnection = {
+      ...connection,
+      provider: "cline",
+      providerSpecificData,
+      expiresAt: flow === "scheduled" ? "2000-01-01T00:00:00.000Z" : undefined,
+    };
+    const originalFetch = globalThis.fetch;
+    const rawFetch = vi.fn(() => { throw new Error("refresh route bypassed"); });
+    globalThis.fetch = rawFetch;
+    mocks.getProviderConnectionById.mockResolvedValue(refreshConnection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(proxyConfig);
+    mocks.testProxyUrl.mockResolvedValue({ ok: true });
+    mocks.proxyAwareFetch.mockReset();
+    const refreshed = {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { accessToken: "refreshed-token", expiresAt: "2099-01-01T00:00:00.000Z" } }),
+    };
+    const acceptedProbe = { ok: true, status: 200 };
+    if (flow === "scheduled") {
+      mocks.proxyAwareFetch
+        .mockResolvedValueOnce(refreshed)
+        .mockResolvedValueOnce(acceptedProbe);
+    } else {
+      mocks.proxyAwareFetch
+        .mockResolvedValueOnce({ ok: false, status: 401 })
+        .mockResolvedValueOnce(refreshed)
+        .mockResolvedValueOnce(acceptedProbe);
+    }
+
+    try {
+      const { testSingleConnection } = await import("@/app/api/providers/[id]/test/testUtils.js");
+      const result = await testSingleConnection(refreshConnection.id);
+
+      expect(result).toMatchObject({ valid: true, error: null, refreshed: true });
+      expect(rawFetch).not.toHaveBeenCalled();
+      expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+        "https://api.cline.bot/api/v1/auth/refresh",
+        expect.objectContaining({ method: "POST" }),
+        proxyOptions,
+      );
+      expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+        "https://api.cline.bot/api/v1/users/me",
+        expect.objectContaining({ method: "GET" }),
+        proxyOptions,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
