@@ -32,6 +32,63 @@ instance with a bare `next start`, which bypasses that wrapper. And
 `ENABLE_REQUEST_LOGS` writes request and response bodies to disk unredacted, so
 leave it off outside of debugging.
 
+## Single sign-on
+
+The dashboard can authenticate against an identity provider. Both SAML 2.0 and
+OIDC are supported, and both are configured in the dashboard rather than through
+environment variables.
+
+<p align="center">
+  <img src="images/saml-admin-dashboard.png" alt="Single sign-on configuration in the dashboard" width="620"/>
+</p>
+
+Three authentication modes are available. Password only keeps the local login
+and ignores any SSO configuration. SSO only disables the password login. Both
+offers the two side by side.
+
+The SSO-only mode is not a lockout risk on its own. The password login is
+rejected only when the mode is SSO-only and the selected SSO type is actually
+configured, so a half-finished identity provider setup still lets you back in
+with the password.
+
+<p align="center">
+  <img src="images/saml-login-screen.png" alt="Login screen in SSO-only mode" width="500"/>
+</p>
+
+OIDC is the default type. It needs the issuer URL, a client id and a client
+secret. Scopes default to `openid profile email`, and the button label is
+configurable.
+
+SAML 2.0 needs the identity provider's single sign-on service URL and its X.509
+signing certificate. A bare base64 certificate blob is accepted and normalised
+into PEM, so the value can be pasted straight out of an identity provider
+console. The service provider entity id defaults to `urn:9router:sp`, and which
+assertion attributes carry the email and the display name are configurable,
+defaulting to `email` and `name`.
+
+The dashboard can import an identity provider's metadata XML and fill the sign-on
+URL, the issuer and the certificate from it, which is faster and less error-prone
+than transcribing the three by hand. It also carries setup notes for AWS IAM
+Identity Center, Okta, Entra ID, Keycloak and Authentik.
+
+Two URLs have to be given to the identity provider, and both are derived from
+the request origin rather than from configuration:
+
+| Purpose | URL |
+| -- | -- |
+| Assertion consumer service | `<your-base-url>/api/auth/saml/acs` |
+| Service provider metadata | `<your-base-url>/api/auth/saml/metadata` |
+
+Because they follow the request origin, the instance has to be reached at its
+real public URL for the ACS URL to match what the identity provider was
+configured with. Behind a reverse proxy that means forwarding the original host.
+
+SAML counts as configured only when both the sign-on URL and the certificate are
+set. Either one alone leaves SSO off. The dashboard's test action reports the
+resolved ACS and metadata URLs, which is the quickest way to confirm the origin
+is what you expect. Assertion replay is guarded by a `saml_state` cookie matched
+against the response's `InResponseTo` value.
+
 ## Splitting the API off the dashboard
 
 Setting `API_PORT` starts a second listener that serves only `/v1`, `/v1beta`,

@@ -121,6 +121,12 @@ provider, several accounts can be registered and are rotated before the combo
 moves to the next model, so a quota ceiling on one account does not end the
 request.
 
+Combos are built by dragging models into order in the dashboard.
+
+<p align="center">
+  <img src="../images/fusion-combo-ui.png" alt="Building a model combo in the dashboard" width="700"/>
+</p>
+
 ## Wiring a CLI tool
 
 Every tool below speaks to the same base URL and key. Where a tool offers an

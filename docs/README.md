@@ -19,7 +19,8 @@ these pages.
 - [troubleshooting.md](troubleshooting.md). Symptoms first, with the cause and
   the fix for each.
 - [deployment.md](deployment.md). Servers, process managers, reverse proxies,
-  the environment contract, where state lives, backup and upgrade.
+  SAML and OIDC single sign-on, the environment contract, where state lives,
+  backup and upgrade.
 
 Container operation is in [../DOCKER.md](../DOCKER.md).
 
