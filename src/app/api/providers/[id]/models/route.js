@@ -97,6 +97,13 @@ const getStaticProviderModels = (providerId) =>
     name: model.name || model.id,
   }));
 
+const parseSenseNovaModels = (data) => {
+  const chatModelIds = new Set(
+    getModelsByProviderId("sensenova").map((model) => model.id),
+  );
+  return parseOpenAIStyleModels(data).filter((model) => chatModelIds.has(model?.id));
+};
+
 // Generic custom resolver for OAuth providers that need refresh-on-401 + token persist.
 // Receives a `fetchFn(token)` and returns parsed models or throws.
 const buildOAuthResolver = ({ refreshFn, fetchFn, parseFn, errorLabel }) => async (connection) => {
@@ -246,7 +253,10 @@ const PROVIDER_MODELS_CONFIG = {
   },
   "volcengine-ark": createOpenAIModelsConfig("https://ark.cn-beijing.volces.com/api/coding/v3/models"),
   byteplus: createOpenAIModelsConfig("https://ark.ap-southeast.bytepluses.com/api/coding/v3/models"),
-  sensenova: createOpenAIModelsConfig("https://token.sensenova.cn/v1/models"),
+  sensenova: {
+    ...createOpenAIModelsConfig("https://token.sensenova.cn/v1/models"),
+    parseResponse: parseSenseNovaModels,
+  },
 
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),

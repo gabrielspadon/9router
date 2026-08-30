@@ -11,7 +11,7 @@ const sensenova = {
     textIcon: "SN",
     website: "https://www.sensenova.cn/token-plan",
     notice: {
-      text: "Free public beta: 60,000 general points and 60,000 Flash-Lite points per rolling 5 hours.",
+      text: "Free public beta: 60,000 general points and 60,000 Flash-Lite points per rolling 5 hours; 600,000 general points and 600,000 Flash-Lite points per rolling week.",
       apiKeyUrl: "https://platform.sensenova.cn/console/keys",
     },
   },

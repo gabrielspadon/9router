@@ -96,6 +96,17 @@ describe("SenseNova provider", () => {
     ]);
   });
 
+  it("publishes both rolling five-hour and weekly allowances for both free pools", () => {
+    const notice = REGISTRY.find((entry) => entry.id === "sensenova").display.notice.text;
+
+    expect(notice).toContain(
+      "60,000 general points and 60,000 Flash-Lite points per rolling 5 hours",
+    );
+    expect(notice).toContain(
+      "600,000 general points and 600,000 Flash-Lite points per rolling week",
+    );
+  });
+
   it("resolves sn without creating the misspelled sensnova alias", () => {
     expect(resolveProviderAlias("sn")).toBe("sensenova");
     expect(resolveProviderAlias("sensnova")).toBe("sensnova");
@@ -154,6 +165,73 @@ describe("SenseNova provider", () => {
         }),
       }),
     );
+  });
+
+  it("filters image-only rows from model discovery while preserving chat metadata", async () => {
+    global.fetch.mockResolvedValue(new Response(JSON.stringify({
+      object: "list",
+      data: [
+        {
+          id: "sensenova-6.8-flash-lite",
+          object: "model",
+          created: 1_788_022_800,
+          owned_by: "SenseTime",
+        },
+        {
+          id: "sensenova-u1.5-lite",
+          object: "model",
+          created: 1_788_022_801,
+          owned_by: "SenseTime",
+        },
+        {
+          id: "deepseek-v4-flash",
+          object: "model",
+          created: 1_788_022_802,
+          owned_by: "DeepSeek",
+        },
+        {
+          id: "sensenova-u1-fast",
+          object: "model",
+          created: 1_788_022_803,
+          owned_by: "SenseTime",
+        },
+        {
+          id: "glm-5.2",
+          object: "model",
+          created: 1_788_022_804,
+          owned_by: "Zhipu AI",
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const response = await listProviderModels(
+      new Request("http://localhost/api/providers/sensenova-connection/models"),
+      { params: Promise.resolve({ id: "sensenova-connection" }) },
+    );
+
+    expect((await response.json()).models).toEqual([
+      {
+        id: "sensenova-6.8-flash-lite",
+        object: "model",
+        created: 1_788_022_800,
+        owned_by: "SenseTime",
+      },
+      {
+        id: "deepseek-v4-flash",
+        object: "model",
+        created: 1_788_022_802,
+        owned_by: "DeepSeek",
+      },
+      {
+        id: "glm-5.2",
+        object: "model",
+        created: 1_788_022_804,
+        owned_by: "Zhipu AI",
+      },
+    ]);
   });
 
   it("tests saved keys with a bounded GET models probe", async () => {
