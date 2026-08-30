@@ -14,7 +14,8 @@ import { estimateUsage } from "../utils/usageTracking.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { proxyAwareFetch, resolveEffectiveProxyRoute } from "../utils/proxyFetch.js";
+import { connectHttp2 as defaultConnectHttp2 } from "../utils/http2Connect.js";
 import {
   createExecutorResponseHeaderTimeout,
   isConnectTimeoutError,
@@ -48,7 +49,12 @@ const COMPRESS_FLAG = {
 
 const AGENT_RUN_PATH = "/agent.v1.AgentService/Run";
 const PROTOBUF_LEN = 2;
-const PROTOBUF_VARINT = 0;
+
+function agentConnectionClosedError() {
+  return Object.assign(new Error("Cursor AgentService closed before response headers"), {
+    code: "http2_connection_closed",
+  });
+}
 
 function concatBuffers(...parts) {
   const length = parts.reduce((total, part) => total + part.length, 0);
@@ -63,7 +69,6 @@ function concatBuffers(...parts) {
 
 const agentString = (field, value) => encodeField(field, PROTOBUF_LEN, value);
 const agentMessage = (field, value) => encodeField(field, PROTOBUF_LEN, value);
-const agentBool = (field, value) => encodeField(field, PROTOBUF_VARINT, value ? 1 : 0);
 
 function textFromContent(content) {
   if (typeof content === "string") return content;
@@ -99,7 +104,14 @@ function encodeHistoryMessage(message) {
   return agentMessage(1, agentMessage(1, agentMessage(1, text)));
 }
 
-function buildAgentRunFrame(messages, model) {
+export function resolveCursorAgentModel(model) {
+  const value = String(model || "");
+  return /^claude-fable-/i.test(value) && value.endsWith("-fast")
+    ? value.slice(0, -"-fast".length)
+    : value;
+}
+
+export function buildAgentRunFrame(messages, model) {
   const system = messages
     .filter((message) => message?.role === "system")
     .map((message) => textFromContent(message.content))
@@ -127,7 +139,7 @@ function buildAgentRunFrame(messages, model) {
     ...(conversationHistory ? [agentMessage(7, conversationHistory)] : []),
   );
   const conversationAction = agentMessage(1, userAction);
-  const requestedModel = concatBuffers(agentString(1, model), agentBool(7, true));
+  const requestedModel = agentMessage(1, agentString(1, resolveCursorAgentModel(model)));
   const runRequest = concatBuffers(
     // An empty ConversationStateStructure starts a fresh local agent session.
     agentMessage(1, new Uint8Array()),
@@ -279,8 +291,9 @@ function createErrorResponse(jsonError) {
 }
 
 export class CursorExecutor extends BaseExecutor {
-  constructor() {
+  constructor({ connectHttp2 = defaultConnectHttp2 } = {}) {
     super("cursor", PROVIDERS.cursor);
+    this.connectHttp2 = connectHttp2;
   }
 
   buildUrl() {
@@ -428,10 +441,7 @@ export class CursorExecutor extends BaseExecutor {
    * AgentService (agent.api5.cursor.sh) is HTTP/2-only. Node's fetch/undici speaks
    * HTTP/1.1 and fails with HTTPParserError on the h2 preface — use http2 duplex.
    */
-  openAgentHttp2Stream(url, headers, signal, connectTimeout = null) {
-    if (!http2) {
-      throw new Error("HTTP/2 is required for Cursor AgentService (endpoint is h2-only)");
-    }
+  async openAgentHttp2Stream(url, headers, signal, proxyOptions = null, connectTimeout = null) {
     if (signal?.aborted) {
       throw signal.reason || new DOMException("Request aborted", "AbortError");
     }
@@ -443,10 +453,12 @@ export class CursorExecutor extends BaseExecutor {
       envTimeout: FETCH_CONNECT_TIMEOUT_MS,
       signal,
     });
+    const route = resolveEffectiveProxyRoute(url, proxyOptions || {});
     const chunkQueue = [];
     let waiting = null;
     let ended = false;
     let streamError = null;
+    let lease = null;
     let client = null;
     let req = null;
     let closed = false;
@@ -470,7 +482,7 @@ export class CursorExecutor extends BaseExecutor {
       if (onHeaderAbort) deadline.signal.removeEventListener("abort", onHeaderAbort);
       if (onCallerAbort) signal?.removeEventListener("abort", onCallerAbort);
       try { req?.destroy(); } catch {}
-      try { client?.close(); } catch {}
+      try { lease?.close(); } catch {}
     };
 
     const fail = (error) => {
@@ -494,7 +506,14 @@ export class CursorExecutor extends BaseExecutor {
     });
 
     try {
-      client = http2.connect(`https://${urlObj.host}`);
+      lease = await this.connectHttp2(url, { route, signal: deadline.signal });
+      if (!lease?.session || typeof lease.close !== "function") {
+        throw new Error("Cursor AgentService adapter did not return a SessionLease");
+      }
+      if (deadline.signal.aborted) {
+        throw deadline.classify(deadline.signal.reason);
+      }
+      client = lease.session;
       client.on("error", fail);
 
       req = client.request({
@@ -518,16 +537,24 @@ export class CursorExecutor extends BaseExecutor {
         else chunkQueue.push(chunk);
       });
       req.on("end", () => {
+        if (closed || ended) return;
+        if (!headersSettled) {
+          fail(agentConnectionClosedError());
+          return;
+        }
         ended = true;
         wake({ value: undefined, done: true });
         close();
+      });
+      req.once("close", () => {
+        if (!closed && !ended) fail(agentConnectionClosedError());
       });
 
       deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
       signal?.addEventListener("abort", onCallerAbort, { once: true });
     } catch (error) {
       close();
-      throw error;
+      throw deadline.classify(error);
     }
 
     return {
@@ -552,7 +579,7 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async executeAgent({ model, body, stream, credentials, signal, connectTimeout = null }) {
+  async executeAgent({ model, body, stream, credentials, signal, proxyOptions = null, connectTimeout = null }) {
     const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
     if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
 
@@ -575,7 +602,13 @@ export class CursorExecutor extends BaseExecutor {
 
     let session;
     try {
-      session = this.openAgentHttp2Stream(url, headers, requestController.signal, connectTimeout);
+      session = await this.openAgentHttp2Stream(
+        url,
+        headers,
+        requestController.signal,
+        proxyOptions,
+        connectTimeout,
+      );
       const closeSession = session.close.bind(session);
       session.close = () => {
         removeParentAbort();
@@ -687,11 +720,9 @@ export class CursorExecutor extends BaseExecutor {
 
     if (stream === false) {
       let content = "";
-      let reasoning = "";
       let agentError = null;
       await consume((event) => {
         if (event.type === "text") content += event.value;
-        else if (event.type === "thinking") reasoning += event.value;
         else if (event.type === "error") agentError = event.value;
       });
       if (agentError) {
@@ -712,7 +743,7 @@ export class CursorExecutor extends BaseExecutor {
           object: "chat.completion",
           created,
           model,
-          choices: [{ index: 0, message: { role: "assistant", content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}) }, finish_reason: "stop" }],
+          choices: [{ index: 0, message: { role: "assistant", content: content || null }, finish_reason: "stop" }],
           usage: estimateUsage(body, content.length, FORMATS.OPENAI),
         }), { headers: { "Content-Type": "application/json" } }),
         url,
@@ -728,8 +759,6 @@ export class CursorExecutor extends BaseExecutor {
         consume((event) => {
           if (event.type === "text") {
             controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: event.value } })));
-          } else if (event.type === "thinking") {
-            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { reasoning_content: event.value } })));
           } else if (event.type === "error") {
             // An SSE error frame, not a content delta: a protocol failure must not
             // be rendered to the user as the assistant's reply, and downstream
@@ -761,7 +790,7 @@ export class CursorExecutor extends BaseExecutor {
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     if (isAgentTextRequest(body)) {
       try {
-        return await this.executeAgent({ model, body, stream, credentials, signal, connectTimeout });
+        return await this.executeAgent({ model, body, stream, credentials, signal, proxyOptions, connectTimeout });
       } catch (error) {
         if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
         return {
