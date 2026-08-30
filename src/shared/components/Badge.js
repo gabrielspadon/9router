@@ -57,15 +57,6 @@ const iconSizes = {
   lg: "text-[16px]",
 };
 
-const dotTones = {
-  success: "bg-success",
-  warning: "bg-warning",
-  danger: "bg-danger",
-  info: "bg-info",
-  neutral: "bg-text-subtle",
-  brand: "bg-brand",
-};
-
 export default function Badge({
   children,
   variant = "neutral",
@@ -92,7 +83,7 @@ export default function Badge({
       {dot && !glyph && (
         <span
           aria-hidden="true"
-          className={cn("size-1.5 rounded-full", dotTones[resolved] || dotTones.neutral)}
+          className={cn("size-1.5 rounded-full", resolved === "brand" ? "bg-brand" : "bg-text-subtle")}
         />
       )}
       {glyph && (
