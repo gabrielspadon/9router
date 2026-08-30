@@ -170,14 +170,17 @@ export class AntigravityExecutor extends BaseExecutor {
             && typeof inlineData === "object"
             && !Array.isArray(inlineData)
             && Object.getPrototypeOf(inlineData) === Object.prototype
-            && typeof inlineData.mimeType === "string"
-            && inlineData.mimeType.length > 0
             && typeof inlineData.data === "string"
             && inlineData.data.length > 0
           ) {
-            validParts.push({
-              inlineData: { mimeType: inlineData.mimeType, data: inlineData.data },
-            });
+            const mimeType = typeof inlineData.mimeType === "string" && inlineData.mimeType.length > 0
+              ? inlineData.mimeType
+              : inlineData.mime_type;
+            if (typeof mimeType === "string" && mimeType.length > 0) {
+              validParts.push({
+                inlineData: { mimeType, data: inlineData.data },
+              });
+            }
           }
         }
         if (validParts.length > 0) {

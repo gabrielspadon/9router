@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
+import { openaiToGeminiRequest } from "../../open-sse/translator/request/openai-to-gemini.js";
 
 const transformImageRequest = body => new AntigravityExecutor().transformRequest(
   "gemini-3.1-flash-image",
@@ -130,7 +131,6 @@ describe("Antigravity image editing requests", () => {
           { inlineData: { mimeType: "", data: "aW1hZ2U=" } },
           { inlineData: { mimeType: 42, data: "aW1hZ2U=" } },
           { inlineData: { mimeType: "image/png", data: 42 } },
-          { inlineData: { mime_type: "image/png", data: "aW1hZ2U=" } },
         ],
       }],
     });
@@ -160,6 +160,56 @@ describe("Antigravity image editing requests", () => {
     expect(output.request.contents).toEqual([{
       role: "user",
       parts: [{ inlineData: { mimeType: "image/png", data: "bmVzdGVk" } }],
+    }]);
+  });
+
+  it("preserves an OpenAI data URI through Gemini translation and Antigravity execution", () => {
+    const translated = openaiToGeminiRequest("gemini-3.1-flash-image", {
+      messages: [{
+        role: "user",
+        content: [{
+          type: "image_url",
+          image_url: { url: "data:image/png;base64,dHJhbnNsYXRlZA==" },
+        }],
+      }],
+    }, false);
+
+    expect(translated.contents[0].parts).toEqual([{
+      inlineData: { mime_type: "image/png", data: "dHJhbnNsYXRlZA==" },
+    }]);
+
+    const output = transformImageRequest(translated);
+    expect(output.request.contents).toEqual([{
+      role: "user",
+      parts: [{ inlineData: { mimeType: "image/png", data: "dHJhbnNsYXRlZA==" } }],
+    }]);
+  });
+
+  it("normalizes both MIME spellings and prefers valid camelCase", () => {
+    const output = transformImageRequest({
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mime_type: "image/jpeg", data: "c25ha2U=" } },
+          { inlineData: { mimeType: "image/png", data: "Y2FtZWw=" } },
+          {
+            inlineData: {
+              mimeType: "image/webp",
+              mime_type: "image/gif",
+              data: "Ym90aA==",
+            },
+          },
+        ],
+      }],
+    });
+
+    expect(output.request.contents).toEqual([{
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: "image/jpeg", data: "c25ha2U=" } },
+        { inlineData: { mimeType: "image/png", data: "Y2FtZWw=" } },
+        { inlineData: { mimeType: "image/webp", data: "Ym90aA==" } },
+      ],
     }]);
   });
 });
