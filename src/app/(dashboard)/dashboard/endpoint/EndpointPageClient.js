@@ -745,13 +745,13 @@ export default function APIPageClient({ machineId }) {
                 <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
-                  className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Disable Tunnel"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -765,7 +765,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Disable Tunnel"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -779,7 +779,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => { setTunnelLoading(false); setTunnelProgress(""); }}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -801,7 +801,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setTunnelChecking(false)}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -837,13 +837,13 @@ export default function APIPageClient({ machineId }) {
                 <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
-                  className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Disable Tailscale"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -857,7 +857,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Disable Tailscale"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -880,7 +880,7 @@ export default function APIPageClient({ machineId }) {
                 )}
                 <button
                   onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); clearUserAuth(); }}
-                  className="p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
                   title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -1019,7 +1019,7 @@ export default function APIPageClient({ machineId }) {
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
+                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
                       <span className="material-symbols-outlined text-[14px]">
@@ -1028,7 +1028,7 @@ export default function APIPageClient({ machineId }) {
                     </button>
                     <button
                       onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
+                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                     >
                       <span className="material-symbols-outlined text-[14px]">
                         {copied === key.id ? "check" : "content_copy"}
@@ -1064,7 +1064,7 @@ export default function APIPageClient({ machineId }) {
                   />
                   <button
                     onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-danger-soft rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    className="focus-ring p-2 hover:bg-danger-soft rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>

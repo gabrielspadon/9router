@@ -35,7 +35,7 @@ export default function NewModelsButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="relative flex items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+        className="focus-ring relative flex items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
         title="Check for new models across all providers"
       >
         <span className="material-symbols-outlined text-[16px]">new_releases</span>
@@ -161,7 +161,7 @@ function NewModelsModal({ onClose }) {
 
             <button
               onClick={handleMarkAllRead}
-              className="mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+              className="focus-ring mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
             >
               <span className="material-symbols-outlined text-[14px]">done_all</span>
               Mark all as read

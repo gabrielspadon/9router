@@ -864,8 +864,7 @@ export default function ProfilePage() {
                   key={option}
                   type="button"
                   onClick={() => setTheme(option)}
-                  className={cn(
-                    'flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial',
+                  className={cn('focus-ring flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial',
                     theme === option
                       ? 'bg-white text-text-main shadow-sm'
                       : 'text-text-muted hover:text-text-main'
@@ -915,7 +914,7 @@ export default function ProfilePage() {
                 ref={importFileRef}
                 type="file"
                 accept="application/json,.json"
-                className="hidden"
+                className="focus-ring hidden"
                 onChange={handleImportDatabase}
               />
             </div>
@@ -939,7 +938,7 @@ export default function ProfilePage() {
           </div>
           <button
             onClick={() => setLangOpen(true)}
-            className="flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-primary/50 transition-colors"
+            className="focus-ring flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-primary/50 transition-colors"
             data-i18n-skip="true"
           >
             <span className="text-sm text-text-muted">Display language</span>
@@ -1044,7 +1043,7 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={() => setOidcExpanded((v) => !v)}
-            className="w-full flex items-center gap-3 text-left"
+            className="focus-ring w-full flex items-center gap-3 text-left"
           >
             <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span className="material-symbols-outlined text-[20px]">lock_open</span>
@@ -1079,8 +1078,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => setSsoTypeTab('saml')}
-                    className={cn(
-                      'flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
+                    className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
                       ssoTypeTab === 'saml'
                         ? 'bg-white text-text-main shadow-sm'
                         : 'text-text-muted hover:text-text-main'
@@ -1091,8 +1089,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => setSsoTypeTab('oidc')}
-                    className={cn(
-                      'flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
+                    className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
                       ssoTypeTab === 'oidc'
                         ? 'bg-white text-text-main shadow-sm'
                         : 'text-text-muted hover:text-text-main'
@@ -1138,8 +1135,7 @@ export default function ProfilePage() {
                         key={option.value}
                         type="button"
                         onClick={() => updateOidcForm('authMode', option.value)}
-                        className={cn(
-                          'text-left rounded-lg border p-3 transition-colors',
+                        className={cn('focus-ring text-left rounded-lg border p-3 transition-colors',
                           active
                             ? 'border-primary bg-primary/5'
                             : 'border-border bg-bg hover:bg-surface-2'
@@ -1162,7 +1158,7 @@ export default function ProfilePage() {
                     <button
                       type="button"
                       onClick={() => setShowSamlGuide((prev) => !prev)}
-                      className="w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors"
+                      className="focus-ring w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors"
                     >
                       <div className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary text-lg">
@@ -1353,7 +1349,7 @@ export default function ProfilePage() {
                       ref={idpMetadataFileRef}
                       type="file"
                       accept=".xml,application/xml,text/xml"
-                      className="hidden"
+                      className="focus-ring hidden"
                       onChange={handleIdpMetadataUpload}
                     />
                   </div>
@@ -1401,7 +1397,7 @@ export default function ProfilePage() {
                           ref={certFileRef}
                           type="file"
                           accept=".crt,.pem,.cer,text/plain"
-                          className="hidden"
+                          className="focus-ring hidden"
                           onChange={handleCertFileUpload}
                         />
                       </div>
@@ -1410,7 +1406,7 @@ export default function ProfilePage() {
                         placeholder="-----BEGIN CERTIFICATE-----&#10;MIIC...&#10;-----END CERTIFICATE-----"
                         value={samlForm.samlCert}
                         onChange={(e) => updateSamlForm('samlCert', e.target.value)}
-                        className="w-full p-2.5 rounded-lg border border-border bg-bg text-xs font-mono text-text-main focus:outline-none focus:border-primary"
+                        className="focus-ring w-full p-2.5 rounded-lg border border-border bg-bg text-xs font-mono text-text-main focus:border-primary"
                         disabled={loading || samlLoading}
                       />
                       <p className="text-xs text-text-muted">
@@ -1489,7 +1485,7 @@ export default function ProfilePage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         download="9router-sp-metadata.xml"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                       >
                         <span className="material-symbols-outlined text-[16px]">download</span>
                         Download XML
@@ -1930,8 +1926,7 @@ export default function ProfilePage() {
                   key={item.id}
                   type="button"
                   onClick={() => toggleNavItem(item.id)}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer',
+                  className={cn('focus-ring inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer',
                     hidden
                       ? 'border-border bg-bg text-text-muted line-through opacity-70'
                       : 'border-primary/40 bg-primary/5 text-text-main hover:border-primary'

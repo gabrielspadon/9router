@@ -59,7 +59,7 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
       <button 
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-3 bg-surface-2 hover:bg-surface-2 transition-colors"
+        className="focus-ring w-full flex items-center justify-between p-3 bg-surface-2 hover:bg-surface-2 transition-colors"
       >
         <div className="flex items-center gap-2">
           {icon && <span className="material-symbols-outlined text-[18px] text-text-muted">{icon}</span>}
@@ -189,9 +189,8 @@ export default function RequestDetailsTab() {
               id="provider-filter"
               value={filters.provider}
               onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
-              className={cn(
-                "h-9 px-3 rounded-lg border border-border bg-surface",
-                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+              className={cn("focus-ring h-9 px-3 rounded-lg border border-border bg-surface",
+                "text-sm text-text-main",
                 "w-full min-w-0 cursor-pointer"
               )}
               style={{ colorScheme: 'auto' }}
@@ -212,9 +211,8 @@ export default function RequestDetailsTab() {
               type="datetime-local"
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className={cn(
-                "h-9 px-3 rounded-lg border border-border bg-surface",
-                "w-full min-w-0 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={cn("focus-ring h-9 px-3 rounded-lg border border-border bg-surface",
+                "w-full min-w-0 text-sm text-text-main"
               )}
             />
           </div>
@@ -226,9 +224,8 @@ export default function RequestDetailsTab() {
               type="datetime-local"
               value={filters.endDate}
               onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className={cn(
-                "h-9 px-3 rounded-lg border border-border bg-surface",
-                "w-full min-w-0 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={cn("focus-ring h-9 px-3 rounded-lg border border-border bg-surface",
+                "w-full min-w-0 text-sm text-text-main"
               )}
             />
           </div>

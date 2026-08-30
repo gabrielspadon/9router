@@ -298,7 +298,7 @@ export default function AddApiKeyModal({
               )}
             </p>
             <textarea
-              className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
+              className="focus-ring w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px]"
               placeholder={bulkPlaceholder}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
@@ -406,7 +406,7 @@ export default function AddApiKeyModal({
                       href={website}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary underline"
+                      className="focus-ring text-primary underline"
                     >
                       Open {website.replace(/^https?:\/\//, "")}
                     </a>
@@ -496,7 +496,7 @@ export default function AddApiKeyModal({
                     href="https://dash.cloudflare.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary underline"
+                    className="focus-ring text-primary underline"
                   >
                     dash.cloudflare.com
                   </a>

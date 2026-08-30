@@ -226,7 +226,7 @@ export default function StatisticsContent({ initialData }) {
                   type="datetime-local"
                   value={customStart}
                   onChange={(e) => setCustomStart(e.target.value)}
-                  className="h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  className="focus-ring h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -235,12 +235,12 @@ export default function StatisticsContent({ initialData }) {
                   type="datetime-local"
                   value={customEnd}
                   onChange={(e) => setCustomEnd(e.target.value)}
-                  className="h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  className="focus-ring h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main"
                 />
               </div>
               <button
                 onClick={applyCustomRange}
-                className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-medium transition-colors hover:opacity-90 cursor-pointer"
+                className="focus-ring h-9 px-4 rounded-lg bg-primary text-white text-sm font-medium transition-colors hover:opacity-90 cursor-pointer"
               >
                 Apply
               </button>
@@ -249,7 +249,7 @@ export default function StatisticsContent({ initialData }) {
           {hasFilter && (
             <button
               onClick={resetFilters}
-              className="h-9 px-3 text-sm text-text-muted hover:text-text-main transition-colors cursor-pointer"
+              className="focus-ring h-9 px-3 text-sm text-text-muted hover:text-text-main transition-colors cursor-pointer"
             >
               Reset
             </button>
@@ -280,7 +280,7 @@ export default function StatisticsContent({ initialData }) {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${viewMode === mode ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text-main"}`}
+                className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${viewMode === mode ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text-main"}`}
               >
                 {mode === "tokens" ? "Tokens" : "Hit Rate"}
               </button>

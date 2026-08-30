@@ -12,7 +12,7 @@ export default function EndpointRow({ label, url, copyId, copied, onCopy, badge,
       <Input value={url} readOnly className="flex-1 font-mono text-sm" />
       <button
         onClick={() => onCopy(url, copyId)}
-        className="p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+        className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
       >
         <span className="material-symbols-outlined text-[18px]">{copied === copyId ? "check" : "content_copy"}</span>
       </button>
