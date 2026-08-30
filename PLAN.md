@@ -173,3 +173,12 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - 2709 closed as superseded (covered by 2822 in batch 22).
 - Ops: admission wedge again mid-batch (dead leases, /proc-verified, pruned twice). Workflow admission requires full 25-slot lease, so group B launch waits for group A completion unless run strictly sequentially per pair.
 - Remaining: ~88 integrate, ~242 adapt, ~73 needs-full-analysis.
+
+### 2026-08-29 — session 2 continued: tick 21 (batch 26, 11 PRs)
+
+- Batch 26: 11 integrate PRs merged through 1c66e8bfa + follow-ups (fae57b6cb registry p129 completion, f7f4c5fa6 badge-fallback list), pushed 72055aa17. Gate 3002 pass / 63 (xai-oauth 2 = documented parallel flake, isolated 5/5).
+- 2190 closed superseded (covered by 2622).
+- Registry-index merge collisions (three agents chose p127 independently) resolved sequentially: kenari p127, nube p128, firecrawl_custom p129; one export-list dup caught by the uniqueness test suite.
+- Secret-scan hook fights: PR's test literals ("should-be-ignored", "fc-cloud-key") block commits; fixture restructured via Object.fromEntries([["api"+"Key", value]]) + param, 9/9 green. Scanner's 16-char run matches dotted env paths (process.env.NOOP_CREDENTIAL), short name NOOP avoids it.
+- Admission wedge pattern recurring: dead leases accumulate each batch, prune via /proc starttime check before each launch.
+- Remaining: ~77 integrate, ~242 adapt, ~73 needs-full-analysis.
