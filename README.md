@@ -116,6 +116,10 @@ rules are in [docs/design/design-system.md](docs/design/design-system.md),
 and the evidence every design gate is judged against sits beside it under
 [docs/design/](docs/design/).
 
+This README ships in English only.
+[docs/design/translation-policy.md](docs/design/translation-policy.md) says why
+and what accepting a translated page would require.
+
 
 ## Acknowledgments
 
