@@ -112,6 +112,21 @@ async function readRaw() {
   return row ? parseJson(row.data, {}) : {};
 }
 
+function deleteClearedProxyPoolSnapshots(providerStrategies) {
+  if (!providerStrategies || typeof providerStrategies !== "object" || Array.isArray(providerStrategies)) {
+    return providerStrategies;
+  }
+  return Object.fromEntries(Object.entries(providerStrategies).map(([providerId, values]) => {
+    if (!values || typeof values !== "object" || Array.isArray(values) || values.proxyPoolId !== null) {
+      return [providerId, values];
+    }
+    const normalized = { ...values };
+    delete normalized.proxyPoolId;
+    delete normalized.strictProxy;
+    return [providerId, normalized];
+  }));
+}
+
 // Merge raw settings with defaults; backward-compat for missing keys
 export function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
@@ -180,6 +195,12 @@ export async function updateSettings(updates) {
       ) {
         updates = { ...updates, [key]: { ...seeded[key], ...updates[key] } };
       }
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "providerStrategies")) {
+      updates = {
+        ...updates,
+        providerStrategies: deleteClearedProxyPoolSnapshots(updates.providerStrategies),
+      };
     }
     next = { ...mergedCurrent, ...updates };
     db.run(

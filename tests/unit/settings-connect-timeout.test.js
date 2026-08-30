@@ -141,6 +141,24 @@ describe("connect timeout settings repository", () => {
       proxyPoolId: "pool-b",
     });
   });
+
+  it("deletes both proxy snapshot fields when a bulk strategy clear carries nulls", async () => {
+    await repository.updateSettings({
+      providerStrategies: {
+        "mimo-free": {
+          rotateStrategy: "none",
+          keep: "bulk-clear",
+          proxyPoolId: null,
+          strictProxy: null,
+        },
+      },
+    });
+
+    expect((await repository.exportSettings()).providerStrategies["mimo-free"]).toEqual({
+      rotateStrategy: "none",
+      keep: "bulk-clear",
+    });
+  });
 });
 
 describe("connect timeout settings route", () => {
@@ -377,6 +395,47 @@ describe("provider strategy proxy-pool snapshots", () => {
     expect(response.status).toBe(200);
     expect((await repository.getSettings()).providerStrategies["mimo-free"])
       .toMatchObject({ proxyPoolId: pool.id, strictProxy: true });
+  });
+
+  it("bulk clearing a no-auth pool removes its snapshot and retains direct credentials", async () => {
+    const pool = await proxyPools.createProxyPool({
+      name: "Clearable Pool",
+      proxyUrl: "https://proxy.example.test:8443",
+      strictProxy: true,
+      isActive: true,
+    });
+    const selected = await PATCH(settingsRequest({
+      providerStrategyPatch: {
+        providerId: "mimo-free",
+        values: { proxyPoolId: pool.id },
+      },
+    }));
+    expect(selected.status).toBe(200);
+
+    const cleared = await PATCH(settingsRequest({
+      providerStrategies: {
+        "mimo-free": {
+          rotateStrategy: "none",
+          keep: "bulk-clear",
+          proxyPoolId: null,
+        },
+      },
+    }));
+
+    expect(cleared.status).toBe(200);
+    expect((await repository.exportSettings()).providerStrategies["mimo-free"]).toEqual({
+      rotateStrategy: "none",
+      keep: "bulk-clear",
+    });
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    await expect(getProviderCredentials("mimo-free")).resolves.toMatchObject({
+      id: "noauth",
+      providerSpecificData: {
+        connectionProxyEnabled: false,
+        strictProxy: false,
+        resolutionKind: "unselected",
+      },
+    });
   });
 
   it("rejects inactive and client-strict no-auth pool selections without writing", async () => {

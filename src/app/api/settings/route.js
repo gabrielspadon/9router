@@ -40,6 +40,13 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function withoutClearedProxyPoolSelection(values) {
+  const normalized = { ...values };
+  delete normalized.proxyPoolId;
+  delete normalized.strictProxy;
+  return normalized;
+}
+
 async function normalizeProviderStrategyProxySelection(values) {
   if ([...NOAUTH_LEGACY_PROXY_KEYS].some((key) => Object.prototype.hasOwnProperty.call(values, key))) {
     return { error: "Connection proxy fields are not valid for provider strategies" };
@@ -52,11 +59,11 @@ async function normalizeProviderStrategyProxySelection(values) {
   }
   const proxyPoolId = values.proxyPoolId;
   if (proxyPoolId === null || proxyPoolId === undefined || proxyPoolId === "" || proxyPoolId === "__none__") {
-    return { values: { ...values, proxyPoolId: null, strictProxy: null } };
+    return { values: withoutClearedProxyPoolSelection(values) };
   }
   const normalizedId = normalizeString(String(proxyPoolId));
   if (!normalizedId) {
-    return { values: { ...values, proxyPoolId: null, strictProxy: null } };
+    return { values: withoutClearedProxyPoolSelection(values) };
   }
   const pool = await getProxyPoolById(normalizedId);
   if (!pool?.isActive || !normalizeString(pool.proxyUrl)) {
