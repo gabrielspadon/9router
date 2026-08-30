@@ -154,6 +154,8 @@ const MODEL_TYPE_TO_KIND = {
   stt: "stt",
   imageToText: "imageToText",
   video: "video",
+  ocr: "ocr",
+  moderation: "moderation",
 };
 
 function modelKind(model) {

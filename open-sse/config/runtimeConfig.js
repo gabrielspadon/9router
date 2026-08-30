@@ -81,6 +81,14 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs(
   60 * 1000,
 );
 
+// OCR and moderation are single-response JSON endpoints. Bound their upstream
+// wait independently so a client that stays connected cannot hold an account
+// selection forever. Env: JSON_PROXY_TIMEOUT_MS.
+export const JSON_PROXY_TIMEOUT_MS = envMs(
+  "JSON_PROXY_TIMEOUT_MS",
+  FETCH_CONNECT_TIMEOUT_MS,
+);
+
 // Connect timeout for ollama-local: higher default because local models may need extra time
 // to load weights (especially large models). Env: OLLAMA_LOCAL_CONNECT_TIMEOUT_MS.
 export const OLLAMA_LOCAL_CONNECT_TIMEOUT_MS = envMs(
