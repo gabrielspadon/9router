@@ -112,8 +112,8 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         {/* Loading */}
         {step === "loading" && (
           <div className="text-center py-6">
-            <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+            <div className="size-16 mx-auto mb-4 rounded-full bg-brand-soft flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-brand animate-spin">
                 progress_activity
               </span>
             </div>

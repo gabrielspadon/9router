@@ -27,18 +27,18 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
       <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
       {editing ? (
         <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={handleKeyDown}
-          className="focus-ring min-w-0 flex-1 rounded border border-primary/40 bg-surface px-1.5 py-0.5 font-mono text-xs text-text-main" />
+          className="focus-ring min-w-0 flex-1 rounded border border-brand-solid bg-surface px-1.5 py-0.5 font-mono text-xs text-text-main" />
       ) : (
         <div className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-surface-2"
           onClick={() => setEditing(true)} title="Click to edit">{model}</div>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
         <Button variant="bare" size="icon-sm" onClick={onMoveUp} disabled={isFirst}
-          className={isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"} title="Move up">
+          className={isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"} title="Move up">
           <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
         </Button>
         <Button variant="bare" size="icon-sm" onClick={onMoveDown} disabled={isLast}
-          className={isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"} title="Move down">
+          className={isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"} title="Move down">
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
         </Button>
       </div>
@@ -119,7 +119,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
                 <div className="flex items-stretch">
                   <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-border bg-surface-2 text-text-muted font-mono text-sm">{forcePrefix}</span>
                   <input value={name} onChange={handleNameChange} placeholder="my-combo"
-                    className="focus-ring flex-1 min-w-0 rounded-r border border-border bg-surface px-2 py-1.5 font-mono text-sm focus:border-primary" />
+                    className="focus-ring flex-1 min-w-0 rounded-r border border-border bg-surface px-2 py-1.5 font-mono text-sm focus:border-brand-solid" />
                 </div>
                 {nameError && <p className="text-[11px] text-danger mt-0.5">{nameError}</p>}
               </>
@@ -151,7 +151,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               </div>
             )}
             <button onClick={() => setShowModelSelect(true)}
-              className="w-full mt-2 py-2 border border-dashed border-border rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1">
+              className="w-full mt-2 py-2 border border-dashed border-border rounded-lg text-xs text-brand font-medium hover:text-brand hover:border-brand-solid transition-colors flex items-center justify-center gap-1">
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>

@@ -237,7 +237,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
             type="button"
             onClick={onMenuClick}
             aria-label={translate("Menu")}
-            className="text-text-main hover:text-primary"
+            className="text-text-main hover:text-brand"
           >
             <span className="material-symbols-outlined">menu</span>
           </Button>
@@ -261,7 +261,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                 {crumb.href ? (
                   <Link
                     href={crumb.href}
-                    className="text-text-muted hover:text-primary transition-colors"
+                    className="text-text-muted hover:text-brand transition-colors"
                   >
                     {crumb.label}
                   </Link>
@@ -288,7 +288,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           <div>
             <div className="flex items-center gap-2 min-w-0">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-xl shrink-0">
+                <span className="material-symbols-outlined text-brand text-xl shrink-0">
                   {icon}
                 </span>
               )}
@@ -312,9 +312,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
             className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate"
             title={displayName}
           >
-            <span className="material-symbols-outlined text-[14px] mr-1.5 text-primary">person</span>
+            <span className="material-symbols-outlined text-[14px] mr-1.5 text-brand">person</span>
             <span className="truncate">{displayName}</span>
-            <span className="ml-2 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            <span className="ml-2 shrink-0 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand">
               {loginMethod}
             </span>
           </div>
@@ -355,7 +355,7 @@ function HeaderSearch() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        className="focus-ring w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:border-primary/50 transition-colors"
+        className="focus-ring w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:border-brand-solid transition-colors"
       />
       {query && (
         <Button

@@ -205,7 +205,7 @@ export default function Sidebar({ onClose }) {
                 <button
                   onClick={() => copy(INSTALL_CMD)}
                   title="Copy install command"
-                  className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
+                  className="flex-1 text-left hover:underline transition-colors cursor-pointer min-w-0"
                 >
                   <code className="block text-[10px] text-text-muted font-mono truncate">
                     {copied ? "✓ copied!" : INSTALL_CMD}
@@ -228,7 +228,7 @@ export default function Sidebar({ onClose }) {
                 className={cn(
                   "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
                   isActive(item.href)
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-brand-soft text-brand"
                     : "text-text-muted hover:bg-surface-2 hover:text-text-main",
                 )}
               >
@@ -237,7 +237,7 @@ export default function Sidebar({ onClose }) {
                     "material-symbols-outlined text-[18px]",
                     isActive(item.href)
                       ? "fill-1"
-                      : "group-hover:text-primary transition-colors",
+                      : "group-hover:text-brand transition-colors",
                   )}
                 >
                   {item.icon}
@@ -260,7 +260,7 @@ export default function Sidebar({ onClose }) {
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
                     pathname.startsWith("/dashboard/media-providers")
-                      ? "bg-primary/10 text-primary"
+                      ? "bg-brand-soft text-brand"
                       : "text-text-muted hover:bg-surface-2 hover:text-text-main",
                   )}
                 >
@@ -293,7 +293,7 @@ export default function Sidebar({ onClose }) {
                           pathname.startsWith(
                             `/dashboard/media-providers/${kind.id}`,
                           )
-                            ? "bg-primary/10 text-primary"
+                            ? "bg-brand-soft text-brand"
                             : "text-text-muted hover:bg-surface-2 hover:text-text-main",
                         )}
                       >
@@ -310,7 +310,7 @@ export default function Sidebar({ onClose }) {
                       className={cn(
                         "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
                         pathname.startsWith(COMBINED_WEB_ITEM.href)
-                          ? "bg-primary/10 text-primary"
+                          ? "bg-brand-soft text-brand"
                           : "text-text-muted hover:bg-surface-2 hover:text-text-main",
                       )}
                     >
@@ -334,7 +334,7 @@ export default function Sidebar({ onClose }) {
                   className={cn(
                     "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
                     isActive(item.href)
-                      ? "bg-primary/10 text-primary"
+                      ? "bg-brand-soft text-brand"
                       : "text-text-muted hover:bg-surface-2 hover:text-text-main",
                   )}
                 >
@@ -343,7 +343,7 @@ export default function Sidebar({ onClose }) {
                       "material-symbols-outlined text-[18px]",
                       isActive(item.href)
                         ? "fill-1"
-                        : "group-hover:text-primary transition-colors",
+                        : "group-hover:text-brand transition-colors",
                     )}
                   >
                     {item.icon}
@@ -364,7 +364,7 @@ export default function Sidebar({ onClose }) {
                   className={cn(
                     "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
                     isActive(item.href)
-                      ? "bg-primary/10 text-primary"
+                      ? "bg-brand-soft text-brand"
                       : "text-text-muted hover:bg-surface-2 hover:text-text-main",
                   )}
                 >
@@ -373,7 +373,7 @@ export default function Sidebar({ onClose }) {
                       "material-symbols-outlined text-[18px]",
                       isActive(item.href)
                         ? "fill-1"
-                        : "group-hover:text-primary transition-colors",
+                        : "group-hover:text-brand transition-colors",
                     )}
                   >
                     {item.icon}
@@ -392,7 +392,7 @@ export default function Sidebar({ onClose }) {
                   "text-text-muted hover:bg-surface-2 hover:text-text-main",
                 )}
               >
-                <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
+                <span className="material-symbols-outlined text-[18px] group-hover:text-brand transition-colors">
                   computer
                 </span>
                 <span className="text-[13px] font-medium">9Remote</span>
@@ -411,7 +411,7 @@ export default function Sidebar({ onClose }) {
                   "text-text-muted hover:bg-surface-2 hover:text-text-main",
                 )}
               >
-                <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
+                <span className="material-symbols-outlined text-[18px] group-hover:text-brand transition-colors">
                   translate
                 </span>
                 <span className="text-[13px] font-medium">9English</span>
@@ -425,7 +425,7 @@ export default function Sidebar({ onClose }) {
               className={cn(
                 "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
                 isActive("/dashboard/profile")
-                  ? "bg-primary/10 text-primary"
+                  ? "bg-brand-soft text-brand"
                   : "text-text-muted hover:bg-surface-2 hover:text-text-main",
               )}
             >
@@ -434,7 +434,7 @@ export default function Sidebar({ onClose }) {
                   "material-symbols-outlined text-[18px]",
                   isActive("/dashboard/profile")
                     ? "fill-1"
-                    : "group-hover:text-primary transition-colors",
+                    : "group-hover:text-brand transition-colors",
                 )}
               >
                 settings

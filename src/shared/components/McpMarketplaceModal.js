@@ -182,7 +182,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                           ? "bg-success-soft text-success cursor-default"
                           : expanded
                           ? "bg-surface border border-border text-text-muted hover:bg-surface-2"
-                          : "bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20"
+                          : "bg-brand-soft border border-brand-line text-brand hover:border-brand-solid"
                       }`}
                     >
                       {added ? "Added" : expanded ? "Cancel" : "+ Add"}
@@ -212,9 +212,9 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-text-muted">{selectedCount}/{toolKeys.length} tools enabled</span>
                             <div className="flex gap-1">
-                              <button onClick={() => setAllTools(s.url, true)} className="text-[10px] text-primary hover:underline">All</button>
+                              <button onClick={() => setAllTools(s.url, true)} className="text-[10px] text-brand hover:underline">All</button>
                               <span className="text-[10px] text-text-muted">·</span>
-                              <button onClick={() => setAllTools(s.url, false)} className="text-[10px] text-primary hover:underline">None</button>
+                              <button onClick={() => setAllTools(s.url, false)} className="text-[10px] text-brand hover:underline">None</button>
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
@@ -234,7 +234,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                       )}
                       <button
                         onClick={() => confirmAdd(s)}
-                        className="self-end px-2 py-1 rounded text-[10px] font-medium bg-primary text-white hover:bg-primary/90"
+                        className="self-end px-2 py-1 rounded text-[10px] font-medium bg-brand-solid text-brand-on hover:bg-brand-solid-hover"
                       >
                         ✓ Confirm Add
                       </button>

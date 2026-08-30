@@ -108,9 +108,9 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => setMode("oauth")}
-                className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-left"
+                className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:border-brand-solid hover:bg-brand-soft transition-colors text-left"
               >
-                <span className="material-symbols-outlined text-2xl text-primary">lock_open</span>
+                <span className="material-symbols-outlined text-2xl text-brand">lock_open</span>
                 <div>
                   <p className="text-sm font-medium">OAuth App</p>
                   <p className="text-xs text-text-muted">Use a GitLab OAuth application</p>
@@ -118,9 +118,9 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
               </button>
               <button
                 onClick={() => setMode("pat")}
-                className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-left"
+                className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:border-brand-solid hover:bg-brand-soft transition-colors text-left"
               >
-                <span className="material-symbols-outlined text-2xl text-primary">key</span>
+                <span className="material-symbols-outlined text-2xl text-brand">key</span>
                 <div>
                   <p className="text-sm font-medium">Personal Access Token</p>
                   <p className="text-xs text-text-muted">Use a GitLab PAT with api scope</p>
@@ -135,7 +135,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
           <>
             <p className="text-xs text-text-muted">
               Create an OAuth app at{" "}
-              <a href={`${baseUrl.trim() || GITLAB_COM}/-/profile/applications`} target="_blank" rel="noreferrer" className="text-primary underline">
+              <a href={`${baseUrl.trim() || GITLAB_COM}/-/profile/applications`} target="_blank" rel="noreferrer" className="text-brand underline">
                 GitLab Applications
               </a>{" "}
               with redirect URI{" "}
@@ -161,7 +161,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
           <>
             <p className="text-xs text-text-muted">
               Create a PAT at{" "}
-              <a href={`${baseUrl.trim() || GITLAB_COM}/-/user_settings/personal_access_tokens`} target="_blank" rel="noreferrer" className="text-primary underline">
+              <a href={`${baseUrl.trim() || GITLAB_COM}/-/user_settings/personal_access_tokens`} target="_blank" rel="noreferrer" className="text-brand underline">
                 GitLab Access Tokens
               </a>{" "}
               with scopes: <code className="bg-sidebar px-1 rounded text-xs">api</code>,{" "}

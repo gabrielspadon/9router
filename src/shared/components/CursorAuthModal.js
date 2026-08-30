@@ -94,8 +94,8 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
         {/* Auto-detecting state */}
         {autoDetecting && (
           <div className="text-center py-6">
-            <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+            <div className="size-16 mx-auto mb-4 rounded-full bg-brand-soft flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-brand animate-spin">
                 progress_activity
               </span>
             </div>
@@ -161,7 +161,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
                 onChange={(e) => setAccessToken(e.target.value)}
                 placeholder="Access token will be auto-filled..."
                 rows={3}
-                className="focus-ring w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface focus:border-primary resize-none"
+                className="focus-ring w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface focus:border-brand-solid resize-none"
               />
             </div>
 

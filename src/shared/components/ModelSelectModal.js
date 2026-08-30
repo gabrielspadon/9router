@@ -471,8 +471,8 @@ export default function ModelSelectModal({
       footer={null}
     >
       {/* Info bar */}
-      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
-        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
+      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-brand-soft border border-brand-line rounded-lg text-xs text-text-muted">
+        <span className="material-symbols-outlined text-brand shrink-0" style={{ fontSize: "14px" }}>info</span>
         <span>Click to add, click again to remove. Changes are saved automatically.</span>
       </div>
 
@@ -498,8 +498,8 @@ export default function ModelSelectModal({
         {filteredCombos.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-              <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
-              <span className="text-xs font-medium text-primary">Combos</span>
+              <span className="material-symbols-outlined text-brand text-[14px]">layers</span>
+              <span className="text-xs font-medium text-brand">Combos</span>
               <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -515,7 +515,7 @@ export default function ModelSelectModal({
                         ? "bg-brand-solid text-brand-on border-brand-solid"
                         : addedModelValues.includes(combo.name)
                           ? "bg-brand-solid border-brand-solid text-brand-on"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                          : "bg-surface border-border text-text-main hover:border-brand-solid hover:bg-brand-soft"
                       }
                     `}
                   >
@@ -542,7 +542,7 @@ export default function ModelSelectModal({
                 fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}
                 fallbackColor={group.color}
               />
-              <span className="text-xs font-medium text-primary">
+              <span className="text-xs font-medium text-brand">
                 {group.name}
               </span>
               <span className="text-[10px] text-text-muted">
@@ -562,12 +562,12 @@ export default function ModelSelectModal({
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
                       ${isPlaceholder
-                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
+                        ? "border-dashed border-border text-text-muted hover:border-brand-solid hover:text-brand bg-surface italic"
                         : isSelected
                           ? "bg-brand-solid text-brand-on border-brand-solid"
                           : addedModelValues.includes(model.value)
                             ? "bg-brand-solid border-brand-solid text-brand-on"
-                            : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                            : "bg-surface border-border text-text-main hover:border-brand-solid hover:bg-brand-soft"
                       }
                     `}
                   >

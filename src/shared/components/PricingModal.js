@@ -158,7 +158,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
                                     min="0"
                                     value={pricingData[provider][model][field] || 0}
                                     onChange={(e) => handlePricingChange(provider, model, field, e.target.value)}
-                                    className="focus-ring w-20 px-2 py-1 text-right bg-surface border border-border rounded focus:border-primary"
+                                    className="focus-ring w-20 px-2 py-1 text-right bg-surface border border-border rounded focus:border-brand-solid"
                                   />
                                 </td>
                               ))}

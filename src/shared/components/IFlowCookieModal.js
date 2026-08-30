@@ -73,7 +73,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
                   href="https://platform.iflow.cn"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-primary hover:underline"
+                  className="text-brand hover:underline"
                 >
                   platform.iflow.cn
                 </a>

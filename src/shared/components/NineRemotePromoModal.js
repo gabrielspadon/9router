@@ -40,7 +40,7 @@ export default function NineRemotePromoModal({ isOpen, onClose }) {
             <div className="w-7 h-7 rounded-[8px] flex items-center justify-center bg-brand-solid">
               <span className="material-symbols-outlined text-brand-on text-base">terminal</span>
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-primary font-mono">9Remote</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-brand font-mono">9Remote</span>
           </div>
           <Button
             variant="ghost" size="icon"
@@ -69,7 +69,7 @@ export default function NineRemotePromoModal({ isOpen, onClose }) {
           <div className="flex gap-2 w-full">
             {FEATURES.map(({ icon, label, desc }) => (
               <div key={label} className="flex-1 flex flex-col items-center gap-1.5 py-4 px-1 rounded-[10px] border border-border-subtle bg-surface-2">
-                <span className="material-symbols-outlined text-primary text-[22px]">{icon}</span>
+                <span className="material-symbols-outlined text-brand text-[22px]">{icon}</span>
                 <p className="text-xs font-semibold text-text-main">{label}</p>
                 <p className="text-[10px] text-text-muted text-center leading-4">{desc}</p>
               </div>
@@ -80,7 +80,7 @@ export default function NineRemotePromoModal({ isOpen, onClose }) {
           <div className="flex flex-col gap-3 w-full">
             {BULLETS.map(({ icon, text }) => (
               <div key={icon} className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined flex-shrink-0 text-primary text-[16px]">{icon}</span>
+                <span className="material-symbols-outlined flex-shrink-0 text-brand text-[16px]">{icon}</span>
                 <span className="text-xs text-text-muted">{text}</span>
               </div>
             ))}

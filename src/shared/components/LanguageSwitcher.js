@@ -168,7 +168,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
                       disabled={isPending}
                       className={`flex flex-col items-center justify-start gap-1 px-2 py-3 rounded-lg text-xs font-medium transition-colors w-full ${
                         active
-                          ? "bg-primary/15 text-primary ring-2 ring-primary"
+                          ? "bg-brand-soft text-brand ring-2 ring-brand-solid"
                           : "text-text-main hover:bg-surface-2"
                       } ${isPending ? "opacity-70 cursor-wait" : ""}`}
                       title={info.name}

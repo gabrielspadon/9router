@@ -96,9 +96,9 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
         <div className="rounded-lg border border-border-subtle bg-surface-2 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-lg">layers</span>
+              <span className="material-symbols-outlined text-brand text-lg">layers</span>
               <code className="font-mono text-sm font-semibold text-text-main">{combo.name}</code>
-              <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary capitalize">
+              <span className="rounded bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand capitalize">
                 Strategy: {fallbackStrategy}
               </span>
             </div>
@@ -178,7 +178,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
         {/* Testing status spinner */}
         {testing && (
           <div className="py-8 flex flex-col items-center justify-center gap-3 border border-dashed border-border-subtle rounded-lg bg-surface-2/50">
-            <div className="size-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <div className="size-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
             <p className="text-xs font-medium text-text-main animate-pulse">
               Testing hit to combo models based on sequence...
             </p>
@@ -240,7 +240,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                 </span>
                 <button
                   onClick={() => copy(getCopyableSummary(), "combo-test-summary")}
-                  className="text-[11px] text-primary hover:underline flex items-center gap-1"
+                  className="text-[11px] text-brand hover:underline flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-[14px]">
                     {copied === "combo-test-summary" ? "check" : "content_copy"}
