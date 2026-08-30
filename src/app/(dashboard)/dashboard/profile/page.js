@@ -850,7 +850,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="size-10 sm:size-12 rounded-lg bg-success-soft text-success flex items-center justify-center shrink-0">
+              <div className="size-10 sm:size-12 rounded-lg bg-surface-2 text-text-muted flex items-center justify-center shrink-0">
                 <span aria-hidden="true" className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
@@ -920,9 +920,12 @@ export default function ProfilePage() {
             </div>
             {dbStatus.message && (
               <p
-                className={`text-sm ${dbStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
+                className={`inline-flex items-start gap-1.5 text-sm ${dbStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
               >
-                {dbStatus.message}
+                <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                  {dbStatus.type === 'error' ? 'error' : 'check_circle'}
+                </span>
+                <span className="min-w-0">{dbStatus.message}</span>
               </p>
             )}
           </div>
@@ -931,7 +934,7 @@ export default function ProfilePage() {
         {/* Language */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="size-10 rounded-lg bg-info-soft text-info flex items-center justify-center shrink-0">
+            <div className="size-10 rounded-lg bg-surface-2 text-text-muted flex items-center justify-center shrink-0">
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">language</span>
             </div>
             <h3 className="text-sm font-semibold">Language</h3>
@@ -1017,9 +1020,12 @@ export default function ProfilePage() {
 
                 {passStatus.message && (
                   <p
-                    className={`text-xs sm:text-sm ${passStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
+                    className={`inline-flex items-start gap-1.5 text-xs sm:text-sm ${passStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                   >
-                    {passStatus.message}
+                    <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                      {passStatus.type === 'error' ? 'error' : 'check_circle'}
+                    </span>
+                    <span className="min-w-0">{passStatus.message}</span>
                   </p>
                 )}
 
@@ -1516,17 +1522,23 @@ export default function ProfilePage() {
 
                   {samlTestStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${samlTestStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
+                      className={`inline-flex items-start gap-1.5 text-xs sm:text-sm ${samlTestStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
-                      {samlTestStatus.message}
+                      <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                        {samlTestStatus.type === 'error' ? 'error' : 'check_circle'}
+                      </span>
+                      <span className="min-w-0">{samlTestStatus.message}</span>
                     </p>
                   )}
 
                   {samlStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${samlStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
+                      className={`inline-flex items-start gap-1.5 text-xs sm:text-sm ${samlStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
-                      {samlStatus.message}
+                      <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                        {samlStatus.type === 'error' ? 'error' : 'check_circle'}
+                      </span>
+                      <span className="min-w-0">{samlStatus.message}</span>
                     </p>
                   )}
                 </div>
@@ -1617,17 +1629,23 @@ export default function ProfilePage() {
 
                   {oidcTestStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${oidcTestStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
+                      className={`inline-flex items-start gap-1.5 text-xs sm:text-sm ${oidcTestStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
-                      {oidcTestStatus.message}
+                      <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                        {oidcTestStatus.type === 'error' ? 'error' : 'check_circle'}
+                      </span>
+                      <span className="min-w-0">{oidcTestStatus.message}</span>
                     </p>
                   )}
 
                   {oidcStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${oidcStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
+                      className={`inline-flex items-start gap-1.5 text-xs sm:text-sm ${oidcStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
-                      {oidcStatus.message}
+                      <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                        {oidcStatus.type === 'error' ? 'error' : 'check_circle'}
+                      </span>
+                      <span className="min-w-0">{oidcStatus.message}</span>
                     </p>
                   )}
                 </div>
@@ -1655,7 +1673,7 @@ export default function ProfilePage() {
         {/* Model */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">model_training</span>
             </div>
             <h3 className="text-sm font-semibold">Model</h3>
@@ -1681,7 +1699,7 @@ export default function ProfilePage() {
         {/* Routing Preferences */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-info-soft text-info shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">route</span>
             </div>
             <h3 className="text-sm font-semibold">Routing Strategy</h3>
@@ -1875,9 +1893,12 @@ export default function ProfilePage() {
 
             {proxyStatus.message && (
               <p
-                className={`text-xs sm:text-sm ${proxyStatus.type === 'error' ? 'text-danger' : 'text-success'} pt-2 border-t border-border/50`}
+                className={`inline-flex items-start gap-1.5 text-xs sm:text-sm ${proxyStatus.type === 'error' ? 'text-danger' : 'text-success'} pt-2 border-t border-border`}
               >
-                {proxyStatus.message}
+                <span className="material-symbols-outlined shrink-0 text-[16px] leading-5" aria-hidden="true">
+                  {proxyStatus.type === 'error' ? 'error' : 'check_circle'}
+                </span>
+                <span className="min-w-0">{proxyStatus.message}</span>
               </p>
             )}
           </div>
@@ -1886,7 +1907,7 @@ export default function ProfilePage() {
         {/* Observability Settings */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
             <h3 className="text-sm font-semibold">Observability</h3>
@@ -1965,7 +1986,7 @@ export default function ProfilePage() {
         {/* Privacy Settings */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">privacy_tip</span>
             </div>
             <h3 className="text-sm font-semibold">Privacy</h3>
