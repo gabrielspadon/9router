@@ -14,7 +14,7 @@
 //   node .unlazy/r2/check-behaviour.mjs --verbose  list every differing entry
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 
 const verbose = process.argv.includes("--verbose");
 const ref = process.env.BASE_REF || "master";
@@ -144,6 +144,9 @@ for (const p of basePaths) {
 const headEntries = [];
 for (const p of headPaths) {
   // Read the working copy, not the blob, so uncommitted edits are in scope.
+  // A path git still tracks but that is gone from disk is a deletion in flight;
+  // it contributes no entries, which is exactly how the multiset should see it.
+  if (!existsSync(p)) continue;
   headEntries.push(...fingerprint(readFileSync(p, "utf8")));
 }
 
