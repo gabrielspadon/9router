@@ -55,22 +55,57 @@ explicit unsupported-route failure rather than a silent direct Cursor request.
 - Claiming a live Cursor model catalog or chat result without separately
   recorded credentialed evidence.
 
+## Persisted strict pool selection
+
+`proxyPoolId` and `strictProxy` are one persisted selection. They are not two
+independent client-supplied settings. A pool assignment records both values in
+the same `providerSpecificData` write, for example
+`{ proxyPoolId: "pool-a", strictProxy: true }`. The server obtains the boolean
+from the selected active pool. A client cannot choose a strict value that
+disagrees with that pool. Clearing the pool assignment deletes both fields in
+the same write, so a later legacy direct configuration cannot inherit a stale
+strict requirement.
+
+`POST /api/providers` and `PUT /api/providers/[id]` must implement this
+lifecycle. Their pool normalizers return the validated active pool's ID and its
+strict boolean, and the create/update paths persist or clear the pair together.
+The update merge keeps the pair through unrelated provider-specific edits.
+Token refresh also keeps it because its merge starts with the existing
+`providerSpecificData`; a refresh may not erase selection provenance.
+
+No-auth provider strategies use the same pair in
+`settings.providerStrategies[providerId]`. The settings PATCH path validates
+and resolves a submitted `proxyPoolId`, then atomically stores that pool's
+current `strictProxy` with it. A clearing patch removes both. It rejects a
+caller-supplied standalone or mismatched `strictProxy` rather than treating the
+boolean as an arbitrary strategy knob. For a rotating strategy, the selected
+pool object supplies both values to the virtual connection before a second
+lookup. Thus a pool disappearing between rotation and resolution retains the
+selected strict provenance.
+
+Existing no-auth strategies that contain a `proxyPoolId` but no strict snapshot
+are migrated before use. If the pool is active, resolve its strict value and
+atomically write the pair, then construct the virtual connection. If it is
+missing, inactive, malformed, or the lookup throws before that migration, do
+not infer a non-strict selection. Return a required-unavailable result and make
+zero environment or direct egress attempts until the user selects or clears a
+pool. This conservative legacy behavior avoids an unknowable historical strict
+selection silently escaping direct.
+
 ## Effective egress route
 
-`resolveConnectionProxyConfig()` will preserve proxy-selection provenance before
-it reads a pool. In particular, it retains the selected pool ID and the last
-known `strictProxy` value from `providerSpecificData` if the pool is missing,
-inactive, malformed, or its lookup throws. Its result distinguishes an
-intentional `__none__` from `missing-selected-pool`, `inactive-selected-pool`,
-and `selection-resolution-error`. It must not convert those error states to
-`strictProxy: false`.
+`resolveConnectionProxyConfig()` will preserve the stored pair before it reads
+a pool. In particular, it retains the selected pool ID and stored `strictProxy`
+if the pool is missing, inactive, malformed, or its lookup throws. Its result
+distinguishes an intentional `__none__` from `missing-selected-pool`,
+`inactive-selected-pool`, and `selection-resolution-error`. It must not convert
+those error states to `strictProxy: false`.
 
-The existing credential handoff already carries `connectionProxyPoolId` and
-`strictProxy`; this adaptation makes the stored strict value authoritative when
-the selected pool cannot be read. An active pool still supplies its current
-strict setting. This lets an intentionally strict connection fail closed during
-database or pool state failure instead of escaping through environment or direct
-egress.
+The credential handoff carries `connectionProxyPoolId` and `strictProxy`; the
+stored boolean is authoritative only when the selected pool cannot be read. An
+active pool still supplies its current strict setting. This lets an intentionally
+strict connection fail closed during database or pool-state failure instead of
+escaping through environment or direct egress.
 
 One pure resolver in `open-sse/utils/proxyFetch.js` will consume that provenance
 and expose a structured route, not only a URL. Its result is one of `direct`,
@@ -105,7 +140,11 @@ cleanup.
 
 ```js
 connectHttp2(url, { route, signal })
-  -> Promise<{ session: ClientHttp2Session, effectiveRoute: Route }>
+  -> Promise<{
+       session: ClientHttp2Session,
+       effectiveRoute: Route,
+       close: () => void,
+     }>
 ```
 
 The caller owns deadline classification. The adapter accepts its composed
@@ -129,14 +168,22 @@ validation. `rejectUnauthorized: false`, raw proxy URLs, and raw credentials
 are prohibited.
 
 Once a `TLSSocket` is handed to `http2.connect`, only the HTTP/2 session owns
-normal traffic. Session close or error destroys the tunnel socket as a
-best-effort backstop.
+normal traffic. The returned lease owns the HTTP/2 session and tunnel socket.
+`lease.close()` is idempotent and is the only close entry point used by the
+catalog path, so a caller can prove one cleanup even when the session emits a
+later error. Session close or error destroys the tunnel socket as a best-effort
+backstop.
 
 For a non-strict proxy route, proxy failure is resolved inside the adapter by a
 new direct connection and returns `effectiveRoute: direct`. A strict route, a
 relay route, and every `required-unavailable` route fail before that fallback.
 No direct dial, SOCKS dial, HTTP CONNECT, or `http2.connect` is allowed for a
 strict unavailable route.
+
+If a non-strict proxied attempt allocates a socket or session before failing,
+the adapter closes that failed proxy resource exactly once before it creates the
+direct fallback lease. The caller sees only the lease for the established
+effective route and never owns both attempts.
 
 ## Cursor integration
 
@@ -180,23 +227,31 @@ international-catalog lookup, or vice versa.
 For a direct or strict-proxy route, the effective route is fixed and an
 eligible cache entry may be consulted before transport. Relay and
 required-unavailable routes never read a catalog cache and fail before egress.
-For a non-strict proxy route, the catalog must establish the HTTP/2 session
+For a non-strict proxy route, the catalog must establish a `SessionLease`
 first. It then consults or warms only the cache key for the returned
-`effectiveRoute`, closing an unused established session on a cache hit. Thus a
-failed proxy followed by direct fallback never reads or warms the selected
-proxy's cache key. A catalog error still returns `null` so its established
-static catalog fallback remains intact, but strict routing never creates a
-direct attempt first.
+`effectiveRoute`. On a cache hit it calls `lease.close()` before returning the
+entry. This applies to both a successful proxy lease and a proxy-to-direct
+fallback lease. Therefore a proxied cache hit closes its unused proxy session
+exactly once, a fallback-to-direct cache hit closes its unused direct lease
+exactly once, and any failed proxy attempt was already closed once inside the
+adapter. Thus a failed proxy followed by direct fallback never reads or warms
+the selected proxy's cache key. A catalog error still returns `null` so its
+established static catalog fallback remains intact, but strict routing never
+creates a direct attempt first.
 
-Catalog transport gets one injected seam:
+Catalog transport gets two injected seams:
 
 ```js
-http2Post(url, headers, body, { signal, route })
-  -> Promise<{ status, body, effectiveRoute }>
+connectHttp2(url, { route, signal }) -> Promise<SessionLease>
+http2Post(lease.session, headers, body, { signal })
+  -> Promise<{ status, body }>
 ```
 
-Production defaults to the adapter-backed implementation. Tests use this seam
-instead of replacing global fetch or opening a real HTTP/2 socket.
+Production defaults to the adapter-backed implementation. `http2Post` borrows
+the session and never closes it. On a cache miss, the catalog owns the lease
+and closes it in a single `finally` after `http2Post`. Tests inject both seams
+instead of replacing global fetch or opening a real HTTP/2 socket. No
+`http2Post` call is allowed after a cache hit.
 
 ### Agent protobuf and model mapping
 
@@ -231,28 +286,50 @@ tunnelling.
    validation, HTTPS-proxy TLS/SNI/verification, SOCKS selection, unsupported
    schemes, partial CONNECT buffering, non-strict direct fallback with returned
    `effectiveRoute`, strict fail-closed behavior, caller abort at each pending
-   stage, and exactly-once resource cleanup. The strict unavailable cases must
-   prove zero calls to net, TLS, SOCKS, and HTTP/2 connection primitives.
+   stage, and exactly-once resource cleanup. Prove a failed proxy resource is
+   closed once before a returned direct fallback lease. The strict unavailable
+   cases must prove zero calls to net, TLS, SOCKS, and HTTP/2 connection
+   primitives.
 2. Extend `tests/unit/cursor-connect-timeout.test.js` for asynchronous
    AgentService setup. Prove the existing header deadline and the exact caller
    abort reason survive direct and proxied setup, both before and after
    response headers, with no timers or listeners left behind.
 3. Replace the catalog test's global-fetch assumption in
-   `tests/unit/cursor-models.test.js` with `http2Post`. Prove identical route
-   hits cache, direct and two proxy identities do not share cache, and a
-   failed non-strict proxy fallback neither reads nor warms its selected proxy
-   cache key. Strict unavailable and relay routes must make zero direct or
-   environment transport calls, while catalog fallback remains `null` on
-   failure.
+   `tests/unit/cursor-models.test.js` with the injected session and post seams.
+   Prove identical route hits cache, direct and two proxy identities do not
+   share cache, and a failed non-strict proxy fallback neither reads nor warms
+   its selected proxy cache key. Seed a direct-key cache entry, have the
+   injected connector report an attempted proxy then return a direct fallback
+   lease, and assert `http2Post` is not called, the returned lease's `close()`
+   is called exactly once, and the adapter's failed proxy resource is closed
+   exactly once. Add the corresponding successful-proxy cache-hit assertion.
+   Strict unavailable and relay routes must make zero direct or environment
+   transport calls, while catalog fallback remains `null` on failure.
 4. Extend `tests/unit/cursor-agent-proto.test.js` to decode the nested
    `RequestedModel`, assert field 1 only, and cover Fable-fast normalization
    plus non-Fable preservation.
-5. Add focused route tests, or extract a small pure proxy-options builder, to
+5. Extend `tests/unit/strict-proxy-propagation.test.js`, provider route tests,
+   and `tests/unit/settings-connect-timeout.test.js` (or focused successor
+   files). Prove create records `{ proxyPoolId, strictProxy }`, update replaces
+   both from the selected active pool, explicit clearing deletes both, and an
+   unrelated credentials refresh preserves both. Prove a no-auth fixed-pool
+   strategy records and clears the same pair, a rotating selection carries the
+   selected pool strict snapshot, and a legacy strategy is atomically migrated
+   before use only when its pool is active. Seed a real stored connection and
+   a real stored no-auth strategy with `{ proxyPoolId: "pool-strict",
+   strictProxy: true }`, then remove or deactivate that pool before resolution.
+   Also simulate the pool resolver throwing. Each case must return
+   `required-unavailable` and prove zero calls to environment resolution,
+   `net.connect`, `tls.connect`, SOCKS, HTTP CONNECT, direct `http2.connect`,
+   and catalog post seams. Also assert a cache hit closes a returned proxy
+   lease exactly once and a fallback-to-direct cache hit closes the returned
+   direct lease exactly once.
+6. Add focused route tests, or extract a small pure proxy-options builder, to
    prove both `/api/v1/models` and `/api/providers/[id]/models` pass the
-   resolved connection proxy and `strictProxy` to Cursor catalog discovery.
-   Cover missing/inactive selected pools and resolver exceptions that retain
-   strict provenance and produce no egress.
-6. Run those focused suites, the Cursor adjacency suites, lint for changed
+   resolved connection proxy and persisted `strictProxy` to Cursor catalog
+   discovery. Cover missing/inactive selected pools and resolver exceptions
+   that retain strict provenance and produce no egress.
+7. Run those focused suites, the Cursor adjacency suites, lint for changed
    files, the repository regression-baseline verifier, and the normal build.
    Live Cursor/proxy tests remain an explicitly unrun external gate unless
    authenticated test credentials and a disposable proxy are supplied.
@@ -267,10 +344,18 @@ open-sse/services/cursorModels.js                      catalog route, cache, inj
 src/lib/network/connectionProxy.js                     strict selection provenance
 src/app/api/v1/models/route.js                         resolved Cursor catalog options
 src/app/api/providers/[id]/models/route.js             resolved Cursor catalog options
+src/app/api/providers/route.js                          pool strict snapshot on create
+src/app/api/providers/[id]/route.js                     pool strict snapshot lifecycle
+src/app/api/settings/route.js                           no-auth strategy snapshot validation
+src/lib/db/repos/settingsRepo.js                        atomic strategy snapshot lifecycle
+src/sse/services/auth.js                                no-auth migration and virtual provenance
+open-sse/services/tokenRefresh.js                       preserve selection pair on refresh
 tests/unit/http2-connect.test.js                       new transport tests
 tests/unit/cursor-connect-timeout.test.js              lifecycle regression tests
 tests/unit/cursor-models.test.js                       cache and seam tests
 tests/unit/cursor-agent-proto.test.js                  protobuf and mapping tests
+tests/unit/strict-proxy-propagation.test.js             persisted fail-closed tests
+tests/unit/settings-connect-timeout.test.js             strategy lifecycle and migration tests
 ```
 
 No generated registry, dependency manifest, dashboard, production service, or
