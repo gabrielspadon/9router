@@ -1,5 +1,3 @@
-import { getKimchiUserAgent } from "../../utils/kimchiUserAgent.js";
-
 export default {
   id: "kimchi",
   priority: 95,
@@ -21,10 +19,9 @@ export default {
   transport: {
     baseUrl: "https://llm.kimchi.dev/openai/v1/chat/completions",
     format: "openai",
-    get headers() {
-      return {
-        "User-Agent": getKimchiUserAgent(),
-      };
+    // Registry imports stay network-inert; KimchiExecutor refreshes this per request.
+    headers: {
+      "User-Agent": "kimchi/0.1.01",
     },
     auth: {
       combined: true,
