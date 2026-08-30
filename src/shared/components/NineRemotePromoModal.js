@@ -42,8 +42,10 @@ export default function NineRemotePromoModal({ isOpen, onClose }) {
             <span className="text-xs font-bold uppercase tracking-wider text-primary font-mono">9Remote</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+            aria-label="Close"
+            className="focus-ring p-1.5 rounded-[var(--radius-brand)] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors duration-150"
           >
             <span className="material-symbols-outlined text-base">close</span>
           </button>

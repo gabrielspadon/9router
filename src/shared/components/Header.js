@@ -232,8 +232,10 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
           <button
+            type="button"
             onClick={onMenuClick}
-            className="text-text-main hover:text-primary transition-colors"
+            aria-label={translate("Menu")}
+            className="focus-ring text-text-main hover:text-primary transition-colors duration-150"
           >
             <span className="material-symbols-outlined">menu</span>
           </button>
