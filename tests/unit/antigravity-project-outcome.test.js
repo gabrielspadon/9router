@@ -139,6 +139,28 @@ describe("Antigravity project verification outcomes", () => {
     expect(listener.onVerificationSuccess).not.toHaveBeenCalled();
   });
 
+  it("uses the fixed Antigravity message for an opaque loadCodeAssist 500 diagnostic", async () => {
+    const opaque = "opaque-project-500-secret";
+    const mod = await loadProjectId(async () => response({ error: { message: opaque } }, 500));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(mod.getProjectIdForConnection("conn-A", "token", "antigravity", hooks())).resolves.toBeNull();
+
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(opaque);
+    expect(JSON.stringify(warn.mock.calls)).toContain("Antigravity upstream request failed");
+  });
+
+  it("uses the fixed Antigravity message for an opaque project transport diagnostic", async () => {
+    const opaque = "opaque-project-throw-secret";
+    const mod = await loadProjectId(async () => { throw new Error(opaque); });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(mod.getProjectIdForConnection("conn-A", "token", "antigravity", hooks())).resolves.toBeNull();
+
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(opaque);
+    expect(JSON.stringify(warn.mock.calls)).toContain("Antigravity upstream request failed");
+  });
+
   it("does not report success after its connection has been released", async () => {
     const gate = deferred();
     const fetchImpl = vi.fn()

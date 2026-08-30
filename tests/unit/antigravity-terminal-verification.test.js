@@ -346,6 +346,8 @@ describe("Antigravity terminal verification success", () => {
   it("uses a fixed Antigravity error for an opaque stream-read exception", async () => {
     const opaqueReadError = new Error("opaque-upstream-stream-read");
     const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const cancel = vi.fn(async () => {});
+    const releaseLock = vi.fn();
     const streamController = {
       signal: new AbortController().signal,
       isConnected: () => true,
@@ -361,7 +363,8 @@ describe("Antigravity terminal verification success", () => {
         body: {
           getReader: () => ({
             read: async () => { throw opaqueReadError; },
-            releaseLock: vi.fn(),
+            cancel,
+            releaseLock,
           }),
         },
       },
@@ -387,6 +390,8 @@ describe("Antigravity terminal verification success", () => {
       error: "Antigravity upstream request failed",
     });
     expect(sinks).not.toContain(opaqueReadError.message);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
   });
 
   it("preflights a normal Antigravity data frame before it can reach stream sinks", async () => {
@@ -435,6 +440,43 @@ describe("Antigravity terminal verification success", () => {
     expect(clientPayload).not.toContain("project-secret");
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain(VALIDATION_URLS[0]);
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain("onboard-secret");
+  });
+
+  it("preflights an initial Antigravity generic SSE error before every stream sink", async () => {
+    const opaque = "opaque-initial-sse-error-secret";
+    const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() };
+    const result = await handleStreamingResponse({
+      ...streamCtx(), providerResponse: sseResponse(`data: ${JSON.stringify({ error: { message: opaque } })}\n\n`),
+      sourceFormat: "openai", targetFormat: "openai", userAgent: "test", onRequestSuccess: vi.fn(),
+      reqLogger: logger, toolNameMap: null, customToolNames: null, streamController, onStreamComplete: vi.fn(), streamDetailId: "stream-initial-sse-error", streamState: {}, log,
+    });
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 502, error: "Antigravity upstream request failed" });
+    expect(JSON.stringify([clientPayload, result, logger, log, streamController.handleError.mock.calls])).not.toContain(opaque);
+  });
+
+  it("preflights a later Antigravity generic SSE error before every stream sink", async () => {
+    const opaque = "opaque-later-sse-error-secret";
+    const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: chunkedSseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "ordinary frame" } }] })}\n\n`,
+        `data: ${JSON.stringify({ error: { message: opaque } })}\n\n`,
+      ]),
+      sourceFormat: "openai", targetFormat: "openai", userAgent: "test", onRequestSuccess: vi.fn(),
+      reqLogger: logger, toolNameMap: null, customToolNames: null, streamController, onStreamComplete: vi.fn(), streamDetailId: "stream-later-sse-error", streamState: {}, log,
+    });
+    const clientPayload = await readAvailableStreamText(result.response);
+
+    expect(clientPayload).toContain("ordinary frame");
+    expect(JSON.stringify([clientPayload, logger, log, streamController.handleError.mock.calls])).not.toContain(opaque);
+    expect(streamController.handleError).toHaveBeenCalledWith(expect.objectContaining({ message: "Antigravity upstream request failed" }));
   });
 
   it("classifies a complete Antigravity JSON RPC validation body before stream sinks", async () => {

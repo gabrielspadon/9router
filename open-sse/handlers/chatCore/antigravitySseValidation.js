@@ -1,4 +1,9 @@
-import { classifyAntigravityValidation } from "../../services/antigravityValidation.js";
+import {
+  ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+  ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE,
+  classifyAntigravityValidation,
+  isAntigravityErrorPayload,
+} from "../../services/antigravityValidation.js";
 
 const MAX_SSE_VALIDATION_FRAME_BYTES = 64 * 1024;
 const encoder = new TextEncoder();
@@ -13,7 +18,7 @@ function nextSseEvent(text) {
   return { event: text.slice(0, lf + 2), rest: text.slice(lf + 2) };
 }
 
-function classifySseEvent(event) {
+function inspectSseEvent(event) {
   const data = event
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
@@ -22,7 +27,9 @@ function classifySseEvent(event) {
   try {
     const payload = JSON.parse(data.join("\n"));
     const status = payload?.error?.code ?? payload?.error?.status ?? payload?.status;
-    return classifyAntigravityValidation({ status, payload, source: "chat" });
+    const validation = classifyAntigravityValidation({ status, payload, source: "chat" });
+    if (validation) return { kind: "validation", validation };
+    return isAntigravityErrorPayload(payload) ? { kind: "error" } : null;
   } catch {
     return null;
   }
@@ -77,36 +84,50 @@ export async function readBoundedAntigravityJson({ reader, initialChunk }) {
   };
 }
 
-export function classifyAntigravitySseValidation(sseText, { includeTrailing = true } = {}) {
+export function classifyAntigravitySseOutcome(sseText, { includeTrailing = true } = {}) {
   let buffer = String(sseText ?? "");
   while (true) {
     const next = nextSseEvent(buffer);
     if (!next) break;
     if (!exceedsFrameLimit(next.event)) {
-      const validation = classifySseEvent(next.event);
-      if (validation) return validation;
+      const outcome = inspectSseEvent(next.event);
+      if (outcome) return outcome;
     }
     buffer = next.rest;
   }
   if (!includeTrailing || !buffer.trim() || exceedsFrameLimit(buffer)) return null;
-  return classifySseEvent(buffer);
+  return inspectSseEvent(buffer);
+}
+
+export function classifyAntigravitySseValidation(sseText, options = {}) {
+  const outcome = classifyAntigravitySseOutcome(sseText, options);
+  return outcome?.kind === "validation" ? outcome.validation : null;
 }
 
 /**
  * Hold only a complete, bounded SSE event before it crosses any stream sink.
- * Safe events retain their bytes. A classified Antigravity validation event
- * invokes the trusted callback and terminates before transforms can inspect it.
+ * Safe events retain their bytes. Classified Antigravity validation and generic
+ * error events terminate before transforms, persistence, or clients inspect them.
  */
-export function createAntigravitySseValidationGate({ reader, initialChunk, onValidationRequired }) {
+export function createAntigravitySseValidationGate({ reader, initialChunk, onValidationRequired, onUpstreamError }) {
   const decoder = new TextDecoder();
   let buffer = decoder.decode(initialChunk, { stream: true });
   let upstreamDone = false;
 
-  const failValidation = async (controller, validation) => {
-    await onValidationRequired?.(validation);
+  const terminate = async (controller, message) => {
     try { await reader.cancel(); } catch {}
     try { reader.releaseLock?.(); } catch {}
-    controller.error(new Error("Antigravity account verification required"));
+    controller.error(new Error(message));
+  };
+
+  const failValidation = async (controller, validation) => {
+    await onValidationRequired?.(validation);
+    await terminate(controller, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+  };
+
+  const failUpstreamError = async (controller) => {
+    await onUpstreamError?.();
+    await terminate(controller, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
   };
 
   return new ReadableStream({
@@ -116,14 +137,16 @@ export function createAntigravitySseValidationGate({ reader, initialChunk, onVal
         if (next) {
           buffer = next.rest;
           if (exceedsFrameLimit(next.event)) {
-            try { await reader.cancel(); } catch {}
-            try { reader.releaseLock?.(); } catch {}
-            controller.error(new Error("Antigravity SSE frame exceeded safe inspection limit"));
+            await failUpstreamError(controller);
             return;
           }
-          const validation = classifySseEvent(next.event);
-          if (validation) {
-            await failValidation(controller, validation);
+          const outcome = inspectSseEvent(next.event);
+          if (outcome?.kind === "validation") {
+            await failValidation(controller, outcome.validation);
+            return;
+          }
+          if (outcome?.kind === "error") {
+            await failUpstreamError(controller);
             return;
           }
           controller.enqueue(encoder.encode(next.event));
@@ -138,12 +161,16 @@ export function createAntigravitySseValidationGate({ reader, initialChunk, onVal
             return;
           }
           if (exceedsFrameLimit(trailing)) {
-            controller.error(new Error("Antigravity SSE frame exceeded safe inspection limit"));
+            await failUpstreamError(controller);
             return;
           }
-          const validation = classifySseEvent(trailing);
-          if (validation) {
-            await failValidation(controller, validation);
+          const outcome = inspectSseEvent(trailing);
+          if (outcome?.kind === "validation") {
+            await failValidation(controller, outcome.validation);
+            return;
+          }
+          if (outcome?.kind === "error") {
+            await failUpstreamError(controller);
             return;
           }
           controller.enqueue(encoder.encode(trailing));
@@ -151,9 +178,7 @@ export function createAntigravitySseValidationGate({ reader, initialChunk, onVal
         }
 
         if (exceedsFrameLimit(buffer)) {
-          try { await reader.cancel(); } catch {}
-          try { reader.releaseLock?.(); } catch {}
-          controller.error(new Error("Antigravity SSE frame exceeded safe inspection limit"));
+          await failUpstreamError(controller);
           return;
         }
         try {
@@ -163,8 +188,8 @@ export function createAntigravitySseValidationGate({ reader, initialChunk, onVal
           } else if (value) {
             buffer += decoder.decode(value, { stream: true });
           }
-        } catch (error) {
-          controller.error(error);
+        } catch {
+          await failUpstreamError(controller);
           return;
         }
       }

@@ -11,7 +11,7 @@ import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import {
   classifyAntigravityJsonValidation,
-  classifyAntigravitySseValidation,
+  classifyAntigravitySseOutcome,
   createAntigravitySseValidationGate,
   createSseTextStream,
   readBoundedAntigravityJson,
@@ -139,6 +139,8 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
     firstChunk = value;
   } catch (readErr) {
+    try { await reader?.cancel?.(); } catch {}
+    try { reader?.releaseLock?.(); } catch {}
     const status = 502;
     const shortMsg = provider === "antigravity"
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
@@ -207,10 +209,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     bufferedAntigravityJson = jsonCapture.text;
   }
 
+  const initialSseOutcome = provider === "antigravity" && !isAntigravityJsonRpc
+    ? classifyAntigravitySseOutcome(new TextDecoder().decode(firstChunk), { includeTrailing: false })
+    : null;
   const initialValidation = provider === "antigravity"
     ? isAntigravityJsonRpc
       ? classifyAntigravityJsonValidation(bufferedAntigravityJson, providerResponse.status)
-      : classifyAntigravitySseValidation(new TextDecoder().decode(firstChunk), { includeTrailing: false })
+      : initialSseOutcome?.validation ?? null
     : null;
   if (initialValidation) {
     await reportValidation(initialValidation);
@@ -226,6 +231,23 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${message}` } }), {
         status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      }),
+    };
+  }
+
+  if (initialSseOutcome?.kind === "error") {
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock?.(); } catch {}
+    const status = 502;
+    if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
+    streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+    return {
+      success: false,
+      status,
+      error: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+      response: new Response(JSON.stringify({ error: { message: `[${status}]: ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}` } }), {
+        status,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       }),
     };
   }
@@ -298,6 +320,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         onValidationRequired: async (validation) => {
           await reportValidation(validation);
           streamController?.handleError?.(new Error(ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE));
+        },
+        onUpstreamError: () => {
+          streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
         },
       });
     } else {

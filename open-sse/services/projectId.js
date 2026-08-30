@@ -8,7 +8,7 @@
  */
 
 import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
-import { classifyAntigravityValidation, redactAntigravityValidationText } from "./antigravityValidation.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation, redactAntigravityValidationText } from "./antigravityValidation.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // connectionId -> { projectId: string, fetchedAt: number }
@@ -116,7 +116,9 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
                 return outcome;
             })
             .catch((error) => {
-                const message = redactAntigravityValidationText(error?.message || String(error));
+                const message = provider === "antigravity"
+                    ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                    : redactAntigravityValidationText(error?.message || String(error));
                 console.warn("[ProjectId] project lookup failed", connectionId.slice(0, 8), message.slice(0, 200));
                 return { kind: "failure" };
             })
@@ -170,7 +172,12 @@ async function fetchProjectOutcome(accessToken, signal, provider) {
     const { data, text } = await readResponseBody(response);
     const validation = classifyAntigravityValidation({ status: response.status, payload: data, source: "loadCodeAssist" });
     if (validation) return { kind: "validation_required", validation };
-    if (!response.ok) throw new Error(`loadCodeAssist failed: HTTP ${response.status} ${redactAntigravityValidationText(text).slice(0, 200)}`);
+    if (!response.ok) {
+        const message = provider === "antigravity"
+            ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+            : `loadCodeAssist failed: HTTP ${response.status} ${redactAntigravityValidationText(text).slice(0, 200)}`;
+        throw new Error(message);
+    }
     const projectId = extractProjectId(data);
     if (projectId) return { kind: "project", projectId };
 
@@ -228,7 +235,12 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
             const { data, text } = await readResponseBody(response);
             const validation = classifyAntigravityValidation({ status: response.status, payload: data, source: "onboardUser" });
             if (validation) return { kind: "validation_required", validation };
-            if (!response.ok) throw new Error(`onboardUser HTTP ${response.status}: ${redactAntigravityValidationText(text).slice(0, 200)}`);
+            if (!response.ok) {
+                const message = provider === "antigravity"
+                    ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                    : `onboardUser HTTP ${response.status}: ${redactAntigravityValidationText(text).slice(0, 200)}`;
+                throw new Error(message);
+            }
 
             if (data?.done === true) {
                 const projectId = extractProjectIdFromOnboard(data);
@@ -239,7 +251,11 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                 // done:true with no usable project id is terminal: Google returns an
                 // empty cloudaicompanionProject object for accounts it won't provision.
                 // Retrying cannot change the answer, so bail out immediately.
-                console.warn("[ProjectId] onboardUser finished without a project ID (account not provisioned)");
+                console.warn(
+                    provider === "antigravity"
+                        ? `[ProjectId] ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`
+                        : "[ProjectId] onboardUser finished without a project ID (account not provisioned)",
+                );
                 return { kind: "failure" };
             }
 
@@ -250,16 +266,26 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
         } catch (error) {
             clearTimeout(timeoutId);
             if (error.name === "AbortError") {
-                console.warn(`[ProjectId] onboardUser attempt ${attempt} aborted (timeout or connection removed)`);
+                console.warn(
+                    provider === "antigravity"
+                        ? `[ProjectId] ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`
+                        : `[ProjectId] onboardUser attempt ${attempt} aborted (timeout or connection removed)`,
+                );
                 if (externalSignal?.aborted) return { kind: "failure" };   // connection gone – stop retrying
                 continue;
             }
             if (attempt === MAX_ATTEMPTS) {
-                console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${redactAntigravityValidationText(error?.message || "unknown error")}`);
+                const message = provider === "antigravity"
+                    ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                    : redactAntigravityValidationText(error?.message || "unknown error");
+                console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${message}`);
                 return { kind: "failure" };
             }
             // Continue to next attempt instead of throwing (which would skip remaining retries)
-            console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${redactAntigravityValidationText(error?.message || "unknown error")}, retrying...`);
+            const message = provider === "antigravity"
+                ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                : redactAntigravityValidationText(error?.message || "unknown error");
+            console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${message}, retrying...`);
             await new Promise(resolve => setTimeout(resolve, 2000));
         } finally {
             clearTimeout(timeoutId);
