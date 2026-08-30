@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card } from "@/shared/components";
+import { Button, Card } from "@/shared/components";
 import { MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -311,14 +311,15 @@ export function GenericExampleCard({ providerId, kind }) {
               className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
             />
             {input && (
-              <button
+              <Button
+                variant="bare" size="icon-sm"
                 type="button"
                 onClick={() => setInput("")}
                 aria-label="Clear input"
-                className="absolute right-2 top-1/2 -translate-y-1/2 focus-ring rounded-sm text-text-muted hover:text-primary transition-colors duration-150"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
-              </button>
+              </Button>
             )}
           </div>
         </Row>
@@ -335,14 +336,15 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
                 />
                 {refImage && (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     type="button"
                     onClick={() => setRefImage("")}
                     aria-label="Clear reference image"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 focus-ring rounded-sm text-text-muted hover:text-primary transition-colors duration-150"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
                   >
                     <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
-                  </button>
+                  </Button>
                 )}
               </div>
               {refImagePreviewSrc && (
@@ -371,14 +373,15 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
                 />
                 {maskImage && (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     type="button"
                     onClick={() => setMaskImage("")}
                     aria-label="Clear mask"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 focus-ring rounded-sm text-text-muted hover:text-primary transition-colors duration-150"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
                   >
                     <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
-                  </button>
+                  </Button>
                 )}
               </div>
               {maskImagePreviewSrc && (
@@ -458,16 +461,17 @@ export function GenericExampleCard({ providerId, kind }) {
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedCurl ? "check" : "content_copy"}</span>
                 {copiedCurl ? "Copied" : "Copy"}
               </button>
-            <button
+            <Button
+              variant="primary" size="sm"
               onClick={handleRun}
               disabled={running || !input.trim() || !modelFull}
-              className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-1 focus-ring rounded-[var(--radius-brand)] bg-brand-solid text-brand-on text-xs font-medium hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full sm:w-auto"
             >
                 <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
                   play_arrow
                 </span>
                 {running ? "Running..." : "Run"}
-              </button>
+              </Button>
             </div>
           </div>
           <pre className="bg-surface-2 rounded-[var(--radius-brand)] px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">{curlSnippet}</pre>

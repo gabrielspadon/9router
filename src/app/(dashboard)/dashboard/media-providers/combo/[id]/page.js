@@ -312,15 +312,15 @@ export default function ComboDetailPage() {
                     {model && <code className="text-xs text-text-muted font-mono truncate block">{model}</code>}
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
-                    <button onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={`focus-ring p-1 rounded-[var(--radius-brand)] transition-colors duration-150 ${idx === 0 ? "text-text-subtle" : "text-text-muted hover:text-primary hover:bg-surface-3"}`} aria-label="Move up" title="Move up">
+                    <Button variant="bare" size="icon-sm" onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={idx === 0 ? "text-text-subtle" : "text-text-muted hover:text-primary hover:bg-surface-3"} aria-label="Move up" title="Move up">
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_upward</span>
-                    </button>
-                    <button onClick={() => handleMove(idx, 1)} disabled={idx === providers.length - 1} className={`focus-ring p-1 rounded-[var(--radius-brand)] transition-colors duration-150 ${idx === providers.length - 1 ? "text-text-subtle" : "text-text-muted hover:text-primary hover:bg-surface-3"}`} aria-label="Move down" title="Move down">
+                    </Button>
+                    <Button variant="bare" size="icon-sm" onClick={() => handleMove(idx, 1)} disabled={idx === providers.length - 1} className={idx === providers.length - 1 ? "text-text-subtle" : "text-text-muted hover:text-primary hover:bg-surface-3"} aria-label="Move down" title="Move down">
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_downward</span>
-                    </button>
-                    <button onClick={() => handleRemoveProvider(idx)} className="focus-ring p-1 rounded-[var(--radius-brand)] text-text-muted hover:text-danger hover:bg-danger-soft transition-colors duration-150" aria-label="Remove" title="Remove">
+                    </Button>
+                    <Button variant="bare" size="icon-sm" onClick={() => handleRemoveProvider(idx)} className="text-text-muted hover:text-danger hover:bg-danger-soft" aria-label="Remove" title="Remove">
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">close</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
               );
