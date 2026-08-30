@@ -113,14 +113,14 @@ export function createSseTerminalObserver(emittedFormat) {
 
     try {
       const payloadType = JSON.parse(dataLines.join("\n"))?.type;
-      if (eventName !== null && typeof payloadType === "string") {
-        return eventName === payloadType && RESPONSES_TERMINAL_TYPES.has(eventName);
+      if (eventName !== null) {
+        return typeof payloadType === "string"
+          && eventName === payloadType
+          && RESPONSES_TERMINAL_TYPES.has(eventName);
       }
-      return eventName === null
-        ? RESPONSES_TERMINAL_TYPES.has(payloadType)
-        : RESPONSES_TERMINAL_TYPES.has(eventName);
+      return RESPONSES_TERMINAL_TYPES.has(payloadType);
     } catch {
-      return RESPONSES_TERMINAL_TYPES.has(eventName);
+      return false;
     }
   };
 

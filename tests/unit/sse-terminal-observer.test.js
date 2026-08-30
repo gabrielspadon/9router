@@ -73,6 +73,20 @@ describe("bounded typed SSE terminal observer", () => {
     );
     expect(responsesEmptyType.sawTerminal()).toBe(false);
 
+    const responsesMissingType = createSseTerminalObserver(FORMATS.OPENAI_RESPONSES);
+    observeInChunks(
+      responsesMissingType,
+      "event: response.completed\ndata: {}\n\n",
+    );
+    expect(responsesMissingType.sawTerminal()).toBe(false);
+
+    const responsesMalformedData = createSseTerminalObserver(FORMATS.OPENAI_RESPONSES);
+    observeInChunks(
+      responsesMalformedData,
+      "event: response.completed\ndata: {\n\n",
+    );
+    expect(responsesMalformedData.sawTerminal()).toBe(false);
+
     const claudeMismatch = createSseTerminalObserver(FORMATS.CLAUDE);
     observeInChunks(
       claudeMismatch,
