@@ -63,7 +63,11 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
   };
 
   const buildHref = (slug) => (slug ? `/${lang}/${slug}` : `/${lang}`);
-  const isActive = (slug) => pathname === buildHref(slug);
+  // next.config.mjs sets trailingSlash: true, so usePathname() returns
+  // "/en/providers/free/" while buildHref returns "/en/providers/free".
+  // Compared raw these never match and no entry is ever marked active.
+  const normalize = (path) => (path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path);
+  const isActive = (slug) => normalize(pathname || "") === buildHref(slug);
 
   const handleLinkClick = () => {
     if (isMobile && onClose) onClose();
