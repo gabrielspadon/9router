@@ -45,6 +45,20 @@ describe("stripUnsupportedParams", () => {
     });
   });
 
+  it("strips reasoning_content from Mistral message history", () => {
+    const body = {
+      messages: [
+        { role: "system", content: "x" },
+        { role: "assistant", content: "hi", reasoning_content: "thinking..." },
+        { role: "user", content: "hello" },
+      ],
+    };
+
+    stripUnsupportedParams("mistral", "mistral-large-latest", body);
+
+    expect(body.messages[1]).toEqual({ role: "assistant", content: "hi" });
+  });
+
   it("keeps VolcEngine Ark GLM max tokens when already under the ceiling", () => {
     const body = { max_tokens: 64000 };
 
