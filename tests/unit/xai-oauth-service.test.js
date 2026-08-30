@@ -7,6 +7,32 @@ describe("xai/oauth service", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
+  it("loads dashboard OAuth providers without starting Kimchi GitHub release discovery", async () => {
+    const kimchiReleaseUrl = "https://api.github.com/repos/getkimchi/kimchi/releases/latest";
+    const fetchMock = fetch;
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: async () => "",
+    });
+    const previousKimchiState = globalThis.__kimchi_ua_state;
+    delete globalThis.__kimchi_ua_state;
+
+    try {
+      await import("../../src/lib/oauth/providers.js");
+      const kimchiState = globalThis.__kimchi_ua_state;
+      await kimchiState?.activePromise;
+
+      const requestedUrls = fetchMock.mock.calls.map(([url]) => String(url));
+      expect(requestedUrls).not.toContain(kimchiReleaseUrl);
+      expect(kimchiState).toBeUndefined();
+    } finally {
+      if (previousKimchiState === undefined) delete globalThis.__kimchi_ua_state;
+      else globalThis.__kimchi_ua_state = previousKimchiState;
+    }
+  }, 20_000);
+
   it("validates discovered endpoints are https x.ai URLs", async () => {
     const { validateOAuthEndpoint } = await import("../../src/lib/oauth/services/xai.js");
 
