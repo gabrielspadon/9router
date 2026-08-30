@@ -25,7 +25,8 @@ reviewer's afternoon.
 - [ ] Baseline regression gate reports no regression
 
   ```
-  cd tests && npx vitest run --reporter=json --outputFile=/tmp/9router-vitest.json
+  cd tests && npx vitest run --reporter=default --reporter=json \
+    --outputFile.json=/tmp/9router-vitest.json
   cd .. && node tests/__baseline__/verify-no-regression.mjs /tmp/9router-vitest.json
   ```
 

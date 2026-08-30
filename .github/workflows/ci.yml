@@ -68,10 +68,30 @@ jobs:
       # tests/__baseline__/known-fails.txt, so vitest exits nonzero by design and
       # its exit code is not the verdict. Swallow it here, then fail if no report
       # was written, which is what a crash rather than a test failure looks like.
+      #
+      # Both reporters are needed. The json reporter is the gate's only input,
+      # and on its own it silences the console, leaving a failure with no message
+      # to read. The default reporter puts that detail back in this job's log.
+      #
+      # The raised timeouts are not a way of letting slow code pass. Several
+      # tests dynamically import a large module graph inside the test body, and
+      # vitest's 5000ms default counts that import against the test. On a loaded
+      # machine, and a 2-vCPU hosted runner is one, those tests time out for
+      # reasons that have nothing to do with the change under review, which would
+      # make the gate below report phantom regressions. Raising a timeout can
+      # only turn a failing test into a passing one, and the gate flags only the
+      # pass to fail direction, so it cannot hide a real regression. If phantom
+      # failures persist, lower --maxConcurrency (the config sets 60, for real
+      # provider runs) before raising these further.
       - name: Run the suite and write a JSON report
         working-directory: tests
         run: |
-          npx vitest run --reporter=json --outputFile="$RUNNER_TEMP/vitest-results.json" || true
+          npx vitest run \
+            --testTimeout=30000 \
+            --hookTimeout=30000 \
+            --reporter=default \
+            --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/vitest-results.json" || true
           test -s "$RUNNER_TEMP/vitest-results.json"
 
       # The verdict. Exits 0 only when every currently failing test is already in
@@ -95,12 +115,3 @@ jobs:
       - name: Verify OAuth URL snapshot
         if: always()
         run: node tests/__baseline__/verify-oauth-urls.mjs
-
-      - name: Upload the test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vitest-results
-          path: ${{ runner.temp }}/vitest-results.json
-          if-no-files-found: warn
-          retention-days: 7

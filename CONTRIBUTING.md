@@ -25,10 +25,33 @@ and [`open-sse/AGENTS.md`](open-sse/AGENTS.md) before changing anything under
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev
 ```
 
 The dashboard serves at `/dashboard` and the gateway at `/v1`.
+
+Mind the port, because three defaults disagree and only one of them reads
+`PORT`.
+
+- `npm run dev` and `npm run start` both pass `--port 20127` on the command
+  line. From a checkout that flag wins, so they listen on **20127** and `PORT`
+  in your `.env` is ignored. `npm run start` from a checkout finds no `server.js`
+  beside `custom-server.js` and forwards its arguments to `next start`.
+- A standalone build reads `PORT`. `npm run build` writes
+  `.next/standalone/custom-server.js` next to a generated `server.js`, and
+  running that file directly honours `PORT` and `HOSTNAME`. This is the path
+  `scripts/dev-test-server.sh` uses to reach port 20129.
+- The packaged CLI, the `Dockerfile` and `docker-compose.yml` all default to
+  **20128**, which is the port the documentation and most client configurations
+  assume.
+
+Set `BASE_URL` and `NEXT_PUBLIC_BASE_URL` to the port you are actually on, or
+OAuth callbacks and cloud sync will point at a different one.
+
+```bash
+npm run build
+PORT=20128 HOSTNAME=0.0.0.0 node .next/standalone/custom-server.js
+```
 
 Run `npm install` at the repository root before anything else, including the
 test suite, because the tests import from `src/` and `open-sse/`.
@@ -112,10 +135,15 @@ That question is answered by the baseline gate, not by a raw pass count.
 
 ```bash
 cd tests
-npx vitest run --reporter=json --outputFile=/tmp/9router-vitest.json
+npx vitest run --reporter=default --reporter=json \
+  --outputFile.json=/tmp/9router-vitest.json
 cd ..
 node tests/__baseline__/verify-no-regression.mjs /tmp/9router-vitest.json
 ```
+
+Both reporters are needed. The gate reads only the JSON, and the json reporter
+on its own silences the console, leaving a failure with no message to read. The
+default reporter puts that detail back on screen. CI runs the same pair.
 
 The gate reads the vitest JSON report, subtracts the catalogued failures, and
 exits 0 printing `No regression` when nothing else fails. It exits 1 and names
