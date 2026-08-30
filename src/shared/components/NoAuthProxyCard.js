@@ -59,27 +59,32 @@ export default function NoAuthProxyCard({ providerId }) {
     };
   }, [providerId]);
 
-  const save = useCallback(async (poolId, strategy) => {
+  const save = useCallback((poolId, strategy) => {
     const values = {
       proxyPoolId: poolId === NONE_PROXY_POOL_VALUE ? null : poolId,
       rotateStrategy: strategy === "none" ? null : strategy,
     };
     setError("");
-    try {
-      await enqueueProviderStrategySave({ providerId, values });
-      confirmedRef.current = { poolId, strategy };
-      setProxyPoolId(poolId);
-      setRotateStrategy(strategy);
-      setSavedFlash(true);
-      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-      flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1500);
-    } catch (e) {
-      console.log("Save proxy config error:", e);
-      setProxyPoolId(confirmedRef.current.poolId);
-      setRotateStrategy(confirmedRef.current.strategy);
-      setSavedFlash(false);
-      setError(e.message);
-    }
+    return enqueueProviderStrategySave({
+      providerId,
+      values,
+      onSuccess: () => {
+        confirmedRef.current = { poolId, strategy };
+        setProxyPoolId(poolId);
+        setRotateStrategy(strategy);
+        setSavedFlash(true);
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1500);
+      },
+      onError: (error) => {
+        console.log("Save proxy config error:", error);
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        setProxyPoolId(confirmedRef.current.poolId);
+        setRotateStrategy(confirmedRef.current.strategy);
+        setSavedFlash(false);
+        setError(error.message);
+      },
+    }).catch(() => {});
   }, [enqueueProviderStrategySave, providerId]);
 
   const handlePoolChange = (newPoolId) => {

@@ -351,23 +351,27 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     fetch_();
   }, [fetch_]);
 
-  const saveStrategy = async (strategy, stickyLimit) => {
+  const saveStrategy = (strategy, stickyLimit) => {
     const values = {
       fallbackStrategy: strategy || null,
       stickyRoundRobinLimit: strategy === "round-robin" && stickyLimit !== ""
         ? Number(stickyLimit) || 3
         : null,
     };
-    try {
-      await enqueueProviderStrategySave({ providerId, values });
-      setProviderStrategy(strategy);
-      if (strategy === "round-robin") {
-        setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
-      }
-    } catch (e) {
-      console.log("saveStrategy error:", e);
-      await fetch_();
-    }
+    return enqueueProviderStrategySave({
+      providerId,
+      values,
+      onSuccess: () => {
+        setProviderStrategy(strategy);
+        if (strategy === "round-robin") {
+          setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
+        }
+      },
+      onError: async (error) => {
+        console.log("saveStrategy error:", error);
+        await fetch_();
+      },
+    }).catch(() => {});
   };
 
   const handleStickyLimitCommit = () => {

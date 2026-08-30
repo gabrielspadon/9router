@@ -420,23 +420,27 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const saveProviderStrategy = async (strategy, stickyLimit) => {
+  const saveProviderStrategy = (strategy, stickyLimit) => {
     const values = {
       fallbackStrategy: strategy || null,
       stickyRoundRobinLimit: strategy === "round-robin" && stickyLimit !== ""
         ? Number(stickyLimit) || 3
         : null,
     };
-    try {
-      await enqueueProviderStrategySave({ providerId, values });
-      setProviderStrategy(strategy);
-      if (strategy === "round-robin") {
-        setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
-      }
-    } catch (error) {
-      console.log("Error saving provider strategy:", error);
-      await fetchConnections();
-    }
+    return enqueueProviderStrategySave({
+      providerId,
+      values,
+      onSuccess: () => {
+        setProviderStrategy(strategy);
+        if (strategy === "round-robin") {
+          setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
+        }
+      },
+      onError: async (error) => {
+        console.log("Error saving provider strategy:", error);
+        await fetchConnections();
+      },
+    }).catch(() => {});
   };
 
   const handleRoundRobinToggle = (enabled) => {

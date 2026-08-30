@@ -60,7 +60,18 @@ export function createProviderStrategySaveQueue(
     if (pending === 1) onBusyChange(true);
     const current = tail
       .catch(() => {})
-      .then(() => save(options))
+      .then(async () => {
+        const { onSuccess, onError, ...saveOptions } = options;
+        let result;
+        try {
+          result = await save(saveOptions);
+        } catch (error) {
+          await onError?.(error);
+          throw error;
+        }
+        await onSuccess?.(result);
+        return result;
+      })
       .finally(() => {
         pending -= 1;
         if (pending === 0) onBusyChange(false);

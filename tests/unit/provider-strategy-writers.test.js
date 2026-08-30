@@ -41,6 +41,15 @@ describe("provider strategy writer source contract", () => {
     }
   });
 
+  it.each([
+    ["provider page", providerPageSource],
+    ["connections card", connectionsCardSource],
+    ["no-auth proxy", noAuthProxySource],
+  ])("keeps %s confirmation and rollback inside the queued lifecycle", (_label, source) => {
+    expect(source).toContain("onSuccess:");
+    expect(source).toContain("onError:");
+  });
+
   it("makes provider-page sticky edits draft-only until blur or Enter", () => {
     expect(providerPageSource).toContain("providerStrategySaving");
     expect(providerPageSource).toContain("disabled={providerStrategySaving}");
@@ -339,6 +348,51 @@ describe("provider strategy atomic patch helper", () => {
     await expect(second).resolves.toMatchObject({
       providerStrategies: { qoder: { stickyRoundRobinLimit: 4 } },
     });
+    expect(busyChanges).toEqual([true, false]);
+  });
+
+  it("serializes rollback before later work and keeps busy true until rollback finishes", async () => {
+    const { createProviderStrategySaveQueue } = await loadHelper();
+    const rollback = deferred();
+    const events = [];
+    const busyChanges = [];
+    const save = vi.fn(async ({ sequence }) => {
+      events.push(`save:${sequence}`);
+      if (sequence === 1) throw new Error("first failed");
+      return { sequence };
+    });
+    const enqueue = createProviderStrategySaveQueue(
+      save,
+      (busy) => busyChanges.push(busy),
+    );
+
+    const first = enqueue({
+      sequence: 1,
+      onError: async () => {
+        events.push("rollback:start");
+        await rollback.promise;
+        events.push("rollback:end");
+      },
+    });
+    const second = enqueue({
+      sequence: 2,
+      onSuccess: () => events.push("confirm:2"),
+    });
+
+    await vi.waitFor(() => expect(events).toEqual(["save:1", "rollback:start"]));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(busyChanges).toEqual([true]);
+
+    rollback.resolve();
+    await expect(first).rejects.toThrow("first failed");
+    await expect(second).resolves.toEqual({ sequence: 2 });
+    expect(events).toEqual([
+      "save:1",
+      "rollback:start",
+      "rollback:end",
+      "save:2",
+      "confirm:2",
+    ]);
     expect(busyChanges).toEqual([true, false]);
   });
 });
