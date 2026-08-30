@@ -14,6 +14,12 @@ const { handleForcedSSEToJson } = await import(
 const { handleNonStreamingResponse } = await import(
   "../../open-sse/handlers/chatCore/nonStreamingHandler.js"
 );
+const { handleComboChat, resetComboRotation } = await import(
+  "../../open-sse/services/combo.js"
+);
+const { getModelUpstreamId } = await import(
+  "../../open-sse/config/providerModels.js"
+);
 const claudeClassifier = await import(
   "../../open-sse/handlers/chatCore/claudeClassifier.js"
 );
@@ -280,6 +286,142 @@ const runWithoutClassifierCalls = async (run) => {
     restoreClassifierSpies(spies);
   }
 };
+
+const CHAT_HANDLER_MOCKS = [
+  "open-sse/index.js",
+  "@/sse/services/auth.js",
+  "@/lib/localDb",
+  "@/sse/services/model.js",
+  "open-sse/handlers/chatCore.js",
+  "open-sse/services/combo.js",
+  "open-sse/services/capacityAdapter.js",
+  "open-sse/utils/bypassHandler.js",
+  "open-sse/services/accountFallback.js",
+  "open-sse/utils/error.js",
+  "open-sse/translator/formats.js",
+  "@/sse/utils/logger.js",
+  "@/sse/services/tokenRefresh.js",
+  "open-sse/services/projectId.js",
+  "@/lib/claudeCompat",
+  "@/lib/headroom/detect",
+  "@/lib/pxpipe/loader.js",
+  "@/lib/pxpipe/events.js",
+  "@/lib/tokenSaver/events.js",
+];
+const unloadChatHandler = () => {
+  for (const moduleName of CHAT_HANDLER_MOCKS) vi.doUnmock(moduleName);
+  vi.resetModules();
+};
+const terminalChatRequest = () => new Request("http://localhost/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "codex/gpt-5.6-sol",
+    messages: [{ role: "user", content: "Classify this action." }],
+  }),
+});
+const terminalCredentials = {
+  connectionId: "classifier-account",
+  connectionName: "classifier-account",
+  apiKey: "provider-key",
+  providerSpecificData: {},
+};
+async function loadTerminalChatHandler({ coreResult, shouldFallback = false }) {
+  const mocks = {
+    appendPxpipeEvent: vi.fn(),
+    appendTokenSaverEvent: vi.fn(),
+    checkAndRefreshToken: vi.fn(async (_provider, credentials) => credentials),
+    clearAccountError: vi.fn(),
+    detectRequiredCapabilities: vi.fn(() => new Set()),
+    getComboModels: vi.fn(async () => null),
+    getModelInfo: vi.fn(async () => ({ provider: "codex", model: "gpt-5.6-sol" })),
+    getProviderCredentials: vi.fn(async () => terminalCredentials),
+    getSettings: vi.fn(async () => ({
+      requireApiKey: false,
+      providerThinking: {},
+      providerStrategies: {},
+      ccFilterNaming: false,
+      rtkEnabled: false,
+      headroomEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      pxpipeEnabled: false,
+    })),
+    handleChatCore: vi.fn(async () => coreResult),
+    markAccountUnavailable: vi.fn(async () => ({ shouldFallback })),
+    updateProviderCredentials: vi.fn(),
+  };
+
+  vi.resetModules();
+  vi.doMock("open-sse/index.js", () => ({}));
+  vi.doMock("@/sse/services/auth.js", () => ({
+    clearAccountError: mocks.clearAccountError,
+    extractApiKey: () => null,
+    getProviderCredentials: mocks.getProviderCredentials,
+    isValidApiKey: vi.fn(async () => true),
+    markAccountUnavailable: mocks.markAccountUnavailable,
+  }));
+  vi.doMock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
+  vi.doMock("@/sse/services/model.js", () => ({
+    getComboModels: mocks.getComboModels,
+    getModelInfo: mocks.getModelInfo,
+  }));
+  vi.doMock("open-sse/handlers/chatCore.js", () => ({
+    handleChatCore: mocks.handleChatCore,
+  }));
+  vi.doMock("open-sse/services/combo.js", () => ({
+    detectRequiredCapabilities: mocks.detectRequiredCapabilities,
+    handleComboChat: vi.fn(),
+    handleFusionChat: vi.fn(),
+  }));
+  vi.doMock("open-sse/services/capacityAdapter.js", () => ({
+    augmentModelsWithCapacityAdapter: vi.fn((models) => models),
+    getActiveAdapterStrategy: vi.fn(),
+    withCapacityAdapterStripping: vi.fn((handler) => handler),
+  }));
+  vi.doMock("open-sse/utils/bypassHandler.js", () => ({
+    handleBypassRequest: vi.fn(() => null),
+  }));
+  vi.doMock("open-sse/services/accountFallback.js", () => ({
+    isRequestReplayBufferError: vi.fn(() => false),
+  }));
+  vi.doMock("open-sse/utils/error.js", () => ({
+    errorResponse: (status, message) => Response.json({ error: { message } }, { status }),
+    unavailableResponse: (status, message) => Response.json({ error: { message } }, { status }),
+  }));
+  vi.doMock("open-sse/translator/formats.js", () => ({
+    detectFormatByEndpoint: vi.fn(() => FORMATS.OPENAI),
+  }));
+  vi.doMock("@/sse/utils/logger.js", () => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    maskKey: vi.fn(() => "***"),
+    warn: vi.fn(),
+  }));
+  vi.doMock("@/sse/services/tokenRefresh.js", () => ({
+    checkAndRefreshToken: mocks.checkAndRefreshToken,
+    updateProviderCredentials: mocks.updateProviderCredentials,
+  }));
+  vi.doMock("open-sse/services/projectId.js", () => ({
+    getProjectIdForConnection: vi.fn(),
+  }));
+  vi.doMock("@/lib/claudeCompat", () => ({
+    buildClaudeRoutingIndex: vi.fn(),
+    looksLikeClaudeWrappedModel: vi.fn(() => false),
+    normalizeClaudeModelName: vi.fn(),
+    readClaudeCompat: vi.fn(() => ({ enabled: false })),
+  }));
+  vi.doMock("@/lib/headroom/detect", () => ({
+    DEFAULT_HEADROOM_URL: "http://headroom.invalid",
+    parseHeadroomTimeoutMs: vi.fn(() => 0),
+  }));
+  vi.doMock("@/lib/pxpipe/loader.js", () => ({ getTransform: vi.fn() }));
+  vi.doMock("@/lib/pxpipe/events.js", () => ({ appendPxpipeEvent: mocks.appendPxpipeEvent }));
+  vi.doMock("@/lib/tokenSaver/events.js", () => ({ appendTokenSaverEvent: mocks.appendTokenSaverEvent }));
+
+  const { handleChat } = await import("../../src/sse/handlers/chat.js");
+  return { handleChat, mocks };
+}
 
 const claudeMessage = (content) => ({
   id: "msg_classifier_1700000000",
@@ -2125,5 +2267,388 @@ describe("Claude Code response classifier validation", () => {
     expect(await empty.response.json()).toMatchObject({
       error: { message: "Empty response content from op-test-chat/gpt-5.6-sol" },
     });
+  });
+});
+
+describe("Task 3 caller-abort terminality", () => {
+  it("returns a 499 core Response without account mutation", async () => {
+    vi.useFakeTimers();
+    const abortResponse = new Response("Request aborted", { status: 499 });
+    const coreResult = {
+      success: false,
+      status: 499,
+      error: "Request aborted",
+      response: abortResponse,
+    };
+    const { handleChat, mocks } = await loadTerminalChatHandler({ coreResult });
+
+    try {
+      const response = await handleChat(terminalChatRequest());
+
+      expect(response).toBe(abortResponse);
+      expect(response.status).toBe(499);
+      expect(await response.text()).toBe("Request aborted");
+      expect(mocks.handleChatCore).toHaveBeenCalledOnce();
+      expect(mocks.getProviderCredentials).toHaveBeenCalledOnce();
+      expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+      expect(mocks.clearAccountError).not.toHaveBeenCalled();
+      expect(mocks.updateProviderCredentials).not.toHaveBeenCalled();
+      expect(mocks.appendPxpipeEvent).not.toHaveBeenCalled();
+      expect(mocks.appendTokenSaverEvent).not.toHaveBeenCalled();
+      expect(mocks.checkAndRefreshToken).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      unloadChatHandler();
+    }
+  });
+
+  it("keeps a 502 core Response on the existing account fallback path", async () => {
+    const failureResponse = new Response("Classifier rejected", { status: 502 });
+    const coreResult = {
+      success: false,
+      status: 502,
+      error: "Classifier rejected",
+      response: failureResponse,
+    };
+    const { handleChat, mocks } = await loadTerminalChatHandler({
+      coreResult,
+      shouldFallback: false,
+    });
+
+    try {
+      const response = await handleChat(terminalChatRequest());
+
+      expect(response).toBe(failureResponse);
+      expect(response.status).toBe(502);
+      expect(await response.text()).toBe("Classifier rejected");
+      expect(mocks.handleChatCore).toHaveBeenCalledOnce();
+      expect(mocks.getProviderCredentials).toHaveBeenCalledOnce();
+      expect(mocks.markAccountUnavailable).toHaveBeenCalledOnce();
+      expect(mocks.clearAccountError).not.toHaveBeenCalled();
+      expect(mocks.updateProviderCredentials).not.toHaveBeenCalled();
+    } finally {
+      unloadChatHandler();
+    }
+  });
+});
+
+const malformedClassifierHandlerResponse = async () => {
+  const result = await handleForcedSSEToJson({
+    ...forcedResponsesContext(STAGE_ONE_BODY, [
+      `data: ${JSON.stringify({
+        id: "chatcmpl_classifier_1700000000",
+        model: "gpt-5.6-sol",
+        choices: [{ delta: { content: "This looks safe to me." }, finish_reason: null }],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        id: "chatcmpl_classifier_1700000000",
+        model: "gpt-5.6-sol",
+        choices: [{ delta: {}, finish_reason: "stop" }],
+      })}\n\n`,
+      "data: [DONE]\n\n",
+    ]),
+    targetFormat: FORMATS.OPENAI,
+    provider: "op-test-chat",
+  });
+
+  expect(result.success).toBe(false);
+  expect(result.status).toBe(502);
+  return result.response;
+};
+
+const canonicalClassifierHandlerResponse = async () => {
+  const result = await handleForcedSSEToJson({
+    ...forcedResponsesContext(STAGE_ONE_BODY, [
+      `data: ${JSON.stringify({
+        id: "chatcmpl_classifier_1700000000",
+        model: "gpt-5.6-sol",
+        choices: [{ delta: { content: "<block>no</block>" }, finish_reason: null }],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        id: "chatcmpl_classifier_1700000000",
+        model: "gpt-5.6-sol",
+        choices: [{ delta: {}, finish_reason: "stop" }],
+      })}\n\n`,
+      "data: [DONE]\n\n",
+    ]),
+    targetFormat: FORMATS.OPENAI,
+    provider: "op-test-chat",
+  });
+
+  expect(result.success).toBe(true);
+  return result.response;
+};
+
+describe("Task 3 combo classifier terminality", () => {
+  it("falls back from a real classifier 502 to a canonical decision", async () => {
+    const malformed = await malformedClassifierHandlerResponse();
+    const canonical = await canonicalClassifierHandlerResponse();
+    const handleSingleModel = vi.fn(async (_body, model) => (
+      model === "cx/gpt-5.6-sol" ? malformed : canonical
+    ));
+    vi.useFakeTimers();
+    resetComboRotation();
+
+    try {
+      const pending = handleComboChat({
+        body: STAGE_ONE_BODY,
+        models: ["cx/gpt-5.6-sol", "cc/claude-opus-4-8"],
+        handleSingleModel,
+        log: { info: vi.fn(), warn: vi.fn() },
+        comboName: "subscription",
+        comboStrategy: "fallback",
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      const response = await pending;
+
+      expect(response).toBe(canonical);
+      expect(handleSingleModel).toHaveBeenCalledTimes(2);
+      expect(handleSingleModel.mock.calls.map(([, model]) => model)).toEqual([
+        "cx/gpt-5.6-sol",
+        "cc/claude-opus-4-8",
+      ]);
+      expect(await response.json()).toMatchObject({
+        content: [{ type: "text", text: "<block>no</block>" }],
+      });
+    } finally {
+      vi.useRealTimers();
+      resetComboRotation();
+    }
+  });
+
+  it("returns a first canonical decision without scheduling a fallback", async () => {
+    const canonical = await canonicalClassifierHandlerResponse();
+    const handleSingleModel = vi.fn(async () => canonical);
+    vi.useFakeTimers();
+    resetComboRotation();
+
+    try {
+      const response = await handleComboChat({
+        body: STAGE_ONE_BODY,
+        models: ["cx/gpt-5.6-sol", "cc/claude-opus-4-8"],
+        handleSingleModel,
+        log: { info: vi.fn(), warn: vi.fn() },
+        comboName: "subscription",
+        comboStrategy: "fallback",
+      });
+
+      expect(response).toBe(canonical);
+      expect(handleSingleModel).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      resetComboRotation();
+    }
+  });
+
+  it("returns a first 499 Response without scheduling a fallback", async () => {
+    const abortResponse = new Response("Request aborted", { status: 499 });
+    const handleSingleModel = vi.fn(async () => abortResponse);
+    vi.useFakeTimers();
+    resetComboRotation();
+
+    try {
+      const response = await handleComboChat({
+        body: STAGE_ONE_BODY,
+        models: ["cx/gpt-5.6-sol", "cc/claude-opus-4-8"],
+        handleSingleModel,
+        log: { info: vi.fn(), warn: vi.fn() },
+        comboName: "subscription",
+        comboStrategy: "fallback",
+      });
+
+      expect(response).toBe(abortResponse);
+      expect(handleSingleModel).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      resetComboRotation();
+    }
+  });
+
+  it.each([401, 429, 503, 504])(
+    "keeps classifier-adjacent %i errors distinct from a decision",
+    async (status) => {
+      const handleSingleModel = vi.fn(async () => new Response(
+        JSON.stringify({ error: { message: `upstream ${status}` } }),
+        { status, headers: { "content-type": "application/json" } },
+      ));
+      vi.useFakeTimers();
+      resetComboRotation();
+
+      try {
+        const pending = handleComboChat({
+          body: STAGE_ONE_BODY,
+          models: ["cx/gpt-5.6-sol"],
+          handleSingleModel,
+          log: { info: vi.fn(), warn: vi.fn() },
+          comboName: "subscription",
+          comboStrategy: "fallback",
+        });
+        await vi.advanceTimersByTimeAsync(5000);
+        const response = await pending;
+
+        expect(response.status).toBe(status);
+        expect(await response.text()).not.toContain("<block>");
+        expect(handleSingleModel).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+        resetComboRotation();
+      }
+    },
+  );
+});
+
+const CHAT_CORE_EXECUTOR_MODULE = "../../open-sse/executors/index.js";
+const unloadFastTierChatCore = () => {
+  vi.doUnmock(CHAT_CORE_EXECUTOR_MODULE);
+  vi.resetModules();
+};
+const malformedResponsesSse = () => new Response(readableFromChunks([
+  doneFrame({
+    id: "msg_classifier_malformed",
+    ...textItem("This looks safe to me."),
+  }),
+  terminalFrame([{
+    id: "msg_classifier_malformed",
+    ...textItem("This looks safe to me."),
+  }]),
+]), { headers: { "content-type": "text/event-stream" } });
+async function loadFastTierChatCore() {
+  const execute = vi.fn(async () => ({
+    response: malformedResponsesSse(),
+    url: "https://upstream.test/responses",
+    headers: {},
+    transformedBody: {},
+  }));
+  const getExecutor = vi.fn(() => ({
+    execute,
+    refreshCredentials: vi.fn(),
+    noAuth: false,
+  }));
+
+  vi.resetModules();
+  vi.doMock(CHAT_CORE_EXECUTOR_MODULE, () => ({ getExecutor }));
+  const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+  return { execute, handleChatCore };
+}
+const fastTierCoreOptions = (body, codexFastMode) => ({
+  body,
+  modelInfo: { provider: "codex", model: "gpt-5.6-sol" },
+  credentials: { apiKey: "provider-key", providerSpecificData: {} },
+  clientRawRequest: {
+    endpoint: "/v1/messages",
+    body,
+    headers: { accept: "application/json" },
+  },
+  connectionId: "classifier-fast-tier",
+  sourceFormatOverride: FORMATS.CLAUDE,
+  codexFastMode,
+  log: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+});
+
+describe("Task 3 Codex Fast tier before classifier validation", () => {
+  it.each([
+    ["absent", undefined, "priority"],
+    ["default", "default", "default"],
+    ["priority", "priority", "priority"],
+  ])(
+    "keeps client service tier %s at %s through the real classifier 502 path",
+    async (_name, clientServiceTier, expectedTier) => {
+      const body = {
+        ...structuredClone(STAGE_ONE_BODY),
+        ...(clientServiceTier === undefined ? {} : { service_tier: clientServiceTier }),
+      };
+      const { execute, handleChatCore } = await loadFastTierChatCore();
+
+      try {
+        const result = await handleChatCore(fastTierCoreOptions(body, true));
+
+        expect(execute).toHaveBeenCalledOnce();
+        expect(execute.mock.calls[0][0].body.service_tier).toBe(expectedTier);
+        expect(result.success).toBe(false);
+        expect(result.status).toBe(502);
+        expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+      } finally {
+        unloadFastTierChatCore();
+      }
+    },
+  );
+});
+
+describe("Task 3 classifier request and model invariants", () => {
+  it.each([
+    ["windsurf", "claude-sonnet-4.6-thinking-1m"],
+    ["windsurf", "claude-sonnet-4.6-1m"],
+    ["devin-cli", "claude-sonnet-4.6-thinking-1m"],
+  ])("preserves real %s model %s", (provider, model) => {
+    expect(getModelUpstreamId(provider, model)).toBe(model);
+  });
+
+  it("keeps frozen classifier request fields and canonical Message metadata", () => {
+    const body = deepFreeze({
+      ...structuredClone(STAGE_ONE_BODY),
+      model: "claude-sonnet-4.6-thinking-1m",
+      service_tier: "priority",
+      tools: [{ name: "shell", input_schema: { type: "object" } }],
+    });
+    const bodyBefore = structuredClone(body);
+    const message = deepFreeze({
+      ...claudeMessage([
+        { type: "thinking", thinking: "private" },
+        { type: "text", text: "<block>no</block>" },
+      ]),
+      id: "msg_classifier_invariant",
+      model: "claude-sonnet-4.6-thinking-1m",
+      stop_reason: "max_tokens",
+      stop_sequence: "</block>",
+      usage: { input_tokens: 13, output_tokens: 7 },
+      extension: { retained: true, source: "provider" },
+    });
+    const messageBefore = structuredClone(message);
+
+    const result = validateClaudeClassifierMessage(body, message);
+
+    expect(body).toEqual(bodyBefore);
+    expect(message).toEqual(messageBefore);
+    expect(result).toEqual({
+      ...messageBefore,
+      content: [{ type: "text", text: "<block>no</block>" }],
+    });
+  });
+
+  it("keeps a frozen classifier handler request byte-equal after a decision", async () => {
+    const body = deepFreeze({
+      ...structuredClone(STAGE_ONE_BODY),
+      model: "claude-sonnet-4.6-thinking-1m",
+      service_tier: "priority",
+      tools: [{ name: "shell", input_schema: { type: "object" } }],
+    });
+    const before = structuredClone(body);
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(body, [
+        `data: ${JSON.stringify({
+          id: "chatcmpl_classifier_invariant",
+          model: "gpt-5.6-sol",
+          choices: [{ delta: { content: "<block>no</block>" }, finish_reason: null }],
+        })}\n\n`,
+        `data: ${JSON.stringify({
+          id: "chatcmpl_classifier_invariant",
+          model: "gpt-5.6-sol",
+          choices: [{ delta: {}, finish_reason: "stop" }],
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+      targetFormat: FORMATS.OPENAI,
+      provider: "op-test-chat",
+    });
+
+    expect(result.success).toBe(true);
+    expect(body).toEqual(before);
   });
 });
