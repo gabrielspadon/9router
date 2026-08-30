@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { DOCS_CONFIG, t } from "@/constants/docsConfig";
 import { DEFAULT_LANG } from "@/constants/languages";
@@ -11,6 +11,17 @@ import LanguageSwitcher from "./LanguageSwitcher";
 export default function DocsHeader({ lang = DEFAULT_LANG }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // The drawer covers the page, so Escape has to dismiss it: the overlay
+  // click is a pointer shortcut, not the only way out.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileMenuOpen]);
+
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-surface/80 backdrop-blur-sm border-border">
@@ -19,7 +30,8 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
           <button
             onClick={() => setMobileMenuOpen(true)}
             className="lg:hidden p-2 rounded-lg hover:bg-surface-2 transition-colors duration-150"
-            aria-label="Open menu"
+            aria-label={t(lang, "openMenu")}
+            aria-expanded={mobileMenuOpen}
           >
             <Menu className="w-6 h-6 text-text-muted" />
           </button>
@@ -53,6 +65,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
         <>
           <div
             className="mobile-menu-overlay lg:hidden"
+            aria-hidden="true"
             onClick={() => setMobileMenuOpen(false)}
           />
           
@@ -64,7 +77,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
               <button
                 onClick={() => setMobileMenuOpen(false)}
                 className="p-2 rounded-lg hover:bg-surface-2 transition-colors duration-150"
-                aria-label="Close menu"
+                aria-label={t(lang, "closeMenu")}
               >
                 <X className="w-5 h-5 text-text-muted" />
               </button>

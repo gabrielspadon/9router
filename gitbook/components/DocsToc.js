@@ -32,9 +32,9 @@ export default function DocsToc({ headings, lang = DEFAULT_LANG }) {
 
   return (
     <aside className="hidden xl:block w-64 border-l bg-surface border-border h-[calc(100vh-4rem)] sticky top-16 overflow-y-auto">
-      <nav className="p-4">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-text-main mb-3">
-          <List className="w-4 h-4" />
+      <nav aria-labelledby="docs-toc-title" className="p-4">
+        <h3 id="docs-toc-title" className="flex items-center gap-2 text-sm font-semibold text-text-main mb-3">
+          <List aria-hidden="true" className="w-4 h-4" />
           {t(lang, "onThisPage")}
         </h3>
         <ul className="space-y-2">
@@ -42,6 +42,7 @@ export default function DocsToc({ headings, lang = DEFAULT_LANG }) {
             <li key={`${heading.id}-${idx}`}>
               <a
                 href={`#${heading.id}`}
+                aria-current={activeId === heading.id ? "location" : undefined}
                 className={`block text-sm transition-colors duration-150 ${
                   heading.level === 3 ? "pl-4" : ""
                 } ${

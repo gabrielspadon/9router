@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { getNavigation } from "@/constants/docsConfig";
+import { getNavigation, t } from "@/constants/docsConfig";
 import { DEFAULT_LANG } from "@/constants/languages";
 import { ChevronDown, ChevronRight, BookOpen, Rocket, Terminal, Monitor, HelpCircle, MessageCircle, Layers, Plug, Cloud, Zap, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server } from "lucide-react";
 
@@ -71,7 +71,7 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
 
   return (
     <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-surface border-border ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
-      <nav className="p-4 space-y-6">
+      <nav aria-label={t(lang, "docsNav")} className="p-4 space-y-6">
         {navigation.map((section, sectionIndex) => {
           const SectionIcon = SECTION_ICONS[section.key] || BookOpen;
 
@@ -79,6 +79,7 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
             <div key={section.key}>
               <button
                 onClick={() => toggleSection(sectionIndex)}
+                aria-expanded={openSections.includes(sectionIndex)}
                 className="flex items-center justify-between w-full text-sm font-semibold text-text-main mb-2 hover:text-brand transition-colors duration-150"
               >
                 <span className="flex items-center gap-2">
@@ -86,9 +87,9 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
                   {section.title}
                 </span>
                 {openSections.includes(sectionIndex) ? (
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown aria-hidden="true" className="w-4 h-4" />
                 ) : (
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight aria-hidden="true" className="w-4 h-4" />
                 )}
               </button>
 
@@ -102,6 +103,7 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
                         <Link
                           href={buildHref(item.slug)}
                           onClick={handleLinkClick}
+                          aria-current={isActive(item.slug) ? "page" : undefined}
                           className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors duration-150 ${
                             isActive(item.slug)
                               ? "bg-brand-soft text-brand font-medium"
