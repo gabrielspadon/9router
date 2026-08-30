@@ -4,7 +4,7 @@ import { cn } from "@/shared/utils/cn";
 
 // Closed variant set. Brand carries primary action, danger carries destruction,
 // and nothing else is coloured; `bare` colours nothing at all. See
-// .unlazy/TOKEN-CONTRACT.md section 1.
+// docs/design/design-system.md section 1.
 const variants = {
   primary:
     "bg-brand-solid text-brand-on hover:bg-brand-solid-hover shadow-soft disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",
@@ -14,7 +14,7 @@ const variants = {
   // No colour opinion at all: the call site owns text and hover colour. Needed
   // because `cn` has no conflict resolution, so a className colour override on a
   // coloured variant silently loses to whichever class Tailwind emitted later
-  // (see .unlazy/BACKEND-HANDOFF.md A6). Icon-only affordances that hover to
+  // last. Icon-only affordances that hover to
   // danger or brand use this; everything with a stock colour uses `ghost`.
   bare: "",
   danger:

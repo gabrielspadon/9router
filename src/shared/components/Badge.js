@@ -6,7 +6,7 @@ import { cn } from "@/shared/utils/cn";
 // per page: success = healthy/connected/valid, warning = degraded/expiring,
 // danger = failed/expired/revoked, info = neutral notice with no health
 // meaning, neutral = a plain label, brand = brand mark, never a status.
-// See .unlazy/TOKEN-CONTRACT.md section 1.
+// See docs/design/design-system.md section 1.
 const variants = {
   success: "bg-success-soft text-success border-success-line",
   warning: "bg-warning-soft text-warning border-warning-line",

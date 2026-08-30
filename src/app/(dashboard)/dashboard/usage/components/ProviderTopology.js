@@ -93,7 +93,7 @@ ProviderNode.propTypes = {
 };
 
 // Center 9Router node. Carrying traffic reads as a brand-filled core; idle
-// reads as an outline. No animation: TOKEN-CONTRACT.md section 8 keeps the
+// reads as an outline. No animation: docs/design/design-system.md section 5 keeps the
 // topology-* keyframes on the landing page.
 function RouterNode({ data }) {
   const powering = (data.activeCount || 0) > 0;
@@ -158,7 +158,7 @@ function TopologyEdge({
 
   // One edge, one stroke. The active/last/error distinction is carried by the
   // stroke token and width from edgeStyle(); the animated beam it replaces was
-  // decoration, which TOKEN-CONTRACT.md section 8 keeps off the dashboard.
+  // decoration, which docs/design/design-system.md section 5 keeps off the dashboard.
   return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke }} />;
 }
 
@@ -211,7 +211,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
   // Edge state rides the status tokens so it flips with the theme, and each
   // state keeps its own stroke width so the diagram still separates them
-  // without relying on hue. See TOKEN-CONTRACT.md section 1.
+  // without relying on hue. See docs/design/design-system.md section 1.
   const edgeStyle = (active, last, error) => {
     if (error) return { stroke: "var(--color-danger)", strokeWidth: 2.5, opacity: 0.9 };
     if (active) return { stroke: "var(--color-success)", strokeWidth: 3.5, opacity: 1 };

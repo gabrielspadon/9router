@@ -13,7 +13,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 
 // Model health maps onto the shared status tokens rather than hard-coded hex,
 // so it flips with the theme. Each state keeps a distinct glyph and a label, so
-// the row never depends on hue alone. See TOKEN-CONTRACT.md section 1.
+// the row never depends on hue alone. See docs/design/design-system.md section 1.
 const STATUS_CONFIG = {
   available: { icon: "check_circle", tone: "text-success", label: "Available" },
   cooldown: { icon: "schedule", tone: "text-warning", label: "Cooldown" },

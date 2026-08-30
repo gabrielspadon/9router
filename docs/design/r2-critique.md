@@ -6,7 +6,7 @@ routing data rather than an empty install. Six accounts are connected across
 three providers (Claude Code 3, Antigravity 2, OpenAI Codex 1); the remaining
 forty or so providers are configured but idle.
 
-Evidence for every claim is a captured view under `.unlazy/r2/evidence/before/`.
+Evidence for every claim is a captured view under `docs/design/evidence/routes/before/`.
 
 ## The one-sentence problem
 

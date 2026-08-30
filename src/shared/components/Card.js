@@ -13,7 +13,7 @@ export default function Card({
   className,
   ...props
 }) {
-  // Densities from .unlazy/TOKEN-CONTRACT.md section 6. They do not vary by
+  // Densities from docs/design/design-system.md section 3. They do not vary by
   // route: a route that needs a different density is a finding, not a prop.
   const paddings = {
     none: "",

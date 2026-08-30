@@ -9,7 +9,7 @@ import QuotaProgressBar from "./QuotaProgressBar";
 import { calculatePercentage } from "./utils";
 
 // A plan tier is a label, not a health state, so every tier reads neutral and
-// the plan name itself carries the distinction. See TOKEN-CONTRACT.md section 1.
+// the plan name itself carries the distinction. See docs/design/design-system.md section 1.
 const planVariants = {
   free: "neutral",
   pro: "neutral",
