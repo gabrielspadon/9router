@@ -245,4 +245,151 @@ describe("Kiro root schema normalization", () => {
     expect(claude).toEqual(openai);
     expect(JSON.stringify({ openaiBody, claudeBody })).toBe(before);
   });
+
+  it("preserves keyword-shaped names in root and nested property maps", () => {
+    const out = specSchema({
+      properties: {
+        title: { type: "string", title: "strip schema title" },
+        $schema: { type: "number", $schema: "strip schema id" },
+        default: { type: "boolean", default: "strip schema default" },
+        nested: {
+          type: "object",
+          properties: {
+            additionalProperties: { type: "string", additionalProperties: false },
+            $id: { type: "integer", $id: "strip nested id" },
+            examples: { type: "null", examples: ["strip nested examples"] },
+            required: { type: "object", required: [] },
+          },
+        },
+      },
+      required: ["title", "$schema", "default", "nested"],
+    });
+
+    expect(out.properties).toEqual({
+      title: { type: "string" },
+      $schema: { type: "number" },
+      default: { type: "boolean" },
+      nested: {
+        type: "object",
+        properties: {
+          additionalProperties: { type: "string" },
+          $id: { type: "integer" },
+          examples: { type: "null" },
+          required: { type: "object" },
+        },
+      },
+    });
+    expect(out.required).toEqual(["title", "$schema", "default", "nested"]);
+  });
+
+  it("preserves keyword-shaped definition names and their surviving references", () => {
+    const out = specSchema({
+      $defs: {
+        title: { type: "string", title: "strip definition title" },
+        $schema: { type: "number", $schema: "strip definition schema" },
+        default: { type: "boolean", default: "strip definition default" },
+      },
+      definitions: {
+        $id: { type: "integer", $id: "strip legacy id" },
+        examples: { type: "null", examples: ["strip legacy examples"] },
+      },
+      properties: {
+        fromTitle: { $ref: "#/$defs/title" },
+        fromSchema: { $ref: "#/$defs/$schema" },
+        fromDefault: { $ref: "#/$defs/default" },
+        fromId: { $ref: "#/definitions/$id" },
+        fromExamples: { $ref: "#/definitions/examples" },
+      },
+    });
+
+    expect(out.$defs).toEqual({
+      title: { type: "string" },
+      $schema: { type: "number" },
+      default: { type: "boolean" },
+    });
+    expect(out.definitions).toEqual({
+      $id: { type: "integer" },
+      examples: { type: "null" },
+    });
+    expect(out.properties.fromTitle).toEqual({ $ref: "#/$defs/title" });
+    expect(out.properties.fromSchema).toEqual({ $ref: "#/$defs/$schema" });
+    expect(out.properties.fromDefault).toEqual({ $ref: "#/$defs/default" });
+    expect(out.properties.fromId).toEqual({ $ref: "#/definitions/$id" });
+    expect(out.properties.fromExamples).toEqual({ $ref: "#/definitions/examples" });
+  });
+
+  it("clones object-valued enum and const data byte-for-byte", () => {
+    const enumValue = {
+      title: "literal enum title",
+      $schema: "literal enum schema",
+      required: [],
+      nested: { default: "literal enum default", additionalProperties: false },
+    };
+    const constValue = {
+      $id: "literal const id",
+      examples: [{ title: "literal nested title" }],
+      required: [],
+      nested: [{ default: "literal nested default" }],
+    };
+    const source = {
+      properties: {
+        choice: {
+          type: "object",
+          enum: [enumValue],
+          const: constValue,
+          required: [],
+        },
+      },
+    };
+    const before = JSON.stringify(source);
+    const out = specSchema(source);
+
+    expect(JSON.stringify(out.properties.choice.enum[0])).toBe(JSON.stringify(enumValue));
+    expect(JSON.stringify(out.properties.choice.const)).toBe(JSON.stringify(constValue));
+    expect(out.properties.choice.required).toBeUndefined();
+    expect(JSON.stringify(source)).toBe(before);
+  });
+
+  it("still strips real schema keywords at root and nested schema nodes", () => {
+    expect(specSchema({
+      title: "strip root title",
+      $schema: "strip root schema",
+      $id: "strip root id",
+      examples: ["strip root examples"],
+      default: "strip root default",
+      additionalProperties: false,
+      properties: {
+        nested: {
+          type: "object",
+          title: "strip nested title",
+          $schema: "strip nested schema",
+          $id: "strip nested id",
+          examples: ["strip nested examples"],
+          default: "strip nested default",
+          additionalProperties: false,
+          properties: {
+            leaf: {
+              type: "string",
+              title: "strip leaf title",
+              $schema: "strip leaf schema",
+              $id: "strip leaf id",
+              examples: ["strip leaf examples"],
+              default: "strip leaf default",
+              additionalProperties: false,
+            },
+          },
+        },
+      },
+    })).toEqual({
+      type: "object",
+      properties: {
+        nested: {
+          type: "object",
+          properties: {
+            leaf: { type: "string" },
+          },
+        },
+      },
+    });
+  });
 });

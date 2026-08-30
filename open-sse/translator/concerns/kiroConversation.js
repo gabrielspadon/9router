@@ -51,9 +51,20 @@ const STRIPPED_SCHEMA_KEYS = new Set([
   "additionalProperties", "$schema", "$id", "examples", "default", "title",
 ]);
 const ROOT_COMBINATORS = ["allOf", "oneOf", "anyOf"];
+const SCHEMA_MAP_KEYS = new Set([
+  "properties", "patternProperties", "$defs", "definitions", "dependentSchemas",
+]);
 
 function isSchemaObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function cleanSchemaMap(value) {
+  if (!isSchemaObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    key,
+    cleanSchemaValue(child),
+  ]));
 }
 
 function cleanSchemaValue(value) {
@@ -62,6 +73,8 @@ function cleanSchemaValue(value) {
   return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
     if (STRIPPED_SCHEMA_KEYS.has(key)) return [];
     if (key === "required" && Array.isArray(child) && child.length === 0) return [];
+    if (SCHEMA_MAP_KEYS.has(key)) return [[key, cleanSchemaMap(child)]];
+    if (key === "enum" || key === "const") return [[key, clone(child)]];
     return [[key, cleanSchemaValue(child)]];
   }));
 }
