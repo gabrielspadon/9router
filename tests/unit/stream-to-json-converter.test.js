@@ -39,4 +39,23 @@ describe("convertResponsesStreamToJson", () => {
     expect(out.output[0].content[0].text).toBe("OK");
     expect(out.usage.output_tokens).toBe(2);
   });
+
+  it("consumes an externally owned reader without releasing its lock", async () => {
+    const stream = sseStream([DONE_ITEM, COMPLETED]);
+    const reader = stream.getReader();
+    const releaseLock = reader.releaseLock.bind(reader);
+    let releases = 0;
+    reader.releaseLock = () => {
+      releases += 1;
+      return releaseLock();
+    };
+
+    const out = await convertResponsesStreamToJson(stream, { reader });
+
+    expect(out.status).toBe("completed");
+    expect(out.output[0].content[0].text).toBe("OK");
+    expect(releases).toBe(0);
+    reader.releaseLock();
+    expect(releases).toBe(1);
+  });
 });

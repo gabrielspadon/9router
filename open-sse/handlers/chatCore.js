@@ -22,11 +22,14 @@ import {
 } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
+  createCallerAbortResult,
   createErrorResult,
   parseUpstreamError,
   formatProviderError,
+  isCallerAbortError,
 } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
+import { isBodyReadTimeoutError } from "../utils/bodyTimeout.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import {
   trackPendingRequest,
@@ -119,6 +122,7 @@ export async function handleChatCore({
   body,
   modelInfo,
   credentials,
+  callerSignal,
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
@@ -729,6 +733,9 @@ export async function handleChatCore({
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
   const mapTransportError = (error) => {
+    if (callerSignal?.aborted && (isCallerAbortError(error) || error.name === "AbortError")) {
+      return createCallerAbortResult();
+    }
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
       model,
@@ -758,6 +765,9 @@ export async function handleChatCore({
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
+    }
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, "Upstream response body timed out");
     }
     const errMsg = formatProviderError(
       error,
@@ -939,6 +949,7 @@ export async function handleChatCore({
               clientRawRequest,
               onRequestSuccess,
               pxpipe: pxpipeSummary,
+              callerSignal,
               reqTag,
               log,
             };
@@ -959,7 +970,7 @@ export async function handleChatCore({
                 appendLog,
               });
               if (s2j) {
-                streamController.handleComplete();
+                if (s2j.success) streamController.handleComplete();
                 return s2j;
               }
             }
@@ -975,7 +986,7 @@ export async function handleChatCore({
                 trackDone,
                 appendLog,
               });
-              streamController.handleComplete();
+              if (nr.success) streamController.handleComplete();
               return nr;
             }
             const { onStreamComplete, onStreamAbandoned, streamDetailId, streamState } =
@@ -1073,6 +1084,7 @@ export async function handleChatCore({
     onRequestSuccess,
     onEmptyStream,
     pxpipe: pxpipeSummary,
+    callerSignal,
     reqTag,
     log,
   };
@@ -1094,7 +1106,7 @@ export async function handleChatCore({
       appendLog,
     });
     if (result) {
-      streamController.handleComplete();
+      if (result.success) streamController.handleComplete();
       return result;
     }
   }
@@ -1112,7 +1124,7 @@ export async function handleChatCore({
       trackDone,
       appendLog,
     });
-    streamController.handleComplete();
+    if (result.success) streamController.handleComplete();
     return result;
   }
 

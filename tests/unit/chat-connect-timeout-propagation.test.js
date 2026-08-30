@@ -117,6 +117,13 @@ vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
 }));
 
 vi.mock("../../open-sse/utils/error.js", () => ({
+  createCallerAbortResult: vi.fn(() => ({
+    success: false,
+    clientAborted: true,
+    status: 499,
+    error: "Request aborted",
+    response: Response.json({ error: { message: "Request aborted" } }, { status: 499 }),
+  })),
   createErrorResult: vi.fn((status, message) => ({
     success: false,
     status,
@@ -124,6 +131,7 @@ vi.mock("../../open-sse/utils/error.js", () => ({
     response: Response.json({ error: { message } }, { status }),
   })),
   formatProviderError: vi.fn((error) => error.message),
+  isCallerAbortError: vi.fn(() => false),
   parseUpstreamError: (...args) => mocks.parseUpstreamError(...args),
 }));
 

@@ -4,8 +4,14 @@ import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { canonicalEchoModel } from "../../services/model.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, claudeUsageToOpenAI, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createCallerAbortResult, createErrorResult, isCallerAbortError } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import {
+  consumeResponseBodyWithDeadline,
+  isBodyReadTimeoutError,
+  readResponseJsonWithDeadline,
+  readResponseTextWithDeadline,
+} from "../../utils/bodyTimeout.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
@@ -409,13 +415,20 @@ function hasMultipleClassifierAlternatives(responseBody) {
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
-  trackDone();
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log, callerSignal }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const classifierMode = sourceFormat === FORMATS.CLAUDE
     && isClaudeClassifierRequest(body);
   let responseBody;
   let classifierProjection = null;
+  const bodyReadFailure = (error, context) => {
+    if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
+    }
+    console.error(`[ChatCore] Failed to ${context} from ${provider}:`, error.message);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid response from ${provider}`);
+  };
 
   if (contentType.includes("text/event-stream")) {
     // A provider not statically flagged forceStream (e.g. a dynamically-added
@@ -431,19 +444,42 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         if (classifierMode && typeof providerResponse.body?.tee === "function") {
           const [conversionStream, projectionStream] = providerResponse.body.tee();
           [responseBody, classifierProjection] = await Promise.all([
-            convertResponsesStreamToJson(conversionStream),
-            projectResponsesClassifierStream(body, projectionStream),
+            consumeResponseBodyWithDeadline({
+              body: conversionStream,
+              callerSignal,
+              consume: (reader) => convertResponsesStreamToJson(conversionStream, { reader }),
+            }),
+            consumeResponseBodyWithDeadline({
+              body: projectionStream,
+              callerSignal,
+              consume: (reader) => projectResponsesClassifierStream(
+                body,
+                projectionStream,
+                { reader },
+              ),
+            }),
           ]);
         } else {
-          responseBody = await convertResponsesStreamToJson(providerResponse.body);
+          responseBody = await consumeResponseBodyWithDeadline({
+            body: providerResponse.body,
+            callerSignal,
+            consume: (reader) => convertResponsesStreamToJson(providerResponse.body, { reader }),
+          });
         }
       } catch (err) {
-        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, err.message);
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to convert streaming response to JSON for ${provider}`);
+        const result = bodyReadFailure(err, "convert Responses SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
       }
     } else {
-      const sseText = await providerResponse.text();
+      let sseText;
+      try {
+        sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
+      } catch (err) {
+        const result = bodyReadFailure(err, "read SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
+      }
       const parsed = parseSSEToOpenAIResponse(sseText, model);
       if (!parsed) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
@@ -453,11 +489,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   } else {
     try {
-      responseBody = await providerResponse.json();
+      responseBody = await readResponseJsonWithDeadline({ body: providerResponse.body, callerSignal });
     } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      const result = bodyReadFailure(err, "parse JSON");
+      appendLog({ status: `FAILED ${result.status}` });
+      return result;
     }
   }
 
@@ -466,6 +502,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       && classifierProjection === null) {
     classifierProjection = projectResponsesClassifierOutput(body, responseBody);
   }
+
+  trackDone();
 
   // Some OpenAI-compatible gateways (e.g. api.cline.bot) wrap the whole completion
   // in { data: {…}, success: true }. Unwrap so the client sees a top-level `choices`.

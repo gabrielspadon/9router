@@ -38,6 +38,31 @@ export function errorResponse(statusCode, message) {
   });
 }
 
+export class CallerAbortError extends Error {
+  constructor(reason) {
+    super("Request aborted", { cause: reason });
+    this.name = "CallerAbortError";
+    this.code = "CLIENT_ABORTED";
+    this.reason = reason;
+  }
+}
+
+export function isCallerAbortError(error) {
+  return error?.name === "CallerAbortError" || error?.code === "CLIENT_ABORTED";
+}
+
+export function createCallerAbortResult() {
+  const status = 499;
+  const error = "Request aborted";
+  return {
+    success: false,
+    clientAborted: true,
+    status,
+    error,
+    response: errorResponse(status, error),
+  };
+}
+
 /**
  * Write error to SSE stream (for streaming)
  * @param {WritableStreamDefaultWriter} writer - Stream writer

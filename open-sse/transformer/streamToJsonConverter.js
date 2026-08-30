@@ -71,14 +71,16 @@ const EMPTY_RESPONSE = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
 /**
  * Convert Responses API SSE stream to single JSON response
  * @param {ReadableStream} stream - SSE stream from provider
+ * @param {{reader?: ReadableStreamDefaultReader}} options - Optional outer-owned reader
  * @returns {Promise<Object>} Final JSON response in Responses API format
  */
-export async function convertResponsesStreamToJson(stream) {
-  if (!stream || typeof stream.getReader !== "function") {
+export async function convertResponsesStreamToJson(stream, { reader: suppliedReader } = {}) {
+  if (!suppliedReader && (!stream || typeof stream.getReader !== "function")) {
     return { id: `resp_${Date.now()}`, object: "response", created_at: Math.floor(Date.now() / 1000), status: "failed", output: [], usage: { ...EMPTY_RESPONSE } };
   }
 
-  const reader = stream.getReader();
+  const reader = suppliedReader || stream.getReader();
+  const ownsReader = !suppliedReader;
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -110,7 +112,7 @@ export async function convertResponsesStreamToJson(stream) {
       processSSEMessage(buffer, state);
     }
   } finally {
-    reader.releaseLock();
+    if (ownsReader) reader.releaseLock();
   }
 
   // Build output array from accumulated items (ordered by index)

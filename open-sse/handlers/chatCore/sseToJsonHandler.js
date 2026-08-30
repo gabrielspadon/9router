@@ -1,6 +1,11 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createCallerAbortResult, createErrorResult, isCallerAbortError } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import {
+  consumeResponseBodyWithDeadline,
+  isBodyReadTimeoutError,
+  readResponseTextWithDeadline,
+} from "../../utils/bodyTimeout.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -353,7 +358,7 @@ function assertClassifierGeminiSseLossless(rawSSE) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log, callerSignal }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -361,7 +366,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   const classifierMode = sourceFormat === FORMATS.CLAUDE
     && isClaudeClassifierRequest(body);
 
-  trackDone();
+  const bodyReadFailure = (error) => {
+    if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
+    }
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+  };
 
   const ctx = {
     provider, model, connectionId,
@@ -385,21 +396,38 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       let jsonResponse;
       let classifierProjection = null;
       if (isGeminiSse) {
-        const rawSSE = await providerResponse.text();
-        if (classifierMode) assertClassifierGeminiSseLossless(rawSSE);
-        const parsed = parseGeminiSSEToOpenAIResponse(rawSSE, model);
+        const sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
+        if (classifierMode) assertClassifierGeminiSseLossless(sseText);
+        const parsed = parseGeminiSSEToOpenAIResponse(sseText, model);
         if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
         if (parsed.error) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
       } else if (classifierMode && typeof providerResponse.body?.tee === "function") {
         const [conversionStream, projectionStream] = providerResponse.body.tee();
         [jsonResponse, classifierProjection] = await Promise.all([
-          convertResponsesStreamToJson(conversionStream),
-          projectResponsesClassifierStream(body, projectionStream),
+          consumeResponseBodyWithDeadline({
+            body: conversionStream,
+            callerSignal,
+            consume: (reader) => convertResponsesStreamToJson(conversionStream, { reader }),
+          }),
+          consumeResponseBodyWithDeadline({
+            body: projectionStream,
+            callerSignal,
+            consume: (reader) => projectResponsesClassifierStream(
+              body,
+              projectionStream,
+              { reader },
+            ),
+          }),
         ]);
       } else {
-        jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+        jsonResponse = await consumeResponseBodyWithDeadline({
+          body: providerResponse.body,
+          callerSignal,
+          consume: (reader) => convertResponsesStreamToJson(providerResponse.body, { reader }),
+        });
       }
+      trackDone();
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -542,13 +570,15 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         );
       }
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+      const result = bodyReadFailure(err);
+      appendLog({ status: `FAILED ${result.status}` });
+      return result;
     }
   }
 
   // Standard Chat Completions SSE path
   try {
-    const sseText = await providerResponse.text();
+    const sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {
@@ -558,6 +588,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       );
     }
 
+    trackDone();
     if (onRequestSuccess) await onRequestSuccess();
 
     const usage = parsed.usage || {};
@@ -631,6 +662,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       );
     }
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+    const result = bodyReadFailure(err);
+    appendLog({ status: `FAILED ${result.status}` });
+    return result;
   }
 }
