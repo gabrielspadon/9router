@@ -71,14 +71,14 @@ export default function LanguageSwitcher({ currentLang }) {
         aria-modal="true"
         aria-labelledby="language-switcher-title"
         tabIndex={-1}
-        className="bg-surface border border-border rounded-[var(--radius-brand-lg)] shadow-elev max-w-md w-full max-h-[80vh] overflow-hidden"
+        className="bg-surface border border-border rounded-brand-lg shadow-elev max-w-md w-full max-h-[80vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 id="language-switcher-title" className="font-bold text-lg text-text-main">{t(currentLang, "selectLanguage")}</h2>
           <button
             onClick={() => setOpen(false)}
-            className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors duration-150"
+            className="p-1.5 rounded-brand hover:bg-surface-2 transition-colors duration-150"
             aria-label={t(currentLang, "close")}
           >
             <X className="w-5 h-5 text-text-muted" />
@@ -90,7 +90,7 @@ export default function LanguageSwitcher({ currentLang }) {
               key={lang.code}
               onClick={() => switchTo(lang.code)}
               aria-current={lang.code === currentLang ? "true" : undefined}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors duration-150 ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-brand text-left transition-colors duration-150 ${
                 lang.code === currentLang
                   ? "bg-brand-soft text-brand font-medium"
                   : "text-text-main hover:bg-surface-2"
@@ -113,7 +113,7 @@ export default function LanguageSwitcher({ currentLang }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-text-main bg-surface-2 rounded-lg hover:bg-surface-3 transition-colors duration-150"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-text-main bg-surface-2 rounded-brand hover:bg-surface-3 transition-colors duration-150"
         aria-label={t(currentLang, "switchLanguage")}
         aria-haspopup="dialog"
         aria-expanded={open}

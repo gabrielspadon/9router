@@ -29,7 +29,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="lg:hidden p-2 rounded-lg hover:bg-surface-2 transition-colors duration-150"
+            className="lg:hidden p-2 rounded-brand hover:bg-surface-2 transition-colors duration-150"
             aria-label={t(lang, "openMenu")}
             aria-expanded={mobileMenuOpen}
           >
@@ -52,7 +52,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
               target="_blank"
               rel="noopener noreferrer"
               aria-label={t(lang, "goToApp")}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-brand-solid text-brand-on rounded-lg font-medium hover:bg-brand-700 transition-colors duration-150 text-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-brand-solid text-brand-on rounded-brand font-medium hover:bg-brand-700 transition-colors duration-150 text-sm"
             >
               <span className="hidden sm:inline">{t(lang, "goToApp")}</span>
               <ExternalLink aria-hidden="true" className="w-4 h-4" />
@@ -77,7 +77,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
               </span>
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-surface-2 transition-colors duration-150"
+                className="p-2 rounded-brand hover:bg-surface-2 transition-colors duration-150"
                 aria-label={t(lang, "closeMenu")}
               >
                 <X className="w-5 h-5 text-text-muted" />

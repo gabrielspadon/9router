@@ -104,7 +104,7 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
                           href={buildHref(item.slug)}
                           onClick={handleLinkClick}
                           aria-current={isActive(item.slug) ? "page" : undefined}
-                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors duration-150 ${
+                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-brand transition-colors duration-150 ${
                             isActive(item.slug)
                               ? "bg-brand-soft text-brand font-medium"
                               : "text-text-muted hover:bg-surface-2 hover:text-text-main"
