@@ -13,41 +13,41 @@
    ============================================================ */
 :root {
   /* Brand scale (light) - centered on #E56A4A */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #E56A4A;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
+  --color-brand-50: #E9F7F4;
+  --color-brand-100: #CDEDE7;
+  --color-brand-200: #9BDBD0;
+  --color-brand-300: #63C5B7;
+  --color-brand-400: #2CA697;
+  --color-brand-500: #00897B;
+  --color-brand-600: #00786C;
+  --color-brand-700: #00695E;
+  --color-brand-800: #005047;
+  --color-brand-900: #003A34;
 
   /* Primary (legacy alias for backward compat with existing components) */
-  --color-primary: var(--color-brand-500);
-  --color-primary-hover: var(--color-brand-600);
+  --color-primary: var(--color-brand-600);
+  --color-primary-hover: var(--color-brand-700);
 
   /* Surfaces & backgrounds (light) */
-  --color-bg: #FDFAF6;
-  --color-bg-alt: #F7F3EE;
+  --color-bg: #F7F8F6;
+  --color-bg-alt: #EFF1EE;
   --color-surface: #ffffff;
-  --color-surface-2: #f4f4f5;
-  --color-surface-3: #e7e7e9;
-  --color-sidebar: rgba(244, 241, 236, 0.85);
+  --color-surface-2: #E9ECE8;
+  --color-surface-3: #DCE0DB;
+  --color-sidebar: rgba(239, 241, 238, 0.92);
 
   /* Borders */
-  --color-border: #e5e7eb;
-  --color-border-subtle: #f1f1f3;
+  --color-border: #D3D7D1;
+  --color-border-subtle: #E6E9E4;
 
   /* Text */
-  --color-text: #0a0a0a;
-  --color-text-main: #0a0a0a;
+  --color-text: #0E1113;
+  --color-text-main: #0E1113;
   /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
-  --color-text-muted: #5F6775;
+  --color-text-muted: #4A5157;
   /* Legal on --color-surface and --color-bg only. On surface-2 and
      surface-3 no lighter value clears 4.5:1, so those use muted. */
-  --color-text-subtle: #6A7280;
+  --color-text-subtle: #5B6167;
 
   /* Status (light). Five slots per status; see .unlazy/TOKEN-CONTRACT.md.
      Every value here holds at least 4.5:1 against the surface it is used on. */
@@ -87,20 +87,20 @@
   /* Brand carries the same five slots so a primary action is expressed the
      same way a status is. --color-brand is the text/icon weight, which the
      500 step is too light to satisfy on a light surface. */
-  --color-brand: #A64027;
-  --color-brand-solid: #C24E33;
-  --color-brand-solid-hover: #A64027;
+  --color-brand: #00655B;
+  --color-brand-solid: #00786C;
+  --color-brand-solid-hover: #005C53;
   --color-brand-on: #ffffff;
-  --color-brand-soft: #FDF1ED;
-  --color-brand-line: #F4B59C;
+  --color-brand-soft: #E4F5F2;
+  --color-brand-line: #7FC9C0;
 
   /* Radius */
-  --radius-brand: 10px;
-  --radius-brand-lg: 14px;
+  --radius-brand: 3px;
+  --radius-brand-lg: 4px;
 
   /* Shadows */
   --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.04);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.18);
+  --shadow-warm: 0 1px 0 0 rgba(14,17,19,0.06);
   --shadow-elevated: 0 12px 28px -4px rgba(60, 50, 45, 0.06);
   --shadow-elev:
     inset 0 1px 0 0 rgba(255,255,255,0.8),
@@ -115,38 +115,38 @@
 
 .dark {
   /* Brand scale (dark) - centered on #E56A4A, same as light for consistency */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #E56A4A;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
+  --color-brand-50: #E9FBF8;
+  --color-brand-100: #C6F5EE;
+  --color-brand-200: #8CEBDE;
+  --color-brand-300: #5BEBDA;
+  --color-brand-400: #2FE0CD;
+  --color-brand-500: #00E5CF;
+  --color-brand-600: #00C4B1;
+  --color-brand-700: #00A392;
+  --color-brand-800: #0E5A50;
+  --color-brand-900: #06231F;
 
-  --color-primary: #E56A4A;
-  --color-primary-hover: #cc5236;
+  --color-primary: #2FE0CD;
+  --color-primary-hover: #5BEBDA;
 
   /* Surfaces (dark - Claude-like neutral warm) */
-  --color-bg: #1a1a1a;
-  --color-bg-alt: #1F1F1E;
-  --color-surface: #262626;
-  --color-surface-2: #303030;
-  --color-surface-3: #3a3a3a;
-  --color-sidebar: rgba(30, 30, 30, 0.85);
+  --color-bg: #0A0B0D;
+  --color-bg-alt: #0E1013;
+  --color-surface: #101317;
+  --color-surface-2: #171B21;
+  --color-surface-3: #1F242B;
+  --color-sidebar: rgba(12, 14, 17, 0.92);
 
-  --color-border: #333333;
-  --color-border-subtle: #2a2a2a;
+  --color-border: #232830;
+  --color-border-subtle: #1A1E24;
 
-  --color-text: #ededed;
-  --color-text-main: #ededed;
+  --color-text: #E9ECEF;
+  --color-text-main: #E9ECEF;
   /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
-  --color-text-muted: #9fa6b2;
+  --color-text-muted: #AEB6BF;
   /* Legal on --color-surface and --color-bg only. On surface-2 and
      surface-3 no darker value clears 4.5:1, so those use muted. */
-  --color-text-subtle: #8b93a1;
+  --color-text-subtle: #98A1AB;
 
   /* Status (dark). Same five slots; the line/text weight lightens so it keeps
      4.5:1 against --color-surface, while the solid fill stays dark enough to
@@ -179,15 +179,15 @@
   --color-info-soft: #101B2E;
   --color-info-line: #1E3A6B;
 
-  --color-brand: #EE8D6A;
-  --color-brand-solid: #C24E33;
-  --color-brand-solid-hover: #A64027;
-  --color-brand-on: #ffffff;
-  --color-brand-soft: #2A1710;
-  --color-brand-line: #5C2A1B;
+  --color-brand: #2FE0CD;
+  --color-brand-solid: #2FE0CD;
+  --color-brand-solid-hover: #5BEBDA;
+  --color-brand-on: #04211E;
+  --color-brand-soft: #08302B;
+  --color-brand-line: #0E5A50;
 
   --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.3);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.25);
+  --shadow-warm: 0 1px 0 0 rgba(0,0,0,0.5);
   --shadow-elevated: 0 12px 28px -4px rgba(0, 0, 0, 0.45);
   --shadow-elev:
     inset 0 1px 0 0 rgba(255,255,255,0.06),
