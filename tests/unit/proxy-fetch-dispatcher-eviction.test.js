@@ -4,15 +4,23 @@ import { MEMORY_CONFIG } from "../../open-sse/config/runtimeConfig.js";
 const dispatcherSeam = vi.hoisted(() => {
   const state = {
     instances: [],
-    rejectionByUri: new Map(),
+    closeFailureByUri: new Map(),
   };
 
   class InjectedDispatcher {
     constructor(options) {
       this.options = options;
+      this.activeWorkAborted = false;
+      this.gracefulCloseRequested = false;
+      this.close = vi.fn(() => {
+        this.gracefulCloseRequested = true;
+        const failure = state.closeFailureByUri.get(options.uri);
+        if (failure?.kind === "sync") throw failure.error;
+        return failure?.kind === "async" ? Promise.reject(failure.error) : Promise.resolve();
+      });
       this.destroy = vi.fn(() => {
-        const rejection = state.rejectionByUri.get(options.uri);
-        return rejection ? Promise.reject(rejection) : Promise.resolve();
+        this.activeWorkAborted = true;
+        return Promise.resolve();
       });
       state.instances.push(this);
     }
@@ -23,7 +31,7 @@ const dispatcherSeam = vi.hoisted(() => {
     state,
     reset() {
       state.instances.length = 0;
-      state.rejectionByUri.clear();
+      state.closeFailureByUri.clear();
     },
   };
 });
@@ -83,10 +91,31 @@ describe("proxy dispatcher cache eviction", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[0][1].dispatcher).toBe(dispatcherSeam.state.instances[0]);
     expect(fetchSpy.mock.calls[1][1].dispatcher).toBe(dispatcherSeam.state.instances[0]);
+    expect(dispatcherSeam.state.instances[0].close).not.toHaveBeenCalled();
     expect(dispatcherSeam.state.instances[0].destroy).not.toHaveBeenCalled();
   });
 
-  it("destroys only the dispatcher removed when the cache reaches its limit", async () => {
+  it("promotes a cache hit so overflow closes B and retains the touched A", async () => {
+    const { proxyAwareFetch } = await loadHarness();
+    await fillDispatcherCache(proxyAwareFetch);
+    const cachedDispatchers = [...dispatcherSeam.state.instances];
+    const touched = cachedDispatchers[0];
+    const leastRecentlyUsed = cachedDispatchers[1];
+
+    await fetchThrough(proxyAwareFetch, "http://proxy-0.example:8080");
+    await fetchThrough(proxyAwareFetch, "http://proxy-overflow.example:8080");
+    await Promise.resolve();
+
+    expect(leastRecentlyUsed.close).toHaveBeenCalledTimes(1);
+    expect(touched.close).not.toHaveBeenCalled();
+    expect(touched.destroy).not.toHaveBeenCalled();
+    for (const retained of [...cachedDispatchers.slice(2), touched]) {
+      expect(retained.close).not.toHaveBeenCalled();
+      expect(retained.destroy).not.toHaveBeenCalled();
+    }
+  });
+
+  it("gracefully closes only the evicted dispatcher without aborting active work", async () => {
     const { proxyAwareFetch } = await loadHarness();
     await fillDispatcherCache(proxyAwareFetch);
     const cachedDispatchers = [...dispatcherSeam.state.instances];
@@ -95,17 +124,45 @@ describe("proxy dispatcher cache eviction", () => {
     await Promise.resolve();
 
     expect(dispatcherSeam.state.instances).toHaveLength(MEMORY_CONFIG.proxyDispatchersMaxSize + 1);
-    expect(cachedDispatchers[0].destroy).toHaveBeenCalledTimes(1);
+    expect(cachedDispatchers[0].close).toHaveBeenCalledTimes(1);
+    expect(cachedDispatchers[0].gracefulCloseRequested).toBe(true);
+    expect(cachedDispatchers[0].activeWorkAborted).toBe(false);
+    expect(cachedDispatchers[0].destroy).not.toHaveBeenCalled();
     for (const retained of cachedDispatchers.slice(1)) {
+      expect(retained.close).not.toHaveBeenCalled();
       expect(retained.destroy).not.toHaveBeenCalled();
     }
+    expect(dispatcherSeam.state.instances.at(-1).close).not.toHaveBeenCalled();
     expect(dispatcherSeam.state.instances.at(-1).destroy).not.toHaveBeenCalled();
   });
 
-  it("owns an evicted dispatcher's rejected destroy promise", async () => {
+  it("contains a synchronous close failure and still installs the replacement", async () => {
     const { proxyAwareFetch } = await loadHarness();
-    const rejection = new Error("synthetic dispatcher destroy failure");
-    dispatcherSeam.state.rejectionByUri.set("http://proxy-0.example:8080", rejection);
+    const failure = new Error("synthetic synchronous close failure");
+    dispatcherSeam.state.closeFailureByUri.set(
+      "http://proxy-0.example:8080",
+      { kind: "sync", error: failure },
+    );
+
+    await fillDispatcherCache(proxyAwareFetch);
+    const evicted = dispatcherSeam.state.instances[0];
+
+    await expect(
+      fetchThrough(proxyAwareFetch, "http://proxy-overflow.example:8080"),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(evicted.close).toHaveBeenCalledTimes(1);
+    expect(evicted.destroy).not.toHaveBeenCalled();
+    expect(dispatcherSeam.state.instances).toHaveLength(MEMORY_CONFIG.proxyDispatchersMaxSize + 1);
+  });
+
+  it("owns an evicted dispatcher's rejected close promise", async () => {
+    const { proxyAwareFetch } = await loadHarness();
+    const rejection = new Error("synthetic asynchronous close failure");
+    dispatcherSeam.state.closeFailureByUri.set(
+      "http://proxy-0.example:8080",
+      { kind: "async", error: rejection },
+    );
     const unhandled = [];
     const onUnhandled = (reason) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
@@ -117,7 +174,8 @@ describe("proxy dispatcher cache eviction", () => {
       await fetchThrough(proxyAwareFetch, "http://proxy-overflow.example:8080");
       await new Promise((resolve) => setImmediate(resolve));
 
-      expect(evicted.destroy).toHaveBeenCalledTimes(1);
+      expect(evicted.close).toHaveBeenCalledTimes(1);
+      expect(evicted.destroy).not.toHaveBeenCalled();
       expect(unhandled).toEqual([]);
     } finally {
       process.removeListener("unhandledRejection", onUnhandled);

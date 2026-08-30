@@ -305,14 +305,14 @@ async function getDispatcher(proxyUrl) {
   if (!normalized) return null;
 
   if (!proxyDispatchers.has(normalized)) {
-    // Evict oldest entry if max size reached
+    // Evict the least-recently-used entry if max size is reached.
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
       const oldestKey = proxyDispatchers.keys().next().value;
       const evictedDispatcher = proxyDispatchers.get(oldestKey);
       proxyDispatchers.delete(oldestKey);
-      if (typeof evictedDispatcher?.destroy === "function") {
+      if (typeof evictedDispatcher?.close === "function") {
         try {
-          void Promise.resolve(evictedDispatcher.destroy()).catch(() => {});
+          void Promise.resolve(evictedDispatcher.close()).catch(() => {});
         } catch { }
       }
     }
@@ -328,6 +328,10 @@ async function getDispatcher(proxyUrl) {
       pipelining: 1,
       maxCachedSessions: PROXY_MAX_FREE_CONNECTIONS,
     }));
+  } else {
+    const cachedDispatcher = proxyDispatchers.get(normalized);
+    proxyDispatchers.delete(normalized);
+    proxyDispatchers.set(normalized, cachedDispatcher);
   }
 
   return proxyDispatchers.get(normalized);
