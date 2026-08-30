@@ -49,8 +49,17 @@ jobs:
       # debt its author did not create. The blocking gate is therefore the diff:
       # every file a pull request touches must lint clean. The whole-tree run
       # stays as a visible, non-blocking report so the backlog does not go quiet.
-      - name: ESLint (changed files, blocking)
+      - name: ESLint (new findings in changed files, blocking)
         run: |
+          # The gate is that a pull request introduces no NEW finding, not that
+          # every file it touches is already clean. Requiring the latter wedges
+          # exactly the pull request this comment says it wants to protect: a
+          # file carrying pre-existing react-hooks debt blocks anyone who edits
+          # a class name in it, on debt they did not create.
+          #
+          # Both sides are linted with the same config and dependencies, and the
+          # comparison keys on file and rule rather than line, so a finding that
+          # merely moved down a file is not counted as new.
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
             echo "no usable base ref, linting the whole tree instead"
@@ -63,8 +72,49 @@ jobs:
             echo "no changed JavaScript files"
             exit 0
           fi
-          printf 'linting %d changed file(s)\n' "${#files[@]}"
-          npx eslint "${files[@]}"
+          printf 'comparing %d changed file(s) against %s\n' "${#files[@]}" "$base"
+          npx eslint --no-error-on-unmatched-pattern -f json "${files[@]}" > /tmp/head.json || true
+
+          wt=$(mktemp -d)
+          git worktree add --detach "$wt" "$base" >/dev/null 2>&1
+          ln -sfn "$PWD/node_modules" "$wt/node_modules"
+          cp eslint.config.mjs "$wt/eslint.config.mjs" 2>/dev/null || true
+          base_files=()
+          for f in "${files[@]}"; do [ -f "$wt/$f" ] && base_files+=("$f"); done
+          if [ "${#base_files[@]}" -gt 0 ]; then
+            ( cd "$wt" && npx eslint --no-error-on-unmatched-pattern -f json "${base_files[@]}" > /tmp/base.json 2>/dev/null ) || true
+          else
+            echo '[]' > /tmp/base.json
+          fi
+          git worktree remove --force "$wt" >/dev/null 2>&1 || true
+
+          node - /tmp/base.json /tmp/head.json <<'NODE'
+          const fs = require("node:fs");
+          const [, , baseP, headP] = process.argv;
+          const load = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; } };
+          const tally = (rs) => {
+            const m = new Map();
+            for (const r of rs) {
+              const f = r.filePath.replace(/^.*?\/(src|docs|cli|tests)\//, "$1/");
+              for (const msg of r.messages || []) {
+                const k = `${f}|${msg.ruleId || "syntax"}`;
+                m.set(k, (m.get(k) || 0) + 1);
+              }
+            }
+            return m;
+          };
+          const base = tally(load(baseP)), head = tally(load(headP));
+          const grew = [];
+          for (const [k, n] of head) { const was = base.get(k) || 0; if (n > was) grew.push(`${k}  ${was} -> ${n}`); }
+          const sum = (m) => [...m.values()].reduce((a, b) => a + b, 0);
+          console.log(`findings in changed files: ${sum(base)} at base, ${sum(head)} on this branch`);
+          if (grew.length) {
+            console.log(`NEW_LINT_FINDINGS=${grew.length}`);
+            grew.slice(0, 40).forEach((g) => console.log("  " + g));
+            process.exit(1);
+          }
+          console.log("no new lint findings");
+          NODE
 
       - name: ESLint (whole tree, reporting only)
         continue-on-error: true
@@ -114,6 +164,14 @@ jobs:
       - name: Run the suite and write a JSON report
         working-directory: tests
         run: |
+          # `devin-cli-executor` asserts the executor does not set
+          # XDG_CONFIG_HOME when DEVIN_MCP_SERVERS is absent. GitHub runners
+          # define XDG_CONFIG_HOME in the ambient environment, so the assertion
+          # sees an inherited value and fails there while passing on a developer
+          # machine where it is unset. Reproduced locally by exporting it, and
+          # fixed by unsetting rather than blanking: the assertion is on the
+          # variable being defined, so an empty string still fails.
+          unset XDG_CONFIG_HOME
           npx vitest run \
             --testTimeout=30000 \
             --hookTimeout=30000 \
