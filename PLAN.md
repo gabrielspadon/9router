@@ -222,3 +222,14 @@ Inspect the rendered dashboard and public surfaces, preserve all workflows, and 
 ### Task 9 — Prove campaign completion
 
 Run an idempotent final upstream sync, require zero reachable PR and issue entries in open or in-progress state, validate no duplicate IDs or upstream mutations, run the complete repository verification matrix and production smoke path, reconcile documentation with live behavior, verify clean `master` equals the fork remote, and audit every campaign gate before declaring completion.
+
+### 2026-08-30 — resumed session: batch 27 recovered and integrated
+
+- Recovered and independently reviewed all 12 batch 27 PR branches. Eleven were integrated; PR #2124 was rejected for lossy transcript handling and hard-coded model routing.
+- Merge receipts: #2133 `4dd27f495`, #2123 `96782e237`, #2091 `f103579f5`, #2129 `3fce72ffd`, #2112 `cd1cf148c`, #2064 `78ad46340`, #1987 `21c228022`, #2020 `0f6a6dd74`, #2006 `54dd8e9c6`, #1991 `1971a063b`, and #1977 `e5267709a`.
+- Provider reconciliation merged at `054a92c0e`. It repaired live Kimchi request headers, added eight missing deterministic provider goldens, and expanded alias verification to all 213 reachable or intentionally retained tokens with 84 non-identity mappings.
+- The first full gate exposed a real xAI OAuth and Kimchi updater fetch race. Strict TDD isolated the dashboard OAuth imports from unrelated Kimchi startup while preserving proxy fetch and live request-time Kimchi headers; merged at `c146f9505` after independent approval.
+- Focused receipts include PR #2064 `19/19`, PR #1987 `15/15`, PR #2129 plus #2091 `10/10`, PR #2112 combined `24/24`, PR #2020 Node `10/10` plus Bun `6/6` applicable, provider goldens `144/144`, xAI `6/6`, and canonical focused replay `151/151`.
+- Final full JSON gate: 3,180 tests, 3,062 passed, 61 known failures, 57 skipped, and `verify-no-regression.mjs` reported no regression. Provider count is 91; alias and OAuth baselines are byte-equal.
+- Operational catches closed before publication: PR #2064 transport and abort classification, PR #2129 combo fallback mutation, PR #2020 JSON alias matching and cascade atomicity, stale provider snapshots, Kimchi flattened-header staleness, Bun shebang selection, xAI global-fetch interference, and three generated snapshot reorder files restored after inspection. Snapshot-order stability remains deferred to Task 7.
+- Tracking now contains 385 open and 453 closed PRs, plus 1,003 open and 1 closed issue. All 12 batch entries moved to closed and tracking validation passes. Publication evidence is recorded in the Task 4 gate after fork-only push verification.

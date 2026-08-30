@@ -6174,3 +6174,170 @@
 - closed: 2026-08-29
 - detail: merge 1c66e8bfa (52b05a7fd); fireworks 16 current LLM rows + thinkingConfig, capabilities thinkingFormat openai, PROVIDER_PRICING rates, real 256px logo; 28 tests
 
+## PR #2133 — fix: rename next-server process to 9router (#2117)
+
+- url: https://github.com/decolua/9router/pull/2133
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 4dd27f495; process-name runtime check passed
+
+## PR #2129 — fix: add prefix=true to last assistant message for Mistral compatibility
+
+- url: https://github.com/decolua/9router/pull/2129
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 3fce72ffd; Mistral and PR2091 combined tests 10/10; fallback contamination fixed
+
+## PR #2124 — feat: add ZenMux Free provider (session-cookie based free-tier LLM)
+
+- url: https://github.com/decolua/9router/pull/2124
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: reviewed at b124e91f9; lossy transcript handling and hard-coded model routing rejected
+
+## PR #2123 — claude-to-openai: forward image tool_result blocks as image_url instead of stringifying base64
+
+- url: https://github.com/decolua/9router/pull/2123
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 96782e237; bridge suites passed 11/11 including expected-failure coverage
+
+## PR #2112 — fix(responses): default text.format for openai-compatible responses providers (#2093)
+
+- url: https://github.com/decolua/9router/pull/2112
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge cd1cf148c; Responses resolver and Mistral combined tests 24/24
+
+## PR #2091 — fix(mistral): strip assistant reasoning_content via paramSupport rule (#1649)
+
+- url: https://github.com/decolua/9router/pull/2091
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge f103579f5; parameter-support tests 5/5
+
+## PR #2064 — feat: add Mistral OCR and Moderation endpoint support
+
+- url: https://github.com/decolua/9router/pull/2064
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 78ad46340; proxy, cancellation, timeout, and discovery tests 19/19
+
+## PR #2020 — fix(provider): cascade delete aliases on provider removal; persist token limits for custom models
+
+- url: https://github.com/decolua/9router/pull/2020
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 0f6a6dd74; atomic provider cascade passed Node 10/10 and Bun 6/6 applicable
+
+## PR #2006 — Add Charm Hyper provider
+
+- url: https://github.com/decolua/9router/pull/2006
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 54dd8e9c6; registry asserted 20 models, unique providers, valid icon
+
+## PR #1991 — feat: add Xunfei (iFlytek Spark) provider
+
+- url: https://github.com/decolua/9router/pull/1991
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 1971a063b; Xunfei provider tests 4/4 and icon validation passed
+
+## PR #1987 — fix(tts): expose minimax/minimax-cn voices in public audio API
+
+- url: https://github.com/decolua/9router/pull/1987
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge 21c228022; MiniMax voice exposure tests 15/15
+
+## PR #1977 — chore(ark): refresh Volcengine Ark model list
+
+- url: https://github.com/decolua/9router/pull/1977
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-30
+- detail: merge e5267709a; Ark runtime model assertions passed
