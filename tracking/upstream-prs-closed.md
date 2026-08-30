@@ -56,6 +56,34 @@
 - closed: 2026-08-30
 - detail: automatic free-tier pool rotation conflicts with the manual per-egress daily-quota policy and can downgrade deleted or inactive selected pools to environment or direct egress. It also pre-dates durable pool snapshots, retries daily exhaustion, clears concurrent cooldown state, and applies broadly to non-OpenCode free providers.
 
+## PR #3257 — feat(codebuddy-cn): anti-ban device fingerprint + telemetry replication
+
+- url: https://github.com/decolua/9router/pull/3257
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref: b1d3166e0
+- disposition: rejected
+- validation: read-only hosted patch, privacy/security audit, and live CodeBuddy path review
+- notes: rejected, no product change
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: adds credentialed outbound telemetry, stable fabricated device/VCS/hardware identities, and provider-policy evasion unrelated to caller requests. Completion telemetry is header-level rather than terminal, while refresh identity wiring is incomplete.
+
+## PR #3208 — Fix resolve 429 resource exhausted by switching to production api endpoint and optimizing request size
+
+- url: https://github.com/decolua/9router/pull/3208
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref: b1d3166e0
+- disposition: rejected
+- validation: read-only endpoint, tool-schema, retry, proxy, and Antigravity validation review
+- notes: rejected, no product change
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: reverses the deliberate production-to-daily chat fallback, silently mutates tool schemas and system authority, and lacks strict-proxy, validation-gate, retry, or test evidence. Revisit request-size failures only as a bounded fail-closed 413 design.
+
 ## PR #3635 — Adding a link to verify your antigravity account
 
 - url: https://github.com/decolua/9router/pull/3635

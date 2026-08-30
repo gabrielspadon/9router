@@ -41,17 +41,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3257 — feat(codebuddy-cn): anti-ban device fingerprint + telemetry replication
-
-- url: https://github.com/decolua/9router/pull/3257
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3255 —  Latency Monitoring for Provider Selection
 
 - url: https://github.com/decolua/9router/pull/3255
@@ -110,17 +99,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #3214 — fix(antigravity): harden Gemini streaming and 3.6 handling
 
 - url: https://github.com/decolua/9router/pull/3214
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3208 — Fix resolve 429 resource exhausted by switching to production api endpoint and optimizing request size
-
-- url: https://github.com/decolua/9router/pull/3208
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
