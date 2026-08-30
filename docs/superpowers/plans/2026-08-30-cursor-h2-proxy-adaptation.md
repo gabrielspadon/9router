@@ -13,7 +13,7 @@
 - Adapt upstream PR 3276 behavior only. Do not apply its patch or change generic fetch, proxy rotation, dashboard, registries, dependency manifests, production services, or tracking.
 - Accept only http, https, socks, socks4, socks4a, socks5, and socks5h tunnel URLs.
 - Relay is not a TCP tunnel. Relay and required-unavailable make zero calls to environment proxy resolution, net, TLS, SOCKS, HTTP CONNECT, http2.connect, catalog cache, or catalog post.
-- Strict selected routes never fall back to environment or direct egress. A selected route produces direct only for a target match in its connectionNoProxy list. An explicit legacy connectionProxyEnabled false selection is a connection-local intentional-direct decision that also bypasses environment lookup. A non-strict established proxy failure closes failed resources exactly once before direct fallback.
+- Strict selected routes never fall back to environment or direct egress. A selected route produces direct only for a target match in its connectionNoProxy list. Connection-local direct egress requires the server-written connectionProxyMode direct marker, never the historical default false and empty legacy tuple. A non-strict established proxy failure closes failed resources exactly once before direct fallback.
 - Preserve existing header deadlines as ConnectTimeoutError. Preserve exact caller abort reasons before and after headers. Header deadline ends at headers, caller-abort lifetime remains until stream cleanup.
 - SessionLease owns exactly one returned H2 session and tunnel. close is idempotent. Catalog http2Post borrows session and never closes it.
 - Cache identity derives only from effective route. Hash normalized proxy URL internally and never log, return, or expose userinfo or a raw URL as a cache key.
@@ -69,7 +69,7 @@ Expected: no tracked dependency or lockfile changes.
 ~~~js
 // Connection provenance is discriminated before egress. cacheIdentity contains no raw URL or userinfo.
 { resolutionKind: "selected-proxy", connectionProxyEnabled: true, connectionProxyUrl, connectionNoProxy, strictProxy: boolean }
-{ resolutionKind: "intentional-direct", reason: "connection-no-proxy" | "legacy-proxy-disabled" | "pool-none" }
+{ resolutionKind: "intentional-direct", reason: "connection-no-proxy" | "connection-proxy-direct" | "pool-none" }
 { resolutionKind: "unselected" }
 { resolutionKind: "required-unavailable", reason, strictProxy: true }
 // Effective Route values consumed by the H2 adapter.
@@ -112,7 +112,7 @@ it("returns strict selected malformed route as required-unavailable before envir
 });
 ~~~
 
-Add relay precedence, explicit connectionNoProxy direct route, pairless required-unavailable, missing selected strict pool, invalid selected strict URL, unsupported selected strict scheme, and non-strict malformed selected route cases. Every unavailable selected case proves zero environment lookup. Test intentional-direct inputs for legacy-proxy-disabled and pool-none also make zero environment lookup. Add one non-strict established proxy failure case separately in Task 2 because direct fallback is permitted only after that real attempt.
+Add relay precedence, explicit connectionNoProxy direct route, pairless required-unavailable, missing selected strict pool, invalid selected strict URL, unsupported selected strict scheme, and non-strict malformed selected route cases. Every unavailable selected case proves zero environment lookup. Test intentional-direct inputs for connection-proxy-direct and pool-none also make zero environment lookup. `connectionNoProxy` is not a standalone direct-selection field. It produces direct only from selected-proxy provenance and only for a matching target. Add one non-strict established proxy failure case separately in Task 2 because direct fallback is permitted only after that real attempt.
 
 - [ ] **Step 2: Run the RED test.**
 
@@ -481,6 +481,7 @@ git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 log --onel
 - Modify: src/app/api/settings/route.js
 - Modify: src/app/api/proxy-pools/[id]/route.js
 - Create: tests/unit/proxy-pool-strict-snapshot.test.js
+- Create: tests/unit/provider-proxy-config.test.js
 - Modify: tests/unit/strict-proxy-propagation.test.js
 - Modify: tests/unit/settings-connect-timeout.test.js
 
@@ -494,7 +495,29 @@ git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 log --onel
 { proxyPoolId: "pool-id", strictProxy: true }
 // One transaction writes the pool and every record still bound to pool-id.
 await updateProxyPoolWithBoundSnapshots(poolId, updates);
+// Legacy per-connection policy is explicit only when a provider write supplies it.
+{ connectionProxyMode: "proxy", connectionProxyEnabled: true, connectionProxyUrl, connectionNoProxy? }
+{ connectionProxyMode: "direct" }
+// No legacy proxy fields means unselected and permits environment policy.
 ~~~
+
+Provider POST and PATCH share one server-owned proxy-write normalizer. If a
+request has none of `connectionProxyEnabled`, `connectionProxyUrl`, or
+`connectionNoProxy`, it writes none of those fields and no `connectionProxyMode`.
+It must not synthesize the current false, empty URL, empty no-proxy tuple. A
+request with `connectionProxyEnabled: true` requires a supported URL and writes
+`connectionProxyMode: "proxy"`; it writes `connectionNoProxy` only when nonempty.
+A request with an explicitly present `connectionProxyEnabled: false` may write
+only `connectionProxyMode: "direct"`, with the legacy enabled, URL, no-proxy,
+and strict fields omitted. `connectionNoProxy` is accepted only with explicit
+enabled true and a valid URL. Reject a request that combines a pool selection
+with any per-connection legacy proxy field, or a direct selection with URL,
+no-proxy, client-supplied strict input, or a client-supplied mode marker. PATCH with none of those fields
+leaves a current explicit policy unchanged, while its ordinary provider-data
+rewrite deletes a recognized historical default tuple.
+Reserved proxy fields inside `body.providerSpecificData` are stripped before
+merge. The top-level server normalizer is the only write owner for
+connectionProxyMode, legacy enabled, URL, no-proxy, proxyPoolId, and strictProxy.
 
 The repository exports the following conditional writers for the migration
 owner in Task 6. Each returns the durable record or null when a concurrent
@@ -521,15 +544,42 @@ it("rolls back pool and snapshots when a fan-out write fails", async () => {
   expect((await failingPoolPUT()).status).toBe(500);
   expect(await readAllThreeRecords()).toEqual(before);
 });
+
+it("POST without proxy fields omits a default tuple smuggled through provider data", async () => {
+  const response = await providerPOST({ provider: "openai", apiKey: "key", name: "OpenAI", providerSpecificData: {
+    connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
+  } });
+  expect(response.status).toBe(201);
+  expect(await storedProviderSpecificData()).not.toEqual(expect.objectContaining({
+    connectionProxyEnabled: false,
+    connectionProxyUrl: "",
+    connectionNoProxy: "",
+  }));
+  expect(await storedProviderSpecificData()).not.toHaveProperty("connectionProxyMode");
+});
+
+it("POST records explicit local direct separately from no selection", async () => {
+  const response = await providerPOST({ provider: "openai", apiKey: "key", name: "OpenAI", connectionProxyEnabled: false });
+  expect(response.status).toBe(201);
+  expect(await storedProviderSpecificData()).toMatchObject({ connectionProxyMode: "direct" });
+  expect(await storedProviderSpecificData()).not.toHaveProperty("connectionProxyEnabled");
+});
 ~~~
 
-Add active-pool POST/PUT selection, clear deleting both fields, client strict mismatch rejection, unrelated token refresh preservation, concurrent reassignment retaining its new pool snapshot, fixed and rotating no-auth strategy behavior.
+The new provider-proxy-config file starts at zero tests and adds six write cases.
+They cover POST omission, explicit direct marker, proxy-mode write with a matching
+target `connectionNoProxy`, rejection of no-proxy without enabled URL, rejection
+of pool plus legacy fields, and PATCH lazy cleanup of an exact historical default
+tuple. Keep the existing active-pool POST/PUT selection, clear deleting both
+pool fields, client strict mismatch rejection, unrelated token refresh
+preservation, concurrent reassignment retaining its new pool snapshot, fixed and
+rotating no-auth strategy behavior.
 
 - [ ] **Step 2: Run persistence RED tests.**
 
-Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/proxy-pool-strict-snapshot.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js --reporter=dot
+Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/proxy-pool-strict-snapshot.test.js unit/provider-proxy-config.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js --reporter=dot
 
-Expected: FAIL because current write paths retain only proxyPoolId and pool PUT does not fan out.
+Expected: FAIL because current POST synthesizes the false-empty legacy tuple, has no explicit direct marker, and current write paths retain only proxyPoolId while pool PUT does not fan out.
 
 - [ ] **Step 3: Implement pair-aware API and repository writes.**
 
@@ -548,20 +598,61 @@ function applySelection(data, selection) {
     Object.assign(data, selection);
   }
 }
+function hasOwn(data, key) {
+  return Object.prototype.hasOwnProperty.call(data || {}, key);
+}
+function normalizeConnectionProxyWrite(body) {
+  const hasEnabled = hasOwn(body, "connectionProxyEnabled");
+  const hasUrl = hasOwn(body, "connectionProxyUrl");
+  const hasNoProxy = hasOwn(body, "connectionNoProxy");
+  if (hasOwn(body, "connectionProxyMode") || hasOwn(body, "strictProxy")) {
+    throw new ProxyConfigValidationError();
+  }
+  if (!hasEnabled && !hasUrl && !hasNoProxy) return { mode: "omit" };
+  if (body.connectionProxyEnabled === false) {
+    if (hasUrl || hasNoProxy) throw new ProxyConfigValidationError();
+    return { mode: "direct" };
+  }
+  const url = normalizeString(body.connectionProxyUrl);
+  const noProxy = normalizeString(body.connectionNoProxy);
+  if (body.connectionProxyEnabled !== true || !url || !isSupportedProviderProxyUrl(url)) {
+    throw new ProxyConfigValidationError();
+  }
+  return { mode: "proxy", url, ...(noProxy ? { noProxy } : {}) };
+}
+function isSupportedProviderProxyUrl(url) {
+  try {
+    return ["http:", "https:", "socks:", "socks4:", "socks4a:", "socks5:", "socks5h:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+function applyConnectionProxyWrite(data, config) {
+  delete data.connectionProxyEnabled;
+  delete data.connectionProxyUrl;
+  delete data.connectionNoProxy;
+  delete data.connectionProxyMode;
+  if (config.mode === "proxy") Object.assign(data, { connectionProxyMode: "proxy", connectionProxyEnabled: true, connectionProxyUrl: config.url, ...(config.noProxy ? { connectionNoProxy: config.noProxy } : {}) });
+  if (config.mode === "direct") data.connectionProxyMode = "direct";
+}
+function stripReservedProxyFields(data) {
+  for (const key of ["connectionProxyMode", "connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy", "proxyPoolId", "strictProxy"]) delete data[key];
+  return data;
+}
 ~~~
 
-Pool repository writes pool, matching decrypted/re-encrypted normal connection data, and settings.providerStrategies entries in one db.transaction. It updates only records still bound to target pool and leaves unrelated data intact. Any error throws from transaction. POST, PUT, and settings PATCH obtain strict only from selected active pool and reject standalone/mismatched client strict input.
+Pool repository writes pool, matching decrypted/re-encrypted normal connection data, and settings.providerStrategies entries in one db.transaction. It updates only records still bound to target pool and leaves unrelated data intact. Any error throws from transaction. POST, PUT, and settings PATCH obtain strict only from selected active pool and reject standalone/mismatched client strict input. `applyConnectionProxyWrite` runs only when per-connection proxy input is present and never on a pool-selection request, so it cannot remove a pool-owned strict snapshot. The provider PUT path otherwise strips the exact pre-change false-empty legacy tuple during its already-authorized provider-data write; it never transforms that tuple during an egress read.
 
 - [ ] **Step 4: Run persistence tests.**
 
-Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/proxy-pool-strict-snapshot.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js --reporter=dot
+Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/proxy-pool-strict-snapshot.test.js unit/provider-proxy-config.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js --reporter=dot
 
 Expected: lifecycle, rollback, concurrency, and existing settings tests pass.
 
 - [ ] **Step 5: Commit.**
 
 ~~~bash
-git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 add src/lib/db/repos/connectionsRepo.js src/lib/db/repos/settingsRepo.js src/lib/db/repos/proxyPoolsRepo.js src/lib/db/index.js src/lib/localDb.js src/models/index.js src/app/api/providers/route.js src/app/api/providers/[id]/route.js src/app/api/settings/route.js src/app/api/proxy-pools/[id]/route.js tests/unit/proxy-pool-strict-snapshot.test.js tests/unit/strict-proxy-propagation.test.js tests/unit/settings-connect-timeout.test.js
+git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 add src/lib/db/repos/connectionsRepo.js src/lib/db/repos/settingsRepo.js src/lib/db/repos/proxyPoolsRepo.js src/lib/db/index.js src/lib/localDb.js src/models/index.js src/app/api/providers/route.js src/app/api/providers/[id]/route.js src/app/api/settings/route.js src/app/api/proxy-pools/[id]/route.js tests/unit/proxy-pool-strict-snapshot.test.js tests/unit/provider-proxy-config.test.js tests/unit/strict-proxy-propagation.test.js tests/unit/settings-connect-timeout.test.js
 git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 commit -m "fix(proxy): persist strict pool selection snapshots"
 git -C /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276 log --oneline -1
 ~~~
@@ -612,9 +703,11 @@ export const isRequiredProxyUnavailableError = error => error?.code === "require
 Define the control helpers in connectionProxy.js. They preserve pool and legacy
 per-connection selection provenance when lookup fails. A missing or malformed
 selected route is not rewritten to unselected, so it cannot become environment
-or direct egress by accident. An explicitly disabled legacy configuration also
-never becomes unselected. Its strict form is unavailable and its non-strict
-form is explicit connection-local direct.
+or direct egress by accident. Never infer intentional direct from an unmarked
+false enabled field. The historical POST implementation persisted exactly false,
+empty URL, and empty no-proxy when the caller provided no selection. That tuple
+is unselected at read time, not explicit direct. Only the new server-written
+connectionProxyMode direct marker is intentional direct.
 
 ~~~js
 function requiredUnavailable(reason, proxyPoolId, strictProxy = true) {
@@ -633,24 +726,37 @@ function hasOwn(data, key) {
   return Object.prototype.hasOwnProperty.call(data || {}, key);
 }
 function normalizeLegacyProxy(data = {}) {
+  const connectionProxyMode = normalizeString(data.connectionProxyMode);
+  const connectionProxyUrl = normalizeString(data.connectionProxyUrl);
+  const connectionNoProxy = normalizeString(data.connectionNoProxy);
+  const strictProxy = data.strictProxy === true;
+  const hasLegacyProxyFields = ["connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy", "strictProxy"].some(key => hasOwn(data, key));
   return {
-    hasLegacySelection: ["connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy", "strictProxy"].some(key => hasOwn(data, key)),
+    connectionProxyMode,
+    hasLegacyProxyFields,
     hasConnectionProxyEnabled: hasOwn(data, "connectionProxyEnabled"),
     connectionProxyEnabled: data.connectionProxyEnabled === true,
-    connectionProxyUrl: normalizeString(data.connectionProxyUrl),
-    connectionNoProxy: normalizeString(data.connectionNoProxy),
-    strictProxy: data.strictProxy === true,
+    connectionProxyUrl,
+    connectionNoProxy,
+    strictProxy,
+    isHistoricalDefaultFalseTuple: connectionProxyMode === "" && data.connectionProxyEnabled === false && connectionProxyUrl === "" && connectionNoProxy === "" && strictProxy === false,
   };
 }
 function usableLegacyConfig(legacy) {
-  if (!legacy.hasLegacySelection) return null;
+  if (legacy.connectionProxyMode === "direct") {
+    if (legacy.hasLegacyProxyFields) return requiredUnavailable("connection-proxy-direct-conflict", null, legacy.strictProxy);
+    return { kind: "usable", resolutionKind: "intentional-direct", source: "legacy", reason: "connection-proxy-direct", connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "", strictProxy: false };
+  }
+  if (legacy.connectionProxyMode && legacy.connectionProxyMode !== "proxy") {
+    return requiredUnavailable("connection-proxy-mode-invalid", null, legacy.strictProxy);
+  }
+  if (legacy.isHistoricalDefaultFalseTuple) return null;
+  if (!legacy.hasLegacyProxyFields && legacy.connectionProxyMode === "") return null;
   if (!legacy.hasConnectionProxyEnabled) {
     return requiredUnavailable("legacy-proxy-enabled-missing", null, legacy.strictProxy);
   }
   if (legacy.connectionProxyEnabled !== true) {
-    return legacy.strictProxy
-      ? requiredUnavailable("legacy-proxy-disabled", null, true)
-      : { kind: "usable", resolutionKind: "intentional-direct", source: "legacy", reason: "legacy-proxy-disabled", ...legacy };
+    return requiredUnavailable("legacy-proxy-disabled-ambiguous", null, legacy.strictProxy);
   }
   if (!legacy.connectionProxyUrl || !isSupportedConnectionProxyUrl(legacy.connectionProxyUrl)) {
     return requiredUnavailable("legacy-proxy-invalid", null, legacy.strictProxy);
@@ -663,27 +769,38 @@ function usableLegacyConfig(legacy) {
 tunnel-scheme allowlist. Do not import a Node HTTP/2 helper into this browser-safe
 configuration module. Pool selection wins over legacy data. `proxyPoolId ===
 "__none__"` returns usable `intentional-direct` with reason `pool-none` before
-legacy evaluation. `unselected` is returned only when there is no pool selection
-and none of the four legacy proxy keys is present. `toConnectionProxyOptions`
-must preserve `resolutionKind` and the complete legacy URL, enabled, no-proxy,
-and strict fields without converting a legacy result into unselected.
+legacy evaluation. A new `connectionProxyMode: "direct"` marker returns
+intentional direct only when no old proxy field conflicts with it. `connectionProxyMode:
+"proxy"` requires enabled true and a valid URL. An unmarked false-empty historical
+tuple returns `unselected`, without a resolver write, so it can still follow
+environment policy. The next already-authorized provider PUT strips that tuple.
+Any other unmarked false configuration is required-unavailable until the user
+re-saves it through the new provider contract. `toConnectionProxyOptions` must
+preserve `resolutionKind` and the complete selected URL, enabled, no-proxy, and
+strict fields without converting a selected legacy result into unselected.
 
 Use this legacy matrix after pool selection and before any unselected result.
 The `effective route` column is evaluated for a non-matching target, except for
 the explicit no-proxy row. Every row other than `unselected` must prove that
 `getEnvProxyUrl` is never called.
 
-| Legacy fields | Resolver outcome | Effective route and egress policy |
+| Persisted origin and fields | Resolver outcome | Effective route and egress policy |
 | --- | --- | --- |
-| enabled true, valid supported URL, strict true | usable `selected-proxy` with URL and strict true | proxy only, no direct fallback |
-| enabled true, valid supported URL, strict false | usable `selected-proxy` with URL and strict false | proxy first, direct only after the Task 2 proxy transport fails |
-| enabled true, missing, malformed, or unsupported URL, strict true | `required-unavailable` `legacy-proxy-invalid` | no environment lookup, direct, catalog, or transport |
-| enabled true, missing, malformed, or unsupported URL, strict false | `required-unavailable` `legacy-proxy-invalid` | no environment lookup or direct retry before a real proxy attempt |
-| enabled false, any URL, strict true | `required-unavailable` `legacy-proxy-disabled` | no environment lookup, direct, catalog, or transport |
-| enabled false, any URL, strict false | usable `intentional-direct` `legacy-proxy-disabled` | direct from the explicit connection-local decision, no environment lookup |
-| enabled absent with any legacy URL, no-proxy, or strict key | `required-unavailable` `legacy-proxy-enabled-missing` | no environment lookup, direct, catalog, or transport |
-| enabled true, valid URL, target matches connectionNoProxy | usable `selected-proxy` | direct with reason `connection-no-proxy`, no environment lookup |
-| no pool selection and no legacy proxy keys | usable `unselected` | environment policy may resolve proxy or direct |
+| new `connectionProxyMode: direct`, no old proxy fields | usable `intentional-direct` `connection-proxy-direct` | direct from explicit server-written decision, no environment lookup |
+| new direct marker plus any enabled, URL, no-proxy, or strict field | `required-unavailable` `connection-proxy-direct-conflict` | no environment lookup, direct, catalog, or transport |
+| new `connectionProxyMode: proxy`, enabled true, valid supported URL, strict true | usable `selected-proxy` with URL and strict true | proxy only, no direct fallback |
+| new `connectionProxyMode: proxy`, enabled true, valid supported URL, strict false | usable `selected-proxy` with URL and strict false | proxy first, direct only after the Task 2 proxy transport fails |
+| new proxy marker, enabled true, missing, malformed, or unsupported URL, strict true | `required-unavailable` `legacy-proxy-invalid` | no environment lookup, direct, catalog, or transport |
+| new proxy marker, enabled true, missing, malformed, or unsupported URL, strict false | `required-unavailable` `legacy-proxy-invalid` | no environment lookup or direct retry before a real proxy attempt |
+| unmarked legacy enabled true, valid supported URL, strict true | usable `selected-proxy` with URL and strict true | proxy only, no direct fallback |
+| unmarked legacy enabled true, valid supported URL, strict false | usable `selected-proxy` with URL and strict false | proxy first, direct only after the Task 2 proxy transport fails |
+| unmarked legacy enabled true, missing, malformed, or unsupported URL, strict true | `required-unavailable` `legacy-proxy-invalid` | no environment lookup, direct, catalog, or transport |
+| unmarked legacy enabled true, missing, malformed, or unsupported URL, strict false | `required-unavailable` `legacy-proxy-invalid` | no environment lookup or direct retry before a real proxy attempt |
+| unmarked historical POST default, enabled false, empty URL, empty no-proxy, strict absent or false | usable `unselected` | environment policy may resolve proxy or direct, and no egress read writes it |
+| unmarked enabled false with URL, no-proxy, or strict true | `required-unavailable` `legacy-proxy-disabled-ambiguous` | no environment lookup, direct, catalog, or transport |
+| unmarked enabled absent with any URL, no-proxy, or strict key | `required-unavailable` `legacy-proxy-enabled-missing` | no environment lookup, direct, catalog, or transport |
+| selected new or legacy valid URL, target matches connectionNoProxy | usable `selected-proxy` | direct with reason `connection-no-proxy`, no environment lookup |
+| no pool selection, proxy mode, or legacy proxy keys | usable `unselected` | environment policy may resolve proxy or direct |
 
 - [ ] **Step 1: Add failing migration tests.**
 
@@ -707,18 +824,43 @@ it.each(["missing", "inactive", "malformed", "lookup-throws", "write-fails", "no
     expect(egressPrimitives).not.toHaveBeenCalled();
   },
 );
+
+it("reads the persisted pre-change false-empty POST tuple as unselected", async () => {
+  getEnvProxyUrl.mockReturnValue("http://environment-proxy.test:8080");
+  const config = await resolveConnectionProxyConfig({
+    connectionProxyEnabled: false,
+    connectionProxyUrl: "",
+    connectionNoProxy: "",
+  });
+  expect(config).toMatchObject({ kind: "usable", resolutionKind: "unselected", source: "legacy-default" });
+  const route = resolveEffectiveProxyRoute("https://agent.api5.cursor.sh/run", toConnectionProxyOptions(config));
+  expect(route).toMatchObject({ kind: "proxy" });
+  expect(getEnvProxyUrl).toHaveBeenCalledTimes(1);
+  expect(persistPoolSnapshot).not.toHaveBeenCalled();
+});
+
+it("uses only the server-written direct marker for local direct egress", async () => {
+  const config = await resolveConnectionProxyConfig({ connectionProxyMode: "direct" });
+  expect(config).toMatchObject({ kind: "usable", resolutionKind: "intentional-direct" });
+  expect(resolveEffectiveProxyRoute("https://agent.api5.cursor.sh/run", toConnectionProxyOptions(config)))
+    .toMatchObject({ kind: "direct" });
+  expect(getEnvProxyUrl).not.toHaveBeenCalled();
+});
 ~~~
 
-Add the nine matrix rows as named strict and non-strict legacy tests. They must
-assert the complete `resolutionKind`, URL, enabled, and strict fields before
-calling `resolveEffectiveProxyRoute`; every non-unselected case asserts no
-environment lookup. Add already-persisted strict disappearance/deactivation/
-malformed/throw cases, no-auth fixed durable write, rotating pair carry-through,
-and refresh preservation.
+Add the 15 matrix rows as named proxy-origin, strict, and non-strict regression
+tests. The persisted historical false-empty tuple test asserts `unselected`,
+permits the environment resolver, and proves no resolver write. The new explicit
+direct-marker test asserts `intentional-direct` and zero environment lookup. The
+selected and unavailable tests assert the complete `resolutionKind`, URL,
+enabled, and strict fields before calling `resolveEffectiveProxyRoute`; every
+non-unselected case asserts no environment lookup. Add already-persisted strict
+disappearance/deactivation/malformed/throw cases, no-auth fixed durable write,
+rotating pair carry-through, and refresh preservation.
 
 - [ ] **Step 2: Run migration RED tests.**
 
-Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js unit/http2-connect.test.js --reporter=dot
+Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/provider-proxy-config.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js unit/http2-connect.test.js --reporter=dot
 
 Expected: FAIL because current resolver treats missing selection as direct-capable state.
 
@@ -736,7 +878,11 @@ if (proxyPoolId && typeof storedStrict !== "boolean") {
 if (proxyPoolId && (!activePool || activePool.isActive !== true || !proxyUrl)) {
   return requiredUnavailable("selected-pool-unavailable", proxyPoolId, storedStrict === true);
 }
-const legacyResult = usableLegacyConfig(normalizeLegacyProxy(providerSpecificData));
+const legacy = normalizeLegacyProxy(providerSpecificData);
+if (legacy.isHistoricalDefaultFalseTuple) {
+  return { kind: "usable", resolutionKind: "unselected", source: "legacy-default", connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "", strictProxy: false };
+}
+const legacyResult = usableLegacyConfig(legacy);
 if (legacyResult) return legacyResult;
 return { kind: "usable", resolutionKind: "unselected", source: "none", ...normalizeLegacyProxy(providerSpecificData) };
 ~~~
@@ -1035,7 +1181,7 @@ For the v1 live Cursor resolver, throw new RequiredProxyUnavailableError when th
 
 - [ ] **Step 4: Run complete focused campaign gate.**
 
-Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/http2-connect.test.js unit/cursor-connect-timeout.test.js unit/cursor-models.test.js unit/cursor-agent-proto.test.js unit/cursor-agent-exec-request.test.js unit/cursor-composer-thinking.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js unit/proxy-pool-strict-snapshot.test.js unit/required-unavailable-callers.test.js unit/models-list-required-unavailable.test.js --reporter=dot
+Run: cd /home/spadon/Codebases/9router/.claude/worktrees/task-5-pr3276/tests && npx vitest run unit/http2-connect.test.js unit/cursor-connect-timeout.test.js unit/cursor-models.test.js unit/cursor-agent-proto.test.js unit/cursor-agent-exec-request.test.js unit/cursor-composer-thinking.test.js unit/strict-proxy-propagation.test.js unit/settings-connect-timeout.test.js unit/proxy-pool-strict-snapshot.test.js unit/provider-proxy-config.test.js unit/required-unavailable-callers.test.js unit/models-list-required-unavailable.test.js --reporter=dot
 
 Expected: all selected files pass. Record Vitest actual expanded count in implementation handoff.
 
