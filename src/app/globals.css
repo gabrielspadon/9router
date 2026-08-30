@@ -45,7 +45,9 @@
   --color-text-main: #0a0a0a;
   /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
   --color-text-muted: #5F6775;
-  --color-text-subtle: #9CA3AF;
+  /* Legal on --color-surface and --color-bg only. On surface-2 and
+     surface-3 no lighter value clears 4.5:1, so those use muted. */
+  --color-text-subtle: #6A7280;
 
   /* Status (light). Five slots per status; see .unlazy/TOKEN-CONTRACT.md.
      Every value here holds at least 4.5:1 against the surface it is used on. */
@@ -132,7 +134,9 @@
   --color-text-main: #ededed;
   /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
   --color-text-muted: #9fa6b2;
-  --color-text-subtle: #6b7280;
+  /* Legal on --color-surface and --color-bg only. On surface-2 and
+     surface-3 no darker value clears 4.5:1, so those use muted. */
+  --color-text-subtle: #8b93a1;
 
   /* Status (dark). Same five slots; the line/text weight lightens so it keeps
      4.5:1 against --color-surface, while the solid fill stays dark enough to
