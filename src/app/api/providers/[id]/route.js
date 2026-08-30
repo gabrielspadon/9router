@@ -126,7 +126,7 @@ function clearHistoricalDefaultTuple(data) {
   delete data.connectionProxyEnabled;
   delete data.connectionProxyUrl;
   delete data.connectionNoProxy;
-  delete data.strictProxy;
+  if (!hasOwn(data, "proxyPoolId")) delete data.strictProxy;
 }
 
 // GET /api/providers/[id] - Get single connection

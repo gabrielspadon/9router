@@ -223,4 +223,25 @@ describe("provider proxy write ownership", () => {
     expect((await models.getProviderConnectionById(connection.id)).providerSpecificData)
       .toEqual({ keep: "safe", updated: "yes" });
   });
+
+  it("PATCH retains a false strict snapshot when a pooled record has a legacy tuple", async () => {
+    const connection = await createExisting({
+      keep: "safe",
+      proxyPoolId: "pool-a",
+      strictProxy: false,
+      connectionProxyEnabled: false,
+      connectionProxyUrl: "",
+      connectionNoProxy: "",
+    });
+    const response = await patch(connection, { providerSpecificData: { updated: "yes" } });
+
+    expect(response.status).toBe(200);
+    expect((await models.getProviderConnectionById(connection.id)).providerSpecificData)
+      .toEqual({
+        keep: "safe",
+        updated: "yes",
+        proxyPoolId: "pool-a",
+        strictProxy: false,
+      });
+  });
 });
