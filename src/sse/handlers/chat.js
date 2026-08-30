@@ -287,7 +287,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const status = credentials.clientErrorStatus ?? lastStatus ?? Number(credentials.lastErrorCode) ?? HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -398,7 +398,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const accountFailureArgs = [
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider,
+      model,
+      result.resetsAtMs,
+    ];
+    if (result.failureMetadata) accountFailureArgs.push(result.failureMetadata);
+    const { shouldFallback } = await markAccountUnavailable(...accountFailureArgs);
 
     if (shouldFallback) {
       lastError = result.error;

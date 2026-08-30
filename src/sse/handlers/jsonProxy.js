@@ -73,7 +73,7 @@ export async function handleJsonProxy(request, kind) {
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const message = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const status = credentials.clientErrorStatus ?? lastStatus ?? Number(credentials.lastErrorCode) ?? HTTP_STATUS.SERVICE_UNAVAILABLE;
         return unavailableResponse(status, `[${provider}/${model}] ${message}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);

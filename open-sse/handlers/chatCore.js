@@ -79,6 +79,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
+import { projectClientModelStatus } from "../config/modelErrorClassifier.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -888,10 +889,16 @@ export async function handleChatCore({
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(
+    const { statusCode, message, resetsAtMs, errorPayload } = await parseUpstreamError(
       providerResponse,
       executor,
     );
+    const failureMetadata = projectClientModelStatus({
+      provider,
+      requestedModel: model,
+      status: statusCode,
+      payload: errorPayload,
+    });
 
     // Adaptive unsupported-parameter retry: on a 400 naming rejected fields,
     // record them per provider+model, strip, and retry once immediately.
@@ -1071,7 +1078,7 @@ export async function handleChatCore({
       );
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, failureMetadata);
   }
 
   const sharedCtx = {

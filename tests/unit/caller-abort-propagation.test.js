@@ -88,6 +88,16 @@ function bodyDeadlineFailure() {
   };
 }
 
+function modelFailure() {
+  return {
+    success: false,
+    status: 404,
+    error: "models/gpt-5.6-sol is not found",
+    failureMetadata: { clientErrorStatus: 404, unknownModelVerified: true },
+    response: Response.json({ error: { message: "models/gpt-5.6-sol is not found" } }, { status: 404 }),
+  };
+}
+
 beforeAll(async () => {
   ({ handleChat } = await import("../../src/sse/handlers/chat.js"));
   routes = {
@@ -183,4 +193,38 @@ describe("caller abort propagation", () => {
       undefined,
     );
   });
+
+  it("forwards only safe model failure metadata into account state", async () => {
+    dispatchMocks.handleChatCore.mockResolvedValue(modelFailure());
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(404);
+    expect(authMocks.markAccountUnavailable).toHaveBeenCalledWith(
+      "account-a",
+      404,
+      "models/gpt-5.6-sol is not found",
+      "codex",
+      "gpt-5.6-sol",
+      undefined,
+      { clientErrorStatus: 404, unknownModelVerified: true },
+    );
+  });
+
+  it("projects the selected model client status without changing raw credential state", async () => {
+    authMocks.getProviderCredentials.mockResolvedValue({
+      allRateLimited: true,
+      retryAfter: new Date(Date.now() + 60_000).toISOString(),
+      retryAfterHuman: "reset after 1m",
+      lastError: "selected model unavailable",
+      lastErrorCode: 502,
+      clientErrorStatus: 404,
+    });
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(404);
+    expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
 });
