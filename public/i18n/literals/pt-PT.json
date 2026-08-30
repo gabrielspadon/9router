@@ -193,5 +193,11 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Clique para adicionar, clique novamente para remover. As alterações são guardadas automaticamente.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Aviso de Risco: Este fornecedor utiliza uma sessão de subscrição/OAuth não licenciada oficialmente para uso de proxy/router. A conta pode ser restringida ou banida. Use por sua conta e risco.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM interceta tráfego HTTPS de ferramentas IDE (Antigravity, GitHub Copilot, Kiro) via CA local para redirecionar pedidos para os seus fornecedores. Pode violar ToS → risco de banimento de conta. Use por sua conta e risco.",
-  "Endpoint is exposed without an API key.": "O endpoint está exposto sem uma chave de API."
+  "Endpoint is exposed without an API key.": "O endpoint está exposto sem uma chave de API.",
+  "Verify Antigravity account": "Verificar conta do Antigravity",
+  "Check verification": "Verificar validação",
+  "Antigravity account verification required": "É necessário verificar a conta do Antigravity",
+  "Sign in or use the local dashboard to verify Antigravity": "Inicie sessão ou use o painel local para verificar o Antigravity",
+  "Verification link expired": "A ligação de verificação expirou",
+  "Unable to load verification link": "Não foi possível carregar a ligação de verificação"
 }

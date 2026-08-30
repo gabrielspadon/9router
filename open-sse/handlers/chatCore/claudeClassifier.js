@@ -301,7 +301,7 @@ function buildFragmentEvidence(eventType, parsed, eventOrdinal) {
   };
 }
 
-export async function projectResponsesClassifierStream(body, stream) {
+export async function projectResponsesClassifierStream(body, stream, { reader: suppliedReader } = {}) {
   if (!isClaudeClassifierRequest(body)) return null;
   const entries = [];
   const evidence = [];
@@ -315,7 +315,8 @@ export async function projectResponsesClassifierStream(body, stream) {
   const doneRecords = [];
   const terminalRecords = [];
   const invalidEvidence = new Set();
-  const reader = stream.getReader();
+  const reader = suppliedReader || stream.getReader();
+  const ownsReader = !suppliedReader;
   const decoder = new TextDecoder("utf-8", { fatal: false });
   let buffer = "";
   let eventOrdinal = 0;
@@ -405,7 +406,7 @@ export async function projectResponsesClassifierStream(body, stream) {
     buffer += decoder.decode();
     if (buffer.trim()) handleFrame(buffer);
   } finally {
-    reader.releaseLock();
+    if (ownsReader) reader.releaseLock();
   }
 
   const successfulTerminals = terminalRecords.filter(({ eventType, parsed }) =>

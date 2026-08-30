@@ -81,6 +81,14 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs(
   60 * 1000,
 );
 
+// Non-streaming upstream bodies are consumed through a reader owner. Keep this
+// distinct from the response-header deadline above: headers may arrive while a
+// provider body stalls indefinitely. Env: RESPONSE_BODY_TIMEOUT_MS.
+export const RESPONSE_BODY_TIMEOUT_MS = envMs(
+  "RESPONSE_BODY_TIMEOUT_MS",
+  300 * 1000,
+);
+
 // OCR and moderation are single-response JSON endpoints. Bound their upstream
 // wait independently so a client that stays connected cannot hold an account
 // selection forever. Env: JSON_PROXY_TIMEOUT_MS.

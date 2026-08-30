@@ -8,6 +8,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { sanitizeAntigravitySystemPrompt } from "../translator/request/openai-to-gemini.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation } from "../services/antigravityValidation.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -122,6 +123,26 @@ export class AntigravityExecutor extends BaseExecutor {
     const forceNonStream = isImageModel(model);
     const action = (stream && !forceNonStream) ? "streamGenerateContent?alt=sse" : "generateContent";
     return `${baseUrl}/v1internal:${action}`;
+  }
+
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    let payload = null;
+    try {
+      payload = JSON.parse(bodyText || "");
+    } catch {
+      payload = null;
+    }
+    const validation = classifyAntigravityValidation({
+      status: response.status,
+      payload,
+      source: "chat",
+    });
+    return {
+      ...base,
+      message: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+      ...(validation ? { validation } : {}),
+    };
   }
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
@@ -349,8 +370,8 @@ export class AntigravityExecutor extends BaseExecutor {
         expiresIn: tokens.expires_in,
         projectId: credentials.projectId
       };
-    } catch (error) {
-      log?.error?.("TOKEN", `Antigravity refresh error: ${error.message}`);
+    } catch {
+      log?.error?.("TOKEN", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
       return null;
     }
   }

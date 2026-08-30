@@ -25,6 +25,7 @@ import {
   refreshProviderCredentials as _refreshProviderCredentials,
   shouldRefreshCredentials as _shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
+import { createAntigravityVerificationHooks } from "@/lib/antigravityVerification";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
@@ -123,7 +124,10 @@ function needsProjectId(provider) {
 function _refreshProjectId(provider, connectionId, accessToken) {
   if (!needsProjectId(provider) || !connectionId || !accessToken) return;
 
-  getProjectIdForConnection(connectionId, accessToken, provider)
+  const verificationHooks = provider === "antigravity"
+    ? createAntigravityVerificationHooks(connectionId)
+    : {};
+  getProjectIdForConnection(connectionId, accessToken, provider, verificationHooks)
     .then((projectId) => {
       if (!projectId) return;
       updateProviderCredentials(connectionId, { projectId }).catch((err) => {

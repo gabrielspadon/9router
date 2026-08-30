@@ -22,11 +22,15 @@ import {
 } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
+  createCallerAbortResult,
   createErrorResult,
   parseUpstreamError,
   formatProviderError,
+  isCallerAbortError,
 } from "../utils/error.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE } from "../services/antigravityValidation.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
+import { isBodyReadTimeoutError } from "../utils/bodyTimeout.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import {
   trackPendingRequest,
@@ -76,6 +80,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
+import { projectClientModelStatus } from "../config/modelErrorClassifier.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -119,9 +124,13 @@ export async function handleChatCore({
   body,
   modelInfo,
   credentials,
+  callerSignal,
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
+  verificationContext,
+  onValidationRequired,
+  onVerificationSuccess,
   onEmptyStream,
   onDisconnect,
   clientRawRequest,
@@ -152,6 +161,16 @@ export async function handleChatCore({
   codexFastMode,
 }) {
   const { provider, model } = modelInfo;
+  const notifyTerminalVerificationSuccess =
+    onVerificationSuccess && verificationContext?.challengeIdAtStart
+      ? async () => {
+          try {
+            await onVerificationSuccess({ challengeId: verificationContext.challengeIdAtStart });
+          } catch {
+            log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+          }
+        }
+      : null;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
   const sessionSeed = (() => {
@@ -668,6 +687,9 @@ export async function handleChatCore({
     model,
     reqTag,
   });
+  const executionSignal = callerSignal
+    ? AbortSignal.any([callerSignal, streamController.signal])
+    : streamController.signal;
 
   const proxyOptions = {
     connectionProxyEnabled:
@@ -729,6 +751,12 @@ export async function handleChatCore({
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
   const mapTransportError = (error) => {
+    const isAntigravity = provider === "antigravity";
+    const sinkError = isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : (error.message || String(error));
+    if (callerSignal?.aborted && (isCallerAbortError(error) || error.name === "AbortError")) {
+      trackPendingRequest(model, provider, connectionId, false);
+      return createCallerAbortResult();
+    }
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
       model,
@@ -746,7 +774,7 @@ export async function handleChatCore({
         request: extractRequestConfig(body, stream),
         providerRequest: translatedBody || null,
         response: {
-          error: error.message || String(error),
+          error: sinkError,
           status: error.name === "AbortError" ? 499 : 502,
           thinking: null,
         },
@@ -756,20 +784,23 @@ export async function handleChatCore({
     ).catch(() => {});
 
     if (error.name === "AbortError") {
-      streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      streamController.handleError(isAntigravity ? new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE) : error);
+      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted");
     }
-    const errMsg = formatProviderError(
-      error,
-      provider,
-      model,
-      HTTP_STATUS.BAD_GATEWAY,
-    );
+    const errMsg = isAntigravity
+      ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+      : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(
+        HTTP_STATUS.GATEWAY_TIMEOUT,
+        isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream response body timed out",
+      );
+    }
     if (log?.errorLine) {
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`,
+        `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${!isAntigravity && error.stack ? `\n    ${error.stack}` : ""}`,
       );
     }
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
@@ -780,7 +811,7 @@ export async function handleChatCore({
       body: translatedBody,
       stream,
       credentials,
-      signal: streamController.signal,
+      signal: executionSignal,
       log,
       proxyOptions,
       sourceFormat,
@@ -840,25 +871,20 @@ export async function handleChatCore({
             body: translatedBody,
             stream,
             credentials,
-            signal: streamController.signal,
+            signal: executionSignal,
             log,
             proxyOptions,
             sourceFormat,
             connectTimeout,
           });
-          if (retryResult.response.ok) {
-            providerResponse = retryResult.response;
-            providerUrl = retryResult.url;
-            providerResponseFormat = retryResult.responseFormat || targetFormat;
-          }
+          providerResponse = retryResult.response;
+          providerUrl = retryResult.url;
+          providerHeaders = retryResult.headers;
+          finalBody = retryResult.transformedBody;
+          providerResponseFormat = retryResult.responseFormat || targetFormat;
+          reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
         } catch (error) {
-          if (error.name === "AbortError" || isConnectTimeoutError(error)) {
-            return mapTransportError(error);
-          }
-          log?.warn?.(
-            "TOKEN",
-            `${provider.toUpperCase()} | retry after refresh failed`,
-          );
+          return mapTransportError(error);
         }
       } else {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
@@ -866,7 +892,7 @@ export async function handleChatCore({
     } catch (e) {
       log?.warn?.(
         "TOKEN",
-        `${provider.toUpperCase()} | refresh threw: ${e.message}`,
+        `${provider.toUpperCase()} | refresh threw: ${provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : e.message}`,
       );
     }
   }
@@ -874,10 +900,30 @@ export async function handleChatCore({
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(
+    const { statusCode, message, resetsAtMs, validation, errorPayload } = await parseUpstreamError(
       providerResponse,
       executor,
     );
+    const safeStatusCode = Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600
+      ? statusCode
+      : HTTP_STATUS.BAD_GATEWAY;
+
+    if (validation && typeof onValidationRequired === "function") {
+      try {
+        await onValidationRequired({
+          validation,
+          observationId: verificationContext?.observationId,
+        });
+      } catch {
+        log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+      }
+    }
+    const failureMetadata = projectClientModelStatus({
+      provider,
+      requestedModel: model,
+      status: statusCode,
+      payload: errorPayload,
+    });
 
     // Adaptive unsupported-parameter retry: on a 400 naming rejected fields,
     // record them per provider+model, strip, and retry once immediately.
@@ -907,7 +953,7 @@ export async function handleChatCore({
             body: stripped,
             stream,
             credentials,
-            signal: streamController.signal,
+            signal: executionSignal,
             log,
             proxyOptions,
             sourceFormat,
@@ -938,7 +984,11 @@ export async function handleChatCore({
               apiKey,
               clientRawRequest,
               onRequestSuccess,
+              verificationContext,
+              onValidationRequired,
+              notifyTerminalVerificationSuccess,
               pxpipe: pxpipeSummary,
+              callerSignal,
               reqTag,
               log,
             };
@@ -959,7 +1009,7 @@ export async function handleChatCore({
                 appendLog,
               });
               if (s2j) {
-                streamController.handleComplete();
+                if (s2j.success) streamController.handleComplete();
                 return s2j;
               }
             }
@@ -975,7 +1025,7 @@ export async function handleChatCore({
                 trackDone,
                 appendLog,
               });
-              streamController.handleComplete();
+              if (nr.success) streamController.handleComplete();
               return nr;
             }
             const { onStreamComplete, onStreamAbandoned, streamDetailId, streamState } =
@@ -1005,7 +1055,7 @@ export async function handleChatCore({
           if (e.name === "AbortError" || isConnectTimeoutError(e)) {
             return mapTransportError(e);
           }
-          log?.warn?.("FIELDSTRIP", `Retry threw: ${e.message}`);
+          log?.warn?.("FIELDSTRIP", `Retry threw: ${provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : e.message}`);
         }
       } else {
         log?.warn?.(
@@ -1024,8 +1074,9 @@ export async function handleChatCore({
       model,
       provider,
       connectionId,
-      status: `FAILED ${statusCode}`,
+      status: `FAILED ${safeStatusCode}`,
     }).catch(() => {});
+    const sinkMessage = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : message;
     saveRequestDetail(
       buildRequestDetail({
         provider,
@@ -1035,28 +1086,25 @@ export async function handleChatCore({
         tokens: { prompt_tokens: 0, completion_tokens: 0 },
         request: extractRequestConfig(body, stream),
         providerRequest: finalBody || translatedBody || null,
-        response: { error: message, status: statusCode, thinking: null },
+        response: { error: sinkMessage, status: safeStatusCode, thinking: null },
         pxpipe: pxpipeSummary,
         status: "error",
       }),
     ).catch(() => {});
 
-    const errMsg = formatProviderError(
-      new Error(message),
-      provider,
-      model,
-      statusCode,
-    );
+    const errMsg = provider === "antigravity"
+      ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+      : formatProviderError(new Error(message), provider, model, safeStatusCode);
     if (log?.errorLine) {
-      const urlStr = providerUrl ? `\n    URL: ${providerUrl}` : "";
+      const urlStr = provider !== "antigravity" && providerUrl ? `\n    URL: ${providerUrl}` : "";
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`,
+        `ERROR ${safeStatusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`,
       );
     }
-    reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
+    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata);
   }
 
   const sharedCtx = {
@@ -1071,8 +1119,12 @@ export async function handleChatCore({
     apiKey,
     clientRawRequest,
     onRequestSuccess,
+    verificationContext,
+    onValidationRequired,
+    notifyTerminalVerificationSuccess,
     onEmptyStream,
     pxpipe: pxpipeSummary,
+    callerSignal,
     reqTag,
     log,
   };
@@ -1094,7 +1146,7 @@ export async function handleChatCore({
       appendLog,
     });
     if (result) {
-      streamController.handleComplete();
+      if (result.success) streamController.handleComplete();
       return result;
     }
   }
@@ -1112,7 +1164,7 @@ export async function handleChatCore({
       trackDone,
       appendLog,
     });
-    streamController.handleComplete();
+    if (result.success) streamController.handleComplete();
     return result;
   }
 

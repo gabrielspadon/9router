@@ -233,3 +233,20 @@ Run an idempotent final upstream sync, require zero reachable PR and issue entri
 - Final full JSON gate: 3,180 tests, 3,062 passed, 61 known failures, 57 skipped, and `verify-no-regression.mjs` reported no regression. Provider count is 91; alias and OAuth baselines are byte-equal.
 - Operational catches closed before publication: PR #2064 transport and abort classification, PR #2129 combo fallback mutation, PR #2020 JSON alias matching and cascade atomicity, stale provider snapshots, Kimchi flattened-header staleness, Bun shebang selection, xAI global-fetch interference, and three generated snapshot reorder files restored after inspection. Snapshot-order stability remains deferred to Task 7.
 - Tracking now contains 385 open and 453 closed PRs, plus 1,003 open and 1 closed issue. All 12 batch entries moved to closed and tracking validation passes. Publication evidence is recorded in the Task 4 gate after fork-only push verification.
+
+### 2026-08-30 — PR #3210 adapted and integrated
+
+- Rejected the upstream page-level live-usage fetch. The adapted two-file dashboard slice renders only the persisted Codex subscription plan with strict normalization, legacy fallback, accessible SSR markup, and zero network activity.
+- Independent design, plan, and implementation reviews passed. Focused evidence is 10/10 dedicated and 27/27 adjacent Codex badge, UI, and route tests. The scoped lint has zero errors and one unchanged ConnectionRow exhaustive-deps warning.
+- Branch `integration/task8-pr3210` fast-forwarded into master at `7aa2ae7e5`; PR #3210 was moved to the closed ledger. Fork publication follows the tracking checkpoint.
+
+### 2026-08-30 — PR #3635 adapted and integrated
+
+- Adapted strict Antigravity account verification rather than the upstream global usage-banner design. The merged implementation validates official structured signals, keeps sensitive challenge links connection-scoped and bounded, protects state transitions against stale callbacks, and exposes an authenticated, CSRF-protected dashboard action in all supported locales.
+- Merge composition retained B31 caller-abort/body-deadline/typed-terminal guarantees, PR3319 classifier validation, and PR3210's persisted plan badge. Whole-branch review approved after the final 616-pass, six-skip composed gate.
+- Branch `integration/task6-pr3635` fast-forwarded to master at `a885318bc`; PR #3635 was moved to the closed ledger. Fork publication follows the tracking checkpoint.
+
+### 2026-08-30 — PR #3268 rejected with upstream evidence
+
+- PR #3268 was mechanically applicable but not integrated. Its author had no tested Plus account, and the maintainer reported no image-speed gain from `service_tier` and requested closure.
+- Fork policy intentionally keeps automatic Fast chat-only and Sol-only. Adding an image request field without a controlled endpoint result would broaden tier parsing and claim an unproven benefit. The PR is closed as rejected pending authoritative live evidence.

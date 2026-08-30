@@ -193,5 +193,11 @@
   "Click to add, click again to remove. Changes are saved automatically.": "I-click para idagdag, i-click muli para alisin. Ang mga pagbabago ay awtomatikong nase-save.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Babala sa Panganib: Ang provider na ito ay gumagamit ng subscription/OAuth session na hindi opisyal na lisensyado para sa proxy/router na paggamit. Maaaring marestrikta o ma-ban ang account. Gamitin sa sarili mong panganib.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ Hinaharang ng MITM ang HTTPS traffic ng mga IDE tool (Antigravity, GitHub Copilot, Kiro) sa pamamagitan ng lokal na CA upang i-redirect ang mga kahilingan sa iyong mga provider. Maaaring lumabag sa ToS → panganib ng pag-ban sa account. Gamitin sa sarili mong panganib.",
-  "Endpoint is exposed without an API key.": "Nakalantad ang endpoint nang walang API key."
+  "Endpoint is exposed without an API key.": "Nakalantad ang endpoint nang walang API key.",
+  "Verify Antigravity account": "I-verify ang Antigravity account",
+  "Check verification": "Suriin ang verification",
+  "Antigravity account verification required": "Kailangan ang verification ng Antigravity account",
+  "Sign in or use the local dashboard to verify Antigravity": "Mag-sign in o gamitin ang lokal na dashboard para i-verify ang Antigravity",
+  "Verification link expired": "Nag-expire na ang verification link",
+  "Unable to load verification link": "Hindi ma-load ang verification link"
 }

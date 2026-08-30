@@ -9,6 +9,8 @@ import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/rout
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { getHotReloadConfig } from "@/shared/constants/config";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation } from "open-sse/services/antigravityValidation.js";
+import { createAntigravityVerificationHooks, runAntigravityUsageProbe } from "@/lib/antigravityVerification";
 
 const HOTRELOAD_TIMEOUT_MS = 10000;
 const HOTRELOAD_RETRIES = 3; // connect failures retry up to 3x with backoff
@@ -64,7 +66,29 @@ async function pokeModel(executor, model, connection, proxyOptions) {
     }
 
     if (res) {
-      await res.body?.cancel?.().catch?.(() => {});
+      if (res.status === 403 && connection.provider === "antigravity") {
+        const text = await res.text();
+        let payload = null;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          // A malformed direct 403 is not a verification challenge.
+        }
+        const validation = classifyAntigravityValidation({
+          status: res.status,
+          payload,
+          source: "chat",
+        });
+        if (validation) {
+          const hooks = createAntigravityVerificationHooks(connection.id);
+          await hooks.onValidationRequired({
+            validation,
+            observationId: hooks.verificationContext.observationId,
+          });
+        }
+      } else {
+        await res.body?.cancel?.().catch?.(() => {});
+      }
       return res.status !== 401 && res.status !== 403;
     }
     const msg = `${error?.message || ""} ${error?.cause?.message || ""}`.toLowerCase();
@@ -87,7 +111,9 @@ async function verifyQuotaMoved(connection, proxyOptions, models) {
   let moved = false;
   for (let attempt = 0; attempt < USAGE_VERIFY_ATTEMPTS; attempt += 1) {
     try {
-      const usage = await getUsageForProvider(connection, proxyOptions);
+      const usage = connection.provider === "antigravity"
+        ? await runAntigravityUsageProbe(connection, proxyOptions)
+        : await getUsageForProvider(connection, proxyOptions);
       const quotas = usage?.quotas || {};
       moved = true;
       for (const model of models) {
@@ -168,7 +194,14 @@ export async function POST(_request, { params }) {
             : "Quota still 0/1000 — hot reload did not move the count."),
     });
   } catch (error) {
-    console.warn(`[HotReload] ${connection.provider}:${connection.id}: ${error.message}`);
-    return Response.json({ ok: false, error: error.message, connectionId: connection.id }, { status: 500 });
+    const isAntigravity = connection.provider === "antigravity";
+    console.warn(
+      `[HotReload] ${connection.provider}:${connection.id}:`,
+      isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message,
+    );
+    return Response.json(
+      { ok: false, error: isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message, connectionId: connection.id },
+      { status: isAntigravity ? 502 : 500 },
+    );
   }
 }
