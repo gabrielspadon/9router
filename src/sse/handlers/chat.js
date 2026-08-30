@@ -42,6 +42,38 @@ function isRateLimited(key) {
 }
 
 /**
+ * Strip reasoning_content from assistant messages in conversation history.
+ * Some providers (e.g. Mistral) reject requests containing reasoning_content
+ * in assistant messages with "extra_forbidden" validation errors.
+ * This field is only meaningful in streaming responses, not in request bodies.
+ */
+function stripReasoningFromMessages(body) {
+  if (!body.messages || !Array.isArray(body.messages)) return body;
+  let modified = false;
+  for (const msg of body.messages) {
+    if (msg && msg.role === "assistant" && msg.reasoning_content !== undefined) {
+      delete msg.reasoning_content;
+      modified = true;
+    }
+  }
+  return modified ? { ...body, messages: [...body.messages] } : body;
+}
+
+/**
+ * Fix message ordering for providers that require specific role sequences.
+ * Mistral requires the last message to be user/tool (or assistant with prefix=true).
+ * If the last message is an assistant without prefix, add prefix: true so the
+ * provider can continue generation from that point.
+ */
+function fixMessageOrdering(messages) {
+  if (!messages || !Array.isArray(messages) || messages.length === 0) return;
+  const last = messages[messages.length - 1];
+  if (last && last.role === "assistant" && !last.prefix) {
+    last.prefix = true;
+  }
+}
+
+/**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
@@ -60,6 +92,10 @@ export async function handleChat(request, clientRawRequest = null) {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
+
+  // Strip reasoning_content from conversation history (providers like Mistral reject it)
+  body = stripReasoningFromMessages(body);
+  fixMessageOrdering(body.messages);
 
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
