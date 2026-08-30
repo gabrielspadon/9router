@@ -2,6 +2,8 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { createExecutorResponseHeaderTimeout } from "../utils/responseHeaderTimeout.js";
 
 export const DEVIN_HOST = "https://server.codeium.com";
 export const DEVIN_AUTH_PATH = "/exa.auth_pb.AuthService/GetUserJwt";
@@ -295,7 +297,7 @@ export class DevinExecutor extends BaseExecutor {
     };
   }
 
-  async execute({ model, body, stream, credentials, signal, proxyOptions = null, fetchImpl: injectedFetch }) {
+  async execute({ model, body, stream, credentials, signal, proxyOptions = null, fetchImpl: injectedFetch, connectTimeout = null }) {
     const token = credentials?.accessToken || credentials?.apiKey;
     if (!token) throw new Error("No Devin credential");
     const fetchImpl = injectedFetch || ((url, options) => proxyAwareFetch(url, options, proxyOptions));
@@ -312,7 +314,20 @@ export class DevinExecutor extends BaseExecutor {
     const url = this.buildUrl();
     const headers = this.buildHeaders(credentials, stream);
     const transformedBody = frameDevinConnect(buildDevinChatRequest({ model, body, apiKey: token, userJwt, sessionId: credentials?.rawHeaders?.["x-session-id"] }));
-    const upstream = await fetchImpl(url, { method: "POST", headers, body: transformedBody, signal });
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
+    let upstream;
+    try {
+      upstream = await fetchImpl(url, { method: "POST", headers, body: transformedBody, signal: deadline.signal });
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
     if (!upstream.ok) return { response: upstream, url, headers, transformedBody };
     return { response: this.transformToSSE(upstream, model), url, headers, transformedBody };
   }
