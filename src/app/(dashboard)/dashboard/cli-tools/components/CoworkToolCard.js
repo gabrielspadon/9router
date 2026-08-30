@@ -405,7 +405,7 @@ export default function CoworkToolCard({
                               if (e.target.checked && exaDef) setPlugins([...plugins.filter((p) => p.name !== "exa"), exaDef]);
                               else setPlugins(plugins.filter((p) => p.name !== "exa"));
                             }}
-                            className="mt-0.5"
+                            className="mt-0.5 accent-primary cursor-pointer focus-ring"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-medium">Web Search & Fetch (Exa)</div>
@@ -424,7 +424,7 @@ export default function CoworkToolCard({
                             type="checkbox"
                             checked={browserEnabled}
                             onChange={(e) => setLocalPlugins(e.target.checked ? [...localPlugins, "browsermcp"] : localPlugins.filter((n) => n !== "browsermcp"))}
-                            className="mt-0.5"
+                            className="mt-0.5 accent-primary cursor-pointer focus-ring"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-medium">Browser Control (Browser MCP)</div>
@@ -453,7 +453,7 @@ export default function CoworkToolCard({
                                 type="checkbox"
                                 checked={enabled}
                                 onChange={(e) => setLocalPlugins(e.target.checked ? [...localPlugins, p.name] : localPlugins.filter((n) => n !== p.name))}
-                                className="mt-0.5"
+                                className="mt-0.5 accent-primary cursor-pointer focus-ring"
                               />
                               <div className="flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-1.5">
