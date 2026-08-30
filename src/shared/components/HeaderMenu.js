@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { useTheme } from "@/shared/hooks/useTheme";
 import ChangelogModal from "./ChangelogModal";
 import { ConfirmModal } from "./Modal";
+import Button from "@/shared/components/Button";
 
 function MenuItem({ icon, label, onClick, trailing, danger }) {
   return (
@@ -69,13 +70,13 @@ export default function HeaderMenu({ onLogout }) {
   return (
     <>
       <div className="relative" ref={menuRef}>
-        <button
+        <Button
+          variant="ghost" size="icon"
           onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-all"
           title="Menu"
         >
           <span className="material-symbols-outlined">grid_view</span>
-        </button>
+        </Button>
 
         {isOpen && (
           <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-border rounded-[var(--radius-brand-lg)] shadow-elev z-50 fade-in overflow-hidden py-1">

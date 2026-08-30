@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
+import Button from "@/shared/components/Button";
 
 export default function DonateModal({ isOpen, onClose }) {
   const [data, setData] = useState(null);
@@ -49,13 +50,13 @@ export default function DonateModal({ isOpen, onClose }) {
             <span className="material-symbols-outlined text-text-muted">volunteer_activism</span>
             {data?.title || "Support 9Router"}
           </h2>
-          <button
+          <Button
+            variant="ghost" size="icon"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
             aria-label="Close"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+          </Button>
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">

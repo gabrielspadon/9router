@@ -33,18 +33,18 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
           onClick={() => setEditing(true)} title="Click to edit">{model}</div>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
-        <button onClick={onMoveUp} disabled={isFirst}
-          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`} title="Move up">
+        <Button variant="bare" size="icon-sm" onClick={onMoveUp} disabled={isFirst}
+          className={isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"} title="Move up">
           <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-        </button>
-        <button onClick={onMoveDown} disabled={isLast}
-          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`} title="Move down">
+        </Button>
+        <Button variant="bare" size="icon-sm" onClick={onMoveDown} disabled={isLast}
+          className={isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"} title="Move down">
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-        </button>
+        </Button>
       </div>
-      <button onClick={onRemove} className="p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-all" title="Remove">
+      <Button variant="bare" size="icon-sm" onClick={onRemove} className="hover:bg-danger-soft text-text-muted hover:text-danger" title="Remove">
         <span className="material-symbols-outlined text-[12px]">close</span>
-      </button>
+      </Button>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { LOCALES, LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { reloadTranslations } from "@/i18n/runtime";
+import Button from "@/shared/components/Button";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -145,13 +146,13 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
             {/* Modal header */}
             <div className="flex items-center justify-between p-3 border-b border-border-subtle">
               <h2 className="text-lg font-semibold text-text-main">Select Language</h2>
-              <button
+              <Button
+                variant="ghost" size="icon"
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
                 aria-label="Close"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
+              </Button>
             </div>
 
             {/* Modal body - fixed grid columns, equal sizing */}

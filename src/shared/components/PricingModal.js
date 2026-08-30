@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getDefaultPricing, formatCost } from "open-sse/providers/pricing.js";
+import Button from "@/shared/components/Button";
 
 export default function PricingModal({ isOpen, onClose, onSave }) {
   const [pricingData, setPricingData] = useState({});
@@ -99,14 +100,15 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-semibold">Pricing Configuration</h2>
-          <button
+          <Button
+            variant="ghost" size="icon"
             onClick={onClose}
             type="button"
             aria-label="Close"
-            className="focus-ring text-text-muted hover:text-text-main text-2xl leading-none"
+            className="text-2xl leading-none"
           >
             ×
-          </button>
+          </Button>
         </div>
 
         {/* Content */}
@@ -180,28 +182,30 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
 
         {/* Footer */}
         <div className="p-4 border-t border-border flex items-center justify-between gap-2">
-          <button
+          <Button
+            variant="bare" size="md"
             onClick={handleReset}
-            className="px-4 py-2 text-sm text-danger hover:bg-danger-soft rounded border border-danger-line transition-colors"
+            className="text-danger hover:bg-danger-soft border border-danger-line"
             disabled={saving}
           >
             Reset to Defaults
-          </button>
+          </Button>
           <div className="flex gap-2">
-            <button
+            <Button
+              variant="bare" size="md"
               onClick={onClose}
-              className="px-4 py-2 text-sm text-text-muted hover:text-text-main border border-border rounded transition-colors"
+              className="text-text-muted hover:text-text-main border border-border"
               disabled={saving}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary" size="md"
               onClick={handleSave}
-              className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
               disabled={saving}
             >
               {saving ? "Saving..." : "Save Changes"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

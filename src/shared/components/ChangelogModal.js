@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import { marked } from "marked";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
+import Button from "@/shared/components/Button";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -58,13 +59,13 @@ export default function ChangelogModal({ isOpen, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-border-subtle">
           <h2 className="text-lg font-semibold text-text-main">Change Log</h2>
-          <button
+          <Button
+            variant="ghost" size="icon"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-text-muted hover:bg-surface-2 transition-colors"
             aria-label="Close"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+          </Button>
         </div>
 
         {/* Body */}

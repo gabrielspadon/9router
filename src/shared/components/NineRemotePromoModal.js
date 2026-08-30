@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import Button from "@/shared/components/Button";
 
 const FEATURES = [
   { icon: "terminal", label: "Terminal", desc: "Full shell access" },
@@ -41,14 +42,14 @@ export default function NineRemotePromoModal({ isOpen, onClose }) {
             </div>
             <span className="text-xs font-bold uppercase tracking-wider text-primary font-mono">9Remote</span>
           </div>
-          <button
+          <Button
+            variant="ghost" size="icon"
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="focus-ring p-1.5 rounded-[var(--radius-brand)] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors duration-150"
           >
             <span className="material-symbols-outlined text-base">close</span>
-          </button>
+          </Button>
         </div>
 
         {/* Body */}
@@ -86,13 +87,14 @@ export default function NineRemotePromoModal({ isOpen, onClose }) {
           </div>
 
           {/* CTA */}
-          <button
+          <Button
+            variant="primary" size="lg"
+            fullWidth
             onClick={() => window.open(NINE_REMOTE_URL, "_blank")}
-            className="w-full py-3 flex items-center justify-center gap-2 text-sm font-semibold text-white rounded-[10px] bg-primary hover:bg-primary-hover shadow-soft transition-colors duration-150"
+            icon="open_in_new"
           >
-            <span className="material-symbols-outlined text-base">open_in_new</span>
             Get 9Remote
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

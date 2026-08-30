@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
+import Button from "@/shared/components/Button";
 
 function getToastStyle(type) {
   if (type === "success") {
@@ -54,14 +55,15 @@ export default function DashboardLayout({ children }) {
                   <p className="text-xs whitespace-pre-wrap break-words">{n.message}</p>
                 </div>
                 {n.dismissible ? (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     type="button"
                     onClick={() => removeNotification(n.id)}
                     className="text-current/70 hover:text-current"
                     aria-label="Dismiss notification"
                   >
                     <span className="material-symbols-outlined text-[16px]">close</span>
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

@@ -14,6 +14,7 @@ import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
 import { translate } from "@/i18n/runtime";
+import Button from "@/shared/components/Button";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
@@ -231,14 +232,15 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
-          <button
+          <Button
+            variant="bare" size="icon"
             type="button"
             onClick={onMenuClick}
             aria-label={translate("Menu")}
-            className="focus-ring text-text-main hover:text-primary transition-colors duration-150"
+            className="text-text-main hover:text-primary"
           >
             <span className="material-symbols-outlined">menu</span>
-          </button>
+          </Button>
         )}
       </div>
 
@@ -356,14 +358,15 @@ function HeaderSearch() {
         className="focus-ring w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:border-primary/50 transition-colors"
       />
       {query && (
-        <button
+        <Button
+          variant="bare" size="icon-sm"
           type="button"
           onClick={() => setQuery("")}
-          className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
+          className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main"
           aria-label="Clear search"
         >
           <span className="material-symbols-outlined text-[16px]">close</span>
-        </button>
+        </Button>
       )}
     </div>
   );

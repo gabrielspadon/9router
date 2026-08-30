@@ -92,13 +92,14 @@ export default function Modal({
               )}
             </div>
             {/* X button — mobile only */}
-            <button
+            <Button
+              variant="ghost" size="icon"
               onClick={onClose}
               aria-label="Close"
-              className="focus-ring md:hidden p-1.5 rounded-[var(--radius-brand)] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors duration-150"
+              className="md:hidden"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
-            </button>
+            </Button>
           </div>
         )}
 
