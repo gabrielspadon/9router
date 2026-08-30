@@ -55,15 +55,24 @@ credentials. The following are in scope.
   to another, a secret reaching a log, a request-detail view, an error body, a
   usage record, a cloud sync payload or an API response.
 - **Session and dashboard authentication.** `JWT_SECRET` signs the session
-  cookie. Forging a session, bypassing login, fixing a session, escalating from
-  an unauthenticated request to a dashboard action, or defeating `REQUIRE_API_KEY`
-  on the gateway are all in scope.
-- **API key handling.** `API_KEY_SECRET` protects the gateway keys the dashboard
-  issues. Recovering a key from stored material, or authenticating with a key
-  that was revoked, is in scope.
-- **The `INITIAL_PASSWORD` default.** The documented default is `123456`, meant
-  to be overridden at first run. A path that lets that default persist
-  unnoticed, or that treats an unchanged password as configured, is in scope.
+  cookie. Forging a session, bypassing login, fixing a session, or escalating
+  from an unauthenticated request to a dashboard action are all in scope.
+- **Gateway authorization.** `src/dashboardGuard.js` lets a request through to
+  `/v1` and the other public LLM prefixes when it is local, or carries a valid
+  CLI token, or carries a valid issued API key. Reaching those routes without one
+  of the three, or having a remote request judged local, is in scope. So is
+  reaching a local-only route from off the machine.
+- **API key handling.** An issued key has the form
+  `sk-{machineId}-{keyId}-{crc8}`, where the trailing 8 characters are an
+  HMAC-SHA256 checksum keyed by `API_KEY_SECRET`. That checksum is a validity
+  check, not the authorization itself, which is a lookup of the stored key.
+  Minting a key that both passes the checksum and is accepted, recovering a key
+  from stored material, or authenticating with a revoked key, is in scope.
+- **The `INITIAL_PASSWORD` default.** The default is `123456`. Login already
+  refuses a remote sign-in while that default is unchanged and no
+  `INITIAL_PASSWORD` is set, so the password has to be changed from the local
+  machine first. Any path around that refusal, or that treats an unchanged
+  password as configured, is in scope.
 - **The loopback trust boundary.** `custom-server.js` derives the client IP from
   the TCP socket, deletes any inbound `X-Forwarded-For` and the internal
   `x-9r-real-ip`, `x-9r-via-proxy` and `x-9r-peer-token` headers, then restamps
@@ -126,7 +135,14 @@ environment contract, except `API_PORT` and `API_HOSTNAME`, which are read in
 - **Split the API off the dashboard** with `API_PORT` when only `/v1` needs to
   be reachable. `API_HOSTNAME` defaults to `127.0.0.1`; widen it deliberately.
 - **Set `AUTH_COOKIE_SECURE=true`** whenever the dashboard is served over HTTPS.
-- **Turn on `REQUIRE_API_KEY`** when anything other than you can reach `/v1`.
+- **Know what actually gates `/v1`.** A request from loopback is let through with
+  no key. A request from anywhere else needs a valid CLI token or an API key
+  issued in the dashboard. There is no switch that turns the loopback exemption
+  off, which is why the reverse proxy has to run on the same host and why
+  `X-Forwarded-For` handling is load-bearing rather than cosmetic.
+- **Do not rely on `REQUIRE_API_KEY`.** It appears in `.env.example` and in the
+  deployment documentation, but no code reads it, so setting it enforces
+  nothing. This is tracked as upstream issue #2834 and is on the list to fix.
 - **Keep `ENABLE_REQUEST_LOGS` off** unless you need it. Request logs and
   `~/.9router/log.txt` contain prompt and response content.
 - **Treat `DATA_DIR` as secret material.** Back it up encrypted, and do not
