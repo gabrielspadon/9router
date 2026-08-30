@@ -9,24 +9,24 @@ import Header from "../Header";
 function getToastStyle(type) {
   if (type === "success") {
     return {
-      wrapper: "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400",
+      wrapper: "border-success-line bg-success-soft text-success",
       icon: "check_circle",
     };
   }
   if (type === "error") {
     return {
-      wrapper: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+      wrapper: "border-danger-line bg-danger-soft text-danger",
       icon: "error",
     };
   }
   if (type === "warning") {
     return {
-      wrapper: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      wrapper: "border-warning-line bg-warning-soft text-warning",
       icon: "warning",
     };
   }
   return {
-    wrapper: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    wrapper: "border-info-line bg-info-soft text-info",
     icon: "info",
   };
 }

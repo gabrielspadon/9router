@@ -104,7 +104,7 @@ export default function NoAuthProxyCard({ providerId }) {
   return (
     <Card>
       <div className="flex items-center gap-3 mb-4">
-        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-success-soft text-success">
           <span className="material-symbols-outlined text-[20px]">lock_open</span>
         </div>
         <div className="flex-1">
@@ -149,7 +149,7 @@ export default function NoAuthProxyCard({ providerId }) {
                 : `Picking a random pool from ${proxyPools.length} active pools each request.`
               : `Uses the selected pool above. Set to Round-robin or Random to rotate across all active pools.`}
         </p>
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
       </div>
     </Card>
   );

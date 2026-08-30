@@ -192,13 +192,13 @@ export default function Sidebar({ onClose }) {
           </Link>
           {updateInfo && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
-              <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
+              <span className="text-xs font-semibold text-info">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowUpdateModal(true)}
-                  className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                  className="focus-ring px-2 py-1 rounded bg-brand-solid hover:bg-brand-solid/90 text-brand-on text-[11px] font-semibold transition-colors duration-150 cursor-pointer"
                 >
                   Update now
                 </button>
@@ -207,7 +207,7 @@ export default function Sidebar({ onClose }) {
                   title="Copy install command"
                   className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
                 >
-                  <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
+                  <code className="block text-[10px] text-text-muted font-mono truncate">
                     {copied ? "✓ copied!" : INSTALL_CMD}
                   </code>
                 </button>
@@ -478,7 +478,7 @@ export default function Sidebar({ onClose }) {
             />
           ) : (
             <div className="text-center p-8">
-              <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
+              <div className="flex items-center justify-center size-16 rounded-full bg-danger-soft text-danger mx-auto mb-4">
                 <span className="material-symbols-outlined text-[32px]">
                   power_off
                 </span>
@@ -518,9 +518,9 @@ function ManualUpdatePanel({
 }) {
   const isCountingDown = countdown > 0;
   return (
-    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
+    <div className="w-full max-w-lg rounded-[var(--radius-brand-lg)] bg-surface border border-border shadow-elev p-6 text-text-main">
       <div className="flex items-center gap-3 mb-4">
-        <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
+        <div className="flex items-center justify-center size-11 rounded-full bg-warning-soft text-warning">
           <span className="material-symbols-outlined text-[24px]">
             content_copy
           </span>
@@ -529,7 +529,7 @@ function ManualUpdatePanel({
           <h2 className="text-lg font-semibold">
             Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}
           </h2>
-          <p className="text-xs text-white/60">
+          <p className="text-xs text-text-muted">
             {isDisconnected
               ? "Server stopped. Paste the command into a terminal to install."
               : isCountingDown
@@ -539,21 +539,21 @@ function ManualUpdatePanel({
         </div>
       </div>
 
-      <p className="text-sm text-white/80 mb-2">Install command:</p>
-      <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
-        <code className="text-xs font-mono text-amber-400 break-all">
+      <p className="text-sm text-text-muted mb-2">Install command:</p>
+      <div className="w-full px-3 py-2 rounded bg-surface-2 mb-4">
+        <code className="text-xs font-mono text-warning break-all">
           {installCmd}
         </code>
       </div>
 
-      <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
+      <ol className="text-xs text-text-muted space-y-1 list-decimal list-inside mb-4">
         <li>
           Click <strong>Copy & Shutdown</strong> below.
         </li>
         <li>Paste the command into your terminal and press Enter.</li>
         <li>
           Run{" "}
-          <code className="px-1 rounded bg-white/10 text-green-400">
+          <code className="px-1 rounded bg-surface-2 text-text-main">
             9router
           </code>{" "}
           again after install.
