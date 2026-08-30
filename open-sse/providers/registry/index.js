@@ -129,6 +129,7 @@ import p124 from "./meta.js";
 import p126 from "./chenzk.js";
 import p127 from "./kenari.js";
 import p128 from "./nube.js";
+import p129 from "./firecrawl_custom.js";
 
 export default [
   p0,
@@ -259,4 +260,5 @@ export default [
   p126,
   p127,
   p128,
+  p127,
 ];
