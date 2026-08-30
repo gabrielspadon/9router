@@ -1,17 +1,285 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
+/* ============================================================
+   9Router design tokens — ported verbatim from src/app/globals.css
+   so the documentation site, the dashboard and the landing page
+   resolve the same palette. Values are not re-derived here; change
+   them in the dashboard first and mirror the change back.
+
+   The docs site has no theme toggle, so the dark values hang off
+   prefers-color-scheme rather than a .dark class. That needs no
+   markup, no script and no change to how a page renders.
+   ============================================================ */
+:root {
+  /* Brand scale (light) - centered on #E56A4A */
+  --color-brand-50: #fdf1ed;
+  --color-brand-100: #fadccf;
+  --color-brand-200: #f4b59c;
+  --color-brand-300: #ee8d6a;
+  --color-brand-400: #ea7855;
+  --color-brand-500: #E56A4A;
+  --color-brand-600: #cc5236;
+  --color-brand-700: #a64027;
+  --color-brand-800: #7a2f1d;
+  --color-brand-900: #4d1e12;
+
+  /* Surfaces & backgrounds (light) */
+  --color-bg: #FDFAF6;
+  --color-bg-alt: #F7F3EE;
+  --color-surface: #ffffff;
+  --color-surface-2: #f4f4f5;
+  --color-surface-3: #e7e7e9;
+
+  /* Borders */
+  --color-border: #e5e7eb;
+  --color-border-subtle: #f1f1f3;
+
+  /* Text */
+  --color-text: #0a0a0a;
+  --color-text-main: #0a0a0a;
+  /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
+  --color-text-muted: #5F6775;
+  /* Legal on --color-surface and --color-bg only. On surface-2 and
+     surface-3 no lighter value clears 4.5:1, so those use muted. */
+  --color-text-subtle: #6A7280;
+
+  /* Status (light). Five slots per status; see .unlazy/TOKEN-CONTRACT.md. */
+  --color-danger: #B42318;
+  --color-danger-solid: #B42318;
+  --color-danger-on: #ffffff;
+  --color-danger-soft: #FEF3F2;
+  --color-danger-line: #FECDCA;
+
+  --color-success: #047857;
+  --color-success-solid: #047857;
+  --color-success-on: #ffffff;
+  --color-success-soft: #ECFDF5;
+  --color-success-line: #A7F3D0;
+
+  --color-warning: #B45309;
+  --color-warning-solid: #B45309;
+  --color-warning-on: #ffffff;
+  --color-warning-soft: #FFFBEB;
+  --color-warning-line: #FDE68A;
+
+  --color-info: #1D4ED8;
+  --color-info-solid: #1D4ED8;
+  --color-info-on: #ffffff;
+  --color-info-soft: #EFF6FF;
+  --color-info-line: #BFDBFE;
+
+  /* Brand carries the same five slots. --color-brand is the text/icon
+     weight; --color-brand-solid is the fill weight that carries white.
+     The 500 step is too light to satisfy either on a light surface. */
+  --color-brand: #A64027;
+  --color-brand-solid: #C24E33;
+  --color-brand-on: #ffffff;
+  --color-brand-soft: #FDF1ED;
+  --color-brand-line: #F4B59C;
+
+  /* Radius */
+  --radius-brand: 10px;
+  --radius-brand-lg: 14px;
+
+  /* Shadows. One elevation step for the page, one for overlays. */
+  --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.04);
+  --shadow-elev:
+    inset 0 1px 0 0 rgba(255,255,255,0.8),
+    0 1px 2px rgba(15,23,42,0.04),
+    0 12px 36px -8px rgba(15,23,42,0.10);
+  /* A focus indicator has to be visible, so this is a solid two-colour ring:
+     a surface-coloured separator, then the brand ring on top of it. */
+  --shadow-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-brand-solid);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Brand scale (dark) - same steps as light for consistency */
+    --color-brand-50: #fdf1ed;
+    --color-brand-100: #fadccf;
+    --color-brand-200: #f4b59c;
+    --color-brand-300: #ee8d6a;
+    --color-brand-400: #ea7855;
+    --color-brand-500: #E56A4A;
+    --color-brand-600: #cc5236;
+    --color-brand-700: #a64027;
+    --color-brand-800: #7a2f1d;
+    --color-brand-900: #4d1e12;
+
+    /* Surfaces (dark - neutral warm) */
+    --color-bg: #1a1a1a;
+    --color-bg-alt: #1F1F1E;
+    --color-surface: #262626;
+    --color-surface-2: #303030;
+    --color-surface-3: #3a3a3a;
+
+    --color-border: #333333;
+    --color-border-subtle: #2a2a2a;
+
+    --color-text: #ededed;
+    --color-text-main: #ededed;
+    /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
+    --color-text-muted: #9fa6b2;
+    /* Legal on --color-surface and --color-bg only. On surface-2 and
+       surface-3 no darker value clears 4.5:1, so those use muted. */
+    --color-text-subtle: #8b93a1;
+
+    /* Status (dark). The line/text weight lightens so it keeps 4.5:1
+       against --color-surface, while the solid fill stays dark enough
+       to carry white. */
+    --color-danger: #F87171;
+    --color-danger-solid: #B42318;
+    --color-danger-on: #ffffff;
+    --color-danger-soft: #2C1615;
+    --color-danger-line: #5C2422;
+
+    --color-success: #34D399;
+    --color-success-solid: #047857;
+    --color-success-on: #ffffff;
+    --color-success-soft: #10261F;
+    --color-success-line: #1F4D3C;
+
+    --color-warning: #FBBF24;
+    --color-warning-solid: #B45309;
+    --color-warning-on: #ffffff;
+    --color-warning-soft: #2A2010;
+    --color-warning-line: #5A421A;
+
+    --color-info: #60A5FA;
+    --color-info-solid: #1D4ED8;
+    --color-info-on: #ffffff;
+    --color-info-soft: #101B2E;
+    --color-info-line: #1E3A6B;
+
+    --color-brand: #EE8D6A;
+    --color-brand-solid: #C24E33;
+    --color-brand-on: #ffffff;
+    --color-brand-soft: #2A1710;
+    --color-brand-line: #5C2A1B;
+
+    --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.3);
+    --shadow-elev:
+      inset 0 1px 0 0 rgba(255,255,255,0.06),
+      0 1px 2px rgba(0,0,0,0.4),
+      0 16px 48px -8px rgba(0,0,0,0.55);
+
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  /* Brand scale */
+  --color-brand-50: var(--color-brand-50);
+  --color-brand-100: var(--color-brand-100);
+  --color-brand-200: var(--color-brand-200);
+  --color-brand-300: var(--color-brand-300);
+  --color-brand-400: var(--color-brand-400);
+  --color-brand-500: var(--color-brand-500);
+  --color-brand-600: var(--color-brand-600);
+  --color-brand-700: var(--color-brand-700);
+  --color-brand-800: var(--color-brand-800);
+  --color-brand-900: var(--color-brand-900);
+
+  /* Semantic surfaces, borders and text */
+  --color-bg: var(--color-bg);
+  --color-bg-alt: var(--color-bg-alt);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-surface-3: var(--color-surface-3);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-text: var(--color-text);
+  --color-text-main: var(--color-text-main);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+
+  /* Status slots. Each one becomes bg-*, text-*, border-* and ring-*
+     utilities, so a component never needs a raw palette class. */
+  --color-danger: var(--color-danger);
+  --color-danger-solid: var(--color-danger-solid);
+  --color-danger-on: var(--color-danger-on);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-danger-line: var(--color-danger-line);
+
+  --color-success: var(--color-success);
+  --color-success-solid: var(--color-success-solid);
+  --color-success-on: var(--color-success-on);
+  --color-success-soft: var(--color-success-soft);
+  --color-success-line: var(--color-success-line);
+
+  --color-warning: var(--color-warning);
+  --color-warning-solid: var(--color-warning-solid);
+  --color-warning-on: var(--color-warning-on);
+  --color-warning-soft: var(--color-warning-soft);
+  --color-warning-line: var(--color-warning-line);
+
+  --color-info: var(--color-info);
+  --color-info-solid: var(--color-info-solid);
+  --color-info-on: var(--color-info-on);
+  --color-info-soft: var(--color-info-soft);
+  --color-info-line: var(--color-info-line);
+
+  --color-brand: var(--color-brand);
+  --color-brand-solid: var(--color-brand-solid);
+  --color-brand-on: var(--color-brand-on);
+  --color-brand-soft: var(--color-brand-soft);
+  --color-brand-line: var(--color-brand-line);
+
+  /* Radius */
+  --radius-brand: var(--radius-brand);
+  --radius-brand-lg: var(--radius-brand-lg);
+
+  /* Shadows */
+  --shadow-soft: var(--shadow-soft);
+  --shadow-elev: var(--shadow-elev);
+  --shadow-focus: var(--shadow-focus);
+
+  /* Font - Inter primary, Apple system fallback */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
+}
+
 /* Base styles */
 * {
   box-sizing: border-box;
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
   padding: 0;
+}
+
+/* Selection - brand-tinted, same as the dashboard */
+::selection {
+  background-color: rgba(229, 106, 74, 0.25);
+  color: var(--color-brand);
+}
+
+/* ============================================================
+   Focus
+   One focus treatment for the whole site, applied once to every
+   natively interactive element so a control cannot ship without a
+   focus indicator by omission. Nothing may override this with
+   `outline: none`.
+   ============================================================ */
+.focus-ring:focus-visible,
+button:focus-visible,
+a[href]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 /* Scrollbar */
@@ -25,18 +293,20 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: var(--color-surface-3);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #E68A6E;
+  background: var(--color-brand-solid);
 }
 
 /* Code highlighting */
 pre {
-  background: #F1F5F9 !important;
-  border-radius: 8px;
+  background: var(--color-surface-2) !important;
+  color: var(--color-text-main);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-brand);
   padding: 1rem;
   overflow-x: auto;
 }
@@ -49,8 +319,8 @@ code {
 
 /* Inline code */
 :not(pre) > code {
-  background: #F1F5F9;
-  color: #E68A6E;
+  background: var(--color-surface-2);
+  color: var(--color-brand);
   padding: 0.125rem 0.375rem;
   border-radius: 4px;
   font-size: 0.875em;
@@ -60,7 +330,7 @@ code {
 .markdown-content h1 {
   font-size: 2.5rem;
   font-weight: 800;
-  color: #E68A6E;
+  color: var(--color-brand);
   /* margin-top: 2rem; */
   margin-bottom: 1rem;
   line-height: 1.2;
@@ -77,18 +347,18 @@ code {
 .markdown-content h2 {
   font-size: 2rem;
   font-weight: 700;
-  color: #000000;
+  color: var(--color-text-main);
   margin-top: 2rem;
   margin-bottom: 1rem;
   line-height: 1.3;
-  border-bottom: 1px solid #E5E7EB;
+  border-bottom: 1px solid var(--color-border);
   padding-bottom: 0.5rem;
 }
 
 .markdown-content h3 {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #000000;
+  color: var(--color-text-main);
   margin-top: 1.5rem;
   margin-bottom: 0.75rem;
   line-height: 1.4;
@@ -98,7 +368,7 @@ code {
   font-size: 1.125rem;
   line-height: 1.75;
   margin-bottom: 1rem;
-  color: #6B7280;
+  color: var(--color-text-muted);
 }
 
 .markdown-content ul,
@@ -111,13 +381,13 @@ code {
   font-size: 1.125rem;
   line-height: 1.75;
   margin-bottom: 0.5rem;
-  color: #6B7280;
+  color: var(--color-text-muted);
 }
 
 .markdown-content a {
-  color: #E68A6E;
+  color: var(--color-brand);
   text-decoration: underline;
-  transition: opacity 0.2s;
+  transition: opacity 0.15s;
 }
 
 .markdown-content a:hover {
@@ -125,16 +395,49 @@ code {
 }
 
 .markdown-content blockquote {
-  border-left: 4px solid #E68A6E;
+  border-left: 4px solid var(--color-brand-solid);
   padding-left: 1rem;
   margin: 1rem 0;
   font-style: italic;
-  color: #6B7280;
+  color: var(--color-text-muted);
 }
 
 .markdown-content strong {
   font-weight: 600;
-  color: #000000;
+  color: var(--color-text-main);
+}
+
+/* Tables. remark-gfm renders these across fifty content files and
+   Tailwind's preflight strips every default rule and cell padding,
+   so without this a table reads as an unseparated run of text. */
+.markdown-content table {
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 1rem;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  color: var(--color-text-muted);
+}
+
+.markdown-content th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
 }
 
 /* Smooth scroll */
@@ -174,7 +477,7 @@ html {
   left: 0;
   bottom: 0;
   width: 280px;
-  background: white;
+  background: var(--color-surface);
   z-index: 50;
   animation: slideInLeft 0.3s ease-out;
   overflow-y: auto;
@@ -186,5 +489,22 @@ html {
   }
   to {
     transform: translateX(0);
+  }
+}
+
+/* ============================================================
+   Reduced motion
+   Every animation on this site is decoration, never information,
+   so all of it can be collapsed for a viewer who asks for less
+   movement.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
