@@ -4111,18 +4111,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes:
 
-## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
-
-- url: https://github.com/decolua/9router/pull/3629
-- upstream-state: open (discovered 2026-08-30)
-- local-status: in-progress
-- branch: 
-- local-ref: 
-- disposition: adapt
-- validation: .superpowers/sdd/PLAN/task-6-b29-pr3629-review.md
-- notes: retain provider auth mutex, dispatcher eviction cleanup, and index-based SSE parsing; reject indefinite caches and content chunk arrays
-
-
 ## PR #3625 — feat(kiro): flatten top-level tool schema combinators + degrade overs…
 
 - url: https://github.com/decolua/9router/pull/3625

@@ -6495,3 +6495,17 @@
 - final-disposition: adapted and integrated
 - closed: 2026-08-30
 - detail: commits 12832ff34 through b58b98d06; opt-in post-translation Sol Fast policy, explicit Codex tier preservation, strict atomic settings, rollback-safe accessible UI, Codex-local orphan filtering, and exact fixture cleanup passed independent review, 161 canonical focused tests, and a 140-route production build
+
+## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
+
+- url: https://github.com/decolua/9router/pull/3629
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 54c2771c0 through 2a4483c6e; provider-keyed auth selection queues, graceful LRU proxy-dispatcher eviction, and allocation-reduced SSE scanning passed independent review, 132 combined focused tests, a 3,498-test no-regression gate, exact provider/alias/OAuth baselines, and a 140-route production build; indefinite caches and content chunk arrays were rejected
