@@ -138,6 +138,42 @@ describe('PR A: strictProxy Propagation', () => {
       }
     });
 
+    it('preserves the exact caller abort reason through strict proxy wrapping', async () => {
+      const caller = new AbortController();
+      const fakeFetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+        const rejectAbort = () => reject(init.signal.reason);
+        if (init.signal.aborted) rejectAbort();
+        else init.signal.addEventListener('abort', rejectAbort, { once: true });
+      }));
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = fakeFetch;
+
+      vi.resetModules();
+      const { proxyAwareFetch } = await import('open-sse/utils/proxyFetch.js');
+      const proxyOptions = {
+        connectionProxyEnabled: true,
+        connectionProxyUrl: 'http://127.0.0.1:19999',
+        connectionNoProxy: '',
+        vercelRelayUrl: '',
+        strictProxy: true,
+      };
+
+      try {
+        const pending = proxyAwareFetch(
+          'https://example.com/v1/chat/completions',
+          { method: 'POST', signal: caller.signal },
+          proxyOptions,
+        );
+        const reason = new DOMException('client left', 'AbortError');
+        caller.abort(reason);
+
+        await expect(pending).rejects.toBe(reason);
+        expect(fakeFetch).toHaveBeenCalledTimes(1);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
     it('Case B: strictProxy=false + proxy failure -> falls back to direct fetch (count = 1)', async () => {
       let proxyAttempts = 0;
       let directFallbackAttempts = 0;

@@ -75,6 +75,35 @@ describe("BaseExecutor response-header timeout", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("restores caller cancellation when transport wraps the rejection", async () => {
+    const caller = new AbortController();
+    const executor = new BaseExecutor("test", {
+      baseUrl: "https://upstream.test/chat",
+      retry: { 502: { attempts: 0, delayMs: 0 } },
+    });
+    fetchMock.mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener(
+        "abort",
+        () => reject(new Error("[ProxyFetch] strict proxy wrapped abort")),
+        { once: true },
+      );
+    }));
+    const pending = executor.execute({
+      model: "m",
+      body: {},
+      stream: false,
+      credentials: {},
+      signal: caller.signal,
+      connectTimeout: { globalTimeout: 15000 },
+    });
+    const reason = new DOMException("client left", "AbortError");
+    caller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("creates a fresh full deadline after an ordinary status retry", async () => {
     const signals = [];
     const executor = new BaseExecutor("test", {

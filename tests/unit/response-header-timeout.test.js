@@ -50,6 +50,18 @@ describe("response header timeout", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("restores the caller reason when transport wraps the abort", () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const deadline = createResponseHeaderTimeout({ timeoutMs: 1000, signal: caller.signal });
+    const reason = new DOMException("client left", "AbortError");
+    caller.abort(reason);
+
+    expect(deadline.classify(new Error("strict proxy wrapped abort"))).toBe(reason);
+    deadline.clear();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("keeps caller cancellation connected after response headers clear the timer", () => {
     vi.useFakeTimers();
     const caller = new AbortController();

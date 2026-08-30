@@ -58,7 +58,9 @@ export function createResponseHeaderTimeout({ timeoutMs, signal: callerSignal } 
     signal,
     clear,
     classify(error) {
-      return source === "timeout" ? timeoutError : error;
+      if (source === "timeout") return timeoutError;
+      if (source === "caller") return callerSignal.reason;
+      return error;
     },
   };
 }

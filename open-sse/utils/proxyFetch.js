@@ -117,10 +117,51 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+function getAbortReason(signal) {
+  return signal?.reason ?? new DOMException("The operation was aborted", "AbortError");
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw getAbortReason(signal);
+}
+
+function waitWithSignal(promise, signal) {
+  throwIfAborted(signal);
+  if (!signal) return promise;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(getAbortReason(signal));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
-async function resolveRealIP(hostname) {
+async function resolveRealIP(hostname, signal) {
+  throwIfAborted(signal);
   const cached = DNS_CACHE.get(hostname);
   if (cached && Date.now() < cached.expiry) return cached.ip;
 
@@ -130,10 +171,12 @@ async function resolveRealIP(hostname) {
     const resolver = new dns.Resolver();
     resolver.setServers(GOOGLE_DNS_SERVERS);
     const resolve4 = promisify(resolver.resolve4.bind(resolver));
-    const addresses = await resolve4(hostname);
+    throwIfAborted(signal);
+    const addresses = await waitWithSignal(resolve4(hostname), signal);
     DNS_CACHE.set(hostname, { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
     return addresses[0];
   } catch (error) {
+    throwIfAborted(signal);
     console.warn(`[ProxyFetch] DNS resolve failed for ${hostname}:`, error.message);
     return null;
   }
@@ -287,16 +330,59 @@ async function getDispatcher(proxyUrl) {
  * Create HTTPS request with manual socket connection (bypass DNS)
  */
 async function createBypassRequest(parsedUrl, realIP, options) {
-  const httpsModule = await import("https");
-  const netModule = await import("net");
+  const signal = options.signal;
+  const [httpsModule, netModule] = await waitWithSignal(
+    Promise.all([import("https"), import("net")]),
+    signal,
+  );
   // CJS modules expose exports via .default in ESM dynamic import context
   const https = httpsModule.default ?? httpsModule;
   const net = netModule.default ?? netModule;
 
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
+    let req = null;
+    let headersSettled = false;
+    let abortHandled = false;
+
+    const cleanupAbort = () => signal?.removeEventListener("abort", onAbort);
+    const rejectBeforeHeaders = (error) => {
+      if (headersSettled) return;
+      headersSettled = true;
+      cleanupAbort();
+      reject(error);
+    };
+    const onTransportError = (error) => {
+      const rejection = signal?.aborted ? getAbortReason(signal) : error;
+      if (headersSettled) {
+        cleanupAbort();
+        return;
+      }
+      rejectBeforeHeaders(rejection);
+    };
+    const onAbort = () => {
+      if (abortHandled) return;
+      abortHandled = true;
+      const reason = getAbortReason(signal);
+      cleanupAbort();
+      const wasPending = !headersSettled;
+      headersSettled = true;
+      try { req?.destroy(reason); } catch { }
+      try { socket.destroy(reason); } catch { }
+      if (wasPending) reject(reason);
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
 
     socket.connect(HTTPS_PORT, realIP, () => {
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
       const reqOptions = {
         socket,
         // SNI + cert hostname are validated against the hostname the caller
@@ -314,7 +400,11 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         },
       };
 
-      const req = https.request(reqOptions, (res) => {
+      req = https.request(reqOptions, (res) => {
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
         const response = {
           ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
           status: res.statusCode,
@@ -328,21 +418,26 @@ async function createBypassRequest(parsedUrl, realIP, options) {
           },
           json: async () => JSON.parse(await response.text()),
         };
+        headersSettled = true;
+        res.once("end", cleanupAbort);
+        res.once("close", cleanupAbort);
+        res.once("error", cleanupAbort);
         resolve(response);
       });
 
-      req.on("error", reject);
+      req.on("error", onTransportError);
       if (options.body) {
         req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
       }
       req.end();
     });
 
-    socket.on("error", reject);
+    socket.on("error", onTransportError);
   });
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  throwIfAborted(options.signal);
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers
@@ -369,6 +464,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         const dispatcher = await getDispatcher(proxyUrl);
         return await originalFetch(url, { ...options, dispatcher });
       } catch (proxyError) {
+        throwIfAborted(options.signal);
         if (proxyOptions?.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
         }
@@ -378,9 +474,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     // No proxy — manually resolve real IP to bypass DNS spoof
     try {
       const parsedUrl = new URL(targetUrl);
-      const realIP = await resolveRealIP(parsedUrl.hostname);
+      const realIP = await resolveRealIP(parsedUrl.hostname, options.signal);
       if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
     } catch (error) {
+      throwIfAborted(options.signal);
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
   }
@@ -390,6 +487,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       const dispatcher = await getDispatcher(proxyUrl);
       return await originalFetch(url, { ...options, dispatcher });
     } catch (proxyError) {
+      throwIfAborted(options.signal);
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
