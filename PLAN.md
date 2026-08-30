@@ -166,3 +166,10 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - Batch 24 adapt queue (12): 3613 codex subscription expiry, 3612 extractResetsAtMs + 6h cooldown cap, 3611 passthrough dedupe (separable slice only), 3333 deepseek tool dedup (signature extended), 3329 claude-adaptive auto handling, 3325 adaptive stripper (fork hook points), 3321 opencode egress + x-real-ip, 3320 antigravity 2.5.5 single-sourced, 3318 functionResponse wrap (intent port), 3313 DNS-aware SSRF guard, 3297 responses completion usage, 3295 ollama-local timeouts.
 - Notable conflict resolutions: 3613 usage route union-merged (grok daily meter + codex entitlement coexist); 2706 stream.js conflict re-applied to fork's restructured passthrough block.
 - Remaining: ~95 integrate, ~242 adapt, ~73 needs-full-analysis. Next: continue integrate + adapt queues in parallel waves.
+
+### 2026-08-29 — session 2 continued: tick 20 (batch 25, 11 PRs)
+
+- Batch 25: 11 integrate PRs merged through e5fa6564e + intentional golden snapshot update (f2913bbb9: byteplus ModelArk URL, kimchi dynamic UA), gate 2974 pass / 61 known fails, pushed 7b52e03e4.
+- 2709 closed as superseded (covered by 2822 in batch 22).
+- Ops: admission wedge again mid-batch (dead leases, /proc-verified, pruned twice). Workflow admission requires full 25-slot lease, so group B launch waits for group A completion unless run strictly sequentially per pair.
+- Remaining: ~88 integrate, ~242 adapt, ~73 needs-full-analysis.
