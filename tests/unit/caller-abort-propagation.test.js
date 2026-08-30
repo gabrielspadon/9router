@@ -227,4 +227,51 @@ describe("caller abort propagation", () => {
     expect(dispatchMocks.handleChatCore).not.toHaveBeenCalled();
   });
 
+  it("keeps a selected all-locked chat account separate from a preceding failed account", async () => {
+    authMocks.getProviderCredentials.mockImplementation(async (_provider, excluded) => {
+      if (!excluded?.size) return credentials("account-a");
+      return {
+        allRateLimited: true,
+        retryAfter: new Date(Date.now() + 120_000).toISOString(),
+        retryAfterHuman: "reset after 2m",
+        lastError: "B selected lock reason",
+        lastErrorCode: 502,
+        clientErrorStatus: null,
+      };
+    });
+    authMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true, cooldownMs: 1 });
+    dispatchMocks.handleChatCore.mockResolvedValue({
+      success: false,
+      status: 429,
+      error: "A failure must not leak",
+      response: Response.json({ error: { message: "A failure must not leak" } }, { status: 429 }),
+    });
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("retry-after")).toMatch(/^(119|120)$/);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("B selected lock reason") },
+    });
+  });
+
+  it("uses a generic unavailable response for a legacy lock without metadata", async () => {
+    authMocks.getProviderCredentials.mockResolvedValue({
+      allRateLimited: true,
+      retryAfter: new Date(Date.now() + 60_000).toISOString(),
+      retryAfterHuman: "reset after 1m",
+      lastError: null,
+      lastErrorCode: null,
+      clientErrorStatus: null,
+    });
+
+    const response = await handleChat(request());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("Unavailable") },
+    });
+  });
+
 });

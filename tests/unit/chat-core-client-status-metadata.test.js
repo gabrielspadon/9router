@@ -15,6 +15,15 @@ const outerHandlerMocks = vi.hoisted(() => ({
   getJsonProxyConfig: vi.fn(() => ({})),
   getVideoConfig: vi.fn(() => ({})),
   assertPublicUrl: vi.fn(),
+  markAccountUnavailable: vi.fn(),
+  handleEmbeddingsCore: vi.fn(),
+  handleFetchCore: vi.fn(),
+  handleImageGenerationCore: vi.fn(),
+  handleJsonProxyCore: vi.fn(),
+  handleSearchCore: vi.fn(),
+  handleSttCore: vi.fn(),
+  handleTtsCore: vi.fn(),
+  handleVideoProxyCore: vi.fn(),
 }));
 
 vi.mock("../../open-sse/executors/index.js", () => ({
@@ -74,7 +83,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 }));
 vi.mock("../../src/sse/services/auth.js", () => ({
   getProviderCredentials: outerHandlerMocks.getProviderCredentials,
-  markAccountUnavailable: vi.fn(),
+  markAccountUnavailable: outerHandlerMocks.markAccountUnavailable,
   clearAccountError: vi.fn(),
   extractApiKey: vi.fn(() => null),
   isValidApiKey: vi.fn(),
@@ -127,19 +136,19 @@ vi.mock("../../open-sse/services/combo.js", () => ({
   handleComboChat: vi.fn(),
 }));
 vi.mock("@/shared/utils/ssrfGuard.js", () => ({ assertPublicUrl: outerHandlerMocks.assertPublicUrl }));
-vi.mock("../../open-sse/handlers/embeddingsCore.js", () => ({ handleEmbeddingsCore: vi.fn() }));
-vi.mock("../../open-sse/handlers/fetch/index.js", () => ({ handleFetchCore: vi.fn() }));
-vi.mock("../../open-sse/handlers/imageGenerationCore.js", () => ({ handleImageGenerationCore: vi.fn() }));
+vi.mock("../../open-sse/handlers/embeddingsCore.js", () => ({ handleEmbeddingsCore: outerHandlerMocks.handleEmbeddingsCore }));
+vi.mock("../../open-sse/handlers/fetch/index.js", () => ({ handleFetchCore: outerHandlerMocks.handleFetchCore }));
+vi.mock("../../open-sse/handlers/imageGenerationCore.js", () => ({ handleImageGenerationCore: outerHandlerMocks.handleImageGenerationCore }));
 vi.mock("../../open-sse/handlers/jsonProxyCore.js", () => ({
   getJsonProxyConfig: outerHandlerMocks.getJsonProxyConfig,
-  handleJsonProxyCore: vi.fn(),
+  handleJsonProxyCore: outerHandlerMocks.handleJsonProxyCore,
 }));
-vi.mock("../../open-sse/handlers/search/index.js", () => ({ handleSearchCore: vi.fn() }));
-vi.mock("../../open-sse/handlers/sttCore.js", () => ({ handleSttCore: vi.fn() }));
-vi.mock("../../open-sse/handlers/ttsCore.js", () => ({ handleTtsCore: vi.fn() }));
+vi.mock("../../open-sse/handlers/search/index.js", () => ({ handleSearchCore: outerHandlerMocks.handleSearchCore }));
+vi.mock("../../open-sse/handlers/sttCore.js", () => ({ handleSttCore: outerHandlerMocks.handleSttCore }));
+vi.mock("../../open-sse/handlers/ttsCore.js", () => ({ handleTtsCore: outerHandlerMocks.handleTtsCore }));
 vi.mock("../../open-sse/handlers/videoCore.js", () => ({
   getVideoConfig: outerHandlerMocks.getVideoConfig,
-  handleVideoProxyCore: vi.fn(),
+  handleVideoProxyCore: outerHandlerMocks.handleVideoProxyCore,
   sanitizeSecrets: vi.fn((value) => value),
 }));
 
@@ -194,6 +203,7 @@ beforeEach(() => {
     return { provider, model };
   });
   outerHandlerMocks.getComboModels.mockResolvedValue(null);
+  outerHandlerMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: false, cooldownMs: 0 });
 });
 
 describe("chat core model failure metadata", () => {
@@ -254,5 +264,63 @@ describe("chat core model failure metadata", () => {
     expect(responses).toHaveLength(8);
     for (const response of responses) expect(response.status).toBe(404);
     expect(outerHandlerMocks.getProviderCredentials).toHaveBeenCalledTimes(8);
+  });
+
+  it("keeps a selected all-locked account's reason and raw status separate from a failed account", async () => {
+    const selectedRetryAfter = new Date(Date.now() + 120_000).toISOString();
+    const selectedLock = {
+      allRateLimited: true,
+      retryAfter: selectedRetryAfter,
+      retryAfterHuman: "reset after 2m",
+      lastError: "B selected lock reason",
+      lastErrorCode: 502,
+      clientErrorStatus: null,
+    };
+    const failedOnA = {
+      success: false,
+      status: 429,
+      error: "A failure must not leak",
+      response: Response.json({ error: { message: "A failure must not leak" } }, { status: 429 }),
+    };
+    outerHandlerMocks.getProviderCredentials.mockImplementation(async (_provider, excluded) =>
+      excluded?.size ? selectedLock : { connectionId: "account-a", providerSpecificData: {} }
+    );
+    outerHandlerMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true, cooldownMs: 1 });
+    outerHandlerMocks.handleEmbeddingsCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleFetchCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleImageGenerationCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleJsonProxyCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleSearchCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleSttCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleTtsCore.mockResolvedValue(failedOnA);
+    outerHandlerMocks.handleVideoProxyCore.mockResolvedValue(failedOnA);
+    const json = (body, path) => new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const form = new FormData();
+    form.set("model", "demo/stt-model");
+    form.set("file", new Blob(["audio"]), "audio.wav");
+
+    const responses = await Promise.all([
+      handleEmbeddings(json({ model: "demo/embedding", input: "hello" }, "/v1/embeddings")),
+      handleFetch(json({ provider: "demo", url: "https://example.com" }, "/v1/web/fetch")),
+      handleImageGeneration(json({ model: "demo/image", prompt: "hello" }, "/v1/images/generations")),
+      handleJsonProxy(json({ model: "demo/moderation", input: "hello" }, "/v1/moderations"), "moderation"),
+      handleSearch(json({ provider: "demo", query: "hello" }, "/v1/web/search")),
+      handleStt(new Request("http://localhost/v1/audio/transcriptions", { method: "POST", body: form })),
+      handleTts(json({ model: "demo/voice", input: "hello" }, "/v1/audio/speech")),
+      handleVideoCreate(json({ model: "xai/video", prompt: "hello" }, "/v1/videos/generations"), "generations"),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(502);
+      expect(response.headers.get("retry-after")).toMatch(/^(119|120)$/);
+      const payload = await response.json();
+      expect(payload.error.message).toContain("B selected lock reason");
+      expect(payload.error.message).toContain("reset after 2m");
+      expect(payload.error.message).not.toContain("A failure must not leak");
+    }
   });
 });
