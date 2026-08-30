@@ -82,12 +82,27 @@ function configuredProxySecrets(proxyOptions) {
   return [...new Set(secrets.filter(Boolean))].sort((a, b) => b.length - a.length);
 }
 
+function configuredTargetSecrets(url) {
+  const secrets = [];
+  if (typeof url !== "string" || !url) return secrets;
+  secrets.push(url);
+  try {
+    const canonical = new URL(url).href;
+    secrets.push(canonical);
+    for (const decoder of [decodeURI, decodeURIComponent]) {
+      try { secrets.push(decoder(canonical)); } catch { }
+    }
+  } catch { }
+  return secrets;
+}
+
 function sanitizeOllamaError(message, { apiKey, url, proxyOptions }) {
   let safe = String(message || "Ollama web fetch failed");
-  const secrets = [apiKey, url, ...configuredProxySecrets(proxyOptions)]
+  const secrets = [apiKey, ...configuredTargetSecrets(url), ...configuredProxySecrets(proxyOptions)]
     .filter((value) => typeof value === "string" && value)
     .sort((a, b) => b.length - a.length);
   for (const secret of secrets) safe = safe.split(secret).join("[redacted]");
+  safe = safe.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, "[redacted-url]");
   safe = safe.replace(/Bearer\s+[^\s,;]+/gi, "Bearer [redacted]");
   return safe.slice(0, MAX_ERROR_CHARACTERS);
 }
@@ -200,8 +215,18 @@ function ownCancellation(reader, reason) {
   } catch { }
 }
 
-function readWithSignal(reader, signal) {
-  if (signal?.aborted) return Promise.reject(signal.reason);
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+  }
+}
+
+function waitWithSignal(promise, signal) {
+  const owned = Promise.resolve(promise);
+  if (signal?.aborted) {
+    owned.catch(() => {});
+    return Promise.reject(signal.reason);
+  }
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (callback, value) => {
@@ -212,11 +237,22 @@ function readWithSignal(reader, signal) {
     };
     const onAbort = () => finish(reject, signal.reason);
     signal?.addEventListener("abort", onAbort, { once: true });
-    Promise.resolve(reader.read()).then(
+    owned.then(
       (value) => finish(resolve, value),
       (error) => finish(reject, error),
     );
   });
+}
+
+function readWithSignal(reader, signal) {
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  let pending;
+  try {
+    pending = reader.read();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  return waitWithSignal(pending, signal);
 }
 
 function concatenateBytes(chunks, total) {
@@ -230,16 +266,27 @@ function concatenateBytes(chunks, total) {
 }
 
 async function readBoundedBody(response, { maxBytes, signal, overflowMode }) {
+  throwIfAborted(signal);
   const contentLength = response.headers.get("content-length");
+  throwIfAborted(signal);
   if (/^\d+$/.test(contentLength || "") && Number(contentLength) > maxBytes) {
-    ownCancellation(response.body?.getReader(), codedError(OLLAMA_ERROR.RESPONSE_TOO_LARGE));
+    const reader = response.body?.getReader();
+    throwIfAborted(signal);
+    ownCancellation(reader, codedError(OLLAMA_ERROR.RESPONSE_TOO_LARGE));
+    throwIfAborted(signal);
     return overflowMode === "truncate"
       ? { bytes: new Uint8Array(), overflowed: true }
       : Promise.reject(codedError(OLLAMA_ERROR.RESPONSE_TOO_LARGE));
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) return { bytes: new Uint8Array(), overflowed: false };
+  const body = response.body;
+  throwIfAborted(signal);
+  const reader = body?.getReader();
+  throwIfAborted(signal);
+  if (!reader) {
+    throwIfAborted(signal);
+    return { bytes: new Uint8Array(), overflowed: false };
+  }
   const chunks = [];
   let total = 0;
   let canceled = false;
@@ -250,7 +297,9 @@ async function readBoundedBody(response, { maxBytes, signal, overflowMode }) {
   };
   try {
     while (true) {
-      const { value, done } = await readWithSignal(reader, signal);
+      const read = await readWithSignal(reader, signal);
+      const { value, done } = read;
+      throwIfAborted(signal);
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
@@ -268,6 +317,7 @@ async function readBoundedBody(response, { maxBytes, signal, overflowMode }) {
   } finally {
     try { reader.releaseLock(); } catch { }
   }
+  throwIfAborted(signal);
   return { bytes: concatenateBytes(chunks, total), overflowed: false };
 }
 
@@ -525,33 +575,45 @@ async function runOllama(args) {
 
   try {
     const upstreamStartedAt = Date.now();
-    const response = await args.transport(OLLAMA_WEB_FETCH_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${valid.apiKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ url: valid.url }),
-      signal: deadline.signal,
-    }, args.proxyOptions ?? null);
+    const response = await waitWithSignal(
+      args.transport(OLLAMA_WEB_FETCH_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${valid.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ url: valid.url }),
+        signal: deadline.signal,
+      }, args.proxyOptions ?? null),
+      deadline.signal,
+    );
+    throwIfAborted(deadline.signal);
 
     const upstreamMs = Date.now() - upstreamStartedAt;
-    if (!response.ok) {
+    const responseOk = response.ok;
+    throwIfAborted(deadline.signal);
+    if (!responseOk) {
       const body = await readBoundedBody(response, {
         maxBytes: MAX_ERROR_BODY_BYTES,
         signal: deadline.signal,
         overflowMode: "truncate",
       });
-      return boundedUpstreamFailure(response, body, {
+      throwIfAborted(deadline.signal);
+      const result = boundedUpstreamFailure(response, body, {
         apiKey: valid.apiKey,
         url: valid.url,
         proxyOptions: args.proxyOptions,
       });
+      throwIfAborted(deadline.signal);
+      return result;
     }
 
-    if (!isJsonMediaType(response.headers.get("content-type"))) {
+    const contentType = response.headers.get("content-type");
+    throwIfAborted(deadline.signal);
+    if (!isJsonMediaType(contentType)) {
       cancelResponseBody(response, codedError(OLLAMA_ERROR.INVALID_CONTENT_TYPE));
+      throwIfAborted(deadline.signal);
       return failure(
         502,
         OLLAMA_ERROR.INVALID_CONTENT_TYPE,
@@ -564,7 +626,10 @@ async function runOllama(args) {
       signal: deadline.signal,
       overflowMode: "error",
     });
-    return parseAndNormalizeOllama(body.bytes, valid, args.startedAt, upstreamMs);
+    throwIfAborted(deadline.signal);
+    const result = parseAndNormalizeOllama(body.bytes, valid, args.startedAt, upstreamMs);
+    throwIfAborted(deadline.signal);
+    return result;
   } catch (error) {
     return classifyOllamaFailure(error, {
       deadline,

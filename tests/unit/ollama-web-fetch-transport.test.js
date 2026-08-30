@@ -297,7 +297,10 @@ describe("Ollama web fetch deadline and bounded body", () => {
     const { response, cancel } = hangingBodyResponse();
     const transport = vi.fn().mockResolvedValue(response);
     const pending = runCore({ signal: caller.signal, transport });
-    await Promise.resolve();
+    for (let attempt = 0; attempt < 10 && !response.body.locked; attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(response.body.locked).toBe(true);
     caller.abort(reason);
 
     const { result } = await pending;
@@ -365,6 +368,159 @@ describe("Ollama web fetch deadline and bounded body", () => {
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
     if (assertionError) throw assertionError;
+  });
+
+  it("settles caller abort when injected transport ignores its signal and owns a late rejection", async () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    const callerAdd = vi.spyOn(caller.signal, "addEventListener");
+    const callerRemove = vi.spyOn(caller.signal, "removeEventListener");
+    let rejectTransport;
+    let transportSignal;
+    let signalAdd;
+    let signalRemove;
+    const transport = vi.fn((_url, init) => {
+      transportSignal = init.signal;
+      signalAdd = vi.spyOn(init.signal, "addEventListener");
+      signalRemove = vi.spyOn(init.signal, "removeEventListener");
+      return new Promise((_resolve, reject) => {
+        rejectTransport = reject;
+      });
+    });
+    const pending = runCore({ signal: caller.signal, transport });
+    await Promise.resolve();
+    const guarded = Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve({ result: "did not settle" }), 1)),
+    ]);
+    caller.abort(reason);
+    await vi.advanceTimersByTimeAsync(1);
+    const outcome = await guarded;
+    const unhandled = [];
+    const onUnhandled = (error) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+    rejectTransport(new Error("late transport rejection"));
+    await pending;
+    await vi.advanceTimersByTimeAsync(0);
+    process.off("unhandledRejection", onUnhandled);
+
+    expect(outcome.result).toMatchObject({
+      success: false,
+      status: 499,
+      code: "OLLAMA_CLIENT_ABORTED",
+    });
+    expect(transportSignal.aborted).toBe(true);
+    expect(transportSignal.reason).toBe(reason);
+    expect(callerAdd.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
+    expect(callerRemove.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
+    expect(signalAdd.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
+    expect(signalRemove.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(unhandled).toEqual([]);
+  });
+
+  it("settles timeout when injected transport ignores its signal and owns a late resolution", async () => {
+    vi.useFakeTimers();
+    let resolveTransport;
+    let transportSignal;
+    let signalAdd;
+    let signalRemove;
+    const transport = vi.fn((_url, init) => {
+      transportSignal = init.signal;
+      signalAdd = vi.spyOn(init.signal, "addEventListener");
+      signalRemove = vi.spyOn(init.signal, "removeEventListener");
+      return new Promise((resolve) => {
+        resolveTransport = resolve;
+      });
+    });
+    const pending = runCore({ transport });
+    await vi.advanceTimersByTimeAsync(30000);
+    const guarded = Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve({ result: "did not settle" }), 1)),
+    ]);
+    await vi.advanceTimersByTimeAsync(1);
+    const outcome = await guarded;
+    resolveTransport(successResponse());
+    await pending;
+    await Promise.resolve();
+
+    expect(outcome.result).toMatchObject({
+      success: false,
+      status: 504,
+      code: "OLLAMA_TIMEOUT",
+    });
+    expect(transportSignal.aborted).toBe(true);
+    expect(signalAdd.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
+    expect(signalRemove.mock.calls.filter(([type]) => type === "abort")).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ["wrong content type", "caller"],
+    ["wrong content type", "timeout"],
+    ["null body", "caller"],
+    ["null body", "timeout"],
+    ["body read settlement", "caller"],
+    ["body read settlement", "timeout"],
+  ])("classifies %s boundary %s abort", async (boundary, source) => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let triggered = false;
+    const trigger = () => {
+      if (triggered) return;
+      triggered = true;
+      if (source === "caller") caller.abort(reason);
+      else vi.advanceTimersByTime(30000);
+    };
+    const headers = {
+      get(name) {
+        if (boundary === "wrong content type" && name.toLowerCase() === "content-type") {
+          trigger();
+          return "text/plain";
+        }
+        return name.toLowerCase() === "content-type" ? "application/json" : null;
+      },
+    };
+    const reader = {
+      read: vi.fn().mockResolvedValue({
+        get done() {
+          if (boundary === "body read settlement") trigger();
+          return true;
+        },
+        value: undefined,
+      }),
+      cancel: vi.fn(),
+      releaseLock: vi.fn(),
+    };
+    const response = {
+      ok: true,
+      status: 200,
+      headers,
+      get body() {
+        if (boundary === "null body") {
+          trigger();
+          return null;
+        }
+        if (boundary === "body read settlement") return { getReader: () => reader };
+        return null;
+      },
+    };
+    const { result } = await runCore({
+      signal: caller.signal,
+      transport: vi.fn().mockResolvedValue(response),
+    });
+
+    expect(triggered).toBe(true);
+    expect(result).toMatchObject({
+      success: false,
+      status: source === "caller" ? 499 : 504,
+      code: source === "caller" ? "OLLAMA_CLIENT_ABORTED" : "OLLAMA_TIMEOUT",
+    });
+    if (source === "caller") expect(caller.signal.reason).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("accepts a successful body at exactly 4 MiB", async () => {
@@ -688,6 +844,42 @@ describe("Ollama web fetch normalized response", () => {
     expect(result.error).not.toContain("proxy-pass");
     expect(result.error).not.toContain(TARGET);
     expect(result.error.length).toBeLessThanOrEqual(512);
+  });
+
+  it("redacts canonical and decoded target variants from upstream JSON diagnostics", async () => {
+    const rawUrl = "https://EXAMPLE.com:443/%61rticle";
+    const canonicalUrl = new URL(rawUrl).href;
+    const decodedUrl = decodeURI(canonicalUrl);
+    const response = new Response(JSON.stringify({
+      error: `failed ${canonicalUrl} after decoding ${decodedUrl} with Bearer ${API_KEY}`,
+    }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+    const { result } = await runCore({
+      url: rawUrl,
+      transport: vi.fn().mockResolvedValue(response),
+    });
+
+    expect(result).toMatchObject({ success: false, status: 403, code: "OLLAMA_UPSTREAM_ERROR" });
+    for (const secret of [rawUrl, canonicalUrl, decodedUrl, API_KEY]) {
+      expect(result.error).not.toContain(secret);
+    }
+  });
+
+  it("redacts canonical and decoded target variants from transport diagnostics", async () => {
+    const rawUrl = "https://EXAMPLE.com:443/%61rticle";
+    const canonicalUrl = new URL(rawUrl).href;
+    const decodedUrl = decodeURI(canonicalUrl);
+    const transport = vi.fn().mockRejectedValue(new Error(
+      `transport failed for ${canonicalUrl} and decoded ${decodedUrl}`,
+    ));
+    const { result } = await runCore({ url: rawUrl, transport });
+
+    expect(result).toMatchObject({ success: false, status: 502, code: "OLLAMA_TRANSPORT_ERROR" });
+    for (const secret of [rawUrl, canonicalUrl, decodedUrl, API_KEY]) {
+      expect(result.error).not.toContain(secret);
+    }
   });
 });
 
