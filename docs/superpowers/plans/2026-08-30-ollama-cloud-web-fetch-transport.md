@@ -36,7 +36,7 @@
 
 ### Created during implementation
 
-- `tests/unit/ollama-web-fetch-transport.test.js` contains all 78 deterministic Transport tests. The core section has 76 tests and the application-plumbing section has 2 tests.
+- `tests/unit/ollama-web-fetch-transport.test.js` contains all 79 deterministic Transport tests. The core section has 77 tests and the application-plumbing section has 2 tests.
 
 ### Modified during implementation
 
@@ -103,15 +103,16 @@ truncateUtf16Safely(text, maxCharacters) -> string
 failure(status, code, message) -> FetchResult
 validationFailure(status, code, message) -> { ok: false, result: FetchResult }
 codedError(code) -> Error & { code: string }
-sanitizeOllamaError(message, { apiKey, url }) -> string
+configuredProxySecrets(proxyOptions) -> string[]
+sanitizeOllamaError(message, { apiKey, url, proxyOptions }) -> string
 ownCancellation(reader, reason) -> void
 readWithSignal(reader, signal) -> Promise<{ value: Uint8Array, done: boolean }>
 concatenateBytes(chunks, total) -> Uint8Array
 isJsonMediaType(value) -> boolean
 cancelResponseBody(response, reason) -> void
-boundedUpstreamFailure(status, body, validatedRequest) -> FetchResult
+boundedUpstreamFailure(response, body, { apiKey, url, proxyOptions }) -> FetchResult
 parseAndNormalizeOllama(bytes, validatedRequest, startedAt, upstreamMs) -> FetchResult
-classifyOllamaFailure(error, { deadline, apiKey, url }) -> FetchResult
+classifyOllamaFailure(error, { deadline, apiKey, url, proxyOptions }) -> FetchResult
 
 runOllama({
   url, format, maxCharacters, providerConfig, credentials,
@@ -175,6 +176,33 @@ test -z "$(git status --porcelain)"
 
 Stop without stashing, resetting, or editing if any assertion fails. After each implementation commit, inspect the complete range from `task6_plan_head`. Stop if the changed paths include anything outside the three owned implementation paths or if the Ollama registry becomes publicly reachable.
 
+Dependency installation is outside implementation scope because it can create or modify lockfiles. Before any test or lint command, run this preflight from the worktree root.
+
+```bash
+test -d node_modules || { printf '%s\n' 'missing root node_modules; stop and ask the coordinator to provision dependencies'; exit 2; }
+test -x node_modules/.bin/eslint || { printf '%s\n' 'missing root ESLint; stop and ask the coordinator to provision root dependencies'; exit 2; }
+test -x node_modules/.bin/next || { printf '%s\n' 'missing root Next.js; stop and ask the coordinator to provision root dependencies'; exit 2; }
+test -d node_modules/undici || { printf '%s\n' 'missing root Undici; stop and ask the coordinator to provision root dependencies'; exit 2; }
+test -d tests/node_modules || { printf '%s\n' 'missing tests/node_modules; stop and ask the coordinator to provision test dependencies'; exit 2; }
+test -x tests/node_modules/.bin/vitest || { printf '%s\n' 'missing tests Vitest; stop and ask the coordinator to provision test dependencies'; exit 2; }
+```
+
+Do not run `npm install`, `npm ci`, a snapshot update, or a baseline generator from this plan. Stop immediately if any command mutates a tracked path. Known snapshot and baseline stop paths are:
+
+```text
+tests/__baseline__/alias-baseline.json
+tests/__baseline__/baseline-results.json
+tests/__baseline__/current.json
+tests/__baseline__/known-fails.txt
+tests/__baseline__/oauth-urls-baseline.json
+tests/__baseline__/providers-baseline.json
+tests/qa/regression-baseline.json
+tests/translator/__snapshots__/golden-request.test.js.snap
+tests/translator/__snapshots__/golden-response-stream.test.js.snap
+tests/translator/__snapshots__/golden-translator-concerns.test.js.snap
+tests/translator/__snapshots__/golden-url-header.test.js.snap
+```
+
 ## Task 1: Implement the bounded core adapter
 
 **Files:**
@@ -197,9 +225,9 @@ git status --short --branch
 
 Expected result is exit 0, a clean `integration/task6-pr3624` status, `serviceKinds: ["llm"]`, and no `fetchConfig`.
 
-- [ ] **Step 2: Add deterministic test fixtures and the 39 request-contract tests**
+- [ ] **Step 2: Add 39 request-contract tests and one default-transport integration test**
 
-Start `tests/unit/ollama-web-fetch-transport.test.js` with real core imports and an injected transport. Do not mock `proxyAwareFetch` for core tests.
+Start `tests/unit/ollama-web-fetch-transport.test.js` with real core imports. The 39 request-contract tests inject their transport. The separate integration test deliberately omits `transport`, wraps the real `proxyAwareFetch` only to record its arguments, and exercises that real function with a synthetic native fetch. No other core test mocks `proxyAwareFetch`.
 
 ```js
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -288,15 +316,81 @@ expect(transport).toHaveBeenCalledWith(
 expect(globalThis.fetch).not.toHaveBeenCalled();
 ```
 
-- [ ] **Step 3: Run the request-contract group and record RED**
+Add one `describe("Ollama default proxy transport", ...)` integration test. It must omit the `transport` property, wrap and delegate to the actual `proxyAwareFetch`, and load a fresh core after the mock is installed. The native-fetch seam distinguishes the one dispatcher-backed proxy attempt from a forbidden direct fallback.
+
+```js
+it("passes exact proxy policy to the default transport and never falls back when strict", async () => {
+  const proxyOptions = Object.freeze({
+    connectionProxyEnabled: true,
+    connectionProxyUrl: "http://proxy-user:proxy-pass@127.0.0.1:19999",
+    connectionNoProxy: "localhost,127.0.0.1",
+    vercelRelayUrl: "",
+    strictProxy: true,
+  });
+  const priorFetch = globalThis.fetch;
+  let proxyAttempts = 0;
+  let directAttempts = 0;
+  const nativeFetch = vi.fn(async (_url, init = {}) => {
+    if (init.dispatcher) {
+      proxyAttempts += 1;
+      throw new Error("synthetic proxy refusal");
+    }
+    directAttempts += 1;
+    throw new Error("unexpected direct Ollama attempt");
+  });
+
+  try {
+    globalThis.fetch = nativeFetch;
+    vi.resetModules();
+    const actualProxyModule = await vi.importActual("../../open-sse/utils/proxyFetch.js");
+    const observedProxyAwareFetch = vi.fn((...args) => actualProxyModule.proxyAwareFetch(...args));
+    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({
+      ...actualProxyModule,
+      proxyAwareFetch: observedProxyAwareFetch,
+    }));
+    const { handleFetchCore: freshCore } = await import("../../open-sse/handlers/fetch/index.js");
+
+    const result = await freshCore({
+      url: TARGET,
+      provider: "ollama",
+      providerConfig: OLLAMA_CONFIG,
+      credentials: { apiKey: API_KEY },
+      proxyOptions,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      status: 502,
+      code: "OLLAMA_TRANSPORT_ERROR",
+    });
+    expect(observedProxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(observedProxyAwareFetch.mock.calls[0][0]).toBe("https://ollama.com/api/web_fetch");
+    expect(observedProxyAwareFetch.mock.calls[0][2]).toBe(proxyOptions);
+    expect(nativeFetch).toHaveBeenCalledTimes(1);
+    expect(nativeFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+      dispatcher: expect.anything(),
+    }));
+    expect(proxyAttempts).toBe(1);
+    expect(directAttempts).toBe(0);
+  } finally {
+    vi.doUnmock("../../open-sse/utils/proxyFetch.js");
+    vi.resetModules();
+    globalThis.fetch = priorFetch;
+  }
+});
+```
+
+This is the only core test without an injected transport. It proves both pieces of the seam in one real path. The core passes the exact five-field object to its default `proxyAwareFetch`, and that real utility performs one dispatcher-backed attempt with zero direct attempts under `strictProxy: true`.
+
+- [ ] **Step 3: Run the first 40 tests and record RED**
 
 Run:
 
 ```bash
-npm --prefix tests exec vitest -- run unit/ollama-web-fetch-transport.test.js -t "Ollama web fetch request contract"
+(cd tests && npx vitest run unit/ollama-web-fetch-transport.test.js)
 ```
 
-Expected result is 39 failed tests. The primary failure is `Unsupported provider: ollama`, missing adapter-local codes, or a zero transport call. Stop if the new tests pass against the unmodified core.
+Expected result is 40 failed tests, comprising 39 request-contract tests and 1 default-transport integration test. The primary failure is `Unsupported provider: ollama`, missing adapter-local codes, or a zero transport call. Stop if the new tests pass against the unmodified core.
 
 - [ ] **Step 4: Add the 17 deadline and bounded-body tests before production edits**
 
@@ -349,15 +443,15 @@ Add `describe("Ollama web fetch deadline and bounded body", ...)` with exactly 1
 
 For fake-time tests, start the promise, attach the expectation before advancing time, call `await vi.advanceTimersByTimeAsync(30000)`, then await the result. Assert status 504, code `OLLAMA_TIMEOUT`, one reader cancellation when a reader exists, and `vi.getTimerCount() === 0`. Caller-abort cases assert status 499, code `OLLAMA_CLIENT_ABORTED`, preserved `signal.reason`, and no timeout classification.
 
-- [ ] **Step 5: Run both unfinished groups and record cumulative RED**
+- [ ] **Step 5: Run all 57 unfinished tests and record cumulative RED**
 
 Run:
 
 ```bash
-npm --prefix tests exec vitest -- run unit/ollama-web-fetch-transport.test.js
+(cd tests && npx vitest run unit/ollama-web-fetch-transport.test.js)
 ```
 
-Expected result is 56 failed tests. No production file has changed yet.
+Expected result is 57 failed tests. No production file has changed yet.
 
 - [ ] **Step 6: Add the final 20 response, link, truncation, and error tests**
 
@@ -367,21 +461,21 @@ Add `describe("Ollama web fetch normalized response", ...)` with exactly 20 test
 |---|---:|---|
 | Links | 11 | Missing; empty; 100 valid; 101; exact 64 KiB aggregate; one byte over aggregate; non-string; non-HTTP scheme; embedded credentials; surrounding whitespace; order preserved with zero dereferences |
 | Truncation | 4 | Default 200000; exact requested maximum; over requested maximum; high-surrogate boundary removes the unmatched high surrogate |
-| Non-2xx and sanitization | 5 | Bounded JSON `error`; bounded text; oversized diagnostic body; API-key redaction; target-URL redaction |
+| Non-2xx and sanitization | 5 | Bounded scalar JSON `error`; non-JSON text maps to the generic message; oversized diagnostic body maps to the generic message; one case redacts both the API key and target URL; proxy transport failure redacts configured proxy URL userinfo |
 
 The link boundary fixtures use ASCII URLs so `Buffer.byteLength` is exact. The 100-link and aggregate-boundary fixtures must assert the returned array preserves upstream order. The surrogate test uses `"A\uD83D\uDE00B"` with `maxCharacters: 2` and expects `"A"`, never `"A\uD83D"`.
 
-For non-2xx JSON, assert the actual upstream status and `OLLAMA_UPSTREAM_ERROR`. For an error body over 16 KiB, assert the upstream status is preserved, the reader is canceled, and the message is exactly `Ollama web fetch failed (HTTP <status>)`.
+For non-2xx JSON, assert the actual upstream status and `OLLAMA_UPSTREAM_ERROR`. A non-JSON diagnostic is never reflected and must return exactly `Ollama web fetch failed (HTTP <status>)`. For an error body over 16 KiB, assert the upstream status is preserved, the reader is canceled, and the same generic message is returned. The sanitization cases place the API key, target URL, and a proxy URL containing `proxy-user:proxy-pass@` into synthetic failures, then assert the complete configured secrets and individual userinfo components are absent from `result.error`.
 
 - [ ] **Step 7: Run the full focused file and record the complete RED snapshot**
 
 Run:
 
 ```bash
-npm --prefix tests exec vitest -- run unit/ollama-web-fetch-transport.test.js
+(cd tests && npx vitest run unit/ollama-web-fetch-transport.test.js)
 ```
 
-Expected result is 76 failed tests. Save the test summary in the implementation receipt. Do not edit production code unless the failures demonstrate missing Ollama behavior rather than test syntax or fixture errors.
+Expected result is 77 failed tests. Save the test summary in the implementation receipt. Do not edit production code unless the failures demonstrate missing Ollama behavior rather than test syntax or fixture errors.
 
 - [ ] **Step 8: Add constants, failure sanitization, and request validation**
 
@@ -447,7 +541,7 @@ function validateOllamaRequest({ url, format, maxCharacters, providerConfig, cre
 }
 ```
 
-`failure(status, code, message)` clamps the final message to 512 characters. `sanitizeOllamaError(message, { apiKey, url })` replaces the exact key, the exact target URL, and Bearer-looking tokens before the clamp. Never pass the raw caught error to `log`.
+`failure(status, code, message)` clamps the final message to 512 characters. `sanitizeOllamaError(message, { apiKey, url, proxyOptions })` replaces the exact key, exact target URL, configured proxy or relay URL, raw and decoded proxy userinfo, and Bearer-looking tokens before the clamp. Sort configured values longest-first so replacing a username cannot prevent replacement of its complete credential-bearing URL. Never pass the raw caught error or unsanitized context to `log`.
 
 ```js
 function failure(status, code, message) {
@@ -462,9 +556,31 @@ function codedError(code, message = code) {
   return Object.assign(new Error(message), { code });
 }
 
-function sanitizeOllamaError(message, { apiKey, url }) {
+function configuredProxySecrets(proxyOptions) {
+  const secrets = [];
+  for (const value of [proxyOptions?.connectionProxyUrl, proxyOptions?.vercelRelayUrl]) {
+    if (typeof value !== "string" || !value) continue;
+    secrets.push(value);
+    const rawUserinfo = /^[a-z][a-z\d+.-]*:\/\/([^@/]+)@/i.exec(value)?.[1];
+    if (rawUserinfo) secrets.push(rawUserinfo);
+    try {
+      const parsed = new URL(value);
+      for (const component of [parsed.username, parsed.password]) {
+        if (!component) continue;
+        secrets.push(component);
+        try { secrets.push(decodeURIComponent(component)); } catch { }
+      }
+    } catch { }
+  }
+  return [...new Set(secrets.filter(Boolean))].sort((a, b) => b.length - a.length);
+}
+
+function sanitizeOllamaError(message, { apiKey, url, proxyOptions }) {
   let safe = String(message || "Ollama web fetch failed");
-  for (const secret of [apiKey, url]) {
+  const secrets = [apiKey, url, ...configuredProxySecrets(proxyOptions)]
+    .filter((value) => typeof value === "string" && value)
+    .sort((a, b) => b.length - a.length);
+  for (const secret of secrets) {
     if (typeof secret === "string" && secret) safe = safe.split(secret).join("[redacted]");
   }
   safe = safe.replace(/Bearer\s+[^\s,;]+/gi, "Bearer [redacted]");
@@ -668,9 +784,13 @@ async function runOllama(args) {
   if (!valid.ok) return valid.result;
   const deadline = createOllamaDeadline({ callerSignal: args.signal, timeoutMs: valid.timeoutMs });
   if (deadline.signal.aborted) {
-    const classified = deadline.classify(deadline.signal.reason);
     deadline.clear();
-    return classifyOllamaFailure(classified.error, { deadline, apiKey: valid.apiKey, url: valid.url });
+    return classifyOllamaFailure(deadline.signal.reason, {
+      deadline,
+      apiKey: valid.apiKey,
+      url: valid.url,
+      proxyOptions: args.proxyOptions,
+    });
   }
   let response;
   try {
@@ -693,7 +813,11 @@ async function runOllama(args) {
         signal: deadline.signal,
         overflowMode: "truncate",
       });
-      return boundedUpstreamFailure(response.status, body, valid);
+      return boundedUpstreamFailure(response, body, {
+        apiKey: valid.apiKey,
+        url: valid.url,
+        proxyOptions: args.proxyOptions,
+      });
     }
 
     if (!isJsonMediaType(response.headers.get("content-type"))) {
@@ -708,14 +832,19 @@ async function runOllama(args) {
     });
     return parseAndNormalizeOllama(body.bytes, valid, args.startedAt, upstreamMs);
   } catch (error) {
-    return classifyOllamaFailure(error, { deadline, apiKey: valid.apiKey, url: valid.url });
+    return classifyOllamaFailure(error, {
+      deadline,
+      apiKey: valid.apiKey,
+      url: valid.url,
+      proxyOptions: args.proxyOptions,
+    });
   } finally {
     deadline.clear();
   }
 }
 ```
 
-`isJsonMediaType` accepts case-insensitive `application/json` and `application/*+json` before an optional semicolon. `boundedUpstreamFailure` extracts only scalar JSON `error`, `message`, or `detail`; otherwise it uses `Ollama web fetch failed (HTTP <status>)`. Oversized diagnostics always use the generic message. `classifyOllamaFailure` maps the first abort source before transport errors, then maps coded response failures, then returns redacted `OLLAMA_TRANSPORT_ERROR`.
+`isJsonMediaType` accepts case-insensitive `application/json` and `application/*+json` before an optional semicolon. `boundedUpstreamFailure` extracts only scalar JSON `error`, `message`, or `detail` when the upstream response declares a JSON media type. Non-JSON, malformed JSON, nonscalar JSON, invalid UTF-8, and oversized diagnostics always use `Ollama web fetch failed (HTTP <status>)`; raw non-JSON text is never reflected. `classifyOllamaFailure` maps the first abort source before transport errors, then maps coded response failures, then returns a redacted `OLLAMA_TRANSPORT_ERROR`.
 
 ```js
 function concatenateBytes(chunks, total) {
@@ -738,23 +867,22 @@ function isJsonMediaType(value) {
     || (mime.startsWith("application/") && mime.endsWith("+json"));
 }
 
-function boundedUpstreamFailure(status, body, valid) {
+function boundedUpstreamFailure(response, body, context) {
+  const { status } = response;
   const generic = `Ollama web fetch failed (HTTP ${status})`;
   let message = generic;
-  if (!body.overflowed) {
+  if (!body.overflowed && isJsonMediaType(response.headers.get("content-type"))) {
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(body.bytes).trim();
-      let parsed;
-      try { parsed = JSON.parse(text); } catch { }
+      const parsed = JSON.parse(text);
       const candidate = parsed?.error ?? parsed?.message ?? parsed?.detail;
       if (["string", "number", "boolean"].includes(typeof candidate)) message = String(candidate);
-      else if (text && parsed === undefined) message = text;
     } catch { }
   }
-  return failure(status, OLLAMA_ERROR.UPSTREAM_ERROR, sanitizeOllamaError(message, valid));
+  return failure(status, OLLAMA_ERROR.UPSTREAM_ERROR, sanitizeOllamaError(message, context));
 }
 
-function classifyOllamaFailure(error, { deadline, apiKey, url }) {
+function classifyOllamaFailure(error, { deadline, apiKey, url, proxyOptions }) {
   const classified = deadline.classify(error);
   if (classified.source === "caller") {
     return failure(499, OLLAMA_ERROR.CLIENT_ABORTED, "Ollama web fetch was canceled by the caller");
@@ -767,29 +895,29 @@ function classifyOllamaFailure(error, { deadline, apiKey, url }) {
   }
   return failure(502, OLLAMA_ERROR.TRANSPORT_ERROR, sanitizeOllamaError(
     classified.error?.message || "Ollama web fetch transport failed",
-    { apiKey, url },
+    { apiKey, url, proxyOptions },
   ));
 }
 ```
 
 Do not infer destination, auth, entitlement, quota, or fallback scope. Do not read `Retry-After`. Empty HTTP 200 `{}` remains a 502 `OLLAMA_EMPTY_RESPONSE` until the later state specification.
 
-- [ ] **Step 12: Run all 76 core tests and record GREEN**
+- [ ] **Step 12: Run all 77 core tests and record GREEN**
 
 Run:
 
 ```bash
-npm --prefix tests exec vitest -- run unit/ollama-web-fetch-transport.test.js
+(cd tests && npx vitest run unit/ollama-web-fetch-transport.test.js)
 ```
 
-Expected result is exactly 1 passed file and 76 passed tests. Confirm no skips and `vi.getTimerCount() === 0` in every fake-timer test.
+Expected result is exactly 1 passed file and 77 passed tests. Confirm no skips and `vi.getTimerCount() === 0` in every fake-timer test.
 
 - [ ] **Step 13: Run core adjacency and static gates**
 
 Run each command from the worktree root.
 
 ```bash
-npm --prefix tests exec vitest -- run unit/firecrawl-selfhosted.test.js unit/jina-reader-fetch.test.js unit/strict-proxy-propagation.test.js unit/proxy-fetch-mitm-abort.test.js
+(cd tests && npx vitest run unit/firecrawl-selfhosted.test.js unit/jina-reader-fetch.test.js unit/strict-proxy-propagation.test.js unit/proxy-fetch-mitm-abort.test.js)
 node --check open-sse/handlers/fetch/index.js
 npm exec eslint -- open-sse/handlers/fetch/index.js tests/unit/ollama-web-fetch-transport.test.js
 git diff --check
@@ -905,16 +1033,17 @@ mocks.getProviderCredentials.mockResolvedValue({
   providerSpecificData,
 });
 
-const response = await handleFetch(new Request("http://localhost/v1/web/fetch", {
+const request = new Request("http://localhost/v1/web/fetch", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ provider: "transport-fixture", url: TARGET }),
   signal: caller.signal,
-}));
+});
+const response = await handleFetch(request);
 
 expect(response.status).toBe(200);
 expect(mocks.handleFetchCore).toHaveBeenCalledWith(expect.objectContaining({
-  signal: caller.signal,
+  signal: request.signal,
   proxyOptions: {
     connectionProxyEnabled: true,
     connectionProxyUrl: "http://proxy.test:3128",
@@ -923,14 +1052,23 @@ expect(mocks.handleFetchCore).toHaveBeenCalledWith(expect.objectContaining({
     strictProxy: true,
   },
 }));
-expect(mocks.handleFetchCore.mock.calls[0][0]).not.toHaveProperty("transport");
-expect(mocks.handleFetchCore.mock.calls[0][0].proxyOptions).not.toHaveProperty("connectionProxyPoolId");
+const coreArgs = mocks.handleFetchCore.mock.calls[0][0];
+expect(coreArgs.signal).toBe(request.signal);
+expect(coreArgs.signal).not.toBe(caller.signal);
+expect(coreArgs).not.toHaveProperty("transport");
+expect(coreArgs.proxyOptions).not.toHaveProperty("connectionProxyPoolId");
 expect(mocks.getProviderCredentials).toHaveBeenCalledWith("transport-fixture", expect.any(Set));
+
+const reason = new DOMException("client left", "AbortError");
+caller.abort(reason);
+expect(request.signal.aborted).toBe(true);
+expect(request.signal.reason).toBe(reason);
+expect(coreArgs.signal.reason).toBe(reason);
 ```
 
-Create a `Request` with a caller controller signal, run `handleFetch`, and assert the response is 200. Assert `handleFetchCore` receives the identical signal and exactly these five transport fields, without `connectionProxyPoolId` and without a `transport` property. Assert `getProviderCredentials` keeps its current argument shape.
+Store the constructed `Request`, run `handleFetch`, and assert the response is 200. A `Request` follows but does not retain object identity with the constructor signal, so assert `handleFetchCore` receives `request.signal`, not `caller.signal`. Abort the controller after the call and prove the exact abort reason propagates to both `request.signal` and the forwarded core signal. Assert exactly these five transport fields, without `connectionProxyPoolId` and without a `transport` property. Assert `getProviderCredentials` keeps its current argument shape.
 
-The no-auth test uses the mocked `noAuth: true` provider and asserts the identical caller signal plus this normalized empty policy.
+The no-auth test uses the mocked `noAuth: true` provider and repeats the `request.signal` identity and abort-reason propagation assertions with this normalized empty policy.
 
 ```js
 {
@@ -947,17 +1085,19 @@ Use this exact no-auth test body.
 ```js
 const caller = new AbortController();
 const { handleFetch, mocks } = await importFetchHandlerForPlumbing({ noAuth: true });
-const response = await handleFetch(new Request("http://localhost/v1/web/fetch", {
+const request = new Request("http://localhost/v1/web/fetch", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ provider: "transport-fixture", url: TARGET }),
   signal: caller.signal,
-}));
+});
+const response = await handleFetch(request);
 
 expect(response.status).toBe(200);
 expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
 const coreArgs = mocks.handleFetchCore.mock.calls[0][0];
-expect(coreArgs.signal).toBe(caller.signal);
+expect(coreArgs.signal).toBe(request.signal);
+expect(coreArgs.signal).not.toBe(caller.signal);
 expect(coreArgs.proxyOptions).toEqual({
   connectionProxyEnabled: false,
   connectionProxyUrl: "",
@@ -966,9 +1106,15 @@ expect(coreArgs.proxyOptions).toEqual({
   strictProxy: false,
 });
 expect(coreArgs).not.toHaveProperty("transport");
+
+const reason = new DOMException("client left", "AbortError");
+caller.abort(reason);
+expect(request.signal.aborted).toBe(true);
+expect(request.signal.reason).toBe(reason);
+expect(coreArgs.signal.reason).toBe(reason);
 ```
 
-After each dynamic test, call `vi.doUnmock` for every mocked specifier and `vi.resetModules()` so the 76 real-core tests remain isolated.
+After each dynamic test, call `vi.doUnmock` for every mocked specifier and `vi.resetModules()` so the 77 real-core tests remain isolated.
 
 ```js
 const PLUMBING_MOCKS = [
@@ -992,7 +1138,7 @@ afterEach(() => {
 Run:
 
 ```bash
-npm --prefix tests exec vitest -- run unit/ollama-web-fetch-transport.test.js -t "application signal and proxy plumbing"
+(cd tests && npx vitest run unit/ollama-web-fetch-transport.test.js -t "application signal and proxy plumbing")
 ```
 
 Expected result is exactly 2 failed tests. The `handleFetchCore` call currently lacks `signal` and `proxyOptions`. Stop if failure comes from mock collection, provider resolution, or request construction.
@@ -1034,20 +1180,20 @@ proxyOptions: buildFetchProxyOptions(refreshedCredentials),
 
 Do not pass a transport from the application module. Do not read `x-connection-id`, change `getProviderCredentials`, add a model key, or alter `markAccountUnavailable` and `clearAccountError`. Those belong to later subprojects.
 
-- [ ] **Step 5: Run all 78 focused tests and record GREEN**
+- [ ] **Step 5: Run all 79 focused tests and record GREEN**
 
 Run:
 
 ```bash
-npm --prefix tests exec vitest -- run unit/ollama-web-fetch-transport.test.js
+(cd tests && npx vitest run unit/ollama-web-fetch-transport.test.js)
 ```
 
-Expected result is exactly 1 passed file and 78 passed tests with no skips.
+Expected result is exactly 1 passed file and 79 passed tests with no skips.
 
 - [ ] **Step 6: Run application adjacency and static gates**
 
 ```bash
-npm --prefix tests exec vitest -- run unit/fetch-success-clears-account.test.js unit/firecrawl-selfhosted.test.js unit/jina-reader-fetch.test.js unit/strict-proxy-propagation.test.js unit/proxy-fetch-mitm-abort.test.js
+(cd tests && npx vitest run unit/fetch-success-clears-account.test.js unit/firecrawl-selfhosted.test.js unit/jina-reader-fetch.test.js unit/strict-proxy-propagation.test.js unit/proxy-fetch-mitm-abort.test.js)
 node --check open-sse/handlers/fetch/index.js
 node --check src/sse/handlers/fetch.js
 npm exec eslint -- open-sse/handlers/fetch/index.js src/sse/handlers/fetch.js tests/unit/ollama-web-fetch-transport.test.js
@@ -1126,35 +1272,54 @@ Expected result is exit 0 and no diff. Do not interpret direct `handleFetchCore(
 - [ ] **Step 3: Run the focused and adjacency suites**
 
 ```bash
-npm --prefix tests exec vitest -- run \
-  unit/ollama-web-fetch-transport.test.js \
-  unit/fetch-success-clears-account.test.js \
-  unit/firecrawl-selfhosted.test.js \
-  unit/jina-reader-fetch.test.js \
-  unit/strict-proxy-propagation.test.js \
-  unit/proxy-fetch-mitm-abort.test.js
+(
+  cd tests &&
+  npx vitest run \
+    unit/ollama-web-fetch-transport.test.js \
+    unit/fetch-success-clears-account.test.js \
+    unit/firecrawl-selfhosted.test.js \
+    unit/jina-reader-fetch.test.js \
+    unit/strict-proxy-propagation.test.js \
+    unit/proxy-fetch-mitm-abort.test.js
+)
 ```
 
-Expected result is all selected files and tests passing. The focused file reports exactly 78 passed tests and no skips.
+Expected result is all selected files and tests passing. The focused file reports exactly 79 passed tests and no skips.
 
 - [ ] **Step 4: Run the full JSON suite and verifier without masking either exit code**
 
 Run this as one shell block from the worktree root.
 
 ```bash
+task6_tracked_before=$(git status --porcelain --untracked-files=no)
+test -z "$task6_tracked_before"
+
 task6_json_dir=$(mktemp -d)
 task6_json="$task6_json_dir/results.json"
 task6_vitest_rc=0
-npm --prefix tests exec vitest -- run --reporter=json --outputFile="$task6_json" || task6_vitest_rc=$?
+(cd tests && CI=1 npx vitest run --update=none --reporter=json --outputFile="$task6_json") || task6_vitest_rc=$?
+
+task6_tracked_after_vitest=$(git status --porcelain --untracked-files=no)
+if test -n "$task6_tracked_after_vitest"; then
+  printf '%s\n' 'full Vitest mutated tracked files; stop without reset or cleanup'
+  printf '%s\n' "$task6_tracked_after_vitest"
+  exit 1
+fi
 test -s "$task6_json"
 
 task6_verifier_rc=0
 node tests/__baseline__/verify-no-regression.mjs "$task6_json" || task6_verifier_rc=$?
+task6_tracked_after_verifier=$(git status --porcelain --untracked-files=no)
+if test -n "$task6_tracked_after_verifier"; then
+  printf '%s\n' 'baseline verifier mutated tracked files; stop without reset or cleanup'
+  printf '%s\n' "$task6_tracked_after_verifier"
+  exit 1
+fi
 printf 'vitest_exit=%s verifier_exit=%s report=%s\n' "$task6_vitest_rc" "$task6_verifier_rc" "$task6_json"
 test "$task6_verifier_rc" -eq 0
 ```
 
-The full Vitest exit may remain nonzero only for catalogued baseline failures. The verifier must exit 0. Preserve both values in the receipt. Missing JSON, a verifier error, or a new regression is not a pass.
+`CI=1` and `--update=none` make the full suite non-interactive and prohibit snapshot updates. The status check immediately after Vitest runs before JSON validation or the baseline verifier. Any tracked mutation, including any known snapshot or baseline stop path listed above, terminates the shell without resetting or cleaning it. The full Vitest exit may remain nonzero only for catalogued baseline failures. The verifier must exit 0. Preserve both values in the receipt. Missing JSON, a verifier error, or a new regression is not a pass.
 
 - [ ] **Step 5: Run syntax, lint, isolated build, and final scope checks**
 
@@ -1188,20 +1353,20 @@ Do not continue into registry, discovery, model normalization, UI, account pinni
 | JSON media type, fatal UTF-8, object shape, empty-object code, and empty content | Task 1 Steps 4, 7, 10 through 12 |
 | 100 links, 8192 bytes each, 64 KiB aggregate, safe schemes, no userinfo | Task 1 Steps 6, 7, 10, and 12 |
 | UTF-16-compatible truncation without a dangling high surrogate | Task 1 Steps 6, 7, 10, and 12 |
-| Bounded and redacted upstream errors without fallback classification | Task 1 Steps 6 through 12 |
+| Generic non-JSON diagnostics and bounded API-key, target-URL, and proxy-userinfo-redacted errors without fallback classification | Task 1 Steps 6 through 12 |
 | Existing fetch-provider compatibility | Task 1 Step 13; Task 2 Step 6; Task 3 Step 3 |
 | Continued absence from registry and public discovery | Snapshot Stop Rule; Task 3 Steps 1, 2, and 6 |
-| Full regression, syntax, lint, build, log, and clean-status evidence | Task 3 Steps 1 and 3 through 6 |
+| Dependency preflight plus full non-updating regression, mutation stop, syntax, lint, build, log, and clean-status evidence | Snapshot Stop Rule; Task 3 Steps 1 and 3 through 6 |
 
 ## Plan Integrity Receipt
 
 - The plan has 3 tasks, of which 2 create implementation commits and 1 is verification-only.
 - The implementation owns exactly 3 paths, with 0 registry, discovery, UI, auth-state, persistence, dependency, generated, or documentation implementation paths.
-- The focused test inventory has exactly 78 tests, split into 76 core tests and 2 application-plumbing tests.
-- Task 1 RED counts progress through 39, 56, and 76 failures before production edits.
+- The focused test inventory has exactly 79 tests, split into 77 core tests and 2 application-plumbing tests.
+- Task 1 RED counts progress through 40, 57, and 77 failures before production edits. The first count is 39 request-contract tests plus 1 no-injected-transport integration test.
 - Task 2 has an independent 2-test RED before application code changes.
 - Every private function and error code referenced by a later step is defined in this plan.
-- Every test and verification command uses worktree-root paths. Vitest uses `npm --prefix tests exec vitest` without directory-state coupling.
-- The full-suite shell preserves both the Vitest and verifier exit codes, so expected baseline failures cannot skip or mask the verifier.
-- The snapshot rule rejects dirty state, extra commits, extra paths, public reachability, or changes to deferred subsystems.
+- Every test and verification command starts from the worktree root. Vitest runs in an explicit `(cd tests && npx vitest ...)` subshell so it discovers `tests/vitest.config.js` and file paths relative to the independent test package.
+- The full-suite shell uses `CI=1` and `--update=none`, preserves both Vitest and verifier exit codes, and checks tracked state immediately after each tool so expected baseline failures cannot skip the verifier or hide a mutation.
+- The snapshot rule rejects missing dependencies, dirty state, tracked snapshot or baseline mutation, extra commits, extra paths, public reachability, or changes to deferred subsystems.
 - The plan contains no implementation placeholder and does not claim feature completion after Transport.
