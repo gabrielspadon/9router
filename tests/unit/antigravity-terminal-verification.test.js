@@ -256,6 +256,92 @@ describe("Antigravity terminal verification success", () => {
     expect(sinks).not.toContain(opaqueMessage);
   });
 
+  it("uses a fixed Antigravity error for an opaque non-SSE title", async () => {
+    const opaqueTitle = "opaque-upstream-html-title";
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = {
+      signal: new AbortController().signal,
+      isConnected: () => true,
+      handleComplete: vi.fn(),
+      handleDisconnect: vi.fn(),
+      handleError: vi.fn(),
+    };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: new Response(`<html><title>${opaqueTitle}</title></html>`, {
+        status: 502,
+        headers: { "content-type": "text/html" },
+      }),
+      sourceFormat: "openai",
+      targetFormat: "openai",
+      userAgent: "test",
+      onRequestSuccess: vi.fn(),
+      reqLogger: { logTargetRequest: vi.fn(), logError: vi.fn() },
+      toolNameMap: null,
+      customToolNames: null,
+      streamController,
+      onStreamComplete: vi.fn(),
+      streamDetailId: "stream-opaque-title",
+      streamState: {},
+      log,
+    });
+    const clientPayload = await result.response.text();
+    const sinks = JSON.stringify([clientPayload, result.error, log.errorLine.mock.calls, streamController.handleError.mock.calls]);
+
+    expect(result).toMatchObject({
+      success: false,
+      status: 502,
+      error: "Antigravity upstream request failed",
+    });
+    expect(sinks).not.toContain(opaqueTitle);
+  });
+
+  it("uses a fixed Antigravity error for an opaque stream-read exception", async () => {
+    const opaqueReadError = new Error("opaque-upstream-stream-read");
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = {
+      signal: new AbortController().signal,
+      isConnected: () => true,
+      handleComplete: vi.fn(),
+      handleDisconnect: vi.fn(),
+      handleError: vi.fn(),
+    };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: {
+        status: 200,
+        headers: new Headers({ "content-type": "text/event-stream" }),
+        body: {
+          getReader: () => ({
+            read: async () => { throw opaqueReadError; },
+            releaseLock: vi.fn(),
+          }),
+        },
+      },
+      sourceFormat: "openai",
+      targetFormat: "openai",
+      userAgent: "test",
+      onRequestSuccess: vi.fn(),
+      reqLogger: { logTargetRequest: vi.fn(), logError: vi.fn() },
+      toolNameMap: null,
+      customToolNames: null,
+      streamController,
+      onStreamComplete: vi.fn(),
+      streamDetailId: "stream-opaque-read",
+      streamState: {},
+      log,
+    });
+    const clientPayload = await result.response.text();
+    const sinks = JSON.stringify([clientPayload, result.error, log.errorLine.mock.calls, streamController.handleError.mock.calls]);
+
+    expect(result).toMatchObject({
+      success: false,
+      status: 502,
+      error: "Antigravity upstream request failed",
+    });
+    expect(sinks).not.toContain(opaqueReadError.message);
+  });
+
   it("preflights a normal Antigravity data frame before it can reach stream sinks", async () => {
     const onValidationRequired = vi.fn();
     const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
@@ -430,6 +516,24 @@ describe("Antigravity terminal verification success", () => {
     expect(logger.logConvertedResponse).not.toHaveBeenCalled();
     expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
     expect(clientPayload).not.toContain("project-secret");
+  });
+
+  it("does not clear Antigravity account health before rejecting empty 200 JSON", async () => {
+    const accountHealth = vi.fn();
+    const ctx = {
+      ...nonStreamingCtx(
+        new Response(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "stop" }] }), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+      onRequestSuccess: accountHealth,
+    };
+
+    const result = await handleNonStreamingResponse(ctx);
+    await Promise.resolve();
+
+    expect(result).toMatchObject({ success: false, status: 502 });
+    expect(accountHealth).not.toHaveBeenCalled();
   });
 
   it("notifies at non-aborted terminal text completion", () => {

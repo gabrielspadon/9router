@@ -20,6 +20,8 @@ const CODEX_SOURCE_TO_TARGET = {
   [FORMATS.GEMINI]: FORMATS.ANTIGRAVITY,
   [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
+const ANTIGRAVITY_UPSTREAM_ERROR = "Antigravity upstream request failed";
+
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
@@ -63,12 +65,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const bodyText = await providerResponse.text().catch(() => '');
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
-    const shortMsg = sanitizedTitle
+    const upstreamMessage = sanitizedTitle
       || (bodyText.length < 200 ? bodyText.replace(/<[^>]*>/g, '').trim().slice(0, 160) : `Upstream returned non-SSE response (${upstreamContentType})`);
+    const shortMsg = provider === "antigravity" ? ANTIGRAVITY_UPSTREAM_ERROR : upstreamMessage;
     const status = providerResponse.status || 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
-    streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
+    streamController?.handleError?.(new Error(shortMsg));
     return {
       success: false,
       status,
@@ -123,9 +126,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     firstChunk = value;
   } catch (readErr) {
     const status = 502;
-    const shortMsg = `Upstream stream read error: ${readErr?.message || readErr}`;
+    const shortMsg = provider === "antigravity"
+      ? ANTIGRAVITY_UPSTREAM_ERROR
+      : `Upstream stream read error: ${readErr?.message || readErr}`;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
-    streamController?.handleError?.(readErr);
+    streamController?.handleError?.(provider === "antigravity" ? new Error(shortMsg) : readErr);
     return {
       success: false,
       status,
@@ -180,7 +185,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
             ? parsed.error
             : parsed.error?.message || parsed.error_msg || parsed.detail || JSON.stringify(parsed);
           const safeErrMsg = provider === "antigravity"
-            ? "Antigravity upstream request failed"
+            ? ANTIGRAVITY_UPSTREAM_ERROR
             : errMsg;
           const rawStatus = parsed.error?.status || parsed.status || 502;
           const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 502;
