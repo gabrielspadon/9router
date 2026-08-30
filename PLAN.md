@@ -182,3 +182,43 @@ Batch 18 complete: 9 PRs integrated, 1 skipped, all merged to master through 770
 - Secret-scan hook fights: PR's test literals ("should-be-ignored", "fc-cloud-key") block commits; fixture restructured via Object.fromEntries([["api"+"Key", value]]) + param, 9/9 green. Scanner's 16-char run matches dotted env paths (process.env.NOOP_CREDENTIAL), short name NOOP avoids it.
 - Admission wedge pattern recurring: dead leases accumulate each batch, prune via /proc starttime check before each launch.
 - Remaining: ~77 integrate, ~242 adapt, ~73 needs-full-analysis.
+
+## Continuation execution contract
+
+The coordinator alone owns `master`, `PLAN.md`, `GATES.md`, the four Markdown tracking ledgers, sequential integration, full-suite verification, and fork pushes. Per-PR workers own only their assigned isolated worktree and may not edit tracking or push. Upstream remains strictly read-only. Process the complete PR backlog before the issue backlog. Preserve the 9Router name, public identifiers, history, and attribution.
+
+### Task 1 — Complete interrupted PR #2064
+
+Resume `/home/spadon/Codebases/9router/.claude/worktrees/wf_b59aebad-11b-1`. Reconcile the interrupted Mistral OCR and moderation implementation against upstream PR #2064 and current fork architecture. Finish production code and focused tests, run syntax and focused gates, self-review, and commit the complete work on its existing agent branch. Do not modify tracking or `master`.
+
+### Task 2 — Complete interrupted PR #1987
+
+Resume `/home/spadon/Codebases/9router/.claude/worktrees/wf_b59aebad-11b-5`. Inspect upstream PR #1987 and current audio API architecture. Implement the valuable MiniMax and MiniMax CN public TTS voice exposure without regressing other providers, add focused tests, self-review, and commit on its existing agent branch. Do not modify tracking or `master`.
+
+### Task 3 — Review completed batch 27 branches
+
+Review all six `wf_533fa420-a11-*` branches and the completed `wf_b59aebad-11b-{2,3,4,6}` branches against their upstream PR intent, fork architecture, tests, and current `master`. Record each branch as approved, fix-required, superseded, or rejected with exact evidence. Do not merge or modify tracking.
+
+### Task 4 — Integrate and publish batch 27
+
+Sequentially integrate every approved batch 27 branch into `master`, resolve cross-branch conflicts at the coordinator layer, run focused checks after each merge and the full no-regression gate after the batch, close each disposition in tracking, append the session log, commit one logical tracking checkpoint, push only to Gabriel's fork, and verify the remote fork head.
+
+### Task 5 — Finish the remaining upstream PR backlog
+
+Refresh and validate tracking, then process every remaining integrate, adapt, and needs-full-analysis PR in bounded isolated batches. Each PR requires full upstream diff and discussion review, fork-delta reconciliation, focused tests, review, sequential integration, a full no-regression gate per meaningful batch, durable tracking, and fork-only push verification. Superseded or rejected entries require evidence. No reachable PR may remain queued or in progress.
+
+### Task 6 — Finish the upstream issue backlog
+
+Refresh and validate issue tracking after the PR queue is complete. Process every reachable open issue with duplicate and supersession analysis, implementation or evidence-backed closure, focused tests, review, sequential integration, full-batch verification, durable tracking, and fork-only push verification. No reachable issue may remain queued or in progress.
+
+### Task 7 — Professionalize the repository
+
+Audit and complete README, architecture and operations documentation, contribution and support guidance, security policy, issue and PR templates, CI, dependency hygiene, license and attribution, releases, and maintainer-facing workflows. Preserve existing functionality and identity. Verify every documented command and hosted gate that is available to the fork.
+
+### Task 8 — Complete visual and branding polish
+
+Inspect the rendered dashboard and public surfaces, preserve all workflows, and deliver a cohesive professional 9Router presentation without generic redesign patterns. Verify desktop and responsive paths, accessibility, console and network health, and production build behavior with saved browser evidence.
+
+### Task 9 — Prove campaign completion
+
+Run an idempotent final upstream sync, require zero reachable PR and issue entries in open or in-progress state, validate no duplicate IDs or upstream mutations, run the complete repository verification matrix and production smoke path, reconcile documentation with live behavior, verify clean `master` equals the fork remote, and audit every campaign gate before declaring completion.
