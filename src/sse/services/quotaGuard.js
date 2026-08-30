@@ -16,7 +16,7 @@
  */
 
 import { getUsageForProvider } from "open-sse/services/usage.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
 import { getWindowThresholds, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 
@@ -58,18 +58,19 @@ function readSnapshot(connection) {
 function buildProxyOptions(connection) {
   // Reuse the same proxy resolution the usage API applies (strictProxy=false so
   // quota fetch falls back to direct on proxy failure).
-  return resolveConnectionProxyConfig(connection.providerSpecificData || {}).then((proxyConfig) => ({
-    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
-    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: false,
-  }));
+  return resolveConnectionProxyConfig(connection.providerSpecificData || {}).then((proxyConfig) => {
+    if (proxyConfig?.kind === "required-unavailable") return proxyConfig;
+    const options = proxyConfig?.kind === "usable"
+      ? toConnectionProxyOptions(proxyConfig)
+      : proxyConfig || {};
+    return { ...options, strictProxy: false };
+  });
 }
 
-async function fetchLiveSnapshot(connection) {
-  const proxyOptions = await buildProxyOptions(connection);
-  const usagePromise = getUsageForProvider(connection, proxyOptions, {});
+async function fetchLiveSnapshot(connection, proxyOptions = null) {
+  const resolvedProxyOptions = proxyOptions || await buildProxyOptions(connection);
+  if (resolvedProxyOptions?.kind === "required-unavailable") return resolvedProxyOptions;
+  const usagePromise = getUsageForProvider(connection, resolvedProxyOptions, {});
   const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error("quota fetch timeout")), LIVE_FETCH_TIMEOUT_MS)
   );
@@ -96,10 +97,28 @@ export async function evaluateQuota(connection) {
   if (!hasWindowThresholds(connection)) return { paused: false, reason: "disabled", snapshot: null };
   if (!isQuotaEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null };
 
+  const proxyOptions = await buildProxyOptions(connection);
+  if (proxyOptions?.kind === "required-unavailable") {
+    return {
+      paused: false,
+      reason: "required-proxy-unavailable",
+      code: "required_proxy_unavailable",
+      snapshot: null,
+    };
+  }
+
   let snapshot = readSnapshot(connection);
   if (!snapshot) {
     try {
-      snapshot = await fetchLiveSnapshot(connection);
+      snapshot = await fetchLiveSnapshot(connection, proxyOptions);
+      if (snapshot?.kind === "required-unavailable") {
+        return {
+          paused: false,
+          reason: "required-proxy-unavailable",
+          code: "required_proxy_unavailable",
+          snapshot: null,
+        };
+      }
     } catch {
       snapshot = null;
     }

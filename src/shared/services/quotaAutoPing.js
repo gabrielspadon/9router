@@ -7,7 +7,7 @@ import { getCodexUsage } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
 
@@ -94,6 +94,7 @@ function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
 }
 
 function buildProxyOptions(cfg) {
+  if (cfg?.kind === "usable") return { ...toConnectionProxyOptions(cfg), strictProxy: false };
   return {
     connectionProxyEnabled: cfg.connectionProxyEnabled === true,
     connectionProxyUrl: cfg.connectionProxyUrl || "",
@@ -196,6 +197,11 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   if (shouldSkipAfterFailure(state, key)) return;
 
   const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
+  if (proxyCfg?.kind === "required-unavailable") {
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${conn.id}: required_proxy_unavailable`);
+    return { code: "required_proxy_unavailable", status: 503 };
+  }
   const proxyOptions = buildProxyOptions(proxyCfg);
 
   let connection = conn;

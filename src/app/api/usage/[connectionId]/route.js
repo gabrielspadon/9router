@@ -8,7 +8,7 @@ import {
 } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { getCodexSubscriptionEntitlement } from "open-sse/services/usage/codex.js";
 import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
@@ -153,11 +153,14 @@ export async function GET(request, { params }) {
 
     // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
     const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
+    if (proxyConfig?.kind === "required-unavailable") {
+      return Response.json({
+        error: "Required proxy is unavailable",
+        code: "required_proxy_unavailable",
+      }, { status: 503 });
+    }
     const proxyOptions = {
-      connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-      connectionNoProxy: proxyConfig.connectionNoProxy || "",
-      vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
+      ...(proxyConfig?.kind === "usable" ? toConnectionProxyOptions(proxyConfig) : proxyConfig || {}),
       strictProxy: false,
     };
 

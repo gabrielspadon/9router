@@ -3,7 +3,7 @@ import "open-sse/index.js";
 
 import { getProviderConnectionById } from "@/lib/db/index.js";
 import { getExecutor } from "open-sse/executors/index.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
@@ -118,11 +118,16 @@ export async function POST(_request, { params }) {
 
   try {
     const proxyCfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    if (proxyCfg?.kind === "required-unavailable") {
+      return Response.json({
+        ok: false,
+        error: "Required proxy is unavailable",
+        code: "required_proxy_unavailable",
+        connectionId: connection.id,
+      }, { status: 503 });
+    }
     const proxyOptions = {
-      connectionProxyEnabled: proxyCfg.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyCfg.connectionProxyUrl || "",
-      connectionNoProxy: proxyCfg.connectionNoProxy || "",
-      vercelRelayUrl: proxyCfg.vercelRelayUrl || "",
+      ...(proxyCfg?.kind === "usable" ? toConnectionProxyOptions(proxyCfg) : proxyCfg || {}),
       strictProxy: false,
     };
 

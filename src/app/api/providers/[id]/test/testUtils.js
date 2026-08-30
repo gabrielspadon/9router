@@ -1,5 +1,5 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -872,7 +872,20 @@ export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
-  const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  if (proxyConfig?.kind === "required-unavailable") {
+    return {
+      valid: false,
+      error: "Required proxy is unavailable",
+      code: "required_proxy_unavailable",
+      status: 503,
+      latencyMs: 0,
+      testedAt: new Date().toISOString(),
+    };
+  }
+  const effectiveProxy = proxyConfig?.kind === "usable"
+    ? toConnectionProxyOptions(proxyConfig)
+    : proxyConfig || {};
 
   if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
