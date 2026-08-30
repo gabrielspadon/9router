@@ -27,8 +27,6 @@ export async function POST() {
       codeAware: settings.headroomCodeAware === true,
       kompress: settings.headroomKompress !== false,
       lossless: settings.headroomLossless === true,
-||||||| 788c2cbfb
-      kompress: settings.headroomKompress !== false,
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
