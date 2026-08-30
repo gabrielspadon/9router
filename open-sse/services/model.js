@@ -3,13 +3,13 @@ import { PROVIDER_MODELS } from "../config/providerModels.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
 // Media-only providers without a registry transport entry keep explicit aliases here.
-const MEDIA_ONLY_ALIASES = {
+export const MEDIA_ONLY_ALIASES = Object.freeze({
   el: "elevenlabs",
   jina: "jina-ai",
   "jina-ai": "jina-ai",
   polly: "aws-polly",
   "aws-polly": "aws-polly",
-};
+});
 
 const ALIAS_TO_PROVIDER_ID = { ...MEDIA_ONLY_ALIASES };
 for (const entry of REGISTRY) {

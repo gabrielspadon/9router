@@ -259,6 +259,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > cerebras → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > charm-hyper → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > chenzk → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -805,6 +824,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > hyperbolic → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > kenari → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > kilo-gateway → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1108,6 +1146,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > nous → headers (ap
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > novita → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > nube → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1474,6 +1531,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > xiaomi-mimo → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > xunfei → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1584,6 +1660,13 @@ exports[`GOLDEN buildUrl (default executor providers) > cerebras → url (stream
 {
   "nonStream": "https://api.cerebras.ai/v1/chat/completions",
   "stream": "https://api.cerebras.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > charm-hyper → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://hyper.charm.land/v1/chat/completions",
+  "stream": "https://hyper.charm.land/v1/chat/completions",
 }
 `;
 
@@ -1734,6 +1817,13 @@ exports[`GOLDEN buildUrl (default executor providers) > hyperbolic → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > kenari → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://kenari.id/v1/chat/completions",
+  "stream": "https://kenari.id/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > kilo-gateway → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.kilo.ai/api/gateway/chat/completions",
@@ -1836,6 +1926,13 @@ exports[`GOLDEN buildUrl (default executor providers) > novita → url (stream +
 {
   "nonStream": "https://api.novita.ai/openai/v1/chat/completions",
   "stream": "https://api.novita.ai/openai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > nube → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://ai.nube.sh/api/v1/chat/completions",
+  "stream": "https://ai.nube.sh/api/v1/chat/completions",
 }
 `;
 
@@ -1962,6 +2059,13 @@ exports[`GOLDEN buildUrl (default executor providers) > xiaomi-mimo → url (str
 {
   "nonStream": "https://api.xiaomimimo.com/v1/chat/completions",
   "stream": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > xunfei → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions",
+  "stream": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions",
 }
 `;
 
