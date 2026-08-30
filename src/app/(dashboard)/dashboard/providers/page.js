@@ -921,23 +921,6 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
-  // Auth type is a category, not a health state, so no status token is spent on
-  // it and the label below carries the distinction. See TOKEN-CONTRACT.md
-  // section 3. (These two maps currently have no consumer -- see
-  // .unlazy/BACKEND-HANDOFF.md.)
-  const dotColors = {
-    free: "bg-surface-3",
-    oauth: "bg-surface-3",
-    apikey: "bg-surface-3",
-    compatible: "bg-surface-3",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
-
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
       <Card
@@ -1043,23 +1026,6 @@ function ApiKeyProviderCard({
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
   );
-
-  // Auth type is a category, not a health state, so no status token is spent on
-  // it and the label below carries the distinction. See TOKEN-CONTRACT.md
-  // section 3. (These two maps currently have no consumer -- see
-  // .unlazy/BACKEND-HANDOFF.md.)
-  const dotColors = {
-    free: "bg-surface-3",
-    oauth: "bg-surface-3",
-    apikey: "bg-surface-3",
-    compatible: "bg-surface-3",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
 
   const getIconPath = () => {
     if (provider.apiType === "multi") return null;
