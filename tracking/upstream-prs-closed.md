@@ -6006,3 +6006,171 @@
 - closed: 2026-08-29
 - detail: merge e5fa6564e (de81793f2); cli.js headroom proxy.pid cleanup at both kill sites (killByPidFile reuse); PR's other files out of brief
 
+## PR #2190 — fix(claude): keep thinking out of visible content
+
+- url: https://github.com/decolua/9router/pull/2190
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: superseded
+- closed: 2026-08-29
+- detail: thinking-tag leak + closeReasoning landed via PR 2622 merge 0edb3f292 (batch 23), which is the superset; 980/2190 both redundant
+
+## PR #2313 — feat(kenari): add Kenari OpenAI-compatible gateway provider
+
+- url: https://github.com/decolua/9router/pull/2313
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 53127ea9e (be0588035); kenari registry p127 (badge-fallback, no upstream mark); 44 provider tests
+
+## PR #2294 — Add Nube.sh OpenAI-compatible provider
+
+- url: https://github.com/decolua/9router/pull/2294
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 907daab11 (ae3e4b5e9+4b48e8753); nube p128 + icon + baselines re-snapshotted; conflict resolved by renumbering (nube p128, firecrawl p129)
+
+## PR #2291 — fix(mitm): replace net session with fltmc for Windows admin check
+
+- url: https://github.com/decolua/9router/pull/2291
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge ff1227633 (74cd1b533); fltmc replaces net session in winElevated + antigravity-mitm route; mitm-admin-check.test.js
+
+## PR #2253 — feat: add self-hosted FireCrawl provider
+
+- url: https://github.com/decolua/9router/pull/2253
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge b0e7d13bf (5aeb1ff76)+220b825b4+393f618d6; firecrawl_custom p129, env-based FIRECRAWL_* config, /v2/scrape, no-auth custom; fixture credential literals restructured to pass secret-scan; 9 tests
+
+## PR #2247 — fix: guard against null modelAliases values causing startsWith crash
+
+- url: https://github.com/decolua/9router/pull/2247
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 912ea9166 (711a573a1); ModelSelectModal typeof-string guards before startsWith
+
+## PR #2216 — fix: cleanup MITM hosts on exit
+
+- url: https://github.com/decolua/9router/pull/2216
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 2979efcf3; cli/hooks/cleanupMitmHosts.js wired at both kill sites + SIGTERM-before-SIGKILL sleepSync(400); prefers fork dnsConfig removeAllDNSEntriesSync
+
+## PR #2178 — fix(embeddings): forward input_type to provider request body
+
+- url: https://github.com/decolua/9router/pull/2178
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge e4d887c70 (68c5294e0); buildBody forwards input_type; openai embedding provider passes when set; 54 tests
+
+## PR #2177 — Remove Deno Deploy relay option
+
+- url: https://github.com/decolua/9router/pull/2177
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge e448d4ea7 (053120ae3); Deno Deploy relay removed (route, page modal, VALID_PROXY_TYPES, connectionProxy checks)
+
+## PR #2147 — feat(xai): register XaiExecutor with reasoning-effort suffix parsing and allow/deny list
+
+- url: https://github.com/decolua/9router/pull/2147
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge c3d49b0b5; XaiExecutor registered (import + registration + re-export); xai-executor.test.js 4 cases
+
+## PR #2143 — fix(github): drop trailing assistant prefill for Copilot chat
+
+- url: https://github.com/decolua/9router/pull/2143
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 3f6bf7cb1 (cb586cb8e); github dropTrailingAssistantPrefill in sanitizeMessagesForChatCompletions; 6 tests
+
+## PR #2140 — feat(fireworks): replace deprecated models with 16 new LLMs, provider pricing/capabilities, and logo
+
+- url: https://github.com/decolua/9router/pull/2140
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 1c66e8bfa (52b05a7fd); fireworks 16 current LLM rows + thinkingConfig, capabilities thinkingFormat openai, PROVIDER_PRICING rates, real 256px logo; 28 tests
+

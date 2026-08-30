@@ -1680,17 +1680,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2313 — feat(kenari): add Kenari OpenAI-compatible gateway provider
-
-- url: https://github.com/decolua/9router/pull/2313
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2299 — fix(sse): strip ANSI/VT100 codes from gc/ stream frames (#2273)
 
 - url: https://github.com/decolua/9router/pull/2299
@@ -1705,28 +1694,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2298 — fix(chat): strip orphaned tool results before dispatch (#2236)
 
 - url: https://github.com/decolua/9router/pull/2298
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2294 — Add Nube.sh OpenAI-compatible provider
-
-- url: https://github.com/decolua/9router/pull/2294
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2291 — fix(mitm): replace net session with fltmc for Windows admin check
-
-- url: https://github.com/decolua/9router/pull/2291
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1823,28 +1790,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2253 — feat: add self-hosted FireCrawl provider
-
-- url: https://github.com/decolua/9router/pull/2253
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2247 — fix: guard against null modelAliases values causing startsWith crash
-
-- url: https://github.com/decolua/9router/pull/2247
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2245 — fix: add error boundary for combos page
 
 - url: https://github.com/decolua/9router/pull/2245
@@ -1889,31 +1834,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2216 — fix: cleanup MITM hosts on exit
-
-- url: https://github.com/decolua/9router/pull/2216
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2203 — feat: Per-Key Combo Access Control
 
 - url: https://github.com/decolua/9router/pull/2203
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2190 — fix(claude): keep thinking out of visible content
-
-- url: https://github.com/decolua/9router/pull/2190
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1936,28 +1859,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2183 — fix(kiro): stop injecting fake 'continue' user turn on tool-result turns
 
 - url: https://github.com/decolua/9router/pull/2183
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2178 — fix(embeddings): forward input_type to provider request body
-
-- url: https://github.com/decolua/9router/pull/2178
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2177 — Remove Deno Deploy relay option
-
-- url: https://github.com/decolua/9router/pull/2177
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -2024,39 +1925,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2148 — feat(cursor): add Cursor identity backfill, usage tracking, and OAuth executor fixes
 
 - url: https://github.com/decolua/9router/pull/2148
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2147 — feat(xai): register XaiExecutor with reasoning-effort suffix parsing and allow/deny list
-
-- url: https://github.com/decolua/9router/pull/2147
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2143 — fix(github): drop trailing assistant prefill for Copilot chat
-
-- url: https://github.com/decolua/9router/pull/2143
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2140 — feat(fireworks): replace deprecated models with 16 new LLMs, provider pricing/capabilities, and logo
-
-- url: https://github.com/decolua/9router/pull/2140
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
