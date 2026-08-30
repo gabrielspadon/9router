@@ -7,7 +7,7 @@ import { cn } from "@/shared/utils/cn";
 // .unlazy/TOKEN-CONTRACT.md section 1.
 const variants = {
   primary:
-    "bg-brand-solid text-brand-on hover:bg-brand-solid/90 shadow-soft disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",
+    "bg-brand-solid text-brand-on hover:bg-brand-solid-hover shadow-soft disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",
   secondary:
     "bg-surface-2 text-text-main border border-border hover:bg-surface-3 disabled:opacity-50",
   ghost: "text-text-muted hover:bg-surface-2 hover:text-text-main",
@@ -18,7 +18,7 @@ const variants = {
   // danger or brand use this; everything with a stock colour uses `ghost`.
   bare: "",
   danger:
-    "bg-danger-solid text-danger-on hover:bg-danger-solid/90 shadow-soft disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",
+    "bg-danger-solid text-danger-on hover:bg-danger-solid-hover shadow-soft disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",
 };
 
 // Deprecated aliases kept so existing call sites keep rendering while they are

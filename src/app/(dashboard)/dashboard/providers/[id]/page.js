@@ -1498,7 +1498,7 @@ export default function ProviderDetailPage() {
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="focus-ring inline-flex shrink-0 justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors duration-150 hover:bg-info-solid/90 sm:py-0.5"
+              className="focus-ring inline-flex shrink-0 justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors duration-150 hover:bg-info-solid-hover sm:py-0.5"
             >
               Get API Key →
             </a>
