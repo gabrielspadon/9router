@@ -11,6 +11,15 @@ const OLLAMA_CONFIG = Object.freeze({
 const TARGET = "https://example.com/article";
 const API_KEY = "ollama_test_key";
 const originalFetch = globalThis.fetch;
+const PLUMBING_MOCKS = [
+  "@/shared/constants/providers.js",
+  "open-sse/handlers/fetch/index.js",
+  "@/sse/services/auth.js",
+  "@/lib/localDb",
+  "@/sse/services/tokenRefresh.js",
+  "@/sse/utils/logger.js",
+  "@/shared/utils/ssrfGuard.js",
+];
 
 function successResponse(payload = { title: "Example", content: "Hello", links: [] }, init = {}) {
   return new Response(JSON.stringify(payload), {
@@ -97,6 +106,56 @@ function captureAssertion(assertion) {
   return assertion.then(() => null, (error) => error);
 }
 
+async function importFetchHandlerForPlumbing({ noAuth = false } = {}) {
+  vi.resetModules();
+  const mocks = {
+    handleFetchCore: vi.fn().mockResolvedValue({
+      success: true,
+      data: { provider: "transport-fixture", content: { text: "ok" } },
+    }),
+    getProviderCredentials: vi.fn(),
+    checkAndRefreshToken: vi.fn(async (_provider, credentials) => credentials),
+  };
+
+  vi.doMock("@/shared/constants/providers.js", () => ({
+    AI_PROVIDERS: {
+      "transport-fixture": {
+        id: "transport-fixture",
+        noAuth,
+        fetchConfig: { formats: ["markdown"], maxCharacters: 200000, timeoutMs: 30000 },
+      },
+    },
+    resolveProviderId: (value) => value,
+  }));
+  vi.doMock("open-sse/handlers/fetch/index.js", () => ({ handleFetchCore: mocks.handleFetchCore }));
+  vi.doMock("@/sse/services/auth.js", () => ({
+    getProviderCredentials: mocks.getProviderCredentials,
+    markAccountUnavailable: vi.fn(),
+    clearAccountError: vi.fn(),
+    extractApiKey: vi.fn(() => null),
+    isValidApiKey: vi.fn(),
+  }));
+  vi.doMock("@/lib/localDb", () => ({
+    getSettings: vi.fn(async () => ({ requireApiKey: false })),
+    getCombos: vi.fn(async () => []),
+  }));
+  vi.doMock("@/sse/services/tokenRefresh.js", () => ({
+    checkAndRefreshToken: mocks.checkAndRefreshToken,
+    updateProviderCredentials: vi.fn(),
+  }));
+  vi.doMock("@/sse/utils/logger.js", () => ({
+    request: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    maskKey: vi.fn(),
+  }));
+  vi.doMock("@/shared/utils/ssrfGuard.js", () => ({ assertPublicUrl: vi.fn() }));
+
+  return { handleFetch: (await import("@/sse/handlers/fetch.js")).handleFetch, mocks };
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   globalThis.fetch = vi.fn();
@@ -105,6 +164,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   globalThis.fetch = originalFetch;
+  for (const specifier of PLUMBING_MOCKS) vi.doUnmock(specifier);
+  vi.resetModules();
   vi.restoreAllMocks();
 });
 
@@ -982,5 +1043,88 @@ describe("Ollama default proxy transport", () => {
       vi.resetModules();
       globalThis.fetch = priorFetch;
     }
+  });
+});
+
+describe("application signal and proxy plumbing", () => {
+  it("passes the Request signal and resolved connection proxy policy", async () => {
+    const providerSpecificData = {
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:3128",
+      connectionNoProxy: "localhost,127.0.0.1",
+      connectionProxyPoolId: "pool-a",
+      vercelRelayUrl: "https://relay.test/egress",
+      strictProxy: true,
+    };
+    const caller = new AbortController();
+    const { handleFetch, mocks } = await importFetchHandlerForPlumbing();
+    mocks.getProviderCredentials.mockResolvedValue({
+      apiKey: API_KEY,
+      connectionId: "connection-a",
+      connectionName: "Ollama A",
+      providerSpecificData,
+    });
+    const request = new Request("http://localhost/v1/web/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "transport-fixture", url: TARGET }),
+      signal: caller.signal,
+    });
+
+    const response = await handleFetch(request);
+
+    expect(response.status).toBe(200);
+    const coreArgs = mocks.handleFetchCore.mock.calls[0][0];
+    expect(coreArgs.signal).toBe(request.signal);
+    expect(coreArgs.signal).not.toBe(caller.signal);
+    expect(coreArgs.proxyOptions).toEqual({
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:3128",
+      connectionNoProxy: "localhost,127.0.0.1",
+      vercelRelayUrl: "https://relay.test/egress",
+      strictProxy: true,
+    });
+    expect(coreArgs).not.toHaveProperty("transport");
+    expect(coreArgs.proxyOptions).not.toHaveProperty("connectionProxyPoolId");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledWith("transport-fixture", expect.any(Set));
+
+    const reason = new DOMException("client left", "AbortError");
+    caller.abort(reason);
+    expect(request.signal.aborted).toBe(true);
+    expect(request.signal.reason).toBe(reason);
+    expect(coreArgs.signal.reason).toBe(reason);
+  });
+
+  it("passes the Request signal and normalized direct policy for no-auth providers", async () => {
+    const caller = new AbortController();
+    const { handleFetch, mocks } = await importFetchHandlerForPlumbing({ noAuth: true });
+    const request = new Request("http://localhost/v1/web/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "transport-fixture", url: TARGET }),
+      signal: caller.signal,
+    });
+
+    const response = await handleFetch(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+    const coreArgs = mocks.handleFetchCore.mock.calls[0][0];
+    expect(coreArgs.signal).toBe(request.signal);
+    expect(coreArgs.signal).not.toBe(caller.signal);
+    expect(coreArgs.proxyOptions).toEqual({
+      connectionProxyEnabled: false,
+      connectionProxyUrl: "",
+      connectionNoProxy: "",
+      vercelRelayUrl: "",
+      strictProxy: false,
+    });
+    expect(coreArgs).not.toHaveProperty("transport");
+
+    const reason = new DOMException("client left", "AbortError");
+    caller.abort(reason);
+    expect(request.signal.aborted).toBe(true);
+    expect(request.signal.reason).toBe(reason);
+    expect(coreArgs.signal.reason).toBe(reason);
   });
 });
