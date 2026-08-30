@@ -49,9 +49,7 @@ export class ClaudeClassifierValidationError extends Error {
 
 export function isClaudeClassifierRequest(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  if (Object.hasOwn(body, "stream")
-      && body.stream !== false
-      && body.stream !== undefined) return false;
+  if (Object.hasOwn(body, "stream") && body.stream !== false) return false;
 
   const systemText = typeof body.system === "string"
     ? body.system
@@ -192,9 +190,11 @@ function structuralEqual(left, right) {
 function parseSseFrame(rawFrame) {
   const lines = rawFrame.replace(/\r\n/gu, "\n").split("\n");
   let eventType = null;
+  let hasExplicitEvent = false;
   const dataLines = [];
   for (const line of lines) {
     if (line.startsWith("event:")) {
+      hasExplicitEvent = true;
       eventType = line.slice(6).trim();
     } else if (line.startsWith("data:")) {
       const data = line.slice(5);
@@ -206,10 +206,22 @@ function parseSseFrame(rawFrame) {
   if (data.trim() === "[DONE]") return { done: true };
   try {
     const parsed = JSON.parse(data);
-    return { eventType: eventType || parsed?.type || "", parsed };
+    return {
+      eventType: hasExplicitEvent ? eventType : parsed?.type || "",
+      parsed,
+    };
   } catch {
     return { malformed: true };
   }
+}
+
+function exposesResponsePayload(parsed) {
+  if (!parsed || typeof parsed !== "object") return false;
+  return Object.hasOwn(parsed, "item")
+    || Object.hasOwn(parsed, "content")
+    || (parsed.response
+      && typeof parsed.response === "object"
+      && Object.hasOwn(parsed.response, "output"));
 }
 
 function successfulTerminal(eventType, parsed) {
@@ -365,6 +377,9 @@ export async function projectResponsesClassifierStream(body, stream) {
       return;
     }
     if (RESPONSES_METADATA_EVENTS.has(eventType)) {
+      if (exposesResponsePayload(parsed)) {
+        appendMalformed(ordinal, null, eventType);
+      }
       return;
     }
     if (parsed?.item || parsed?.content || parsed?.response?.output) {

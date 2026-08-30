@@ -43,6 +43,7 @@ const STAGE_TWO_BODY = deepFreeze({
   system: [{ type: "text", text: `${SYSTEM_PREFIX}: verify the first result.` }],
   messages: [{ role: "user", content: "Verify this action." }],
 });
+const withoutStream = ({ stream: _stream, ...body }) => body;
 const CLASSIFIER_ERROR = {
   error: {
     message:
@@ -159,8 +160,7 @@ describe("Claude classifier request detector", () => {
     [
       "stage one first system block",
       {
-        ...STAGE_ONE_BODY,
-        stream: undefined,
+        ...withoutStream(STAGE_ONE_BODY),
         system: [{ type: "text", text: `${SYSTEM_PREFIX} valid.` }],
         stop_sequences: ["other", "  </block>  "],
       },
@@ -171,7 +171,7 @@ describe("Claude classifier request detector", () => {
     ],
     [
       "stage two empty stops",
-      { ...STAGE_TWO_BODY, stream: undefined, stop_sequences: [] },
+      { ...withoutStream(STAGE_TWO_BODY), stop_sequences: [] },
     ],
   ])("detects %s", (_name, body) => {
     const before = structuredClone(body);
@@ -199,7 +199,7 @@ describe("Claude classifier request detector", () => {
     expect(isClaudeClassifierRequest(body)).toBe(false);
   });
 
-  it.each([true, null, "false", 0, [], {}])(
+  it.each([undefined, true, null, "false", 0, [], {}])(
     "rejects stream value %j",
     (stream) => {
       expect(isClaudeClassifierRequest({ ...STAGE_ONE_BODY, stream })).toBe(false);
@@ -802,6 +802,32 @@ describe("lossless Responses classifier projection", () => {
     );
     expect(projection.entries.some((entry) => entry.kind === "malformed")).toBe(true);
   });
+
+  it("ignores content-free Responses metadata", async () => {
+    const projection = await projectResponsesClassifierStream(
+      STAGE_ONE_BODY,
+      readableFromChunks([
+        frame("response.created", {
+          type: "response.created",
+          response: { id: "resp_classifier_1700000000", status: "in_progress" },
+        }),
+        doneFrame(textItem("<block>no</block>")),
+        terminalFrame(),
+      ]),
+    );
+
+    expect(projection.entries).toEqual([
+      projectionEntry({
+        kind: "text",
+        eventOrdinal: 1,
+        outputIndex: 0,
+        itemIndex: 0,
+        blockIndex: 0,
+        type: "output_text",
+        text: "<block>no</block>",
+      }),
+    ]);
+  });
 });
 
 describe("Claude Code response classifier validation", () => {
@@ -857,6 +883,56 @@ describe("Claude Code response classifier validation", () => {
   ])("rejects raw Responses SSE ambiguity from %s", async (_name, chunks) => {
     const result = await handleForcedSSEToJson(
       forcedResponsesContext(STAGE_ONE_BODY, chunks),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects actionable output hidden in recognized metadata", async () => {
+    const safeItem = {
+      id: "msg_classifier_safe",
+      ...textItem("<block>no</block>"),
+    };
+    const result = await handleForcedSSEToJson(
+      forcedResponsesContext(STAGE_ONE_BODY, [
+        frame("response.created", {
+          type: "response.created",
+          response: {
+            id: "resp_classifier_1700000000",
+            output: [{ id: "ct_hidden", type: "custom_tool_call", name: "shell", input: "pwd" }],
+          },
+        }),
+        doneFrame(safeItem),
+        terminalFrame([safeItem]),
+      ]),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects a blank explicit SSE event instead of falling back to JSON type", async () => {
+    const safeItem = {
+      id: "msg_classifier_safe",
+      ...textItem("<block>no</block>"),
+    };
+    const blankEventTerminal = `event:\ndata: ${JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp_classifier_1700000000",
+        status: "completed",
+        output: [safeItem],
+        usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
+      },
+    })}\n\n`;
+    const result = await handleForcedSSEToJson(
+      forcedResponsesContext(STAGE_ONE_BODY, [
+        doneFrame(safeItem),
+        blankEventTerminal,
+      ]),
     );
 
     expect(result.success).toBe(false);
