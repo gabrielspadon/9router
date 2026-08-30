@@ -431,7 +431,7 @@ function convertOpenAIToKiro(chunk, state) {
   }
 
   if (frames.length === 0) {
-    // اولین چانک ممکنه فقط role/empty باشه — initial رو همون‌جا بفرست
+    // The first chunk may carry only role/empty, so send the initial frame here.
     if (!state.initialSent) return withInitialFrame(state, null);
     return null;
   }

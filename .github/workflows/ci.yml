@@ -39,7 +39,6 @@ jobs:
       # package-lock.json is in .gitignore and no lockfile is committed, so
       # `npm ci` cannot resolve a tree and setup-node's npm cache has nothing to
       # key on. `npm install` is the install command everywhere in this repo,
-      # matching gitbook-pages.yml.
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 

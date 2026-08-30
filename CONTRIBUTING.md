@@ -16,7 +16,6 @@ and [`open-sse/AGENTS.md`](open-sse/AGENTS.md) before changing anything under
 | `src/` | Next.js app, dashboard UI, dashboard and compatibility APIs |
 | `open-sse/` | Provider-agnostic routing and translation engine |
 | `cli/` | The `9router` npm launcher, a separate package with its own version |
-| `gitbook/` | Documentation site, built and deployed on its own |
 | `tests/` | Vitest suite, an independent ESM package |
 | `scripts/` | Build, deploy and verification helpers |
 

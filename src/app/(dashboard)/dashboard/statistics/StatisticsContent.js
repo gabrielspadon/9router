@@ -37,7 +37,7 @@ const fmtTokens = (n) => {
 
 const fmtPct = (n) => `${((n || 0) * 100).toFixed(1)}%`;
 const fmtDur = (ms) => (ms ? `${(ms / 1000).toFixed(1)}s` : "-");
-// "用时/首字" — total latency / time-to-first-token, e.g. 2.6s/0.3s
+// Latency pair, total latency over time-to-first-token, e.g. 2.6s/0.3s
 const fmtLatencyPair = (total, ttft) => {
   if (!total && !ttft) return "-";
   return `${fmtDur(total)}/${fmtDur(ttft)}`;

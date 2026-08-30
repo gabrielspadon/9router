@@ -10,7 +10,6 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
-import NineRemotePromoModal from "./NineRemotePromoModal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt"];
@@ -64,8 +63,6 @@ export const HIDEABLE_NAV_ITEMS = [
   { id: "mediaProviders", label: "Media Providers" },
   { id: "proxyPools", label: "Proxy Pools", href: "/dashboard/proxy-pools" },
   { id: "skills", label: "Skills", href: "/dashboard/skills" },
-  { id: "nineRemote", label: "9Remote" },
-  { id: "nineEnglish", label: "9English" },
 ];
 
 const NAV_ID_BY_HREF = Object.fromEntries(
@@ -86,7 +83,6 @@ const systemItems = [
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -109,7 +105,7 @@ export default function Sidebar({ onClose }) {
         })
         .catch(() => {});
     load();
-    // Settings 页编辑 hiddenNavItems 后即时刷新侧栏
+    // Refresh the rail immediately after hiddenNavItems is edited in Settings
     window.addEventListener("hidden-nav-changed", load);
     return () => window.removeEventListener("hidden-nav-changed", load);
   }, []);
@@ -416,40 +412,7 @@ export default function Sidebar({ onClose }) {
               ) : null;
             })}
 
-            {/* Remote */}
-            {!isNavHidden("nineRemote") && (
-              <button
-                onClick={() => setShowRemoteModal(true)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                  "text-text-muted hover:bg-surface-2 hover:text-text-main",
-                )}
-              >
-                <span className="material-symbols-outlined text-[18px] group-hover:text-brand transition-colors">
-                  computer
-                </span>
-                <span className="text-[13px] font-medium">9Remote</span>
-              </button>
-            )}
 
-            {/* 9English */}
-            {!isNavHidden("nineEnglish") && (
-              <a
-                href="https://9english.net/"
-                target="_blank"
-                rel="noreferrer"
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                  "text-text-muted hover:bg-surface-2 hover:text-text-main",
-                )}
-              >
-                <span className="material-symbols-outlined text-[18px] group-hover:text-brand transition-colors">
-                  translate
-                </span>
-                <span className="text-[13px] font-medium">9English</span>
-              </a>
-            )}
 
             {/* Settings */}
             <Link
@@ -478,11 +441,6 @@ export default function Sidebar({ onClose }) {
         </nav>
       </aside>
 
-      {/* Remote Promo Modal */}
-      <NineRemotePromoModal
-        isOpen={showRemoteModal}
-        onClose={() => setShowRemoteModal(false)}
-      />
 
       {/* Update Confirmation Modal */}
       <ConfirmModal

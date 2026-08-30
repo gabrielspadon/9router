@@ -22,9 +22,9 @@ export default {
   category: "apikey",
   hasProviderSpecificData: true,
   regions: [
-    { id: "sgp", label: "Singapore (新加坡)" },
-    { id: "cn", label: "China (中国大陆)" },
-    { id: "ams", label: "Amsterdam (阿姆斯特丹)" },
+    { id: "sgp", label: "Singapore" },
+    { id: "cn", label: "China (Mainland)" },
+    { id: "ams", label: "Amsterdam" },
   ],
   defaultRegion: "sgp",
   transport: {

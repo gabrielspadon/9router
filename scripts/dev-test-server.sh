@@ -1,7 +1,9 @@
 #!/bin/bash
-# 9router 测试实例：源码启动、独立端口、独立 DATA_DIR —— 与生产(20128)完全隔离。
-# 用途：改完源码先在这里验证（scripts/smoke-test.mjs），通过后再 /tmp/9router-deploy.sh 发布。
-# 用法: scripts/dev-test-server.sh [up|down|restart|status]   (SKIP_BUILD=1 跳过重新 build)
+# 9router test instance. Runs from source on its own port with its own DATA_DIR,
+# fully isolated from production (20128).
+# Purpose: verify source changes here first with scripts/smoke-test.mjs, then publish
+# with /tmp/9router-deploy.sh.
+# Usage: scripts/dev-test-server.sh [up|down|restart|status]   (SKIP_BUILD=1 skips the rebuild)
 set -euo pipefail
 
 PORT=20129
@@ -40,18 +42,20 @@ down() {
   if alive; then local p; p=$(pid); kill "$p" && rm -f "$PID_FILE" && echo "stopped pid $p"; else echo "not running"; fi
 }
 
-# 冷拷贝生产数据到测试 DATA_DIR（sqlite3 .backup 在线安全备份，不锁不碰生产文件）。
-# 之后 20129 上看到与生产相同的连接/节点/统计数据，任何页面操作只写测试副本。
+# Cold-copy production data into the test DATA_DIR. sqlite3 .backup is an online-safe
+# backup, it takes no lock and never writes to the production files.
+# Afterwards 20129 shows the same connections, nodes and statistics as production, and
+# any action in the UI writes only to the test copy.
 sync() {
   down >/dev/null 2>&1 || true
-  echo "[sync] 生产 DB → ${DATA_DIR}（.backup，只读源）"
+  echo "[sync] production DB → ${DATA_DIR} (.backup, read-only source)"
   mkdir -p "$DATA_DIR/db"
   sqlite3 "$HOME/.9router/db/data.sqlite" ".backup '$DATA_DIR/db/data.sqlite'"
   rm -f "$DATA_DIR"/db/data.sqlite-wal "$DATA_DIR"/db/data.sqlite-shm
   for f in usage.json log.txt; do
     [ -f "$HOME/.9router/$f" ] && cp "$HOME/.9router/$f" "$DATA_DIR/$f" 2>/dev/null || true
   done
-  echo "done. 启动: scripts/dev-test-server.sh up  → http://localhost:${PORT}（密码与生产相同）"
+  echo "done. start with: scripts/dev-test-server.sh up  → http://localhost:${PORT} (same password as production)"
 }
 
 case "${1:-up}" in

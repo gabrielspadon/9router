@@ -8,8 +8,9 @@
 .fonts-loaded .material-symbols-outlined { visibility: visible; }
 
 /* ============================================================
-   9Router palette — adopted from 9remote_private/web
-   Brand orange (dark) / soft coral (light), neutral warm bases
+   9Router palette. Near-black and mineral white with one
+   electric accent. Both themes are authored independently
+   rather than inverted; see docs/design/design-system.md.
    ============================================================ */
 :root {
   /* Brand scale (light) - centered on #E56A4A */
