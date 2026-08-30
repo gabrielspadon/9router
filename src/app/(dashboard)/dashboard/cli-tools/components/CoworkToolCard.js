@@ -361,9 +361,9 @@ export default function CoworkToolCard({
                             <span className="text-xs px-1 py-0.5 rounded bg-surface-2 text-text-muted metric whitespace-nowrap">+{p.toolNames.length - 6}</span>
                           )}
                         </div>
-                        <button onClick={() => removePlugin(p.name)} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto focus-ring">
+                        <Button variant="bare" size="icon-sm" onClick={() => removePlugin(p.name)} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto">
                           <span className="material-symbols-outlined text-[12px]">close</span>
-                        </button>
+                        </Button>
                       </div>
                     ))}
                     {/* Custom plugins */}
@@ -372,9 +372,9 @@ export default function CoworkToolCard({
                         <span className="text-xs font-medium min-w-0 truncate flex-shrink-0">{p.name}</span>
                         <span className="text-xs px-1 py-0.5 rounded bg-surface-2 text-text-muted shrink-0">custom</span>
                         <span className="flex-1 text-xs text-text-muted truncate">{p.url}</span>
-                        <button onClick={() => setCustomPlugins(customPlugins.filter((x) => x.name !== p.name))} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto focus-ring">
+                        <Button variant="bare" size="icon-sm" onClick={() => setCustomPlugins(customPlugins.filter((x) => x.name !== p.name))} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto">
                           <span className="material-symbols-outlined text-[12px]">close</span>
-                        </button>
+                        </Button>
                       </div>
                     ))}
                     {plugins.filter((p) => p.name !== "exa").length === 0 && customPlugins.length === 0 && (
@@ -543,9 +543,9 @@ export default function CoworkToolCard({
           <div className="bg-surface border border-border rounded-xl shadow-[var(--shadow-elev)] w-full max-w-sm mx-4 p-5 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Add Custom MCP</h3>
-              <button onClick={() => setAddMcpOpen(false)} aria-label="Close" className="text-text-muted hover:text-text-main focus-ring">
+              <Button variant="ghost" size="icon" onClick={() => setAddMcpOpen(false)} aria-label="Close">
                 <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              </Button>
             </div>
 
             <div className="flex flex-col gap-2">

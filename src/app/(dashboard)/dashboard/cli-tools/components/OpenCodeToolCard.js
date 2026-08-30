@@ -415,13 +415,14 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                     Select Model
                   </Button>
                   {subagentModel && (
-                    <button
+                    <Button
+                      variant="bare" size="icon-sm"
                       onClick={() => setSubagentModel("")}
-                      aria-label="Clear (will use main model)" className="p-1 text-text-muted hover:text-danger rounded transition-colors focus-ring"
+                      aria-label="Clear (will use main model)" className="text-text-muted hover:text-danger"
                       title="Clear (will use main model)"
                     >
                       <span className="material-symbols-outlined text-[14px]">close</span>
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>

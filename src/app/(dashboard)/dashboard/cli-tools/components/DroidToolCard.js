@@ -329,9 +329,9 @@ export default function DroidToolCard({
                         {modelList.map((id) => (
                           <div key={id} className="flex items-center gap-1.5 px-2 py-1 bg-surface-2 rounded border border-border">
                             <span className="flex-1 text-xs font-mono truncate">{id}</span>
-                            <button onClick={() => removeModel(id)} aria-label={`Remove ${id}`} className="text-text-muted hover:text-danger transition-colors shrink-0 focus-ring" title="Remove">
+                            <Button variant="bare" size="icon-sm" onClick={() => removeModel(id)} aria-label={`Remove ${id}`} className="text-text-muted hover:text-danger shrink-0" title="Remove">
                               <span className="material-symbols-outlined text-[12px]">close</span>
-                            </button>
+                            </Button>
                           </div>
                         ))}
                       </div>

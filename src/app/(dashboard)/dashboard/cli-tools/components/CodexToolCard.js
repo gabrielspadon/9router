@@ -306,7 +306,7 @@ model = "${effectiveSubagentModel}"
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
                     <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} aria-label="Clear" className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors focus-ring" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    {selectedModel && <Button variant="bare" size="icon-sm" onClick={() => setSelectedModel("")} aria-label="Clear" className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-danger" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></Button>}
                   </div>
                   <Button
                     variant="secondary"
@@ -332,13 +332,14 @@ model = "${effectiveSubagentModel}"
                       className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5"
                     />
                     {subagentModel && (
-                      <button
+                      <Button
+                        variant="bare" size="icon-sm"
                         onClick={() => setSubagentModel("")}
-                        aria-label="Clear (will use main model)" className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors focus-ring"
+                        aria-label="Clear (will use main model)" className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-danger"
                         title="Clear (will use main model)"
                       >
                         <span className="material-symbols-outlined text-[14px]">close</span>
-                      </button>
+                      </Button>
                     )}
                   </div>
                   <Button

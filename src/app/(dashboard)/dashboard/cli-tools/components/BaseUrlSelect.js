@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import Button from "@/shared/components/Button";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
@@ -155,9 +156,9 @@ export default function BaseUrlSelect({
           {canSave && <option value={SAVE_VALUE}>+ Save current as...</option>}
         </select>
         {isSaved && (
-          <button type="button" onClick={handleDeleteSaved} aria-label="Delete saved endpoint" className="p-1 text-text-muted hover:text-danger rounded transition-colors shrink-0 focus-ring" title="Delete saved endpoint">
+          <Button variant="bare" size="icon-sm" type="button" onClick={handleDeleteSaved} aria-label="Delete saved endpoint" className="text-text-muted hover:text-danger shrink-0" title="Delete saved endpoint">
             <span className="material-symbols-outlined text-[14px]">delete</span>
-          </button>
+          </Button>
         )}
       </div>
       {isCustom && (

@@ -94,13 +94,14 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               aria-label="Copy model id"
               className="shrink-0"
             />
-            <button
+            <Button
+              variant="bare" size="icon"
               onClick={() => setModelValue("")}
-              aria-label="Clear" className="p-2 text-text-muted hover:text-danger rounded transition-colors focus-ring"
+              aria-label="Clear" className="text-text-muted hover:text-danger"
               title="Clear"
             >
               <span className="material-symbols-outlined text-[18px]">close</span>
-            </button>
+            </Button>
           </>
         )}
       </div>

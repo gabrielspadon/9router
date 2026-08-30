@@ -209,16 +209,17 @@ export default function MitmToolCard({
                         className={`w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
                       />
                       {modelMappings[model.alias] && (
-                        <button
+                        <Button
+                          variant="bare" size="icon-sm"
                           onClick={() => {
                             handleModelMappingChange(model.alias, "");
                             saveMappings({ ...modelMappings, [model.alias]: "" });
                           }}
-                          aria-label="Clear" className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors focus-ring"
+                          aria-label="Clear" className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-danger"
                           title="Clear"
                         >
                           <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
+                        </Button>
                       )}
                     </div>
                     <Button

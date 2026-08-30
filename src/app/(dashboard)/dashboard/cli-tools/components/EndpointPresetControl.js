@@ -117,14 +117,15 @@ export default function EndpointPresetControl({
         Save
       </Button>
       {selectedPreset && (
-        <button
+        <Button
+          variant="bare" size="icon-sm"
           type="button"
           onClick={handleDelete}
-          aria-label="Delete selected preset" className="p-1 text-text-muted hover:text-danger rounded transition-colors focus-ring"
+          aria-label="Delete selected preset" className="text-text-muted hover:text-danger"
           title="Delete selected preset"
         >
           <span className="material-symbols-outlined text-[14px]">delete</span>
-        </button>
+        </Button>
       )}
     </div>
   );
