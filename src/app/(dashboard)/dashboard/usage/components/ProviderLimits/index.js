@@ -46,7 +46,7 @@ import {
 } from "./utils";
 import { createRefreshTimers, nextCountdown } from "./refreshTimers";
 import Card from "@/shared/components/Card";
-import { Badge } from "@/shared/components";
+import { Badge, Button } from "@/shared/components";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -1088,11 +1088,12 @@ export default function ProviderLimits() {
 
 
           {/* Refresh all button */}
-          <button
+          <Button
+            variant="bare" size="icon"
             type="button"
             onClick={() => refreshAll(true)}
             disabled={refreshingAll}
-            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:opacity-50"
+            className="shrink-0 border border-border text-xs text-text-main hover:bg-surface-2"
             title="Refresh all"
           >
             <span
@@ -1101,7 +1102,7 @@ export default function ProviderLimits() {
             >
               refresh
             </span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1265,62 +1266,67 @@ export default function ProviderLimits() {
                           </button>
                         </Tooltip>
                         <Tooltip text="View Codex reset credit expiry">
-                          <button
+                          <Button
+                            variant="bare" size="icon"
                             type="button"
                             onClick={() => handleViewCodexResetCredits(conn)}
                             disabled={isLoading || rowBusy}
                             aria-label="View Codex reset credit expiry"
-                            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+                            className="border border-border text-text-muted hover:bg-surface-2 hover:text-brand"
                           >
                             <span aria-hidden="true" className="material-symbols-outlined text-[17px]">schedule</span>
-                          </button>
+                          </Button>
                         </Tooltip>
                       </>
                     )}
                     {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
                       <Tooltip text={AUTO_PING_TOOLTIPS[conn.provider]}>
-                        <button
+                        <Button
+                          variant="bare" size="icon"
                           type="button"
                           onClick={() => toggleAutoPing(conn.id, conn.provider, !(autoPingMaps[conn.provider]?.[conn.id] === true))}
                           aria-label="Toggle auto-ping"
-                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-150 hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-brand" : "text-text-muted"}`}
+                          className={`hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-brand" : "text-text-muted"}`}
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
-                        </button>
+                        </Button>
                       </Tooltip>
                     )}
                     <Tooltip text="Refresh quota">
-                      <button
+                      <Button
+                        variant="bare" size="icon"
                         type="button"
                         onClick={() => refreshProvider(conn.id, conn.provider)}
                         disabled={isLoading || rowBusy}
                         aria-label="Refresh quota"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 transition-colors duration-150 disabled:opacity-50"
+                        className="hover:bg-surface-2"
                       >
                         <span aria-hidden="true"
                           className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
                         >
                           refresh
                         </span>
-                      </button>
+                      </Button>
                     </Tooltip>
                     {getHotReloadConfig(conn.provider, conn.authType) && (
                       <Tooltip text={getHotReloadConfig(conn.provider, conn.authType)?.tooltip || "Hot reload quota countdown"}>
-                        <button
+                        <Button
+                          variant="bare" size="icon"
                           type="button"
                           onClick={() => handleHotReloadConnection(conn)}
                           disabled={isLoading || rowBusy}
                           aria-label="Hot reload quota countdown"
-                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors duration-150 disabled:opacity-50 ${isHotReloading ? "text-brand" : ""}`}
+                          className={`hover:bg-surface-2 text-text-muted hover:text-brand ${isHotReloading ? "text-brand" : ""}`}
                         >
                           <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${isHotReloading ? "animate-spin" : ""}`}>
                             {isHotReloading ? "progress_activity" : "rocket_launch"}
                           </span>
-                        </button>
+                        </Button>
                       </Tooltip>
                     )}
                     <Tooltip text="Edit connection">
-                      <button
+                      <Button
+                        variant="bare" size="icon"
                         type="button"
                         onClick={() => {
                           setSelectedConnection(conn);
@@ -1328,27 +1334,28 @@ export default function ProviderLimits() {
                         }}
                         disabled={rowBusy}
                         aria-label="Edit connection"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors duration-150 disabled:opacity-50"
+                        className="hover:bg-surface-2 text-text-muted hover:text-brand"
                       >
                         <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                           edit
                         </span>
-                      </button>
+                      </Button>
                     </Tooltip>
                     <Tooltip text="Delete connection">
-                      <button
+                      <Button
+                        variant="bare" size="icon"
                         type="button"
                         onClick={() => handleDeleteConnection(conn.id)}
                         disabled={rowBusy}
                         aria-label="Delete connection"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-danger-soft text-danger transition-colors duration-150 disabled:opacity-50"
+                        className="hover:bg-danger-soft text-danger"
                       >
                         <span aria-hidden="true"
                           className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
                         >
                           delete
                         </span>
-                      </button>
+                      </Button>
                     </Tooltip>
                     <div
                       className="inline-flex items-center pl-0.5"
@@ -1546,7 +1553,8 @@ export default function ProviderLimits() {
               >
                 First Page
               </button>
-              <button
+              <Button
+                variant="bare" size="icon"
                 type="button"
                 onClick={() =>
                   setPage((currentPage) => Math.max(1, currentPage - 1))
@@ -1554,14 +1562,15 @@ export default function ProviderLimits() {
                 disabled={
                   pagination.page <= 1 || connectionsLoading || refreshingAll
                 }
-                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                className="border border-border text-text-main hover:bg-surface-2"
                 aria-label="Previous accounts page"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   chevron_left
                 </span>
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="bare" size="icon"
                 type="button"
                 onClick={() =>
                   setPage((currentPage) =>
@@ -1573,13 +1582,13 @@ export default function ProviderLimits() {
                   connectionsLoading ||
                   refreshingAll
                 }
-                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                className="border border-border text-text-main hover:bg-surface-2"
                 aria-label="Next accounts page"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   chevron_right
                 </span>
-              </button>
+              </Button>
               <button
                 type="button"
                 onClick={() => setPage(pagination.totalPages)}
@@ -1625,14 +1634,14 @@ export default function ProviderLimits() {
                   {getConnectionLabel(resetCreditsState.connection) || "Codex account"}
                 </p>
               </div>
-              <button
+              <Button
+                variant="ghost" size="icon"
                 type="button"
                 onClick={() => setResetCreditsState(null)}
-                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-text-main"
                 aria-label="Close reset credit expiry modal"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              </Button>
             </div>
 
             <div className="max-h-[70vh] overflow-auto bg-surface p-4">

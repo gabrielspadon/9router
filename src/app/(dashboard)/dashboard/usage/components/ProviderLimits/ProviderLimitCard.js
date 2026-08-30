@@ -7,6 +7,7 @@ import Badge from "@/shared/components/Badge";
 import QuotaProgressBar from "./QuotaProgressBar";
 import { calculatePercentage } from "./utils";
 
+import Button from "@/shared/components/Button";
 // A plan tier is a label, not a health state, so every tier reads neutral and
 // the plan name itself carries the distinction. See TOKEN-CONTRACT.md section 1.
 const planVariants = {
@@ -91,10 +92,11 @@ export default function ProviderLimitCard({
         </div>
 
         {/* Refresh Button */}
-        <button
+        <Button
+          variant="ghost" size="icon"
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="focus-ring shrink-0 p-2 rounded-lg text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="shrink-0"
           title="Refresh quota"
           aria-label={`Refresh quota for ${name || provider}`}
         >
@@ -106,7 +108,7 @@ export default function ProviderLimitCard({
           >
             refresh
           </span>
-        </button>
+        </Button>
       </div>
 
       {/* Loading State */}

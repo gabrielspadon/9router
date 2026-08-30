@@ -14,7 +14,7 @@ import {
   
   Legend,
 } from "recharts";
-import { Card, SegmentedControl, MultiSelect } from "@/shared/components";
+import { Button, Card, MultiSelect, SegmentedControl } from "@/shared/components";
 import Pagination from "@/shared/components/Pagination";
 
 const PERIODS = [
@@ -238,21 +238,21 @@ export default function StatisticsContent({ initialData }) {
                   className="focus-ring h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main"
                 />
               </div>
-              <button
+              <Button
+                variant="primary" size="md"
                 onClick={applyCustomRange}
-                className="focus-ring h-9 px-4 rounded-lg bg-brand-solid text-brand-on text-sm font-medium transition-colors duration-150 hover:opacity-90 cursor-pointer"
               >
                 Apply
-              </button>
+              </Button>
             </div>
           )}
           {hasFilter && (
-            <button
+            <Button
+              variant="ghost" size="md"
               onClick={resetFilters}
-              className="focus-ring h-9 px-3 text-sm text-text-muted hover:text-text-main transition-colors duration-150 cursor-pointer"
             >
               Reset
-            </button>
+            </Button>
           )}
         </div>
       </Card>
