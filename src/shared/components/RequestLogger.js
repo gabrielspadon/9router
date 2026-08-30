@@ -46,7 +46,7 @@ export default function RequestLogger() {
             <span>Auto Refresh (3s)</span>
             <div
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`focus-ring relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${autoRefresh ? "bg-primary" : "bg-surface-2 border border-border"
+              className={`focus-ring relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${autoRefresh ? "bg-brand-solid" : "bg-surface-2 border border-border"
                 }`}
             >
               <span
