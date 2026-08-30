@@ -10,6 +10,7 @@ import { APP_CONFIG } from '@/shared/constants/config';
 import { LOCALE_COOKIE, normalizeLocale } from '@/i18n/config';
 import { LOCALE_FLAGS } from '@/shared/constants/locales';
 import { HIDEABLE_NAV_ITEMS } from '@/shared/components/Sidebar';
+import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput";
 
 function getLocaleFromCookie() {
   if (typeof document === 'undefined') return 'en';
@@ -1766,6 +1767,20 @@ export default function ProfilePage() {
                 />
               </div>
             )}
+
+            <div className="pt-4 border-t border-border/50">
+              <ConnectTimeoutInput
+                value={settings.connectTimeoutMs}
+                disabled={loading}
+                onSaved={(value, nextSettings) => {
+                  setSettings((previous) => ({
+                    ...previous,
+                    ...nextSettings,
+                    connectTimeoutMs: value,
+                  }));
+                }}
+              />
+            </div>
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === 'round-robin'

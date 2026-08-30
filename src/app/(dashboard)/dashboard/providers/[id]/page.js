@@ -23,6 +23,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -83,6 +84,7 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [providerConnectTimeoutMs, setProviderConnectTimeoutMs] = useState(null);
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -355,6 +357,7 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setProviderConnectTimeoutMs(override.connectTimeoutMs ?? null);
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -1556,6 +1559,17 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Connections */}
+      <div className="rounded-lg border border-border bg-surface-1 p-4">
+        <div className="w-full sm:max-w-sm">
+          <ConnectTimeoutInput
+            providerId={providerId}
+            value={providerConnectTimeoutMs}
+            disabled={loading}
+            onSaved={(value) => setProviderConnectTimeoutMs(value)}
+          />
+        </div>
+      </div>
+
       {isFreeNoAuth ? (
         <NoAuthProxyCard providerId={providerId} />
       ) : (

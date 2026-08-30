@@ -127,4 +127,24 @@ describe("connect timeout input contract", () => {
     expect(componentSource).toContain("event.currentTarget.blur()");
     expect(componentSource).not.toContain("fetch(");
   });
+
+  it("renders global and provider controls from server-confirmed settings", () => {
+    const profileSource = readFileSync(
+      new URL("../../src/app/(dashboard)/dashboard/profile/page.js", import.meta.url),
+      "utf8",
+    );
+    const providerSource = readFileSync(
+      new URL("../../src/app/(dashboard)/dashboard/providers/[id]/page.js", import.meta.url),
+      "utf8",
+    );
+
+    expect(profileSource).toContain('import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput"');
+    expect(profileSource).toContain("<ConnectTimeoutInput");
+    expect(profileSource).toContain("value={settings.connectTimeoutMs}");
+    expect(profileSource).toContain("setSettings((previous)");
+    expect(providerSource).toContain('import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput"');
+    expect(providerSource).toContain("providerId={providerId}");
+    expect(providerSource).toContain("value={providerConnectTimeoutMs}");
+    expect(providerSource).toContain("setProviderConnectTimeoutMs(value)");
+  });
 });
