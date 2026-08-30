@@ -259,6 +259,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > cerebras → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > chenzk → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > chutes → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -830,18 +849,18 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimchi → headers (
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "kimchi/0.1.50",
+    "User-Agent": "kimchi/0.1.01",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "kimchi/0.1.50",
+    "User-Agent": "kimchi/0.1.01",
   },
   "oauth": {
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "kimchi/0.1.50",
+    "User-Agent": "kimchi/0.1.01",
   },
 }
 `;
@@ -887,6 +906,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > llm7 → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > meta → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1069,6 +1107,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > nous → headers (ap
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > novita → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > nvidia → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1108,6 +1165,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > ollama → headers (
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > openai → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > opencode-zen → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1499,8 +1575,8 @@ exports[`GOLDEN buildUrl (default executor providers) > bluesminds → url (stre
 
 exports[`GOLDEN buildUrl (default executor providers) > byteplus → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
-  "stream": "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
+  "nonStream": "https://ark.ap-southeast.bytepluses.com/api/v3/chat/completions",
+  "stream": "https://ark.ap-southeast.bytepluses.com/api/v3/chat/completions",
 }
 `;
 
@@ -1508,6 +1584,13 @@ exports[`GOLDEN buildUrl (default executor providers) > cerebras → url (stream
 {
   "nonStream": "https://api.cerebras.ai/v1/chat/completions",
   "stream": "https://api.cerebras.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > chenzk → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://chenzk.top/v1/chat/completions",
+  "stream": "https://chenzk.top/v1/chat/completions",
 }
 `;
 
@@ -1686,6 +1769,13 @@ exports[`GOLDEN buildUrl (default executor providers) > llm7 → url (stream + n
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > meta → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.meta.ai/v1/chat/completions",
+  "stream": "https://api.meta.ai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > minimax → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.minimax.io/anthropic/v1/messages?beta=true",
@@ -1742,6 +1832,13 @@ exports[`GOLDEN buildUrl (default executor providers) > nous → url (stream + n
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > novita → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.novita.ai/openai/v1/chat/completions",
+  "stream": "https://api.novita.ai/openai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > nvidia → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://integrate.api.nvidia.com/v1/chat/completions",
@@ -1760,6 +1857,13 @@ exports[`GOLDEN buildUrl (default executor providers) > openai → url (stream +
 {
   "nonStream": "https://api.openai.com/v1/chat/completions",
   "stream": "https://api.openai.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > opencode-zen → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://opencode.ai/zen/v1",
+  "stream": "https://opencode.ai/zen/v1",
 }
 `;
 
