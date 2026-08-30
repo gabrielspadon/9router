@@ -1195,16 +1195,18 @@ function ProviderTestResultsView({ results }) {
       {summary && (
         <div className="flex flex-wrap items-center gap-2 text-xs mb-1 sm:gap-3">
           <span className="text-text-muted">{modeLabel} Test</span>
-          <span className="px-2 py-0.5 rounded bg-success-soft text-success font-medium">
-            {summary.passed} passed
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-success-soft text-success font-medium">
+            <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden="true">check_circle</span>
+            <span className="metric">{summary.passed}</span> passed
           </span>
           {summary.failed > 0 && (
-            <span className="px-2 py-0.5 rounded bg-danger-soft text-danger font-medium">
-              {summary.failed} failed
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-danger-soft text-danger font-medium">
+              <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden="true">error</span>
+              <span className="metric">{summary.failed}</span> failed
             </span>
           )}
           <span className="text-text-muted sm:ml-auto">
-            {summary.total} tested
+            <span className="metric">{summary.total}</span> tested
           </span>
         </div>
       )}
@@ -1232,7 +1234,7 @@ function ProviderTestResultsView({ results }) {
             </span>
           )}
           <span
-            className={`shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+            className={`shrink-0 text-xs uppercase font-bold px-1.5 py-0.5 rounded ${
               r.valid
                 ? "bg-success-soft text-success"
                 : "bg-danger-soft text-danger"

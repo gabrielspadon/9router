@@ -282,36 +282,36 @@ export default function RequestDetailsTab() {
                     key={`${detail.id}-${index}`}
                     className="border-b border-border last:border-b-0 hover:bg-surface-2 transition-colors"
                   >
-                    <td className="whitespace-nowrap p-4 text-sm text-text-main">
+                    <td className="whitespace-nowrap px-4 py-3 text-sm metric text-text-main">
                       {new Date(detail.timestamp).toLocaleString()}
                     </td>
-                    <td className="max-w-[260px] truncate p-4 font-mono text-sm text-text-main">
+                    <td className="max-w-[260px] truncate px-4 py-3 font-mono text-sm text-text-main">
                       {detail.model}
                     </td>
-                    <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
+                    <td className="max-w-[180px] truncate px-4 py-3 text-sm text-text-main">
                        <span className="font-medium">
                          {getProviderName(detail.provider, providerNameCache)}
                        </span>
                      </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
+                    <td className="px-4 py-3 text-sm text-text-main text-right metric font-mono">
                       {getInputTokens(detail.tokens).toLocaleString()}
                     </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
+                    <td className="px-4 py-3 text-sm text-text-main text-right metric font-mono">
                       {getCachedTokens(detail.tokens) > 0 ? getCachedTokens(detail.tokens).toLocaleString() : "—"}
                     </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
+                    <td className="px-4 py-3 text-sm text-text-main text-right metric font-mono">
                       {getCacheCreationTokens(detail.tokens) > 0 ? getCacheCreationTokens(detail.tokens).toLocaleString() : "—"}
                     </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
+                    <td className="px-4 py-3 text-sm text-text-main text-right metric font-mono">
                       {detail.tokens?.completion_tokens?.toLocaleString() || 0}
                     </td>
-                    <td className="p-4 text-sm text-text-muted">
+                    <td className="px-4 py-3 text-sm text-text-muted">
                       <div className="flex flex-col gap-0.5">
-                        <div>TTFT: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
-                        <div>Total: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
+                        <div>TTFT: <span className="metric font-mono">{detail.latency?.ttft || 0}ms</span></div>
+                        <div>Total: <span className="metric font-mono">{detail.latency?.total || 0}ms</span></div>
                       </div>
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="px-4 py-3 text-center">
                       <Button
                         variant="outline"
                         size="sm"
@@ -355,7 +355,7 @@ export default function RequestDetailsTab() {
               </div>
               <div>
                 <span className="text-text-muted">Timestamp:</span>{" "}
-                <span className="text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
+                <span className="metric text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
               </div>
               <div>
                  <span className="text-text-muted">Provider:</span>{" "}
@@ -379,20 +379,20 @@ export default function RequestDetailsTab() {
               </div>
               <div>
                 <span className="text-text-muted">Latency:</span>{" "}
-                <span className="text-text-main font-mono">
+                <span className="metric text-text-main font-mono">
                   TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
                 </span>
               </div>
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
-                <span className="text-text-main font-mono">
+                <span className="metric text-text-main font-mono">
                   {getInputTokens(selectedDetail.tokens).toLocaleString()}
                 </span>
               </div>
               {getCachedTokens(selectedDetail.tokens) > 0 && (
                 <div>
                   <span className="text-text-muted">Cached Tokens:</span>{" "}
-                  <span className="text-text-main font-mono">
+                  <span className="metric text-text-main font-mono">
                     {getCachedTokens(selectedDetail.tokens).toLocaleString()}
                   </span>
                 </div>
@@ -400,14 +400,14 @@ export default function RequestDetailsTab() {
               {getCacheCreationTokens(selectedDetail.tokens) > 0 && (
                 <div>
                   <span className="text-text-muted">Cache Creation:</span>{" "}
-                  <span className="text-text-main font-mono">
+                  <span className="metric text-text-main font-mono">
                     {getCacheCreationTokens(selectedDetail.tokens).toLocaleString()}
                   </span>
                 </div>
               )}
               <div>
                 <span className="text-text-muted">Output Tokens:</span>{" "}
-                <span className="text-text-main font-mono">
+                <span className="metric text-text-main font-mono">
                   {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
                 </span>
               </div>

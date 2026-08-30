@@ -1590,7 +1590,7 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Connections */}
-      <div className="rounded-lg border border-border bg-surface-1 p-4">
+      <div className="rounded-lg border border-border bg-surface p-4">
         <div className="w-full space-y-4 sm:max-w-xl">
           <ConnectTimeoutInput
             providerId={providerId}
@@ -1718,7 +1718,7 @@ export default function ProviderDetailPage() {
                       }}
                       disabled={providerStrategySaving}
                       placeholder="1"
-                      className="focus-ring w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:border-primary"
+                      className="focus-ring w-14 px-2 py-1 text-xs border border-border rounded-md bg-bg focus:border-primary"
                     />
                   </div>
                 )}
@@ -1873,7 +1873,7 @@ export default function ProviderDetailPage() {
                 value={thinkingMode}
                 onChange={(e) => handleThinkingModeChange(e.target.value)}
                 title="Appends (level) suffix to copied model names"
-                className="focus-ring rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary"
+                className="focus-ring rounded-md border border-border bg-bg px-2 py-1 text-xs focus:border-primary"
               >
                 {providerThinkingLevels.map((opt) => (
                   <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>

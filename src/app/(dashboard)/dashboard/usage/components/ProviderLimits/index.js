@@ -1432,7 +1432,7 @@ export default function ProviderLimits() {
                                     Number.parseInt(e.target.value, 10) || 0,
                                   )
                                 }
-                                className="focus-ring w-14 rounded border border-border bg-background px-1 py-0.5 text-[11px] focus:border-primary"
+                                className="focus-ring w-14 rounded border border-border bg-bg px-1 py-0.5 text-[11px] focus:border-primary"
                                 aria-label={`Pause buffer for ${w.key}`}
                               />
                               <span className="text-[10px] text-text-muted">%</span>

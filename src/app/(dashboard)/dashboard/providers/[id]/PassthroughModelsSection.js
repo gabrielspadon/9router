@@ -139,7 +139,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="anthropic/claude-3-opus"
-            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:border-primary"
+            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-primary"
           />
         </div>
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>

@@ -42,7 +42,7 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
-        {isFree && <span className="text-[10px] font-bold text-success bg-success-soft px-1.5 py-0.5 rounded">FREE</span>}
+        {isFree && <span className="text-xs font-semibold text-text-muted bg-surface-2 border border-border px-1.5 py-0.5 rounded">FREE</span>}
         {isCustom && (
           <button onClick={onDeleteAlias} className="focus-ring p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity ml-auto" title="Remove custom model">
             <span className="material-symbols-outlined text-sm">close</span>
@@ -82,7 +82,7 @@ function AddCustomModelModal({ isOpen, onSave, onClose }) {
         <div>
           <label className="text-xs text-text-muted mb-1 block">Model ID</label>
           <input
-            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:border-primary"
+            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-primary"
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSave()}

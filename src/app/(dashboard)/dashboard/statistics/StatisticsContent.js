@@ -275,7 +275,7 @@ export default function StatisticsContent({ initialData }) {
         padding="md"
         title="Trends"
         action={
-          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1">
+          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-surface-2 p-1">
             {["tokens", "hitRate"].map((mode) => (
               <button
                 key={mode}

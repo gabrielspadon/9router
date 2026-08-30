@@ -35,14 +35,15 @@ export default function NewModelsButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="focus-ring relative flex items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+        className="focus-ring relative flex items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-text-muted hover:text-text-main hover:border-brand-line transition-colors duration-150"
         title="Check for new models across all providers"
       >
-        <span className="material-symbols-outlined text-[16px]">new_releases</span>
+        <span className="material-symbols-outlined text-[16px]" aria-hidden="true">new_releases</span>
         <span className="hidden sm:inline">New Models</span>
         {unseenCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-danger-solid text-white text-[10px] font-bold px-1">
+          <span className="metric absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-brand-solid text-brand-on text-xs font-semibold px-1">
             {unseenCount > 99 ? "99+" : unseenCount}
+            <span className="sr-only"> new models</span>
           </span>
         )}
       </button>
@@ -123,13 +124,13 @@ function NewModelsModal({ onClose }) {
           <>
             {groups.map((group) => (
               <div key={group.providerAlias} className="border border-border rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-surface/60 border-b border-border">
+                <div className="flex items-center justify-between px-3 py-2 bg-surface-2 border-b border-border">
                   <div className="flex items-center gap-2">
                     <ProviderIcon name={group.providerAlias} />
                     <span className="text-sm font-medium text-text-main">
                       {group.providerName}
                     </span>
-                    <span className="text-[10px] text-text-muted bg-bg rounded-full px-1.5 py-0.5">
+                    <span className="metric text-xs text-text-muted bg-bg rounded-full px-1.5 py-0.5">
                       {group.models.length}
                     </span>
                   </div>
@@ -138,12 +139,12 @@ function NewModelsModal({ onClose }) {
                   {group.models.map((m) => (
                     <div key={m.modelId} className="flex items-center gap-2 px-3 py-1.5">
                       {m.isNew && (
-                        <span className="shrink-0 min-w-[32px] text-center text-[9px] font-bold text-white bg-info-solid rounded px-1 py-0.5">
+                        <span className="shrink-0 min-w-[32px] text-center text-xs font-semibold text-info-on bg-info-solid rounded px-1 py-0.5">
                           NEW
                         </span>
                       )}
                       {m.isFree && (
-                        <span className="shrink-0 min-w-[32px] text-center text-[9px] font-bold text-success bg-success-soft rounded px-1 py-0.5">
+                        <span className="shrink-0 min-w-[32px] text-center text-xs font-semibold text-text-muted bg-surface-2 border border-border rounded px-1 py-0.5">
                           FREE
                         </span>
                       )}
