@@ -1,5 +1,19 @@
 # Upstream PRs — closed (processed)
 
+## PR #3210 — feat(dashboard): show effective Codex plan badges
+
+- url: https://github.com/decolua/9router/pull/3210
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task8-pr3210
+- local-ref: 7aa2ae7e5
+- disposition: adapted
+- validation: 10/10 dedicated TDD, 27/27 Codex badge/UI/route adjacency, scoped ESLint 0 errors, diff check clean
+- notes: persisted safe provider data only, no dashboard fetch/usage refresh/write, no ProviderLimits changes
+- final-disposition: adapted
+- closed: 2026-08-30
+- detail: design and plan were independently reviewed. Adapted only the persisted Codex subscription badge, with precedence and invalid-value fallback, SSR accessible markup, and zero-fetch proof. Branch fast-forwarded to master at 7aa2ae7e5.
+
 ## PR #3608 — Add error message for preventing abuse
 
 - url: https://github.com/decolua/9router/pull/3608
