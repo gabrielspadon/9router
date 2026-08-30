@@ -1,3 +1,5 @@
+import { getKimchiUserAgent } from "../../utils/kimchiUserAgent.js";
+
 export default {
   id: "kimchi",
   priority: 95,
@@ -13,14 +15,16 @@ export default {
       signupUrl: "https://app.kimchi.dev",
     },
   },
-  category: "freeTier",
-  authModes: ["oauth", "apikey"],
+  category: "oauth",
+  authModes: ["oauth"],
   hasOAuth: true,
   transport: {
     baseUrl: "https://llm.kimchi.dev/openai/v1/chat/completions",
     format: "openai",
-    headers: {
-      "User-Agent": "kimchi/0.1.50",
+    get headers() {
+      return {
+        "User-Agent": getKimchiUserAgent(),
+      };
     },
     auth: {
       combined: true,
