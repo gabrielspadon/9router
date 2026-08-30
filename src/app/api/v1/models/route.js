@@ -133,15 +133,6 @@ const LIVE_MODEL_RESOLVERS = {
   },
 };
 
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
-};
-
-// Header sent by fetchCompatibleModelIds to detect cross-instance /models fetches
-// and break recursive loops between 9router instances connected to each other.
-const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
-
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
 
@@ -174,63 +165,6 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-async function fetchCompatibleModelIds(connection) {
-  if (!connection?.apiKey) return [];
-
-  const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
-    ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
-    : "";
-
-  if (!baseUrl) return [];
-
-  let url = `${baseUrl}/models`;
-  const headers = {
-    "Content-Type": "application/json",
-  };
-
-  if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-  } else if (isAnthropicCompatibleProvider(connection.provider)) {
-    if (url.endsWith("/messages/models")) {
-      url = url.slice(0, -9);
-    } else if (url.endsWith("/messages")) {
-      url = `${url.slice(0, -9)}/models`;
-    }
-    headers["x-api-key"] = connection.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-  } else {
-    return [];
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { ...headers, [INTERNAL_MODELS_FETCH_HEADER]: "1" },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    const rawModels = parseOpenAIStyleModels(data);
-
-    return Array.from(
-      new Set(
-        rawModels
-          .map((model) => model?.id || model?.name || model?.model)
-          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
-      )
-    );
-  } catch {
-    return [];
-  }
-}
-
 // Provider matches kindFilter when its serviceKinds intersect the requested kinds.
 // LLM is the default kind for providers missing serviceKinds.
 function providerMatchesKinds(providerId, kindFilter) {
@@ -252,11 +186,7 @@ function comboMatchesKinds(combo, kindFilter) {
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-export async function buildModelsList(kindFilter, options = {}) {
-  // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
-  // cross-instance recursive loops.
-  const skipDynamicFetch = options.skipDynamicFetch === true;
+export async function buildModelsList(kindFilter) {
   let connections = [];
   try {
     connections = await getProviderConnections();
@@ -435,7 +365,9 @@ export async function buildModelsList(kindFilter, options = {}) {
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
 
-      let rawModelIds = hasExplicitEnabledModels
+      let rawModelIds = isCompatibleProvider
+        ? []
+        : hasExplicitEnabledModels
         ? Array.from(
             new Set(
               enabledModels.filter(
@@ -462,10 +394,6 @@ export async function buildModelsList(kindFilter, options = {}) {
           return modelId;
         })
         .filter((modelId) => modelId !== "");
-
-      if (isCompatibleProvider && rawModelIds.length === 0 && customModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
-      }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
       // -thinking/-agentic variants per account). On failure, fall back to
@@ -530,13 +458,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
-      // Compatible providers fall back to a live full /models fetch when no
-      // explicit model list is set. If the user has whitelisted specific models
-      // via customModels, treat that whitelist as authoritative instead of
-      // surfacing every upstream model (a passthrough all-models dump).
-      const hasModelWhitelist = customModelIds.length > 0;
       const mergedModelIds = Array.from(new Set([
-        ...(isCompatibleProvider && hasModelWhitelist && !hasExplicitEnabledModels ? [] : modelIds),
+        ...modelIds,
         ...customModelIds,
         ...aliasModelIds,
       ]));
@@ -672,9 +595,7 @@ export async function OPTIONS() {
  */
 export async function GET(request) {
   try {
-    // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
-    const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const data = await buildModelsList([LLM_KIND]);
 
     // Anthropic-protocol clients (Claude Code) filter model ids by
     // /(claude|anthropic)/i and would see nothing — rewrite ids with the
