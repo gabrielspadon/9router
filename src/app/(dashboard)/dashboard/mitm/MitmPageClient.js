@@ -76,10 +76,10 @@ export default function MitmPageClient() {
 
   return (
     <div className="flex w-full flex-col gap-6">
-      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-        <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
-        <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">
-          ⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.
+      <div className="flex items-start gap-3 p-4 rounded-[var(--radius-brand)] bg-warning-soft border border-warning-line">
+        <span className="material-symbols-outlined text-[16px] text-warning mt-0.5 shrink-0" aria-hidden="true">warning</span>
+        <p className="text-xs text-warning leading-relaxed">
+          MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.
         </p>
       </div>
 
@@ -91,7 +91,7 @@ export default function MitmPageClient() {
       />
 
       {/* Tool Cards */}
-      <div className="grid gap-3 sm:gap-4">
+      <div className="grid gap-4">
         {mitmTools.map(([toolId, tool]) => (
           <MitmToolCard
             key={toolId}
