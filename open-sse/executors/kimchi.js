@@ -1,5 +1,6 @@
 import { DefaultExecutor } from "./default.js";
 import { getCachedKimchiModelMetadata } from "../services/kimchiModels.js";
+import { getKimchiUserAgent } from "../utils/kimchiUserAgent.js";
 
 const TOP_LEVEL_OPENAI_GATEWAY_DROPS = [
   "anthropic_version",
@@ -95,6 +96,12 @@ function isAnthropicBackedKimchiModel(model) {
 export class KimchiExecutor extends DefaultExecutor {
   constructor() {
     super("kimchi");
+  }
+
+  buildHeaders(credentials, stream = true, url, model) {
+    const headers = super.buildHeaders(credentials, stream, url, model);
+    headers["User-Agent"] = getKimchiUserAgent();
+    return headers;
   }
 
   transformRequest(model, body, stream, credentials) {
