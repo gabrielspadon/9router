@@ -43,7 +43,8 @@
   /* Text */
   --color-text: #0a0a0a;
   --color-text-main: #0a0a0a;
-  --color-text-muted: #6B7280;
+  /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
+  --color-text-muted: #5F6775;
   --color-text-subtle: #9CA3AF;
 
   /* Status (light). Five slots per status; see .unlazy/TOKEN-CONTRACT.md.
@@ -129,7 +130,8 @@
 
   --color-text: #ededed;
   --color-text-main: #ededed;
-  --color-text-muted: #9ca3af;
+  /* 4.5:1 or better on surface, surface-2, surface-3 and bg. */
+  --color-text-muted: #9fa6b2;
   --color-text-subtle: #6b7280;
 
   /* Status (dark). Same five slots; the line/text weight lightens so it keeps
@@ -268,8 +270,8 @@ select {
   --color-border-dark: #333333;
   --color-text-main-light: #0a0a0a;
   --color-text-main-dark: #ededed;
-  --color-text-muted-light: #6B7280;
-  --color-text-muted-dark: #9ca3af;
+  --color-text-muted-light: #5F6775;
+  --color-text-muted-dark: #9fa6b2;
 
   /* Radius */
   --radius-brand: var(--radius-brand);
