@@ -21,6 +21,11 @@ export async function POST(request) {
     if (!providerAlias || !id) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
+    for (const [field, value] of Object.entries({ maxInputTokens, maxOutputTokens })) {
+      if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
+        return NextResponse.json({ error: `${field} must be a positive integer` }, { status: 400 });
+      }
+    }
     const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, maxInputTokens, maxOutputTokens });
     return NextResponse.json({ success: true, added });
   } catch (error) {

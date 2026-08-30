@@ -19,10 +19,16 @@ export async function deleteModelAlias(alias) {
   await aliasKv.remove(alias);
 }
 
-// Delete all aliases associated with a given provider node (values start with "{providerId}/")
+// Delete all aliases associated with a given provider node.
 export async function deleteModelAliasesByProvider(providerId) {
   const db = await getAdapter();
-  db.run(`DELETE FROM kv WHERE scope = 'modelAliases' AND value LIKE ?`, [`${providerId}/%`]);
+  const encodedPrefix = stringifyJson(`${providerId}/`).slice(0, -1);
+  db.run(
+    `DELETE FROM kv
+     WHERE scope = ?
+       AND substr(value, 1, length(?)) = ?`,
+    ["modelAliases", encodedPrefix, encodedPrefix]
+  );
 }
 
 // customModels: key=`${providerAlias}|${id}|${type}`, value=full model object
@@ -44,8 +50,8 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ma
     const row = db.get(`SELECT 1 FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) return;
     const modelData = { providerAlias, id, type, name: name || id };
-    if (maxInputTokens) modelData.maxInputTokens = maxInputTokens;
-    if (maxOutputTokens) modelData.maxOutputTokens = maxOutputTokens;
+    if (maxInputTokens !== undefined) modelData.maxInputTokens = maxInputTokens;
+    if (maxOutputTokens !== undefined) modelData.maxOutputTokens = maxOutputTokens;
     const value = stringifyJson(modelData);
     db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
     added = true;
