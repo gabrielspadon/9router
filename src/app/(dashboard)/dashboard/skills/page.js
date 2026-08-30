@@ -16,7 +16,7 @@ function CopyButton({ value, label = "Copy link" }) {
       size="sm"
       icon={copied ? "check" : "content_copy"}
       onClick={() => copy(value)}
-      className="focus-ring shrink-0"
+      className="shrink-0"
       title={value}
     >
       {copied ? "Copied!" : label}

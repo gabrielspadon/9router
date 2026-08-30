@@ -112,7 +112,7 @@ export default function PxpipeClient() {
           <a href="/dashboard/token-saver" className="focus-ring rounded-sm text-xs text-primary underline hover:opacity-80">
             Token Saver settings
           </a>
-          <Button size="sm" variant="ghost" className="focus-ring" onClick={refresh} disabled={loading}>
+          <Button size="sm" variant="ghost" onClick={refresh} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
           </Button>
         </div>

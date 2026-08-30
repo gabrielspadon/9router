@@ -254,7 +254,7 @@ export default function TranslatorPage() {
                 </button>
                 {!isExpanded && (
                   <div className="flex gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" icon="folder_open" aria-label="Load file" className="focus-ring" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
+                    <Button size="sm" variant="ghost" icon="folder_open" aria-label="Load file" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
                     {action}
                   </div>
                 )}
@@ -277,9 +277,9 @@ export default function TranslatorPage() {
                     />
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" variant="secondary" icon="folder_open" className="focus-ring" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
-                    <Button size="sm" variant="secondary" icon="data_object" className="focus-ring" onClick={() => handleFormat(step.id)}>Format</Button>
-                    <Button size="sm" variant="secondary" icon="content_copy" className="focus-ring" onClick={() => handleCopy(step.id)}>Copy</Button>
+                    <Button size="sm" variant="secondary" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
+                    <Button size="sm" variant="secondary" icon="data_object" onClick={() => handleFormat(step.id)}>Format</Button>
+                    <Button size="sm" variant="secondary" icon="content_copy" onClick={() => handleCopy(step.id)}>Copy</Button>
                     {action}
                   </div>
                 </>

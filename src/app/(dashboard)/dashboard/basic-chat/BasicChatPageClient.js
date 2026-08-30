@@ -892,7 +892,7 @@ export default function BasicChatPageClient() {
                       {message.attachments?.length ? (
                         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 mt-2">
                           {message.attachments.map((attachment) => (
-                            <a key={attachment.id} href={attachment.dataUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[var(--radius-brand)] border border-border bg-surface-2">
+                            <a key={attachment.id} href={attachment.dataUrl} target="_blank" rel="noreferrer" className="focus-ring overflow-hidden rounded-[var(--radius-brand)] border border-border bg-surface-2">
                               <img src={attachment.dataUrl} alt={attachment.name} className="h-28 w-full object-cover" loading="lazy" decoding="async" />
                             </a>
                           ))}

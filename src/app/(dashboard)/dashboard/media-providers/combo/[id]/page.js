@@ -255,7 +255,7 @@ export default function ComboDetailPage() {
             <code className="text-lg font-semibold font-mono text-text-main break-all">{combo.name}</code>
           </div>
         </div>
-        <Button variant="danger" icon="delete" onClick={handleDelete} className="focus-ring shrink-0">
+        <Button variant="danger" icon="delete" onClick={handleDelete} className="shrink-0">
           Delete
         </Button>
       </div>
