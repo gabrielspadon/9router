@@ -1,0 +1,106 @@
+name: CI
+
+# No paths / paths-ignore filter belongs on this on: block. These jobs carry
+# required check names, and a run skipped by a path filter reports neither
+# success nor failure, leaving the check Pending and the pull request
+# unmergeable forever. Skip work at job level with if:, which still reports
+# success.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # package-lock.json is in .gitignore and no lockfile is committed, so
+      # `npm ci` cannot resolve a tree and setup-node's npm cache has nothing to
+      # key on. `npm install` is the install command everywhere in this repo,
+      # matching gitbook-pages.yml.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: ESLint
+        run: npx eslint .
+
+  baseline:
+    name: Baseline regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Root dependencies first. The suite imports from src/ and open-sse/, so
+      # it cannot run on the tests package alone.
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund
+
+      # tests/ is an independent ESM package with its own package.json.
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+
+      # The suite is deliberately not green on a plain checkout. A set of
+      # failures predates this fork and is catalogued in
+      # tests/__baseline__/known-fails.txt, so vitest exits nonzero by design and
+      # its exit code is not the verdict. Swallow it here, then fail if no report
+      # was written, which is what a crash rather than a test failure looks like.
+      - name: Run the suite and write a JSON report
+        working-directory: tests
+        run: |
+          npx vitest run --reporter=json --outputFile="$RUNNER_TEMP/vitest-results.json" || true
+          test -s "$RUNNER_TEMP/vitest-results.json"
+
+      # The verdict. Exits 0 only when every currently failing test is already in
+      # the baseline, and names the offenders otherwise. Reads the report path as
+      # its one argument, which is the interface the script defines.
+      - name: Verify no regression against the baseline
+        run: node tests/__baseline__/verify-no-regression.mjs "$RUNNER_TEMP/vitest-results.json"
+
+      # Byte-for-byte snapshots of the provider registry, alias resolution and
+      # OAuth endpoints. Each takes no arguments and exits nonzero on any drift.
+      # They are cheap and independent of the suite, so they run even when the
+      # gate above has already failed.
+      - name: Verify provider registry snapshot
+        if: always()
+        run: node tests/__baseline__/verify-providers.mjs
+
+      - name: Verify alias resolution snapshot
+        if: always()
+        run: node tests/__baseline__/verify-alias.mjs
+
+      - name: Verify OAuth URL snapshot
+        if: always()
+        run: node tests/__baseline__/verify-oauth-urls.mjs
+
+      - name: Upload the test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-results
+          path: ${{ runner.temp }}/vitest-results.json
+          if-no-files-found: warn
+          retention-days: 7
