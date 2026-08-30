@@ -90,6 +90,17 @@ function normalizeLunaFunctionToolReasoning(model, body, sourceFormat) {
   body.reasoning_effort = "none";
 }
 
+// Mistral accepts an assistant prefill only when the final assistant message is
+// explicitly marked as a prefix. Run this in the resolved provider executor so
+// translated requests receive the marker without leaking it to other providers.
+function normalizeMistralAssistantPrefix(body) {
+  if (!Array.isArray(body?.messages) || body.messages.length === 0) return;
+  const lastMessage = body.messages.at(-1);
+  if (lastMessage?.role === "assistant" && lastMessage.prefix !== true) {
+    lastMessage.prefix = true;
+  }
+}
+
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
@@ -153,6 +164,9 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+      if (this.provider === "mistral") {
+        normalizeMistralAssistantPrefix(transformed);
+      }
     }
 
     // ponytail: Console Go Muse Spark rejects forced tool_choice (only "auto" supported); demote to auto. Move to registry quirk when a second model needs it.
