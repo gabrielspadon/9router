@@ -67,7 +67,7 @@ challenge.
 ## Threat model
 
 The verification URL is a credential-like action link. Its opaque query values
-may grant access to an account-validation workflow. The design protects against
+can grant access to an account-validation workflow. The design protects against
 five concrete threats.
 
 1. A malicious or compromised upstream can place an `accounts.google.com` URL
@@ -115,7 +115,7 @@ exactly equal one of the three Cloud Code domains and its `reason` must exactly
 equal `VALIDATION_REQUIRED`. The classifier does not trim, sanitize, or loosely
 match either field. It then reads the first link of the first detail whose
 `@type` is exactly `type.googleapis.com/google.rpc.Help`. It does not scan later
-links. Only when that first Help link is absent may it use
+links. Only when that first Help link is absent does it use
 `ErrorInfo.metadata.validation_link`. If the selected candidate fails URL
 validation, classification fails rather than trying a lower-priority field.
 
@@ -162,23 +162,103 @@ appear in logs or returned public error messages.
 `loadCodeAssist` and `onboardUser`. A successful ineligible-tier challenge stops
 onboarding and reports the typed event through an optional callback. A 403 from
 either endpoint is classified before the bounded redacted diagnostic is built.
-The function retains its current return contract and project-ID cache behavior.
+The public function retains its `Promise<string|null>` return contract and
+project-ID cache behavior, but its internal pending promise resolves a typed
+`ProjectOutcome` before the public wrapper projects that outcome to a string or
+null. Its updated signature is
+`getProjectIdForConnection(connectionId, accessToken, provider, hooks)`, where
+`hooks` accepts only `verificationContext`, `onValidationRequired`, and
+`onVerificationSuccess`.
+
+Project fetch deduplication must preserve callback semantics. Each pending entry
+owns one operation ID, the challenge ID snapshotted by the first initiator, and
+a `Promise<ProjectOutcome>`. Every call that joins the pending operation attaches
+its own continuation to that same typed promise. A validation outcome is
+therefore delivered to every registered `onValidationRequired` waiter, including
+waiters registered after the fetch started. A project-ID success delivers
+`onVerificationSuccess` with the first initiator's snapshotted challenge ID,
+never a later waiter's newer snapshot. The event carries the operation ID, and
+the app store treats repeated delivery of the same operation ID as one
+observation, so multicast does not allocate duplicate challenge generations.
+The pending entry must not reduce the underlying result to `null` before all
+waiters can observe its typed challenge or success outcome.
+
+`ProjectOutcome` is an internal tagged union. The operation ID below is the
+observation ID presented to app callbacks.
+
+```js
+{ kind: "project", projectId: "..." }
+{ kind: "validation_required", validation, observationId: "..." }
+{ kind: "failure" }
+```
+
+The first initiator supplies the pending entry's operation ID and
+`challengeIdAtStart`. Project success invokes each waiter's independent
+`onVerificationSuccess` continuation with that first snapshot. Validation
+invokes each waiter's independent `onValidationRequired` continuation with the
+one validation outcome and observation ID. Failure invokes neither callback.
+Every continuation catches its own callback error, so one rejected or throwing
+waiter cannot change the public result, reject the shared promise, or suppress
+another waiter. Cache hits do not represent a new upstream verification probe
+and invoke neither callback.
 
 `open-sse/services/usage/google.js` similarly reads each response body once,
 classifies only Antigravity responses, and reports through an optional callback.
 It preserves the official Antigravity headers, proxy options, status-specific
 messages, and current JSON failure behavior. `open-sse/services/usage.js`
-threads only explicit callback and connection context fields. It must not use
-`...options` after trusted fields because that would allow caller data to
-replace credentials, provider, proxy, or connection identity.
+threads only explicit `onValidationRequired`, `onVerificationSuccess`,
+`verificationContext`, and connection fields. It must not use `...options`
+after trusted fields because that would allow caller data to replace
+credentials, provider, proxy, or connection identity. A usable Antigravity
+usage success means a 2xx quota response whose parsed body has a `models` object
+and no structured error. A message object, subscription-only response, malformed
+2xx body, HTTP error, timeout, or transport failure is not verification success.
 
 The callback is the only crossing point from the provider engine into app
 state. The engine never imports the app store. Callback failure is fail-open
-for the provider request and is logged without the URL.
+for the provider request and is logged without the URL. The engine callback
+payloads are exactly
+`onValidationRequired({ validation, observationId })` and
+`onVerificationSuccess({ challengeId })`.
+
+### Complete app caller inventory
+
+Every current Antigravity project or usage caller must capture the current
+challenge ID before starting its upstream operation and pass explicit hooks.
+Ownership is exhaustive at this base.
+
+| Caller | Operation and required behavior |
+| --- | --- |
+| `src/sse/handlers/chat.js` | Cold-miss `getProjectIdForConnection` records typed project challenges and compare-clears only an extracted project ID. It then takes a fresh snapshot immediately before `handleChatCore`. |
+| `src/sse/services/tokenRefresh.js` | Non-blocking `_refreshProjectId` after proactive refresh records challenges and uses the project operation's first-initiator snapshot for success clear. It must never fire and forget without hooks. |
+| `src/sse/services/quotaGuard.js` | Live Antigravity quota fetch records challenges even if its three-second routing timeout wins. Only a later usable quota outcome compare-clears; fail-open routing behavior remains unchanged. |
+| `src/app/api/providers/[id]/hotreload/route.js` | Each quota verification attempt passes hooks. The direct Antigravity poke reads a 403 body once and records a strict challenge before returning its existing failed-auth result. A landed 2xx, 429, 5xx, abort, or timeout does not itself clear verification. |
+| `src/app/api/usage/[connectionId]/route.js` | Initial usage and post-auth-refresh retry each take their own snapshot and pass hooks, including `force=1` calls from existing quota UI. Only a usable Antigravity quota result clears. |
+| Sensitive verification recheck route | The dedicated POST recheck uses the same app-side usage operation with explicit hooks and the submitted challenge ID as its compare-and-clear snapshot. |
+
+`open-sse/services/usage.js` and `open-sse/services/usage/google.js` own dispatch
+and typed results, not app storage. `src/lib/antigravityVerification.js` exports
+`createAntigravityVerificationHooks(connectionId, expectedChallengeId)` and
+`runAntigravityUsageProbe(connection, proxyOptions, options)`, where `options`
+allows only `force` and `expectedChallengeId`. The hook factory captures
+`expectedChallengeId` when supplied by recheck and otherwise snapshots the
+store synchronously. It allocates one `crypto.randomUUID()` observation ID and
+returns the trusted `verificationContext` containing `connectionId`,
+`observationId`, and `challengeIdAtStart`, plus `onValidationRequired` and
+`onVerificationSuccess` fields passed to the engine.
+The usage wrapper creates a fresh hook set for exactly one
+`getUsageForProvider` attempt. It consumes `expectedChallengeId` in the hook
+factory, passes only the allowlisted `force` field into engine options, and
+returns the engine result unchanged. The two direct project callers use the
+hook factory. Quota guard, every provider-hotreload quota attempt, initial and
+post-refresh forced usage, and dedicated recheck use the usage wrapper. The
+hotreload direct poke uses a fresh hook set with the classifier directly. A
+call-site inventory test fails if another Antigravity project or usage call is
+added without one of these explicit hook paths.
 
 ### Chat error parsing
 
-`open-sse/executors/antigravity.js` may add strict typed validation metadata to
+`open-sse/executors/antigravity.js` adds strict typed validation metadata to
 its current `parseError` result. It must not change `buildHeaders`, the official
 2.5.5 fingerprint, platform selection, request body construction, image parts,
 or MIME-key translation.
@@ -188,6 +268,31 @@ or MIME-key translation.
 OpenRouter annotations. `createErrorResult` does not serialize the raw URL or
 the typed challenge. The app-side `onValidationRequired` callback records it
 before the ordinary sanitized error response is returned.
+
+### Terminal verification success
+
+Account health and verification state have separate callback contracts. The
+existing `onRequestSuccess` callback continues to clear account errors at its
+current point, including the first valid streaming event. Its timing and
+fallback semantics do not change.
+
+Add a separate `onVerificationSuccess({ challengeId })` callback to
+`handleChatCore` and its response helpers. For a true non-stream response or a
+forced-SSE-to-JSON response, it runs once only after the body has passed current
+format parsing, structured-error detection, and usable-output validation. A
+malformed body, error disguised as HTTP 200, or empty converted result does not
+invoke it.
+
+For a streaming response, current first-valid-event logic continues to invoke
+`onRequestSuccess`, but it never invokes `onVerificationSuccess`. The latter is
+owned by `buildOnStreamComplete` and runs only after terminal stream EOF or
+terminal flush, when `aborted` is false and the completed stream has non-empty
+text, thinking, or output tokens under the same predicate used by empty-stream
+detection. Client cancellation, upstream reset, stall timeout,
+`onStreamAbandoned`, aborted completion, and empty EOF never clear a challenge.
+The callback receives the challenge ID snapshotted immediately before this
+`handleChatCore` attempt. Callback failure is best-effort and does not change
+the client response or account-health callback.
 
 ### Post-refresh response replacement
 
@@ -219,6 +324,7 @@ Each entry contains only these fields.
   connectionId,
   challengeId,
   generation,
+  observationId,
   url,
   observedAt,
   expiresAt
@@ -226,9 +332,10 @@ Each entry contains only these fields.
 ```
 
 `challengeId` is an opaque `crypto.randomUUID()` value. `generation` comes from
-a process-local monotonically increasing safe integer. The URL is stored only
-in this server entry. Email, connection name, provider credentials, upstream
-body, and diagnostic text are not stored.
+a process-local monotonically increasing safe integer. `observationId` is the
+opaque ID allocated by the one underlying upstream operation. The URL is stored
+only in this server entry. Email, connection name, provider credentials,
+upstream body, and diagnostic text are not stored.
 
 The fixed policy is a ten-minute TTL, at most 256 live connection entries, and
 a one-minute unreferenced cleanup sweep. Every public operation also performs
@@ -236,25 +343,40 @@ lazy expiry. When at capacity after expiry cleanup, the oldest observed entry
 is removed before the new one is inserted. Process restart, development reload,
 or module recreation begins empty. There is no disk persistence or recovery.
 
-Recording a challenge allocates a new generation and challenge ID, then
-replaces only that connection's entry. It emits a sanitized upsert event after
-the synchronous Map update. Removal emits only the connection ID and removed
-challenge ID.
+The module also keeps a URL-free idempotency ledger of at most 1,024
+`(connectionId, observationId)` pairs for ten minutes. The same lazy and sweep
+cleanup applies, and oldest-seen eviction enforces the bound. This ledger holds
+only the two opaque IDs and `seenAt`. Connection deletion removes its ledger
+pairs. Restart or reload clears it with the live entries.
+
+The first recording of an observation ID allocates a new generation and
+challenge ID, then replaces only that connection's entry. Delivery of the same
+observation ID by another deduplicated project waiter is ignored even if the
+original entry was subsequently replaced or dismissed. It cannot extend TTL,
+allocate a generation, emit another upsert, resurrect a removed entry, or
+replace a newer challenge. A genuinely new upstream operation receives a new
+observation ID even when its URL is textually identical. The service marks the
+idempotency pair and updates the Map synchronously before emitting a sanitized
+upsert event. Removal emits only the connection ID and removed challenge ID.
 
 Every upstream operation snapshots the current challenge ID before it begins.
-A successful chat, project-ID probe, or Antigravity usage probe calls
+A successful project-ID probe or Antigravity usage probe, or a terminally
+successful chat, calls
 `clearIfCurrent(connectionId, snapshottedChallengeId)`. No challenge at start
 means no clear. If a parallel request records a newer challenge, the IDs differ
-and the successful older operation cannot clear it. A failed probe never
-clears. A repeated validation response records a new generation. Connection
-deletion unconditionally removes that connection's entry after the database
-deletion succeeds.
+and the successful older operation cannot clear it. A failed probe, first
+streaming chunk, aborted stream, or empty stream never clears. A repeated
+validation response from a new upstream operation records a new generation.
+Connection deletion unconditionally removes that connection's entry after the
+database deletion succeeds.
 
-Success has a narrow definition. Chat success uses the existing completed
-request success callback. Project setup success requires an extracted project
-ID. Usage success requires the provider's successful parsed quota response, not
-merely the absence of a classified challenge. An HTTP error, transport error,
-malformed success payload, or generic message result does not clear state.
+Success has a narrow definition. Chat clear uses only the separate terminal
+verification-success callback, never the account-health `onRequestSuccess`
+callback. Project setup success requires an extracted project ID. Usage success
+requires the usable parsed quota response defined above, not merely the absence
+of a classified challenge. An HTTP error, transport error, malformed success
+payload, subscription-only result, generic message result, incomplete stream,
+or empty stream does not clear state.
 
 ## Sensitive API
 
@@ -264,6 +386,7 @@ Use dedicated routes below the Antigravity provider namespace.
 GET    /api/providers/antigravity/verification/stream
 GET    /api/providers/antigravity/verification/[connectionId]
 DELETE /api/providers/antigravity/verification/[connectionId]
+POST   /api/providers/antigravity/verification/[connectionId]/recheck
 ```
 
 The stream sends an initial `snapshot`, then `upsert` and `remove` events. Its
@@ -279,6 +402,23 @@ compare-and-clear dismissal. A stale ID returns 409 without revealing the
 current ID. Deleting verification state does not delete or disable the provider
 connection.
 
+POST recheck accepts a JSON body containing `challengeId`, confirms that it is
+still current, loads the exact Antigravity connection, and invokes the shared
+app-side usage operation with a forced fresh upstream read. It does not make an
+HTTP self-call to the general usage route. A usable quota result clears only the
+submitted current challenge and returns `{ verified: true }`. A repeated strict
+challenge records the new observation and returns `{ verified: false }` without
+the URL. Authentication, transport, malformed response, and generic provider
+failures leave the current challenge intact and return a sanitized error.
+
+For detail, dismissal, and recheck, an absent connection, wrong provider,
+expired entry, or absent entry is 404. A supplied non-current challenge ID is
+409. Identity failure is 401 and CSRF failure is 403. A successful dismissal is
+204. Recheck returns 200 only for the two boolean outcomes above. Its
+credential, transport, malformed-body, and generic upstream failures use the
+existing sanitized usage error mapping, with 502 as the fallback, and never
+include an upstream body or verification URL.
+
 All successes and errors use `Cache-Control: private, no-store, max-age=0`,
 `Pragma: no-cache`, `Referrer-Policy: no-referrer`, and
 `X-Content-Type-Options: nosniff`. The SSE route additionally uses
@@ -290,25 +430,48 @@ revalidation.
 
 ### Route authorization
 
-Phase 2 adds a route-local helper for this exact policy. It reuses
-`isLocalRequest`, `hasValidCliToken`, dashboard JWT verification, and current
-settings. The general `/api/providers` guard is not the final trust boundary.
+Phase 2 adds `src/lib/auth/antigravityVerificationAccess.js` for this exact
+policy. It reuses `hasTrustedPeerHeaders`, `hasValidCliToken`,
+`verifyDashboardAuthToken`, and current settings. It must not call
+`isLocalRequest` because that helper accepts a bare loopback Host as a
+development fallback. The general `/api/providers` guard is not the final trust
+boundary.
 
 | Request context | `requireLogin=true` | `requireLogin=false` |
 | --- | --- | --- |
-| Proven loopback browser with valid JWT | allow | allow |
-| Proven loopback browser without JWT | deny 401 | allow |
+| Wrapper-stamped direct loopback peer with valid JWT | allow | allow |
+| Wrapper-stamped direct loopback peer without JWT | deny 401 | allow |
+| Bare development loopback Host without trusted peer proof | deny 401 | deny 401 |
 | Remote or tunnel caller with valid JWT | allow | allow |
 | Remote or tunnel caller with valid CLI token | allow | allow |
 | Remote or tunnel caller without JWT or CLI token | deny 401 | deny 401 |
 | Forged Host, Origin, forwarding, or XFF without token | deny 401 | deny 401 |
 
-`isLocalRequest` remains authoritative for proven loopback. A
-`x-9r-via-proxy` request is remote even when its socket hop is loopback. A
-Host header alone never proves local access. The same matrix applies to stream,
-detail, and dismissal methods. An unauthenticated remote no-login dashboard may
-continue using ordinary non-sensitive dashboard features, but it cannot see or
-open a verification link.
+The local no-login exception requires all three conditions. The request has a
+valid per-process peer token proven by `hasTrustedPeerHeaders`, its stamped
+`x-9r-real-ip` is loopback, and `x-9r-via-proxy` is absent. A Host header,
+development mode, Origin, XFF, or an unstamped `x-9r-real-ip` never substitutes
+for peer proof. The helper accepts only the wrapper's loopback address forms
+`127.0.0.1`, `::1`, and `::ffff:127.0.0.1`, after removing brackets from an
+IPv6 literal. `x-9r-via-proxy` must be absent, not merely empty. A proxy-stamped
+request is remote even when its socket hop is loopback. Valid JWT or CLI
+authentication is evaluated independently and authorizes a remote request. The
+same identity matrix applies to stream, detail, dismissal, and recheck. An
+unauthenticated remote no-login dashboard remains authorized for ordinary
+non-sensitive dashboard features, but it cannot see, open, dismiss, or recheck
+a verification link.
+
+DELETE and POST recheck add a CSRF gate after identity authorization. A valid
+CLI token is exempt because it is an explicit non-cookie credential. Every
+browser or JWT-cookie mutation must carry an `Origin` header whose exact value
+equals `new URL(request.url).origin`, and `Sec-Fetch-Site` must equal
+`same-origin`. Origin values with a path, trailing slash, credentials, opaque
+origin, or alternate textual origin are not normalized into acceptance.
+Missing, malformed, cross-origin, `same-site`, `cross-site`, or `none` values
+return 403 before reading the body or touching state. The UI sends JSON with
+`Content-Type: application/json`. GET detail and SSE perform no mutation and do
+not use the CSRF exception. No method accepts a query-string action or GET-based
+recheck.
 
 ## Dashboard behavior
 
@@ -329,12 +492,14 @@ keyboard focusable and uses the existing focus style. The action container
 uses a wrapping layout rather than adding another fixed grid column.
 
 Opening the anchor does not clear the challenge. A separate translated
-`Check verification` button invokes the current forced connection usage refresh
-through `/api/usage/[connectionId]?force=true`. That app route supplies the
-typed callback and snapshot ID to the Antigravity usage service. A verified
-successful usage response compare-clears the same challenge. A repeated
-validation response replaces it with a newer challenge, and any other failure
-leaves it visible. Existing Antigravity hot reload stays present and unchanged.
+`Check verification` button sends the current challenge ID to the dedicated
+same-origin POST recheck route. That route supplies the typed callback and
+snapshot ID to the Antigravity usage service. A verified successful usage
+response compare-clears the same challenge. A repeated validation response
+replaces it with a newer challenge, and any other failure leaves it visible.
+The existing `/api/usage/[connectionId]?force=1` caller still gains strict
+recording and success semantics for quota UI use, but it is not the verification
+action. Existing Antigravity hot reload stays present and unchanged.
 
 If sensitive-route authorization fails, the page renders no href and gives an
 accessible translated explanation that verification requires a signed-in or
@@ -362,14 +527,14 @@ PR #3630 is rejected and must not be used as a guard implementation base. Its
 future guard-inventory task exclusively owns `src/dashboardGuard.js` and its
 generated capability matrix. This adaptation does not edit that file.
 
-Phase 2 owns the new routes, their route-local authorization helper, and their
-end-to-end auth tests. The route inventory test records all three routes as
-`sensitive-verification`. A later PR #3630 guard-inventory task may centralize
-that policy only if it preserves the exact matrix above and changes the helper,
-guard, and tests in one reviewed commit. Until then, middleware may provide an
-outer check, but route-local authorization is mandatory. No implementation leaf
-may own `dashboardGuard.js` for both efforts, and neither effort may silently
-stack on the submitted PR #3630 hunk.
+Phase 2 owns the new routes, their dedicated authorization helper, and their
+end-to-end auth tests. The route inventory test records all four routes as
+`sensitive-verification`. A later PR #3630 guard-inventory task can centralize
+that policy only by preserving the exact matrix above and changing the helper,
+guard, and tests in one reviewed commit. Until then, middleware provides only
+an outer check, and route-local authorization remains mandatory. No
+implementation leaf owns `dashboardGuard.js` for both efforts, and neither
+effort silently stacks on the submitted PR #3630 hunk.
 
 ## Phased implementation ownership
 
@@ -378,19 +543,30 @@ The feature is delivered as three sequential, independently reviewed phases.
 ### Phase 1, classifier and retry preservation
 
 This phase owns the new pure classifier and the smallest changes in current
-`antigravity.js`, `projectId.js`, `usage/google.js`, `usage.js`, `error.js`, and
-`chatCore.js`. It adds no app state or UI. Strict RED tests cover every accepted
-and rejected structured shape, redaction, single-read bodies, and complete retry
-replacement. The phase cannot alter headers, fingerprints, images, timeouts,
-fallback, or public response schema.
+`antigravity.js`, `projectId.js`, `usage/google.js`, `usage.js`, `error.js`,
+`chatCore.js`, `chatCore/nonStreamingHandler.js`,
+`chatCore/sseToJsonHandler.js`, and `chatCore/streamingHandler.js`. It adds no
+app state or UI. Strict RED tests cover every accepted and rejected structured
+shape, project dedupe fanout, terminal verification success, redaction,
+single-read bodies, and complete retry replacement. The phase cannot alter
+headers, fingerprints, images, timeouts, fallback, account-health callback
+timing, or public response schema.
 
 ### Phase 2, bounded state and sensitive delivery
 
-This phase owns the app-side service, explicit app callbacks, connection
-deletion cleanup, the three routes, route-local auth helper, and focused state,
-route, stats-exclusion, and auth tests. It does not own `dashboardGuard.js`,
-`usageRepo`, `usageDb`, general usage SSE, request-detail schema, or a database
-migration.
+This phase owns `src/lib/antigravityVerification.js`, including
+`createAntigravityVerificationHooks` and `runAntigravityUsageProbe`, callback
+registration in `src/sse/handlers/chat.js` and
+`src/sse/services/tokenRefresh.js`, wrapper integration in
+`src/sse/services/quotaGuard.js`, `src/app/api/usage/[connectionId]/route.js`,
+and `src/app/api/providers/[id]/hotreload/route.js`, connection deletion cleanup
+in `src/app/api/providers/[id]/route.js`, all four sensitive routes,
+`src/lib/auth/antigravityVerificationAccess.js`, and focused state, caller,
+route, stats-exclusion, auth, and CSRF tests. The usage wrapper centralizes
+callback wiring only. Existing callers retain credential refresh, proxy
+resolution, quota snapshot persistence, routing timeouts, retries, and result
+handling. Phase 2 does not own `dashboardGuard.js`, `usageRepo`, `usageDb`,
+general usage SSE, request-detail schema, or a database migration.
 
 ### Phase 3, provider-page action and localization
 
@@ -428,6 +604,14 @@ passes. The next phase begins only after a fresh review of the prior phase.
   format, and target log on retry success and retry HTTP error.
 - Verify retry transport, timeout, and abort failures return their own mapped
   result.
+- Prove `onRequestSuccess` retains its current account-health timing while
+  `onVerificationSuccess` is absent at first stream chunk and fires once only
+  after non-aborted, non-empty EOF. It must not fire for cancellation,
+  abandonment, stall, reset, empty EOF, malformed JSON, or an error disguised
+  as 200.
+- Prove true non-stream and forced-SSE-to-JSON paths invoke terminal
+  verification success only after their existing usable-response validation and
+  carry the exact challenge ID snapshotted before the attempt.
 - Run current project-ID, Antigravity usage-header, quota, token-refresh,
   image-editing, IDE-version-sync, chat transport, unsupported-field, and
   account-fallback tests.
@@ -442,12 +626,37 @@ passes. The next phase begins only after a fresh review of the prior phase.
 - Prove per-connection isolation, increasing generations, stale dismissal
   rejection, deletion clear, and success compare-clear that cannot erase a
   newer challenge.
+- RED starts project fetches concurrently from token-refresh and cold-chat
+  callers. It proves a later waiter receives the first operation's typed
+  challenge, all waiters receive the same observation ID, the store emits one
+  generation, one throwing waiter cannot suppress another, and different
+  connection IDs remain independent.
+- RED lets the first waiter record observation `X`, records newer observation
+  `Y`, then delivers `X` from a delayed deduplicated waiter after replacement
+  and again after dismissal. Neither delivery can replace `Y`, extend a TTL,
+  emit an event, or resurrect a dismissed entry. Fake-clock tests also prove
+  idempotency-ledger expiry, oldest eviction at 1,024 pairs, and deletion
+  cleanup.
+- RED starts with challenge `A`, lets a project operation begin, records newer
+  challenge `B`, then joins a late waiter and resolves the operation
+  successfully. Every success callback must carry `A`, and compare-clear must
+  leave `B` intact. Aborted or removed pending operations notify no success.
+- Exercise the complete caller table. Token-refresh cold project lookup, chat
+  cold project lookup, quota guard, every hot-reload quota attempt and direct
+  403 poke, initial usage, post-refresh usage retry, existing `force=1` usage,
+  and dedicated recheck must each record a typed challenge and must not clear on
+  their named failure cases.
 - Prove the raw URL is absent from active requests, usage stats, usage stream,
   request details, request logs, error JSON, sanitized SSE, and process globals.
 - Exercise every row of the authorization table against both route handlers and
   the current dashboard proxy, including trusted peer headers, forged Host,
   Origin, XFF, tunnel stamping, valid and invalid JWT, and valid and invalid CLI
   tokens.
+- Prove a bare `next dev` Host fallback cannot read the snapshot or href and
+  cannot dismiss or recheck. For DELETE and POST, cover exact same-origin
+  Origin plus `Sec-Fetch-Site: same-origin`, each missing header, malformed and
+  cross-origin values, all other Sec-Fetch-Site values, JWT-cookie callers,
+  trusted local no-login callers, and the CLI-token CSRF exemption.
 - Assert no-store headers on every status, no wildcard CORS, stream abort
   cleanup, no listener growth, and no URL in `Location`, SSE, or log output.
 
@@ -460,7 +669,8 @@ passes. The next phase begins only after a fresh review of the prior phase.
 - Prove expired, dismissed, unauthorized, invalid, and failed-detail states
   render no anchor.
 - Prove one provider-page EventSource, cleanup on unmount or navigation, no
-  `/api/usage/stream` subscriber, explicit check behavior, and race-safe refresh.
+  `/api/usage/stream` subscriber, same-origin JSON POST recheck, no GET-based
+  recheck, explicit check behavior, and race-safe refresh.
 - Check all 34 locale catalogs for all six literals and render one non-English
   locale.
 - Run syntax checks, ESLint with no new warning, `git diff --check`, the
@@ -484,12 +694,17 @@ passes. The next phase begins only after a fresh review of the prior phase.
   migration, quota schema, or provider UI change.
 - No automatic browser launch, automatic retry loop, automatic challenge
   dismissal, or URL redirect from the server.
+- No development Host fallback for sensitive-route authorization and no
+  mutating verification action through GET or a query string.
 
 ## Completion criteria
 
 The adaptation is complete only when all three phases and their fresh reviews
-pass, the production build and no-regression verifier pass, the sensitive URL
-is absent from every excluded channel, and an isolated credentialed probe
-demonstrates capture, connection-scoped display, explicit user navigation,
-explicit recheck, and race-safe clear. Without the credentialed probe, the code
-may be implementation-complete but the feature remains runtime-unverified.
+pass, concurrent project-dedupe and all-caller callback tests pass, terminal
+stream success and negative EOF tests pass, the complete trusted-peer and CSRF
+matrix passes, the production build and no-regression verifier pass, and the
+sensitive URL is absent from every excluded channel. An isolated credentialed
+probe must demonstrate capture, connection-scoped display, explicit user
+navigation, same-origin explicit recheck, and race-safe terminal clear. Without
+the credentialed probe, the code may be implementation-complete but the feature
+remains runtime-unverified.
