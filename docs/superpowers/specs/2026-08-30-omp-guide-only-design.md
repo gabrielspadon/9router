@@ -148,19 +148,25 @@ by the existing card, `Oh My Pi`.
 
 `DefaultToolCard` receives no OMP-specific branch. Extract its present string
 logic to a named helper such as `replaceGuideVariables(text, options)`, then
-have the component call that helper. Its contract is the pre-existing one.
+have the component call that helper. Its normal bare-URL and exact-`/v1`
+outputs, API-key fallback, and model fallback remain byte-for-byte compatible
+with the existing guides. The one intentional normalization is removal of
+trailing slashes before deciding whether to append `/v1`.
 
 | Input base URL | Required `{{baseUrl}}` output |
 | --- | --- |
 | `http://localhost:20128` | `http://localhost:20128/v1` |
 | `https://router.example/v1` | `https://router.example/v1` |
+| `https://router.example/v1/` | `https://router.example/v1` |
 
-The helper retains the existing key fallback and `{{model}}` fallback for
-other cards. The OMP card itself supplies only `{{baseUrl}}` and `{{apiKey}}`.
-The rendered YAML always uses an unquoted endpoint, as required by the current
-Oh My Pi schema. The API key is copied as YAML scalar content exactly as the
-existing guide card substitutes it. This slice does not add a YAML serializer
-or attempt to escape, validate, save, or transmit that value.
+The helper first removes one or more trailing slashes from an ordinary base URL,
+then preserves an ending `/v1` or appends a single `/v1`. It must never emit
+`/v1/v1` or `/v1//v1`. It retains the existing key fallback and `{{model}}`
+fallback for other cards. The OMP card itself supplies only `{{baseUrl}}` and
+`{{apiKey}}`. The rendered YAML always uses an unquoted endpoint, as required
+by the current Oh My Pi schema. The API key is copied as YAML scalar content
+exactly as the existing guide card substitutes it. This slice does not add a
+YAML serializer or attempt to escape, validate, save, or transmit that value.
 
 ## Strict TDD Boundary
 
@@ -179,18 +185,21 @@ following.
 | Zero write surface | No OMP API route exists, the registry does not declare a settings path or writer command, and the source tree has no OMP-specific `all-statuses` entry or dashboard route. |
 
 `tests/unit/default-tool-card-template.test.js` imports only the new pure
-placeholder helper. It proves the two base-URL rows above, asserts that an API
-key replaces `{{apiKey}}`, and asserts that a base URL already ending in `/v1`
-does not become `/v1/v1`. It also covers the existing no-key fallback and an
-ordinary `{{model}}` replacement so this extraction is behavior-preserving for
-the present guides.
+placeholder helper. It proves all three base-URL rows above, including that
+`https://router.example/v1/` becomes exactly
+`https://router.example/v1`. It asserts that neither `/v1/v1` nor `/v1//v1`
+is emitted, that an API key replaces `{{apiKey}}`, and that an exact `/v1`
+base URL remains unchanged. It also covers the existing no-key fallback and an
+ordinary `{{model}}` replacement so the extraction preserves every normal
+existing guide output.
 
 The red sequence is this.
 
 1. Add the OMP registry and template assertions. They must fail because `omp`
    does not exist.
-2. Add the pure interpolation assertions. They must fail because the named
-   helper does not exist.
+2. Add the pure interpolation assertions for bare, exact-`/v1`, and
+   trailing-slash base URLs. They must fail because the named helper does not
+   exist and the current inline logic duplicates `/v1/`.
 3. Add only the registry entry and the behavior-preserving helper extraction.
    Re-run the two tests until green.
 
