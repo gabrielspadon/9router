@@ -388,6 +388,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
+    if (result.status === 499) return result.response;
+
     if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
       requestReplayAttempted = true;
       requestReplayConnectionId = credentials.connectionId;

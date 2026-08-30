@@ -14,6 +14,14 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import {
+  CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+  ClaudeClassifierValidationError,
+  isClaudeClassifierRequest,
+  projectResponsesClassifierOutput,
+  projectResponsesClassifierStream,
+  validateClaudeClassifierMessage,
+} from "./claudeClassifier.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
@@ -383,13 +391,31 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   return responseBody;
 }
 
+function hasLegacyClassifierFunctionCall(responseBody) {
+  return responseBody?.choices?.some((choice) =>
+    Object.hasOwn(choice?.message || {}, "function_call"),
+  );
+}
+
+function hasMultipleClassifierAlternatives(responseBody) {
+  if (Array.isArray(responseBody?.choices) && responseBody.choices.length > 1) {
+    return true;
+  }
+  const geminiResponse = responseBody?.response || responseBody;
+  return Array.isArray(geminiResponse?.candidates)
+    && geminiResponse.candidates.length > 1;
+}
+
 /**
  * Handle non-streaming response from provider.
  */
 export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
+  const classifierMode = sourceFormat === FORMATS.CLAUDE
+    && isClaudeClassifierRequest(body);
   let responseBody;
+  let classifierProjection = null;
 
   if (contentType.includes("text/event-stream")) {
     // A provider not statically flagged forceStream (e.g. a dynamically-added
@@ -402,7 +428,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     // aware converter (same one handleForcedSSEToJson uses) in that case.
     if (targetFormat === FORMATS.OPENAI_RESPONSES) {
       try {
-        responseBody = await convertResponsesStreamToJson(providerResponse.body);
+        if (classifierMode && typeof providerResponse.body?.tee === "function") {
+          const [conversionStream, projectionStream] = providerResponse.body.tee();
+          [responseBody, classifierProjection] = await Promise.all([
+            convertResponsesStreamToJson(conversionStream),
+            projectResponsesClassifierStream(body, projectionStream),
+          ]);
+        } else {
+          responseBody = await convertResponsesStreamToJson(providerResponse.body);
+        }
       } catch (err) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
         console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, err.message);
@@ -425,6 +459,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
     }
+  }
+
+  if (classifierMode
+      && targetFormat === FORMATS.OPENAI_RESPONSES
+      && classifierProjection === null) {
+    classifierProjection = projectResponsesClassifierOutput(body, responseBody);
   }
 
   // Some OpenAI-compatible gateways (e.g. api.cline.bot) wrap the whole completion
@@ -450,9 +490,36 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+  if (classifierMode && (
+    hasLegacyClassifierFunctionCall(responseBody)
+    || hasMultipleClassifierAlternatives(responseBody)
+  )) {
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+    );
+  }
+
+  let translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
     : responseBody;
+  if (classifierMode) {
+    try {
+      translatedResponse = validateClaudeClassifierMessage(
+        body,
+        translatedResponse,
+        classifierProjection,
+      );
+    } catch (err) {
+      if (err instanceof ClaudeClassifierValidationError) {
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+        );
+      }
+      throw err;
+    }
+  }
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.
