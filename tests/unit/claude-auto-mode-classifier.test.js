@@ -11,6 +11,12 @@ const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { handleForcedSSEToJson } = await import(
   "../../open-sse/handlers/chatCore/sseToJsonHandler.js"
 );
+const { handleNonStreamingResponse } = await import(
+  "../../open-sse/handlers/chatCore/nonStreamingHandler.js"
+);
+const claudeClassifier = await import(
+  "../../open-sse/handlers/chatCore/claudeClassifier.js"
+);
 const {
   CLAUDE_CLASSIFIER_ERROR_MESSAGE,
   ClaudeClassifierValidationError,
@@ -18,7 +24,7 @@ const {
   projectResponsesClassifierOutput,
   projectResponsesClassifierStream,
   validateClaudeClassifierMessage,
-} = await import("../../open-sse/handlers/chatCore/claudeClassifier.js");
+} = claudeClassifier;
 
 const deepFreeze = (value) => {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -52,6 +58,28 @@ const CLASSIFIER_ERROR = {
     code: "bad_gateway",
   },
 };
+const RESPONSES_JSON_WITH_DROPPED_ITEM = deepFreeze({
+  id: "resp_classifier_json_dropped_item",
+  object: "response",
+  created_at: 1700000000,
+  model: "gpt-5.6-sol",
+  status: "completed",
+  output: [
+    {
+      id: "msg_classifier_decision",
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: "<block>no</block>" }],
+    },
+    {
+      id: "tools_classifier_hidden",
+      type: "additional_tools",
+      tools: [{ type: "web_search" }],
+    },
+  ],
+  usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
+});
 
 const textItem = (text) => ({
   type: "message",
@@ -118,13 +146,17 @@ const projectionEntry = ({
   type,
   text,
 });
-const forcedResponsesContext = (body, chunks) => ({
+const forcedResponsesContext = (body, chunks, {
+  sourceFormat = FORMATS.CLAUDE,
+  targetFormat = FORMATS.OPENAI_RESPONSES,
+  provider = "codex",
+} = {}) => ({
   providerResponse: new Response(readableFromChunks(chunks), {
     headers: { "content-type": "text/event-stream" },
   }),
-  sourceFormat: FORMATS.CLAUDE,
-  targetFormat: FORMATS.OPENAI_RESPONSES,
-  provider: "codex",
+  sourceFormat,
+  targetFormat,
+  provider,
   model: "gpt-5.6-sol",
   body,
   stream: false,
@@ -141,6 +173,113 @@ const forcedResponsesContext = (body, chunks) => ({
   reqTag: "classifier-test",
   log: null,
 });
+const jsonProviderResponse = (responseBody) => new Response(
+  JSON.stringify(responseBody),
+  { headers: { "content-type": "application/json" } },
+);
+const openAICompletion = (content) => ({
+  id: "chatcmpl_classifier_1700000000",
+  object: "chat.completion",
+  created: 1700000000,
+  model: "gpt-5.6-sol",
+  choices: [{
+    index: 0,
+    message: { role: "assistant", content },
+    finish_reason: "stop",
+  }],
+  usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 },
+});
+const openAICompletionMessage = (message, {
+  id = "chatcmpl_classifier_1700000000",
+  finishReason = "stop",
+} = {}) => ({
+  id,
+  object: "chat.completion",
+  created: 1700000000,
+  model: "gpt-5.6-sol",
+  choices: [{ index: 0, message, finish_reason: finishReason }],
+  usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 },
+});
+const nativeClaudeMessage = (content) => ({
+  id: "msg_classifier_1700000000",
+  type: "message",
+  role: "assistant",
+  model: "gpt-5.6-sol",
+  content,
+  stop_reason: "end_turn",
+  stop_sequence: null,
+  usage: { input_tokens: 8, output_tokens: 2 },
+});
+const responsesJson = (output, {
+  id = "resp_classifier_1700000000",
+  status = "completed",
+  usage = { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
+  ...extra
+} = {}) => ({
+  id,
+  object: "response",
+  created_at: 1700000000,
+  model: "gpt-5.6-sol",
+  status,
+  ...(output === undefined ? {} : { output }),
+  usage,
+  ...extra,
+});
+const nonStreamingContext = ({
+  body = STAGE_ONE_BODY,
+  providerResponse,
+  sourceFormat = FORMATS.CLAUDE,
+  targetFormat = FORMATS.OPENAI,
+  provider = "op-test-chat",
+} = {}) => ({
+  providerResponse,
+  provider,
+  model: "gpt-5.6-sol",
+  sourceFormat,
+  targetFormat,
+  body,
+  stream: false,
+  translatedBody: null,
+  finalBody: null,
+  requestStartTime: 1700000000000,
+  connectionId: "classifier-test-connection",
+  apiKey: "classifier-test-key",
+  clientRawRequest: { endpoint: "/v1/messages", body },
+  onRequestSuccess: vi.fn(async () => {}),
+  reqLogger: {
+    logProviderResponse: vi.fn(),
+    logConvertedResponse: vi.fn(),
+  },
+  toolNameMap: null,
+  customToolNames: null,
+  trackDone: vi.fn(),
+  appendLog: vi.fn(),
+  pxpipe: null,
+  reqTag: "classifier-test",
+  log: null,
+});
+const classifierCallSpies = () => ({
+  detect: vi.spyOn(claudeClassifier, "isClaudeClassifierRequest"),
+  output: vi.spyOn(claudeClassifier, "projectResponsesClassifierOutput"),
+  stream: vi.spyOn(claudeClassifier, "projectResponsesClassifierStream"),
+  validate: vi.spyOn(claudeClassifier, "validateClaudeClassifierMessage"),
+});
+const expectNoClassifierCalls = (spies) => {
+  for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+};
+const restoreClassifierSpies = (spies) => {
+  for (const spy of Object.values(spies)) spy.mockRestore();
+};
+const runWithoutClassifierCalls = async (run) => {
+  const spies = classifierCallSpies();
+  try {
+    const result = await run();
+    expectNoClassifierCalls(spies);
+    return result;
+  } finally {
+    restoreClassifierSpies(spies);
+  }
+};
 
 const claudeMessage = (content) => ({
   id: "msg_classifier_1700000000",
@@ -831,17 +970,484 @@ describe("lossless Responses classifier projection", () => {
 });
 
 describe("Claude Code response classifier validation", () => {
-  it("rejects malformed classifier prose from forced Responses SSE", async () => {
-    const result = await handleForcedSSEToJson(
-      forcedResponsesContext(STAGE_ONE_BODY, [
-        doneFrame(textItem("This looks safe to me.")),
-        terminalFrame(),
+  it("rejects malformed classifier prose from forced Chat SSE", async () => {
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [
+        `data: ${JSON.stringify({
+          id: "chatcmpl_classifier_1700000000",
+          model: "gpt-5.6-sol",
+          choices: [{ delta: { content: "This looks safe to me." }, finish_reason: null }],
+        })}\n\n`,
+        `data: ${JSON.stringify({
+          id: "chatcmpl_classifier_1700000000",
+          model: "gpt-5.6-sol",
+          choices: [{ delta: {}, finish_reason: "stop" }],
+        })}\n\n`,
+        "data: [DONE]\n\n",
       ]),
-    );
+      targetFormat: FORMATS.OPENAI,
+      provider: "op-test-chat",
+    });
 
     expect(result.success).toBe(false);
     expect(result.status).toBe(502);
     expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects malformed classifier prose from OpenAI Chat JSON", async () => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      providerResponse: jsonProviderResponse(openAICompletion("This looks safe to me.")),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects a Responses JSON item dropped by final conversion", async () => {
+    const context = nonStreamingContext({
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      providerResponse: jsonProviderResponse(RESPONSES_JSON_WITH_DROPPED_ITEM),
+    });
+    const result = await handleNonStreamingResponse(context);
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+    await Promise.resolve();
+    expect(context.onRequestSuccess).toHaveBeenCalledOnce();
+    expect(context.appendLog).toHaveBeenCalledOnce();
+    expect(context.appendLog).toHaveBeenCalledWith(expect.objectContaining({
+      status: "200 OK",
+    }));
+  });
+
+  it("rejects malformed classifier prose from native Claude JSON", async () => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      targetFormat: FORMATS.CLAUDE,
+      provider: "claude",
+      providerResponse: jsonProviderResponse(nativeClaudeMessage([
+        { type: "text", text: "This looks safe to me." },
+      ])),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects a hidden custom tool from unexpected Responses SSE", async () => {
+    const safeItem = {
+      id: "msg_classifier_safe",
+      ...textItem("<block>no</block>"),
+    };
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      providerResponse: new Response(readableFromChunks([
+        doneFrame(safeItem),
+        frame("response.output_item.added", {
+          type: "response.output_item.added",
+          output_index: 1,
+          item: { id: "ct_hidden", type: "custom_tool_call", name: "shell", input: "pwd" },
+        }),
+        terminalFrame([safeItem]),
+      ]), { headers: { "content-type": "text/event-stream" } }),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects malformed classifier prose from Gemini SSE", async () => {
+    const raw = [
+      'data: {"response":{"responseId":"gemini_classifier","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"text":"This looks safe to me."}]}}]}}',
+      'data: {"response":{"responseId":"gemini_classifier","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [raw]),
+      targetFormat: FORMATS.GEMINI,
+      provider: "gemini",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each(["<block>no</block>", "<block>yes</block>"])(
+    "keeps the forced Chat SSE decision %s as a canonical Claude Message",
+    async (decision) => {
+      const result = await handleForcedSSEToJson({
+        ...forcedResponsesContext(STAGE_ONE_BODY, [
+          `data: ${JSON.stringify({
+            id: "chatcmpl-classifier_1700000000",
+            created: 1700000000,
+            model: "gpt-5.6-sol",
+            choices: [{ delta: { content: decision }, finish_reason: null }],
+          })}\n\n`,
+          `data: ${JSON.stringify({
+            id: "chatcmpl-classifier_1700000000",
+            created: 1700000000,
+            model: "gpt-5.6-sol",
+            choices: [{ delta: {}, finish_reason: "stop" }],
+            usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 },
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        targetFormat: FORMATS.OPENAI,
+        provider: "op-test-chat",
+      });
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "classifier_1700000000",
+        type: "message",
+        role: "assistant",
+        model: "gpt-5.6-sol",
+        content: [{ type: "text", text: decision }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 8, output_tokens: 2 },
+      });
+    },
+  );
+
+  it.each(["<block>no</block>", "<block>yes</block>"])(
+    "keeps the OpenAI Chat JSON decision %s as a canonical Claude Message",
+    async (decision) => {
+      const result = await handleNonStreamingResponse(nonStreamingContext({
+        providerResponse: jsonProviderResponse(openAICompletion(decision)),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "chatcmpl_classifier_1700000000",
+        type: "message",
+        role: "assistant",
+        model: "subscription",
+        content: [{ type: "text", text: decision }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 2008, output_tokens: 2 },
+      });
+    },
+  );
+
+  it.each(["<block>no</block>", "<block>yes</block>"])(
+    "keeps the Responses JSON decision %s as a canonical Claude Message",
+    async (decision) => {
+      const result = await handleNonStreamingResponse(nonStreamingContext({
+        targetFormat: FORMATS.OPENAI_RESPONSES,
+        provider: "codex",
+        providerResponse: jsonProviderResponse(responsesJson([
+          { id: "msg_classifier_decision", ...textItem(decision) },
+        ])),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "classifier_1700000000",
+        type: "message",
+        role: "assistant",
+        model: "subscription",
+        content: [{ type: "text", text: decision }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 2008, output_tokens: 2 },
+      });
+    },
+  );
+
+  it.each(["<block>no</block>", "<block>yes</block>"])(
+    "keeps the native Claude JSON decision %s with its Claude identity",
+    async (decision) => {
+      const result = await handleNonStreamingResponse(nonStreamingContext({
+        targetFormat: FORMATS.CLAUDE,
+        provider: "claude",
+        providerResponse: jsonProviderResponse(nativeClaudeMessage([
+          { type: "text", text: decision },
+        ])),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        ...nativeClaudeMessage([{ type: "text", text: decision }]),
+        model: "subscription",
+        usage: { input_tokens: 2008, output_tokens: 2 },
+      });
+    },
+  );
+
+  it.each(["<block>no</block>", "<block>yes</block>"])(
+    "keeps the unexpected Responses SSE decision %s as a canonical Claude Message",
+    async (decision) => {
+      const item = { id: "msg_classifier_sse", ...textItem(decision) };
+      const result = await handleNonStreamingResponse(nonStreamingContext({
+        targetFormat: FORMATS.OPENAI_RESPONSES,
+        provider: "codex",
+        providerResponse: new Response(readableFromChunks([
+          frame("response.created", {
+            type: "response.created",
+            response: { id: "resp_classifier_sse", created_at: 1700000000 },
+          }),
+          doneFrame(item),
+          terminalFrame([item]),
+        ]), { headers: { "content-type": "text/event-stream" } }),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "classifier_sse",
+        type: "message",
+        role: "assistant",
+        model: "subscription",
+        content: [{ type: "text", text: decision }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 2008, output_tokens: 2 },
+      });
+    },
+  );
+
+  it.each(["<block>no</block>", "<block>yes</block>"])(
+    "keeps the Gemini SSE decision %s as a canonical Claude Message",
+    async (decision) => {
+      const raw = [
+        `data: ${JSON.stringify({
+          response: {
+            responseId: "gemini_classifier",
+            modelVersion: "gemini-3.7-flash-low",
+            usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 2, totalTokenCount: 10 },
+            candidates: [{ content: { parts: [{ text: decision }] }, finishReason: "STOP" }],
+          },
+        })}`,
+        "data: [DONE]",
+        "",
+      ].join("\n\n");
+      const result = await handleForcedSSEToJson({
+        ...forcedResponsesContext(STAGE_ONE_BODY, [raw]),
+        targetFormat: FORMATS.GEMINI,
+        provider: "gemini",
+      });
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "gemini_classifier",
+        type: "message",
+        role: "assistant",
+        model: "gemini-3.7-flash-low",
+        content: [{ type: "text", text: decision }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 8, output_tokens: 2 },
+      });
+    },
+  );
+
+  it.each([
+    ["no choice", { ...openAICompletion(""), choices: [] }],
+    ["prose", openAICompletion("This looks safe to me.")],
+    ["tool call", openAICompletionMessage({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call_hidden", type: "function", function: { name: "shell", arguments: "{}" } }],
+    }, { finishReason: "tool_calls" })],
+    ["decision plus tool call", openAICompletionMessage({
+      role: "assistant",
+      content: "<block>no</block>",
+      tool_calls: [{ id: "call_hidden", type: "function", function: { name: "shell", arguments: "{}" } }],
+    }, { finishReason: "tool_calls" })],
+  ])("rejects invalid OpenAI Chat JSON with %s", async (_name, responseBody) => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      providerResponse: jsonProviderResponse(responseBody),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each([
+    ["missing content", { ...nativeClaudeMessage([]), content: undefined }],
+    ["thinking only", nativeClaudeMessage([{ type: "thinking", thinking: "private" }])],
+    ["malformed thinking", nativeClaudeMessage([{ type: "thinking", thinking: null }])],
+    ["tool use", nativeClaudeMessage([{ type: "tool_use", id: "tool_1", name: "shell", input: {} }])],
+    ["two text blocks", nativeClaudeMessage([{ type: "text", text: "<block>no</block>" }, { type: "text", text: "<block>yes</block>" }])],
+    ["decision plus unknown block", nativeClaudeMessage([{ type: "text", text: "<block>no</block>" }, { type: "future_part" }])],
+  ])("rejects invalid native Claude JSON with %s", async (_name, responseBody) => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      targetFormat: FORMATS.CLAUDE,
+      provider: "claude",
+      providerResponse: jsonProviderResponse(responseBody),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each([
+    ["earlier prose then decision", [textItem("prose"), textItem("<block>no</block>")]],
+    ["allow then deny", [textItem("<block>yes</block>"), textItem("<block>no</block>")]],
+    ["deny then allow", [textItem("<block>no</block>"), textItem("<block>yes</block>")]],
+    ["duplicate decisions", [textItem("<block>no</block>"), textItem("<block>no</block>")]],
+    ["two text blocks", [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "<block>no</block>" }, { type: "output_text", text: "<block>yes</block>" }] }]],
+    ["empty message then decision", [{ type: "message", role: "assistant", content: [] }, textItem("<block>no</block>")]],
+    ["function call", [textItem("<block>no</block>"), { type: "function_call", id: "fc_hidden", name: "shell", arguments: "{}" }]],
+    ["custom tool call", [textItem("<block>no</block>"), { type: "custom_tool_call", id: "ct_hidden", name: "shell", input: "pwd" }]],
+    ["function call output", [textItem("<block>no</block>"), { type: "function_call_output", call_id: "fc_hidden", output: "done" }]],
+    ["custom tool output", [textItem("<block>no</block>"), { type: "custom_tool_call_output", call_id: "ct_hidden", output: "done" }]],
+    ["additional tools", [textItem("<block>no</block>"), { type: "additional_tools", tools: [] }]],
+    ["unknown item", [textItem("<block>no</block>"), { type: "future_item" }]],
+    ["unknown nested block", [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "<block>no</block>" }, { type: "future_part" }] }]],
+    ["malformed reasoning", [{ type: "reasoning", summary: [{ type: "summary_text", text: null }] }, textItem("<block>no</block>")]],
+    ["missing output", undefined],
+    ["empty output", []],
+    ["non-array output", "invalid"],
+  ])("rejects invalid Responses JSON with %s", async (_name, output) => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      providerResponse: jsonProviderResponse(responsesJson(output)),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each([
+    ["duplicate output index", (safeItem) => [
+      doneFrame(safeItem, 0),
+      doneFrame({ ...safeItem, id: "msg_classifier_duplicate" }, 0),
+      terminalFrame(),
+    ]],
+    ["hidden custom tool", (safeItem) => [
+      doneFrame(safeItem, 0),
+      doneFrame({ id: "ct_hidden", type: "custom_tool_call", name: "shell", input: "pwd" }, 1),
+      terminalFrame(),
+    ]],
+    ["terminal mismatch", (safeItem) => [
+      doneFrame(safeItem, 0),
+      terminalFrame([{ ...safeItem, content: [{ type: "output_text", text: "<block>yes</block>" }] }]),
+    ]],
+    ["EOF before terminal", (safeItem) => [doneFrame(safeItem, 0)]],
+  ])("rejects invalid unexpected Responses SSE with %s", async (_name, makeChunks) => {
+    const safeItem = { id: "msg_classifier_safe", ...textItem("<block>no</block>") };
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      providerResponse: new Response(readableFromChunks(makeChunks(safeItem)), {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each([
+    ["prose", [{ delta: { content: "This looks safe to me." }, finish_reason: "stop" }]],
+    ["two text segments with surrounding prose", [
+      { delta: { content: "<block>no</block>" }, finish_reason: null },
+      { delta: { content: " extra" }, finish_reason: "stop" },
+    ]],
+    ["decision plus tool use", [
+      {
+        delta: {
+          content: "<block>no</block>",
+          tool_calls: [{ index: 0, id: "call_hidden", function: { name: "shell", arguments: "{}" } }],
+        },
+        finish_reason: "tool_calls",
+      },
+    ]],
+  ])("rejects invalid forced Chat SSE with %s", async (_name, choices) => {
+    const chunks = choices.map((choice) => `data: ${JSON.stringify({
+      id: "chatcmpl-classifier_1700000000",
+      created: 1700000000,
+      model: "gpt-5.6-sol",
+      choices: [choice],
+    })}\n\n`);
+    chunks.push("data: [DONE]\n\n");
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, chunks),
+      targetFormat: FORMATS.OPENAI,
+      provider: "op-test-chat",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("canonicalizes forced Chat SSE reasoning beside a decision", async () => {
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [
+        `data: ${JSON.stringify({
+          id: "chatcmpl-classifier_1700000000",
+          created: 1700000000,
+          model: "gpt-5.6-sol",
+          choices: [{
+            delta: { reasoning_content: "private", content: "<block>no</block>" },
+            finish_reason: "stop",
+          }],
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+      targetFormat: FORMATS.OPENAI,
+      provider: "op-test-chat",
+    });
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toMatchObject({
+      id: "classifier_1700000000",
+      type: "message",
+      role: "assistant",
+      model: "gpt-5.6-sol",
+      content: [{ type: "text", text: "<block>no</block>" }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+    });
+  });
+
+  it("rejects Gemini SSE with a function call beside a decision", async () => {
+    const raw = [
+      'data: {"response":{"responseId":"gemini_classifier","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"text":"<block>no</block>"},{"functionCall":{"name":"shell","args":{"cmd":"pwd"}}}]},"finishReason":"STOP"}]}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [raw]),
+      targetFormat: FORMATS.GEMINI,
+      provider: "gemini",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects malformed classifier prose from forced Responses SSE", async () => {
+    const context = forcedResponsesContext(STAGE_ONE_BODY, [
+      doneFrame(textItem("This looks safe to me.")),
+      terminalFrame(),
+    ]);
+    const result = await handleForcedSSEToJson(context);
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+    expect(context.onRequestSuccess).toHaveBeenCalledOnce();
+    expect(context.appendLog).toHaveBeenCalledOnce();
+    expect(context.appendLog).toHaveBeenCalledWith(expect.objectContaining({
+      status: "200 OK",
+    }));
   });
 
   it.each([
@@ -1029,5 +1635,381 @@ describe("Claude Code response classifier validation", () => {
     expect(result.success).toBe(false);
     expect(result.status).toBe(502);
     expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("keeps a non-Claude OpenAI JSON near miss unchanged without classifier calls", async () => {
+    const result = await runWithoutClassifierCalls(() => handleNonStreamingResponse(
+      nonStreamingContext({
+        sourceFormat: FORMATS.OPENAI,
+        providerResponse: jsonProviderResponse(openAICompletion("ordinary prose")),
+      }),
+    ));
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toEqual({
+      ...openAICompletion("ordinary prose"),
+      model: "subscription",
+      usage: { prompt_tokens: 2008, completion_tokens: 2, total_tokens: 2010 },
+    });
+  });
+
+  it("keeps a non-Claude forced Chat SSE near miss unchanged without classifier calls", async () => {
+    const result = await runWithoutClassifierCalls(() => handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [
+        `data: ${JSON.stringify({
+          id: "chatcmpl_nonclaude_forced",
+          created: 1700000000,
+          model: "gpt-5.6-sol",
+          choices: [{ delta: { content: "ordinary forced prose" }, finish_reason: "stop" }],
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ], {
+        sourceFormat: FORMATS.OPENAI,
+        targetFormat: FORMATS.OPENAI,
+        provider: "op-test-chat",
+      }),
+    }));
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toEqual({
+      id: "chatcmpl_nonclaude_forced",
+      object: "chat.completion",
+      created: 1700000000,
+      model: "gpt-5.6-sol",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "ordinary forced prose" },
+        finish_reason: "stop",
+      }],
+    });
+  });
+
+  it("keeps a non-Claude Responses JSON near miss unchanged without classifier calls", async () => {
+    const result = await runWithoutClassifierCalls(() => handleNonStreamingResponse(
+      nonStreamingContext({
+        sourceFormat: FORMATS.OPENAI,
+        targetFormat: FORMATS.OPENAI_RESPONSES,
+        provider: "codex",
+        providerResponse: jsonProviderResponse(responsesJson([
+          { id: "msg_nonclaude", ...textItem("ordinary Responses prose") },
+        ], { id: "resp_nonclaude_json" })),
+      }),
+    ));
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toEqual({
+      id: "chatcmpl-nonclaude_json",
+      object: "chat.completion",
+      created: 1700000000,
+      model: "subscription",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "ordinary Responses prose" },
+        finish_reason: "stop",
+      }],
+      usage: { prompt_tokens: 2008, completion_tokens: 2, total_tokens: 2010 },
+    });
+  });
+
+  it("keeps a non-Claude native Claude JSON near miss unchanged without classifier calls", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1700000000000));
+    try {
+      const result = await runWithoutClassifierCalls(() => handleNonStreamingResponse(
+        nonStreamingContext({
+          sourceFormat: FORMATS.OPENAI,
+          targetFormat: FORMATS.CLAUDE,
+          provider: "claude",
+          providerResponse: jsonProviderResponse(nativeClaudeMessage([
+            { type: "text", text: "ordinary native prose" },
+          ])),
+        }),
+      ));
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "chatcmpl-msg_classifier_1700000000",
+        object: "chat.completion",
+        created: 1700000000,
+        model: "subscription",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: "ordinary native prose" },
+          finish_reason: "stop",
+        }],
+        usage: { prompt_tokens: 2008, completion_tokens: 2, total_tokens: 2010 },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a non-Claude unexpected Responses SSE near miss unchanged without classifier calls", async () => {
+    const ordinaryItem = { id: "msg_nonclaude_sse", ...textItem("ordinary Responses SSE prose") };
+    const stream = readableFromChunks([
+      frame("response.created", {
+        type: "response.created",
+        response: { id: "resp_nonclaude_sse", created_at: 1700000000 },
+      }),
+      doneFrame(ordinaryItem),
+      terminalFrame([ordinaryItem]),
+    ]);
+    const tee = vi.spyOn(stream, "tee");
+    try {
+      const result = await runWithoutClassifierCalls(() => handleNonStreamingResponse(
+        nonStreamingContext({
+          sourceFormat: FORMATS.OPENAI,
+          targetFormat: FORMATS.OPENAI_RESPONSES,
+          provider: "codex",
+          providerResponse: new Response(stream, { headers: { "content-type": "text/event-stream" } }),
+        }),
+      ));
+
+      expect(result.success).toBe(true);
+      expect(tee).not.toHaveBeenCalled();
+      expect(await result.response.json()).toEqual({
+        id: "chatcmpl-nonclaude_sse",
+        object: "chat.completion",
+        created: 1700000000,
+        model: "subscription",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: "ordinary Responses SSE prose" },
+          finish_reason: "stop",
+        }],
+        usage: { prompt_tokens: 2008, completion_tokens: 2, total_tokens: 2010 },
+      });
+    } finally {
+      tee.mockRestore();
+    }
+  });
+
+  it("keeps an ordinary Claude Responses SSE unprojected and unteed", async () => {
+    const ordinaryBody = deepFreeze({ ...STAGE_ONE_BODY, system: "ordinary request" });
+    const ordinaryItem = { id: "msg_ordinary_sse", ...textItem("ordinary Claude prose") };
+    const stream = readableFromChunks([
+      frame("response.created", {
+        type: "response.created",
+        response: { id: "resp_ordinary_sse", created_at: 1700000000 },
+      }),
+      doneFrame(ordinaryItem),
+      terminalFrame([ordinaryItem]),
+    ]);
+    const tee = vi.spyOn(stream, "tee");
+    const spies = classifierCallSpies();
+    try {
+      const result = await handleNonStreamingResponse(nonStreamingContext({
+        body: ordinaryBody,
+        targetFormat: FORMATS.OPENAI_RESPONSES,
+        provider: "codex",
+        providerResponse: new Response(stream, { headers: { "content-type": "text/event-stream" } }),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(spies.detect).toHaveBeenCalledOnce();
+      expect(spies.output).not.toHaveBeenCalled();
+      expect(spies.stream).not.toHaveBeenCalled();
+      expect(spies.validate).not.toHaveBeenCalled();
+      expect(tee).not.toHaveBeenCalled();
+      expect(await result.response.json()).toEqual({
+        id: "ordinary_sse",
+        type: "message",
+        role: "assistant",
+        model: "subscription",
+        content: [{ type: "text", text: "ordinary Claude prose" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 2008, output_tokens: 2 },
+      });
+    } finally {
+      restoreClassifierSpies(spies);
+      tee.mockRestore();
+    }
+  });
+
+  it("keeps a non-Claude Gemini SSE near miss unchanged without classifier calls", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1700000000000));
+    try {
+      const raw = [
+        'data: {"response":{"responseId":"gemini_nonclaude","modelVersion":"gemini-3.7-flash-low","usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":2,"totalTokenCount":10},"candidates":[{"content":{"parts":[{"text":"ordinary Gemini prose"}]},"finishReason":"STOP"}]}}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n");
+      const result = await runWithoutClassifierCalls(() => handleForcedSSEToJson({
+        ...forcedResponsesContext(STAGE_ONE_BODY, [raw], {
+          sourceFormat: FORMATS.OPENAI,
+          targetFormat: FORMATS.GEMINI,
+          provider: "gemini",
+        }),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(await result.response.json()).toEqual({
+        id: "resp_gemini_nonclaude",
+        object: "chat.completion",
+        created: 1700000000,
+        model: "gemini-3.7-flash-low",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: "ordinary Gemini prose" },
+          finish_reason: "stop",
+        }],
+        usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves ordinary Responses reasoning and custom tool conversion", async () => {
+    const ordinaryBody = deepFreeze({ ...STAGE_ONE_BODY, system: "ordinary request" });
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      body: ordinaryBody,
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      providerResponse: jsonProviderResponse(responsesJson([
+        {
+          id: "rs_ordinary",
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "ordinary reasoning" }],
+        },
+        { id: "msg_ordinary", ...textItem("ordinary Responses text") },
+        { id: "ct_ordinary", type: "custom_tool_call", name: "shell", input: "pwd" },
+      ], { id: "resp_ordinary_rich" })),
+    }));
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toEqual({
+      id: "ordinary_rich",
+      type: "message",
+      role: "assistant",
+      model: "subscription",
+      content: [
+        { type: "thinking", thinking: "ordinary reasoning" },
+        { type: "text", text: "ordinary Responses text" },
+        { type: "tool_use", id: "ct_ordinary", name: "shell", input: { input: "pwd" } },
+      ],
+      stop_reason: "tool_use",
+      stop_sequence: null,
+      usage: { input_tokens: 2008, output_tokens: 2 },
+    });
+  });
+
+  it("keeps ordinary forced Responses incomplete status cache-aware without teeing", async () => {
+    const ordinaryBody = deepFreeze({ ...STAGE_ONE_BODY, system: "ordinary request" });
+    const item = { id: "msg_ordinary_incomplete", ...textItem("ordinary incomplete text") };
+    const stream = readableFromChunks([
+      frame("response.created", {
+        type: "response.created",
+        response: { id: "resp_ordinary_incomplete", created_at: 1700000000 },
+      }),
+      doneFrame(item),
+      frame("response.incomplete", {
+        type: "response.incomplete",
+        response: {
+          id: "resp_ordinary_incomplete",
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+          usage: {
+            input_tokens: 8,
+            output_tokens: 2,
+            total_tokens: 10,
+            input_tokens_details: { cached_tokens: 12 },
+          },
+        },
+      }),
+    ]);
+    const tee = vi.spyOn(stream, "tee");
+    const spies = classifierCallSpies();
+    try {
+      const context = {
+        ...forcedResponsesContext(ordinaryBody, [], {
+          targetFormat: FORMATS.OPENAI_RESPONSES,
+          provider: "codex",
+        }),
+        providerResponse: new Response(stream, { headers: { "content-type": "text/event-stream" } }),
+      };
+      const result = await handleForcedSSEToJson(context);
+
+      expect(result.success).toBe(true);
+      expect(spies.detect).toHaveBeenCalledOnce();
+      expect(spies.stream).not.toHaveBeenCalled();
+      expect(spies.output).not.toHaveBeenCalled();
+      expect(spies.validate).not.toHaveBeenCalled();
+      expect(tee).not.toHaveBeenCalled();
+      expect(context.appendLog).toHaveBeenCalledWith(expect.objectContaining({
+        status: "200 OK",
+        tokens: expect.objectContaining({
+          input_tokens_details: { cached_tokens: 12 },
+        }),
+      }));
+      expect(await result.response.json()).toEqual({
+        id: "ordinary_incomplete",
+        type: "message",
+        role: "assistant",
+        model: "gpt-5.6-sol",
+        content: [{ type: "text", text: "ordinary incomplete text" }],
+        stop_reason: "max_tokens",
+        stop_sequence: null,
+        usage: { input_tokens: 8, output_tokens: 2 },
+      });
+    } finally {
+      restoreClassifierSpies(spies);
+      tee.mockRestore();
+    }
+  });
+
+  it("preserves ordinary Chat reasoning when no text is present", async () => {
+    const ordinaryBody = deepFreeze({ ...STAGE_ONE_BODY, system: "ordinary request" });
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      body: ordinaryBody,
+      providerResponse: jsonProviderResponse(openAICompletionMessage({
+        role: "assistant",
+        content: "",
+        reasoning_content: "ordinary Chat reasoning",
+      })),
+    }));
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toEqual({
+      id: "chatcmpl_classifier_1700000000",
+      type: "message",
+      role: "assistant",
+      model: "subscription",
+      content: [{ type: "thinking", thinking: "ordinary Chat reasoning" }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: 2008, output_tokens: 2 },
+    });
+  });
+
+  it("preserves ordinary JSON fence removal and empty-content fallback", async () => {
+    const jsonBody = deepFreeze({
+      ...STAGE_ONE_BODY,
+      system: "ordinary request",
+      response_format: { type: "json_object" },
+    });
+    const fenced = await handleNonStreamingResponse(nonStreamingContext({
+      body: jsonBody,
+      sourceFormat: FORMATS.OPENAI,
+      providerResponse: jsonProviderResponse(openAICompletion("```json\n{\"ok\":true}\n```")),
+    }));
+    const empty = await handleNonStreamingResponse(nonStreamingContext({
+      body: deepFreeze({ ...STAGE_ONE_BODY, system: "ordinary request" }),
+      providerResponse: jsonProviderResponse(openAICompletion("")),
+    }));
+
+    expect(fenced.success).toBe(true);
+    expect(await fenced.response.json()).toMatchObject({
+      object: "chat.completion",
+      choices: [{ message: { role: "assistant", content: "{\"ok\":true}" } }],
+      model: "subscription",
+    });
+    expect(empty.success).toBe(false);
+    expect(empty.status).toBe(502);
+    expect(await empty.response.json()).toMatchObject({
+      error: { message: "Empty response content from op-test-chat/gpt-5.6-sol" },
+    });
   });
 });

@@ -452,7 +452,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
-      if (classifierMode && !isGeminiSse) {
+      if (classifierMode) {
         finalResp = validateClaudeClassifierMessage(
           body,
           finalResp,
@@ -544,8 +544,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       finalBody = parsed;
     }
 
+    if (classifierMode) {
+      finalBody = validateClaudeClassifierMessage(body, finalBody, null);
+    }
+
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
+    if (err instanceof ClaudeClassifierValidationError) {
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+      );
+    }
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
   }
