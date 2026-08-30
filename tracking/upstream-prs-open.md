@@ -8,31 +8,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3276 — fix(cursor): tunnel AgentService through HTTP/2 proxy so vendor models stream
-
-- url: https://github.com/decolua/9router/pull/3276
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3273 — feat(usage): live Sessions tab + CLI custom URL presets
 
 - url: https://github.com/decolua/9router/pull/3273
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3272 — feat: add Oh My Pi (omp) CLI tool integration
-
-- url: https://github.com/decolua/9router/pull/3272
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 

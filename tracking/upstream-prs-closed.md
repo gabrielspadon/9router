@@ -1,5 +1,33 @@
 # Upstream PRs — closed (processed)
 
+## PR #3276 — fix(cursor): tunnel AgentService through HTTP/2 proxy so vendor models stream
+
+- url: https://github.com/decolua/9router/pull/3276
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-pr3276
+- local-ref: 31eb48b4c
+- disposition: adapted
+- validation: independent task and whole-branch reviews approved; composed strict-proxy and Cursor union 205/205, final focused checks 153/153 plus recheck 47/47
+- notes: replaced raw upstream patch with route-provenance HTTP/2 leases, strict pool snapshots and migration, required-unavailable zero-egress boundaries, and Cursor catalog 503 preflight
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits f2971fe22 through fa61ffbea, composed with master in 31eb48b4c. Preserves B31 model-lock metadata and Antigravity verification ordering while enforcing proxy route ownership across AgentService, refresh, provider tests, usage, quota, and all Cursor model routes.
+
+## PR #3272 — feat: add Oh My Pi (omp) CLI tool integration
+
+- url: https://github.com/decolua/9router/pull/3272
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: design/pr3272-omp-guide-spec
+- local-ref: e6c0491e8
+- disposition: adapted
+- validation: independent design, plan, task, and whole-slice reviews approved; focused guide union 16/16, scoped ESLint, guarded CLI packaging with archive cleanup
+- notes: accepted only a model-less default-card guide with one normalized /v1 template; rejected upstream writer, status, project, package, and runtime integration
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits d5caacdc8 and e6c0491e8 add the copyable OMP v18 discovery YAML and preserve existing guide substitutions. No OMP-specific route, writer, status adapter, model selector, probe, or CLI change was introduced.
+
 ## PR #3268 — feat(codex): support fast service tier for image generation
 
 - url: https://github.com/decolua/9router/pull/3268
