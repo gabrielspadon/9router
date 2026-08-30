@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, resetHeadroomCircuitBreaker } from "../../open-sse/rtk/headroom.js";
 import { parseHeadroomTimeoutMs } from "../../src/lib/headroom/detect.js";
 
@@ -721,6 +721,21 @@ describe("compressWithHeadroom", () => {
     expect(stats).toBeNull();
     expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(diagnostics.reason).toContain("circuit breaker active");
+  });
+  it("uses a 15s default timeout so large prompt compression can finish", async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+      tokens_before: 100,
+      tokens_after: 20,
+      tokens_saved: 80,
+    }), { status: 200 }));
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => new AbortController().signal);
+    const body = { messages: [{ role: "user", content: "meaningful original content that is fairly long here ".repeat(30) }] };
+
+    const stats = await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787" });
+
+    expect(stats.tokens_saved).toBe(80);
+    expect(timeoutSpy).toHaveBeenCalledWith(15000);
   });
 });
 
