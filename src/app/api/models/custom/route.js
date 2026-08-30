@@ -17,11 +17,16 @@ export async function GET() {
 // POST /api/models/custom - Add custom model
 export async function POST(request) {
   try {
-    const { providerAlias, id, type, name } = await request.json();
+    const { providerAlias, id, type, name, maxInputTokens, maxOutputTokens } = await request.json();
     if (!providerAlias || !id) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
-    const added = await addCustomModel({ providerAlias, id, type: type || "llm", name });
+    for (const [field, value] of Object.entries({ maxInputTokens, maxOutputTokens })) {
+      if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
+        return NextResponse.json({ error: `${field} must be a positive integer` }, { status: 400 });
+      }
+    }
+    const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, maxInputTokens, maxOutputTokens });
     return NextResponse.json({ success: true, added });
   } catch (error) {
     console.log("Error adding custom model:", error);

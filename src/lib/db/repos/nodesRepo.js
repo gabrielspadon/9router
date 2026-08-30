@@ -94,3 +94,24 @@ export async function deleteProviderNode(id) {
   });
   return removed;
 }
+
+// Remove a provider node, its connections, and its model aliases as one unit.
+export async function deleteProviderNodeCascade(id) {
+  const db = await getAdapter();
+  let removed = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
+    if (!row) return;
+    const encodedAliasPrefix = stringifyJson(`${id}/`).slice(0, -1);
+    db.run(`DELETE FROM providerConnections WHERE provider = ?`, [id]);
+    db.run(
+      `DELETE FROM kv
+       WHERE scope = ?
+         AND substr(value, 1, length(?)) = ?`,
+      ["modelAliases", encodedAliasPrefix, encodedAliasPrefix]
+    );
+    db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
+    removed = rowToNode(row);
+  });
+  return removed;
+}

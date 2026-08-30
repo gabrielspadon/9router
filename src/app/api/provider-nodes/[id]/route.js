@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { deleteProviderNodeCascade, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
 import { canonicalEndpoint, openAIEndpoints } from "../endpointUrls.js";
 
 const BEARER_AUTH = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -108,14 +108,11 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
-    const node = await getProviderNodeById(id);
+    const node = await deleteProviderNodeCascade(id);
 
     if (!node) {
       return NextResponse.json({ error: "Provider node not found" }, { status: 404 });
     }
-
-    await deleteProviderConnectionsByProvider(id);
-    await deleteProviderNode(id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
