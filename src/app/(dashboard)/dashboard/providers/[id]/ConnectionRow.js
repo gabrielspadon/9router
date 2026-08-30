@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle, Tooltip } from "@/shared/components";
+import { Badge, Button, Toggle, Tooltip } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
 import CooldownTimer from "./CooldownTimer";
 
@@ -178,24 +178,26 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
-          <button
+          <Button
+            variant="bare" size="icon-sm"
             onClick={onMoveUp}
             disabled={isFirst}
-            className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
+            className={isFirst ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
             title="Raise connection priority"
             aria-label="Raise connection priority"
           >
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="bare" size="icon-sm"
             onClick={onMoveDown}
             disabled={isLast}
-            className={`focus-ring p-0.5 rounded ${isLast ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
+            className={isLast ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
             title="Lower connection priority"
             aria-label="Lower connection priority"
           >
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
-          </button>
+          </Button>
         </div>
         <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-sm text-text-muted">
           {authIcon}

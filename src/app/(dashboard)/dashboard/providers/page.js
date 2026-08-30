@@ -759,13 +759,13 @@ export default function ProvidersPage() {
           >
             <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
               <h3 className="font-semibold">Test Results</h3>
-              <button
+              <Button
+                variant="ghost" size="icon"
                 onClick={() => setTestResults(null)}
-                className="focus-ring p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors duration-150"
                 aria-label="Close test results"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-lg">close</span>
-              </button>
+              </Button>
             </div>
             <div className="p-5">
               <ProviderTestResultsView results={testResults} />

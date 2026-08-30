@@ -24,29 +24,29 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
         </div>
         {onTest && (
           <div className="relative group/btn">
-            <button onClick={onTest} disabled={isTesting} title={isTesting ? "Testing model" : "Test model"} aria-label={isTesting ? "Testing model" : "Test model"} className={`focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-brand transition-opacity duration-150 ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            <Button variant="bare" size="icon-sm" onClick={onTest} disabled={isTesting} title={isTesting ? "Testing model" : "Test model"} aria-label={isTesting ? "Testing model" : "Test model"} className={`hover:bg-sidebar text-text-muted hover:text-brand transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
               <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
-            </button>
+            </Button>
             <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-150">
               {isTesting ? "Testing..." : "Test"}
             </span>
           </div>
         )}
         <div className="relative group/btn">
-          <button onClick={() => onCopy(fullModel, `model-${model.id}`)} title={copied === `model-${model.id}` ? "Copied" : "Copy model id"} aria-label={copied === `model-${model.id}` ? "Copied" : "Copy model id"} className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-brand">
+          <Button variant="bare" size="icon-sm" onClick={() => onCopy(fullModel, `model-${model.id}`)} title={copied === `model-${model.id}` ? "Copied" : "Copy model id"} aria-label={copied === `model-${model.id}` ? "Copied" : "Copy model id"} className="hover:bg-sidebar text-text-muted hover:text-brand">
             <span className="material-symbols-outlined text-sm" aria-hidden="true">{copied === `model-${model.id}` ? "check" : "content_copy"}</span>
-          </button>
+          </Button>
           <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-150">
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
         {isFree && <span className="text-xs font-semibold text-text-muted bg-surface-2 border border-border px-1.5 py-0.5 rounded">FREE</span>}
         {isCustom && (
-          <button onClick={onDeleteAlias} className="focus-ring p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity duration-150 ml-auto" title="Remove custom model">
+          <Button variant="bare" size="icon-sm" onClick={onDeleteAlias} className="hover:bg-danger-soft text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity ml-auto" title="Remove custom model">
             <span aria-hidden="true" className="material-symbols-outlined text-sm">close</span>
-          </button>
+          </Button>
         )}
       </div>
     </div>

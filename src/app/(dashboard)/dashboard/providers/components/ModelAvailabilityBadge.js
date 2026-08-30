@@ -125,14 +125,14 @@ export default function ModelAvailabilityBadge() {
               <span className="text-sm font-semibold text-text-main">Model Status</span>
               <span className="sr-only">{isHealthy ? "All models available" : "Some models degraded"}</span>
             </div>
-            <button
+            <Button
+              variant="ghost" size="icon-sm"
               onClick={fetchStatus}
-              className="focus-ring p-1 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors duration-150"
               title="Refresh"
               aria-label="Refresh model status"
             >
               <span className="material-symbols-outlined text-[14px]" aria-hidden="true">refresh</span>
-            </button>
+            </Button>
           </div>
 
           <div className="px-4 py-3 max-h-60 overflow-y-auto">
