@@ -178,7 +178,7 @@ describe("Antigravity terminal verification success", () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it("keeps first valid stream event limited to account-health success", async () => {
+  it("defers Antigravity account-health success until terminal stream completion", async () => {
     const notify = terminalSpy();
     const accountHealth = vi.fn();
     const response = {
@@ -199,10 +199,49 @@ describe("Antigravity terminal verification success", () => {
       streamController: { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() }, onStreamComplete: vi.fn(), streamDetailId: "stream-1", streamState: {},
       pxpipe: null, reqTag: "TERM", log: { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() },
     });
-    await result.response.body.cancel();
+    await Promise.resolve();
+    expect(accountHealth).not.toHaveBeenCalled();
+    await readAvailableStreamText(result.response);
     await Promise.resolve();
     expect(accountHealth).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("uses a fixed Antigravity error for an opaque structured streaming failure", async () => {
+    const opaqueMessage = "opaque-upstream-stream-secret";
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = {
+      signal: new AbortController().signal,
+      isConnected: () => true,
+      handleComplete: vi.fn(),
+      handleDisconnect: vi.fn(),
+      handleError: vi.fn(),
+    };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: sseResponse(JSON.stringify({ error: { status: 502, message: opaqueMessage } })),
+      sourceFormat: "openai",
+      targetFormat: "openai",
+      userAgent: "test",
+      onRequestSuccess: vi.fn(),
+      reqLogger: { logTargetRequest: vi.fn(), logError: vi.fn() },
+      toolNameMap: null,
+      customToolNames: null,
+      streamController,
+      onStreamComplete: vi.fn(),
+      streamDetailId: "stream-opaque-error",
+      streamState: {},
+      log,
+    });
+    const clientPayload = await result.response.text();
+    const sinks = JSON.stringify([clientPayload, result.error, log.errorLine.mock.calls, streamController.handleError.mock.calls]);
+
+    expect(result).toMatchObject({
+      success: false,
+      status: 502,
+      error: "Antigravity upstream request failed",
+    });
+    expect(sinks).not.toContain(opaqueMessage);
   });
 
   it("preflights a normal Antigravity data frame before it can reach stream sinks", async () => {
@@ -254,7 +293,8 @@ describe("Antigravity terminal verification success", () => {
   });
 
   it("gates a later split Antigravity validation frame before stream sinks", async () => {
-    const onValidationRequired = vi.fn();
+    const healthStates = [];
+    const onValidationRequired = vi.fn(async () => healthStates.push("unavailable"));
     const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
     const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
     const validationSse = `data: ${JSON.stringify(validationFrame())}\n\n`;
@@ -276,7 +316,7 @@ describe("Antigravity terminal verification success", () => {
       sourceFormat: "openai",
       targetFormat: "openai",
       userAgent: "test",
-      onRequestSuccess: vi.fn(),
+      onRequestSuccess: async () => healthStates.push("available"),
       onValidationRequired,
       verificationContext: { connectionId: "conn-terminal", observationId: "obs-later", challengeIdAtStart: "challenge-later" },
       reqLogger: logger,
@@ -300,6 +340,7 @@ describe("Antigravity terminal verification success", () => {
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain(VALIDATION_URLS[0]);
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain("onboard-secret");
     expect(streamController.handleError).toHaveBeenCalled();
+    expect(healthStates).toEqual(["unavailable"]);
   });
 
   it("gates Antigravity validation before forced SSE-to-JSON conversion sinks", async () => {

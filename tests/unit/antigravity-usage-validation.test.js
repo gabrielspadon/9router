@@ -381,4 +381,13 @@ describe("Antigravity usage verification", () => {
     });
     expect(serialized).not.toContain(OPAQUE_QUOTA_ERROR);
   });
+
+  it("fails open when the Gemini quota request throws", async () => {
+    const google = await loadGoogle([]);
+    fetchWithTimeout.mockRejectedValueOnce(new Error("opaque-gemini-quota-secret"));
+
+    await expect(google.getGeminiUsage("token", { projectId: "project-id" })).resolves.toEqual({
+      message: "Gemini CLI quota request failed.",
+    });
+  });
 });

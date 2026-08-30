@@ -9,7 +9,6 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
-import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
 import { classifyAntigravitySseValidation, createAntigravitySseValidationGate } from "./antigravitySseValidation.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
@@ -181,7 +180,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
             ? parsed.error
             : parsed.error?.message || parsed.error_msg || parsed.detail || JSON.stringify(parsed);
           const safeErrMsg = provider === "antigravity"
-            ? redactAntigravityValidationText(errMsg)
+            ? "Antigravity upstream request failed"
             : errMsg;
           const rawStatus = parsed.error?.status || parsed.status || 502;
           const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 502;
@@ -203,8 +202,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
   }
 
-  // First valid event/chunk confirmed — notify request success callback
-  if (onRequestSuccess) {
+  // Non-Antigravity streams can clear account health after their first valid
+  // event. Antigravity must wait for terminal completion because a later SSE
+  // frame can still be a validation challenge.
+  if (onRequestSuccess && provider !== "antigravity") {
     Promise.resolve()
       .then(onRequestSuccess)
       .catch(err => {
@@ -252,7 +253,21 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, streamState });
+  let antigravityRequestSuccessNotified = false;
+  const onStreamCompleteAtTerminal = (...args) => {
+    onStreamComplete?.(...args);
+    if (provider !== "antigravity" || antigravityRequestSuccessNotified || typeof onRequestSuccess !== "function") return;
+    const [contentObj, usage, , { aborted = false } = {}] = args;
+    if (aborted || !(contentObj?.content?.trim?.() || contentObj?.thinking?.trim?.() || hasOutputTokens(usage))) return;
+    antigravityRequestSuccessNotified = true;
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  };
+
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: onStreamCompleteAtTerminal, apiKey, streamState });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;

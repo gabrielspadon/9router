@@ -120,7 +120,7 @@ export async function getGeminiUsage(accessToken, providerSpecificData, proxyOpt
 
     return { plan, quotas };
   } catch {
-    return { message: `Gemini CLI error: ${error.message}` };
+    return { message: "Gemini CLI quota request failed." };
   }
 }
 
