@@ -35,17 +35,16 @@ export default function LanguageSwitcher({ currentLang }) {
         return;
       }
       if (event.key !== "Tab") return;
-      const focusable = dialogRef.current?.querySelectorAll("button, [href]");
-      if (!focusable || focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      const items = [...(dialogRef.current?.querySelectorAll("button, [href]") || [])];
+      if (items.length === 0) return;
+      // -1 is the dialog container, which takes focus on open and is not in
+      // the list. Stepping from it must land inside, not on the page behind.
+      const index = items.indexOf(document.activeElement);
+      const next = event.shiftKey
+        ? items[index <= 0 ? items.length - 1 : index - 1]
+        : items[index === -1 || index === items.length - 1 ? 0 : index + 1];
+      event.preventDefault();
+      next.focus();
     };
 
     document.addEventListener("keydown", onKeyDown);
