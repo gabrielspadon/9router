@@ -336,7 +336,7 @@ export default function CoworkToolCard({
                         selectedModels.map((m) => (
                           <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
                             {m}
-                            <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-danger">
+                            <button onClick={() => handleRemoveModel(m)} aria-label={`Remove ${m}`} className="ml-0.5 hover:text-danger focus-ring">
                               <span className="material-symbols-outlined text-[12px]">close</span>
                             </button>
                           </span>
@@ -364,7 +364,7 @@ export default function CoworkToolCard({
                             <span className="text-[9px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/5 text-text-muted whitespace-nowrap">+{p.toolNames.length - 6}</span>
                           )}
                         </div>
-                        <button onClick={() => removePlugin(p.name)} className="shrink-0 hover:text-danger ml-auto">
+                        <button onClick={() => removePlugin(p.name)} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto focus-ring">
                           <span className="material-symbols-outlined text-[12px]">close</span>
                         </button>
                       </div>
@@ -375,7 +375,7 @@ export default function CoworkToolCard({
                         <span className="text-xs font-medium min-w-0 truncate flex-shrink-0">{p.name}</span>
                         <span className="text-[8px] px-1 py-0.5 rounded bg-surface-2 text-text-muted shrink-0">custom</span>
                         <span className="flex-1 text-[9px] text-text-muted truncate">{p.url}</span>
-                        <button onClick={() => setCustomPlugins(customPlugins.filter((x) => x.name !== p.name))} className="shrink-0 hover:text-danger ml-auto">
+                        <button onClick={() => setCustomPlugins(customPlugins.filter((x) => x.name !== p.name))} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto focus-ring">
                           <span className="material-symbols-outlined text-[12px]">close</span>
                         </button>
                       </div>
@@ -387,7 +387,7 @@ export default function CoworkToolCard({
                     <div className="flex items-center gap-2 mt-0.5">
                       <Button variant="secondary" size="sm" onClick={() => setMarketplaceOpen(true)}>+ Browse</Button>
                       <Button variant="secondary" size="sm" onClick={() => { setAddMcpForm({ name: "", url: "" }); setAddMcpOpen(true); }}>+ Custom</Button>
-                      <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="text-[10px] text-text-muted hover:text-primary underline ml-auto">Find MCPs →</a>
+                      <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="ml-auto rounded-[4px] text-[10px] text-text-muted hover:text-primary underline focus-ring">Find MCPs →</a>
                     </div>
                   </div>
                 </div>
@@ -433,7 +433,7 @@ export default function CoworkToolCard({
                             <div className="text-xs font-medium">Browser Control (Browser MCP)</div>
                             <p className="text-[10px] text-text-muted leading-snug">
                               Controls your running Chrome. Auto-strips Cowork&apos;s built-in browser tools.{" "}
-                              <a href={browserDef.extensionUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">Install Chrome extension</a>
+                              <a href={browserDef.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-primary underline focus-ring">Install Chrome extension</a>
                             </p>
                           </div>
                         </label>
@@ -465,10 +465,10 @@ export default function CoworkToolCard({
                                 </div>
                                 <p className="text-[10px] text-text-muted leading-snug">{p.description}</p>
                                 {p.extensionUrl && (
-                                  <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary underline">Install Chrome extension</a>
+                                  <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-[10px] text-primary underline focus-ring">Install Chrome extension</a>
                                 )}
                                 {p.setupUrl && (
-                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary underline">{p.setupLabel || "Setup guide"}</a>
+                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-[10px] text-primary underline focus-ring">{p.setupLabel || "Setup guide"}</a>
                                 )}
                               </div>
                             </label>
@@ -552,7 +552,7 @@ export default function CoworkToolCard({
           <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-sm mx-4 p-5 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Add Custom MCP</h3>
-              <button onClick={() => setAddMcpOpen(false)} className="text-text-muted hover:text-text-main">
+              <button onClick={() => setAddMcpOpen(false)} aria-label="Close" className="text-text-muted hover:text-text-main focus-ring">
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
@@ -565,7 +565,7 @@ export default function CoworkToolCard({
                   placeholder="my-mcp"
                   value={addMcpForm.name}
                   onChange={(e) => setAddMcpForm((f) => ({ ...f, name: e.target.value.replace(/\s+/g, "-").toLowerCase() }))}
-                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs outline-none focus:border-primary"
+                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs focus-ring focus:border-primary"
                 />
               </div>
               <div className="flex flex-col gap-1">
@@ -575,7 +575,7 @@ export default function CoworkToolCard({
                   placeholder="https://your-mcp-server.com/sse"
                   value={addMcpForm.url}
                   onChange={(e) => setAddMcpForm((f) => ({ ...f, url: e.target.value }))}
-                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs outline-none focus:border-primary"
+                  className="px-2 py-1.5 rounded border border-border bg-surface text-xs focus-ring focus:border-primary"
                 />
               </div>
             </div>

@@ -190,7 +190,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
               {showInstallGuide && (
                 <div className="p-4 bg-surface border border-border rounded-lg">
                   <h4 className="font-medium mb-3">Installation Guide</h4>
-                  <p className="text-sm text-text-muted">Install Kilo Code from <a className="text-primary underline" href="https://kilocode.ai" target="_blank" rel="noreferrer">kilocode.ai</a> or VS Code extension marketplace.</p>
+                  <p className="text-sm text-text-muted">Install Kilo Code from <a className="rounded-[4px] text-primary underline focus-ring" href="https://kilocode.ai" target="_blank" rel="noreferrer">kilocode.ai</a> or VS Code extension marketplace.</p>
                 </div>
               )}
             </div>
@@ -223,8 +223,8 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Model</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="relative w-full min-w-0">
-                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
-                    {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5" />
+                    {selectedModel && <button onClick={() => setSelectedModel("")} aria-label="Clear" className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors focus-ring" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <Button
                     variant="secondary"

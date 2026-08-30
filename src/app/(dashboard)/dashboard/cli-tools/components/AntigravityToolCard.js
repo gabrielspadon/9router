@@ -329,7 +329,7 @@ export default function AntigravityToolCard({
                   <select
                     value={selectedApiKey}
                     onChange={(e) => setSelectedApiKey(e.target.value)}
-                    className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                    className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus-ring sm:py-1.5"
                   >
                     {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
                   </select>
@@ -350,12 +350,12 @@ export default function AntigravityToolCard({
                       value={modelMappings[model.alias] || ""}
                       onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
                       placeholder="provider/model-id"
-                      className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                      className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5"
                     />
                     {modelMappings[model.alias] && (
                       <button
                         onClick={() => handleModelMappingChange(model.alias, "")}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors"
+                        aria-label="Clear" className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors focus-ring"
                         title="Clear"
                       >
                         <span className="material-symbols-outlined text-[14px]">close</span>

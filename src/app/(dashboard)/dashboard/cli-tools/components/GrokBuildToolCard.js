@@ -30,13 +30,13 @@ function ModelField({ label, value, placeholder, onChange, onSelect, disabled, h
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
-          className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+          className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5"
         />
         {value && (
           <button
             type="button"
             onClick={() => onChange("")}
-            className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors"
+            aria-label="Clear (inherit main model for subagents)" className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-danger rounded transition-colors focus-ring"
             title="Clear (inherit main model for subagents)"
           >
             <span className="material-symbols-outlined text-[14px]">close</span>

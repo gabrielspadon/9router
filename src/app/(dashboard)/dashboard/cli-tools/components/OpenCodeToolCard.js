@@ -375,7 +375,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                                   console.log("Error removing model:", error);
                                 }
                               }}
-                              className="ml-0.5 hover:text-danger"
+                              aria-label={`Remove ${model}`} className="ml-0.5 hover:text-danger focus-ring"
                             >
                               <span className="material-symbols-outlined text-[12px]">close</span>
                             </button>
@@ -407,7 +407,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                     value={subagentModel}
                     onChange={(e) => setSubagentModel(e.target.value)}
                     placeholder={selectedModel || "provider/model-id (defaults to main model)"}
-                    className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                    className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5"
                   />
                   <Button
                     variant="secondary"
@@ -421,7 +421,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                   {subagentModel && (
                     <button
                       onClick={() => setSubagentModel("")}
-                      className="p-1 text-text-muted hover:text-danger rounded transition-colors"
+                      aria-label="Clear (will use main model)" className="p-1 text-text-muted hover:text-danger rounded transition-colors focus-ring"
                       title="Clear (will use main model)"
                     >
                       <span className="material-symbols-outlined text-[14px]">close</span>

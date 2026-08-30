@@ -73,7 +73,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           value={modelValue}
           onChange={(e) => setModelValue(e.target.value)}
           placeholder="provider/model-id"
-          className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+          className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus-ring"
         />
         <Button
           variant="secondary"
@@ -96,7 +96,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             />
             <button
               onClick={() => setModelValue("")}
-              className="p-2 text-text-muted hover:text-danger rounded transition-colors"
+              aria-label="Clear" className="p-2 text-text-muted hover:text-danger rounded transition-colors focus-ring"
               title="Clear"
             >
               <span className="material-symbols-outlined text-lg">close</span>

@@ -252,7 +252,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                         selectedModels.map((model) => (
                           <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
                             {model}
-                            <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} className="ml-0.5 hover:text-danger">
+                            <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} aria-label={`Remove ${model}`} className="ml-0.5 hover:text-danger focus-ring">
                               <span className="material-symbols-outlined text-[12px]">close</span>
                             </button>
                           </span>
