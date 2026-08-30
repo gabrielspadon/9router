@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Badge } from "@/shared/components";
+import { Card, Badge, Button } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   SKILLS,
@@ -12,16 +12,15 @@ import {
 function CopyButton({ value, label = "Copy link" }) {
   const { copied, copy } = useCopyToClipboard(2000);
   return (
-    <button
+    <Button
+      size="sm"
+      icon={copied ? "check" : "content_copy"}
       onClick={() => copy(value)}
-      className="px-2 py-1 rounded-md bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1"
+      className="focus-ring shrink-0"
       title={value}
     >
-      <span className="material-symbols-outlined text-[12px]">
-        {copied ? "check" : "content_copy"}
-      </span>
       {copied ? "Copied!" : label}
-    </button>
+    </Button>
   );
 }
 
@@ -29,23 +28,23 @@ function SkillRow({ skill }) {
   const url = getSkillRawUrl(skill.id);
   return (
     <div
-      className={`flex items-start gap-3 p-4 rounded-[14px] border shadow-[var(--shadow-soft)] transition-colors ${
+      className={`flex items-start gap-3 p-4 rounded-[var(--radius-brand-lg)] border shadow-[var(--shadow-soft)] transition-colors duration-150 ${
         skill.isEntry
-          ? "border-brand-500/40 bg-brand-500/5"
+          ? "border-brand-line bg-brand-soft"
           : "border-border-subtle bg-surface hover:bg-surface-2"
       }`}
     >
       <div
-        className={`size-9 rounded-lg flex items-center justify-center shrink-0 ${
-          skill.isEntry ? "bg-primary text-white" : "bg-primary/10 text-primary"
+        className={`size-9 rounded-[var(--radius-brand)] flex items-center justify-center shrink-0 ${
+          skill.isEntry ? "bg-brand-solid text-brand-on" : "bg-surface-2 text-text-muted"
         }`}
       >
-        <span className="material-symbols-outlined text-[18px]">{skill.icon}</span>
+        <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{skill.icon}</span>
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="font-semibold text-sm text-text-main">{skill.name}</h3>
+          <h3 className="text-sm font-semibold text-text-main">{skill.name}</h3>
           {skill.isEntry && (
             <Badge variant="primary" size="sm">START HERE</Badge>
           )}
@@ -60,10 +59,10 @@ function SkillRow({ skill }) {
           href={getSkillBlobUrl(skill.id)}
           target="_blank"
           rel="noreferrer"
-          className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
+          className="focus-ring rounded-sm text-xs text-text-muted hover:text-primary transition-colors duration-150 mt-1 inline-flex items-center gap-1 break-all"
         >
           {url}
-          <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+          <span className="material-symbols-outlined text-[12px]" aria-hidden="true">open_in_new</span>
         </a>
       </div>
 
@@ -77,12 +76,12 @@ export default function SkillsPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <Card padding="md">
         <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
-        <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
+        <div className="px-4 py-3 rounded-[var(--radius-brand)] bg-surface-2 font-mono text-xs text-text-main break-all">
           Read this skill and use it: {getSkillRawUrl("9router")}
         </div>
       </Card>
 
-      <div className="space-y-2">
+      <div className="space-y-4">
         {SKILLS.map((skill) => (
           <SkillRow key={skill.id} skill={skill} />
         ))}
@@ -100,9 +99,9 @@ export default function SkillsPage() {
             href={`${SKILLS_REPO_URL}/tree/master/skills`}
             target="_blank"
             rel="noreferrer"
-            className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+            className="focus-ring rounded-sm text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
-            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+            <span className="material-symbols-outlined text-[16px]" aria-hidden="true">open_in_new</span>
             View on GitHub
           </a>
         </div>
