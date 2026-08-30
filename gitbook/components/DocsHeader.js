@@ -51,10 +51,11 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
               href={DOCS_CONFIG.appUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-brand-solid text-brand-on rounded-lg font-medium hover:bg-brand transition-colors duration-150 text-sm"
+              aria-label={t(lang, "goToApp")}
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-brand-solid text-brand-on rounded-lg font-medium hover:bg-brand-700 transition-colors duration-150 text-sm"
             >
               <span className="hidden sm:inline">{t(lang, "goToApp")}</span>
-              <ExternalLink className="w-4 h-4" />
+              <ExternalLink aria-hidden="true" className="w-4 h-4" />
             </Link>
           </div>
         </div>
