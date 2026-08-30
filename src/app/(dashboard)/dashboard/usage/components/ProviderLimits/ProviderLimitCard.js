@@ -4,10 +4,10 @@ import { useState } from "react";
 import Card from "@/shared/components/Card";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import Badge from "@/shared/components/Badge";
+import Button from "@/shared/components/Button";
 import QuotaProgressBar from "./QuotaProgressBar";
 import { calculatePercentage } from "./utils";
 
-import Button from "@/shared/components/Button";
 // A plan tier is a label, not a health state, so every tier reads neutral and
 // the plan name itself carries the distinction. See TOKEN-CONTRACT.md section 1.
 const planVariants = {
