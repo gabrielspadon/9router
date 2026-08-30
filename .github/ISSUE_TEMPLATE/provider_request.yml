@@ -1,0 +1,125 @@
+name: Provider request
+description: Ask for a new upstream provider to be supported
+title: "feat(providers): "
+labels: ["provider request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        9Router routes to upstream providers through a registry entry, and adds
+        a bespoke executor only where the upstream is not OpenAI-compatible.
+        The questions below decide which of the two this is, so answering them
+        is most of the work.
+
+        Never paste a working key. If you must show an authenticated request,
+        redact the credential.
+
+  - type: input
+    id: provider-name
+    attributes:
+      label: Provider name
+      description: The name the provider uses for itself.
+      placeholder: "Example AI"
+    validations:
+      required: true
+
+  - type: input
+    id: base-url
+    attributes:
+      label: API base URL
+      description: The base the client points at, without the endpoint path.
+      placeholder: "https://api.example.com/v1"
+    validations:
+      required: true
+
+  - type: input
+    id: docs
+    attributes:
+      label: Link to the API documentation
+      description: Public documentation for the chat or completion endpoint. A provider with no public docs is hard to support and harder to keep working.
+      placeholder: "https://docs.example.com/api/chat"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: openai-compatible
+    attributes:
+      label: Is the API OpenAI-compatible
+      description: Compatible means a request to `/chat/completions` in OpenAI's request and response shape works, streaming included. If you have not tried it, say so rather than guessing.
+      options:
+        - "Yes, fully: request, response and streaming all match"
+        - "Mostly: it works but something differs (describe below)"
+        - "No: it has its own request or response format"
+        - "Not sure, I have not tested it"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication mechanism
+      options:
+        - API key in an Authorization bearer header
+        - API key in a custom header
+        - OAuth authorization code flow
+        - OAuth device code flow
+        - Session token exported from a first-party client
+        - No authentication
+        - Other or a mix (describe below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: auth-detail
+    attributes:
+      label: Authentication detail
+      description: For an API key, the header name and value prefix. For OAuth, the authorize and token endpoints, the client id if it is public, and the scopes. Redact any real credential.
+    validations:
+      required: false
+
+  - type: textarea
+    id: models
+    attributes:
+      label: Models to support
+      description: The exact model identifiers as the API expects them, one per line, plus a link to the model list endpoint or page if there is one.
+      placeholder: |
+        example-large-2
+        example-small-2
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: capabilities
+    attributes:
+      label: Capabilities
+      description: Tick only what you have confirmed. An unticked box is treated as unknown, not as unsupported.
+      options:
+        - label: Streaming responses
+        - label: Tool or function calling
+        - label: Image or other multimodal input
+        - label: Thinking or reasoning output
+        - label: Embeddings
+        - label: Image generation
+        - label: Text to speech
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: How does someone get access
+      options:
+        - Free, no account needed
+        - Free tier with an account
+        - Paid, self-service signup
+        - Paid, sales or waitlist only
+        - Self-hosted, the user runs it
+        - Region-restricted
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: can-test
+    attributes:
+      label: Testing
+      options:
+        - label: I have access to this provider and can test a build against it.
+        - label: I am willing to open the pull request myself.

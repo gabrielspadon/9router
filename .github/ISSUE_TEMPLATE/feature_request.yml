@@ -1,0 +1,81 @@
+name: Feature request
+description: Propose a feature or a change in behaviour
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Asking for a new upstream provider has its own form, which collects the
+        details a provider actually needs. Use
+        [Provider request](https://github.com/gabrielspadon/9router/issues/new?template=provider_request.yml)
+        for that.
+
+        Questions about how to do something belong in
+        [Discussions](https://github.com/gabrielspadon/9router/discussions).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched existing issues and did not find this proposal.
+          required: true
+        - label: This is not a request for a new upstream provider.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and what stopped you. Describe the situation, not the solution you have in mind. A problem statement that survives a different solution is the useful kind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The change you want, concretely enough to argue with. If it touches the dashboard, say which page. If it touches routing, say where in the request path.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Routing, fallback or combos
+        - Format translation
+        - Providers, credentials or token refresh
+        - Dashboard UI
+        - Usage, quota or logging
+        - CLI launcher
+        - Deployment, Docker or configuration
+        - Documentation
+        - Other or not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you have already tried
+      description: Existing settings, a workaround, or another tool. Knowing why the current behaviour is not enough is often what decides this.
+    validations:
+      required: false
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Who else does this affect
+      description: Whether it changes behaviour for people who do not opt in, whether it needs a new configuration value, and whether an existing setup would have to change. A change nobody has to notice is far easier to accept than one everybody does.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open the pull request myself.

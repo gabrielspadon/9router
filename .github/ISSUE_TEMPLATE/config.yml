@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question, or not sure it is a bug
+    url: https://github.com/gabrielspadon/9router/blob/master/SUPPORT.md
+    about: Where to ask, and what to bring so the answer arrives on the first reply.
+  - name: Discussions
+    url: https://github.com/gabrielspadon/9router/discussions
+    about: Usage questions, configuration help, and anything not yet a reproducible bug.
+  - name: Report a security vulnerability
+    url: https://github.com/gabrielspadon/9router/security/advisories/new
+    about: Private disclosure. 9Router holds provider API keys and OAuth tokens, so never report one in a public issue.
+  - name: Contributing guide
+    url: https://github.com/gabrielspadon/9router/blob/master/CONTRIBUTING.md
+    about: Setup, the baseline test gate, and how to get a pull request merged.

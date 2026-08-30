@@ -1,0 +1,137 @@
+name: Bug report
+description: Something is broken and you can reproduce it
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this.
+
+        Do not report a security vulnerability here. Use the private route in
+        [SECURITY.md](https://github.com/gabrielspadon/9router/blob/master/SECURITY.md).
+
+        Redact every credential before you post. API keys, OAuth access and
+        refresh tokens, bearer headers and session cookies do not belong in a
+        public issue.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before filing
+      options:
+        - label: I reproduced this on the current release.
+          required: true
+        - label: I searched existing issues and did not find this one.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I have redacted every key, token, cookie and header value below.
+          required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: The `version` field in `package.json`, or the version shown in the dashboard.
+      placeholder: "0.5.55"
+    validations:
+      required: true
+
+  - type: input
+    id: cli-version
+    attributes:
+      label: CLI version
+      description: Output of `9router --version`, or the `version` field in `cli/package.json`. Write "not used" if you do not run the CLI. The server and the CLI are versioned independently.
+      placeholder: "0.5.55"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it
+      options:
+        - npm CLI launcher (9router)
+        - npm run start from a checkout
+        - npm run dev from a checkout
+        - Docker or docker-compose
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Node version
+      description: Output of `node -v` plus the OS and its version.
+      placeholder: "Ubuntu 24.04, Node v24.14.0"
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Upstream provider and model
+      description: The provider, the exact model identifier or combo you routed to, and whether the connection uses an API key or OAuth.
+      placeholder: "anthropic, claude-sonnet-4-6, OAuth"
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: Client and endpoint
+      description: Which client or CLI tool sent the request, and which endpoint it hit.
+      placeholder: "Claude Code -> /v1/messages"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: request-shape
+    attributes:
+      label: Request shape
+      description: Format translation is where most defects live, so the shape of the request matters as much as the upstream.
+      options:
+        - label: Streaming
+        - label: Tool or function calls
+        - label: Tool results fed back in
+        - label: Images or other non-text content
+        - label: System prompt
+        - label: Thinking or reasoning blocks
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The status code and the error body if there was one. A hang, a truncated stream and a 500 are three different bugs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps, or a curl command with the key redacted. State whether the same request works against a different provider, or the same provider works from a different client.
+      placeholder: |
+        1. Connect provider X with an API key
+        2. Send this request from client Y
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: The lines around the failure from `~/.9router/log.txt`, not the whole file. This file can contain prompt and response content, so read what you paste. It stays in `~/.9router/` even when `DATA_DIR` is set elsewhere.
+      render: text
+    validations:
+      required: false
