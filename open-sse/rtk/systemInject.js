@@ -7,6 +7,22 @@ import { ROLE, RESPONSES_ITEM } from "../translator/schema/index.js";
 
 const SEP = "\n\n";
 
+// Dedup guard: the first 100 chars of the prompt act as its signature. Multi-turn
+// conversations replay the same system injection on every request, so appending
+// without this check grows the system message unboundedly.
+function isPromptAlreadyInjected(content, prompt) {
+  if (!content || !prompt) return false;
+  const needle = prompt.trim();
+  if (!needle) return false;
+  return content.includes(needle.slice(0, 100));
+}
+
+function extractTextFromOpenAIMessage(msg) {
+  if (typeof msg.content === "string") return msg.content;
+  if (Array.isArray(msg.content)) return msg.content.map(part => part?.text || "").join(" ");
+  return "";
+}
+
 export function injectSystemPrompt(body, format, prompt) {
   if (!body || !prompt) return;
 
@@ -31,6 +47,7 @@ export function injectSystemPrompt(body, format, prompt) {
 function injectMessagesSystem(body, format, prompt) {
   // OpenAI Responses API: top-level string field
   if (typeof body.instructions === "string") {
+    if (isPromptAlreadyInjected(body.instructions, prompt)) return;
     body.instructions = body.instructions
       ? `${body.instructions}${SEP}${prompt}`
       : prompt;
@@ -45,6 +62,7 @@ function injectMessagesSystem(body, format, prompt) {
   const isResponses = format === FORMATS.OPENAI_RESPONSES;
   const idx = arr.findIndex(m => m && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
   if (idx >= 0) {
+    if (isPromptAlreadyInjected(extractTextFromOpenAIMessage(arr[idx]), prompt)) return;
     appendToOpenAIMessage(arr[idx], prompt, isResponses);
   } else {
     arr.unshift(isResponses
@@ -86,10 +104,13 @@ function appendToOpenAIMessage(msg, prompt, isResponses) {
 // Insert before the last cache_control block to keep injection inside the cached prefix.
 function injectClaudeSystem(body, prompt) {
   if (typeof body.system === "string" && body.system.length > 0) {
+    if (isPromptAlreadyInjected(body.system, prompt)) return;
     body.system = `${body.system}${SEP}${prompt}`;
     return;
   }
   if (Array.isArray(body.system)) {
+    const existingText = body.system.map(block => block?.text || "").join(" ");
+    if (isPromptAlreadyInjected(existingText, prompt)) return;
     const block = { type: "text", text: prompt };
     let lastCacheIdx = -1;
     for (let i = body.system.length - 1; i >= 0; i--) {
@@ -113,6 +134,8 @@ function injectGeminiSystem(body, prompt) {
   const key = useSnake ? "system_instruction" : "systemInstruction";
   const sys = target[key];
   if (sys && Array.isArray(sys.parts)) {
+    const existingText = sys.parts.map(part => part?.text || "").join(" ");
+    if (isPromptAlreadyInjected(existingText, prompt)) return;
     sys.parts.push({ text: prompt });
     return;
   }
