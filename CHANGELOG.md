@@ -1,6 +1,21 @@
 # Unreleased
 
 ## Features
+- Added a configurable upstream response-header timeout. Resolution uses a
+  provider override first, then an executor or registry transport timeout,
+  then the global 15-second setting, then `FETCH_CONNECT_TIMEOUT_MS`. Values
+  must be whole milliseconds from 1000 through 120000.
+- Connect timeouts skip same-transport 502 retries so account and combo
+  fallback can continue promptly. Client cancellation remains distinct.
+- Cursor's standard HTTP/2 path retains its independent existing 60-second
+  whole-request ceiling. A higher response-header setting does not extend that
+  path.
+- The setting covers chat transports, Antigravity image generation, and the
+  dashboard translator. It does not cover response bodies, token stalls, auth
+  or catalog preflight, quota auto-ping, or Devin CLI process startup. Trae
+  event connection is bounded after session creation. A streaming event
+  timeout occurs after the 200 wrapper and cannot trigger combo fallback,
+  while a non-streaming event timeout returns 502 and can fall back.
 - **Providers**: auto-discover free-tier models on a schedule — a background
   sync fetches the public catalogs of every free/free-tier provider that
   exposes one (OpenRouter, OpenCode, MiMo Free), filters them to genuinely
