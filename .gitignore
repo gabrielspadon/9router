@@ -55,6 +55,13 @@ logs/*
 source/*
 .cursor/*
 docs/*
+!docs/README.md
+!docs/getting-started.md
+!docs/providers.md
+!docs/oauth.md
+!docs/token-saver.md
+!docs/troubleshooting.md
+!docs/deployment.md
 !docs/ARCHITECTURE.md
 !docs/MEMORY_OPTIMIZATION.md
 !docs/design/
