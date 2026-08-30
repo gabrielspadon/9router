@@ -26,6 +26,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel, normalizeClaudeModelName, buildClaudeRoutingIndex, readClaudeCompat } from "@/lib/claudeCompat";
+import { createAntigravityVerificationHooks } from "@/lib/antigravityVerification";
 
 // Simple in-memory sliding-window rate limiter to stop abuse of the expensive AI calls below
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -304,7 +305,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
+      const projectVerificationHooks = provider === "antigravity"
+        ? createAntigravityVerificationHooks(credentials.connectionId)
+        : {};
+      const pid = await getProjectIdForConnection(
+        credentials.connectionId,
+        refreshedCredentials.accessToken,
+        provider,
+        projectVerificationHooks,
+      );
       if (pid) {
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately
@@ -319,6 +328,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       providerOverride: chatSettings.providerStrategies?.[provider]?.connectTimeoutMs,
       globalTimeout: chatSettings.connectTimeoutMs,
     };
+    const chatVerificationHooks = provider === "antigravity"
+      ? createAntigravityVerificationHooks(credentials.connectionId)
+      : {};
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -358,6 +370,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       } : null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      verificationContext: chatVerificationHooks.verificationContext,
+      onValidationRequired: chatVerificationHooks.onValidationRequired,
+      onVerificationSuccess: chatVerificationHooks.onVerificationSuccess,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,

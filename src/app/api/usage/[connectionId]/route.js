@@ -12,6 +12,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { getCodexSubscriptionEntitlement } from "open-sse/services/usage/codex.js";
 import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
+import { runAntigravityUsageProbe } from "@/lib/antigravityVerification";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -175,7 +176,9 @@ export async function GET(request, { params }) {
     }
 
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection, proxyOptions, { force });
+    let usage = connection.provider === "antigravity"
+      ? await runAntigravityUsageProbe(connection, proxyOptions, { force })
+      : await getUsageForProvider(connection, proxyOptions, { force });
 
     // Best-effort: persist a quota snapshot so routing can skip this account
     // when its remaining % drops to/below the per-account pause threshold
@@ -192,7 +195,9 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection, proxyOptions, { force });
+        usage = connection.provider === "antigravity"
+          ? await runAntigravityUsageProbe(connection, proxyOptions, { force })
+          : await getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }

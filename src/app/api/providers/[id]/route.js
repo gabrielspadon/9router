@@ -5,6 +5,8 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { releaseConnection } from "@/sse/services/tokenRefresh";
+import { invalidateAntigravityVerificationConnection } from "@/lib/antigravityVerification";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -195,6 +197,8 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    releaseConnection(id);
+    invalidateAntigravityVerificationConnection(id);
     return NextResponse.json({ message: "Connection deleted successfully" });
   } catch (error) {
     console.log("Error deleting connection:", error);

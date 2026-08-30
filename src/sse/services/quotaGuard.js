@@ -19,6 +19,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
 import { getWindowThresholds, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
+import { runAntigravityUsageProbe } from "@/lib/antigravityVerification";
 
 // How long a snapshot (memory or persisted) stays fresh before a live refresh.
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -69,7 +70,9 @@ function buildProxyOptions(connection) {
 
 async function fetchLiveSnapshot(connection) {
   const proxyOptions = await buildProxyOptions(connection);
-  const usagePromise = getUsageForProvider(connection, proxyOptions, {});
+  const usagePromise = connection.provider === "antigravity"
+    ? runAntigravityUsageProbe(connection, proxyOptions)
+    : getUsageForProvider(connection, proxyOptions, {});
   const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error("quota fetch timeout")), LIVE_FETCH_TIMEOUT_MS)
   );
