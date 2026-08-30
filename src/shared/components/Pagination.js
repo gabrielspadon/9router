@@ -37,7 +37,7 @@ export default function Pagination({
   return (
     <div
       className={cn(
-        "flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2",
+        "metric flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2",
         className
       )}
     >
@@ -77,7 +77,7 @@ export default function Pagination({
         {totalPages > 1 && (
           <div className="flex items-center gap-1">
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => onPageChange(currentPage - 1)}
               disabled={currentPage === 1}
@@ -134,7 +134,7 @@ export default function Pagination({
             )}
 
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => onPageChange(currentPage + 1)}
               disabled={currentPage === totalPages}

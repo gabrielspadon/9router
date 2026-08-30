@@ -225,7 +225,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                       {fallbacksCount} Fallback{fallbacksCount > 1 ? "s" : ""}
                     </span>
                   )}
-                  <span className="rounded bg-black/10 dark:bg-white/10 px-2 py-0.5">
+                  <span className="metric rounded bg-black/10 dark:bg-white/10 px-2 py-0.5">
                     Total: {result.totalLatencyMs}ms
                   </span>
                 </div>
@@ -304,7 +304,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                         )}
 
                         {!step.skipped && (
-                          <span className="font-mono text-[11px] text-text-muted">
+                          <span className="metric font-mono text-[11px] text-text-muted">
                             {step.latencyMs}ms
                           </span>
                         )}
