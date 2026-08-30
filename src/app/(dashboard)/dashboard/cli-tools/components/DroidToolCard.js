@@ -307,7 +307,7 @@ export default function DroidToolCard({
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                    <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
+                    <span className="min-w-0 break-all rounded bg-surface-2 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                       {droidStatus.settings.customModels.find(m => m.id?.startsWith("custom:9Router")).baseUrl}
                     </span>
                   </div>
@@ -331,7 +331,7 @@ export default function DroidToolCard({
                     {modelList.length > 0 && (
                       <div className="flex flex-col gap-0.5 mb-1">
                         {modelList.map((id) => (
-                          <div key={id} className="flex items-center gap-1.5 px-2 py-1 bg-bg-secondary rounded border border-border">
+                          <div key={id} className="flex items-center gap-1.5 px-2 py-1 bg-surface-2 rounded border border-border">
                             <span className="flex-1 text-xs font-mono truncate">{id}</span>
                             <button onClick={() => removeModel(id)} aria-label={`Remove ${id}`} className="text-text-muted hover:text-danger transition-colors shrink-0 focus-ring" title="Remove">
                               <span className="material-symbols-outlined text-[12px]">close</span>

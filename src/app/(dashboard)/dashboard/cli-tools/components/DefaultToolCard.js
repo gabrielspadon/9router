@@ -73,7 +73,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           value={modelValue}
           onChange={(e) => setModelValue(e.target.value)}
           placeholder="provider/model-id"
-          className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus-ring"
+          className="w-full sm:w-auto flex-1 px-3 py-2 bg-surface-2 rounded-lg text-xs border border-border focus-ring"
         />
         <Button
           variant="secondary"
@@ -162,19 +162,18 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
         {canShowGuide() && tool.guideSteps.map((item) => (
           <div key={item.step} className="flex items-start gap-4">
             <div 
-              className="size-8 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold text-white"
-              style={{ backgroundColor: tool.color }}
+              className="size-8 rounded-full flex items-center justify-center shrink-0 bg-surface-3 text-sm font-semibold text-text-main metric"
             >
               {item.step}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-text">{item.title}</p>
+              <p className="text-sm font-medium text-text-main">{item.title}</p>
               {item.desc && <p className="text-sm text-text-muted mt-0.5">{item.desc}</p>}
               {item.type === "apiKeySelector" && renderApiKeySelector()}
               {item.type === "modelSelector" && renderModelSelector()}
               {item.value && (
                 <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
-                  <code className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm font-mono border border-border truncate">
+                  <code className="w-full sm:w-auto min-w-0 flex-1 px-3 py-2 bg-surface-2 rounded-lg text-sm font-mono border border-border break-all">
                     {replaceVars(item.value)}
                   </code>
                   {item.copyable && (
@@ -206,7 +205,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
                 {copiedField === "codeblock" ? "Copied!" : "Copy"}
               </Button>
             </div>
-            <pre className="p-4 bg-bg-secondary rounded-lg border border-border overflow-x-auto">
+            <pre className="p-4 bg-surface-2 rounded-lg border border-border overflow-x-auto">
               <code className="text-sm font-mono whitespace-pre">{replaceVars(tool.codeBlock.code)}</code>
             </pre>
           </div>

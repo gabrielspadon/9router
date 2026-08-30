@@ -334,7 +334,7 @@ export default function AntigravityToolCard({
                     {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
                   </select>
                 ) : (
-                  <span className="min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
+                  <span className="min-w-0 break-all rounded bg-surface-2 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                     {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
                   </span>
                 )}

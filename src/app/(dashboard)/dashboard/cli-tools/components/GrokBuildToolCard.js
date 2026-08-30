@@ -315,7 +315,7 @@ export default function GrokBuildToolCard({
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                    <span className="min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted metric sm:py-1.5">{configuredModel.base_url} · {configuredModel.model}{configuredModel.context_window ? ` · ${(configuredModel.context_window / 1000).toLocaleString()}K ctx` : ""}</span>
+                    <span className="min-w-0 break-all rounded bg-surface-2 px-2 py-2 text-xs text-text-muted metric sm:py-1.5">{configuredModel.base_url} · {configuredModel.model}{configuredModel.context_window ? ` · ${(configuredModel.context_window / 1000).toLocaleString()}K ctx` : ""}</span>
                   </div>
                 )}
 

@@ -290,7 +290,7 @@ model = "${effectiveSubagentModel}"
                     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                       <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                       <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                      <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
+                      <span className="min-w-0 break-all rounded bg-surface-2 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                         {currentBaseUrl}
                       </span>
                     </div>
