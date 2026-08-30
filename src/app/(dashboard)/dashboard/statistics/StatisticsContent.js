@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useReducer } from "react";
 import { translate, onLocaleChange } from "@/i18n/runtime";
+import Badge from "@/shared/components/Badge";
 import {
   AreaChart,
   Area,
@@ -356,7 +357,7 @@ export default function StatisticsContent({ initialData }) {
             <thead>
               <tr className="border-b border-border-subtle text-left text-xs text-text-muted">
                 {["Time", "Provider", "Account", "Model", "Input", "Output", "Cache Read", "Cache Write", "Hit Rate", "Time/TTFT", "Status"].map((h) => (
-                  <th key={h} className="px-4 py-2.5 font-medium whitespace-nowrap">{t(h)}</th>
+                  <th key={h} scope="col" className="px-4 py-3 font-medium">{t(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -366,17 +367,17 @@ export default function StatisticsContent({ initialData }) {
               )}
               {items.map((it) => (
                 <tr key={it.id} className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2/50">
-                  <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">{fmtTime(it.timestamp)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{providerNameMap[it.provider] || it.provider || "-"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{it.account || "-"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{it.model || "-"}</td>
-                  <td className="px-4 py-2.5 text-right metric">{fmtTokens(it.inputTokens)}</td>
-                  <td className="px-4 py-2.5 text-right metric">{fmtTokens(it.outputTokens)}</td>
-                  <td className="px-4 py-2.5 text-right metric text-blue-500">{fmtTokens(it.cacheReadTokens)}</td>
-                  <td className="px-4 py-2.5 text-right metric text-purple-500">{fmtTokens(it.cacheCreationTokens)}</td>
-                  <td className="px-4 py-2.5 text-right metric">{fmtPct(it.cacheHitRate)}</td>
-                  <td className="px-4 py-2.5 text-right metric whitespace-nowrap">{fmtLatencyPair(it.latencyMs, it.ttftMs)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
+                  <td className="px-4 py-3 text-text-muted whitespace-nowrap">{fmtTime(it.timestamp)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{providerNameMap[it.provider] || it.provider || "-"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{it.account || "-"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{it.model || "-"}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.inputTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.outputTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.cacheReadTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.cacheCreationTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtPct(it.cacheHitRate)}</td>
+                  <td className="px-4 py-3 text-right metric whitespace-nowrap">{fmtLatencyPair(it.latencyMs, it.ttftMs)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <StatusBadge status={it.status} />
                   </td>
                 </tr>
@@ -418,23 +419,21 @@ const SERIES_LABELS = {
 
 function StatCard({ label, value }) {
   return (
-    <div className="rounded-[14px] border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
+    <div className="rounded-[var(--radius-brand-lg)] border border-border bg-surface p-5 shadow-soft">
       <p className="text-xs text-text-muted">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-text-main truncate">{value}</p>
+      <p className="mt-1 metric text-lg font-semibold text-text-main truncate">{value}</p>
     </div>
   );
 }
 
+// Request outcome. Badge supplies the glyph for the tone, so the result never
+// depends on hue alone. See TOKEN-CONTRACT.md section 1.
 function StatusBadge({ status }) {
   const ok = status === "success" || status === "ok" || status === "200 OK";
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-        ok ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"
-      }`}
-    >
+    <Badge variant={ok ? "success" : "danger"} size="sm">
       {ok ? "ok" : status || "error"}
-    </span>
+    </Badge>
   );
 }
 

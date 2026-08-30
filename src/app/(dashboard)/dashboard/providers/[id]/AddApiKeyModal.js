@@ -305,7 +305,7 @@ export default function AddApiKeyModal({
             />
             {bulkResult && (
               <div
-                className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-yellow-400" : "text-green-400"}`}
+                className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-warning" : "text-success"}`}
               >
                 ✓ {bulkResult.success} added
                 {bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ""}
@@ -466,7 +466,7 @@ export default function AddApiKeyModal({
               </Badge>
             )}
             {error && (
-              <p className="text-xs text-red-500 break-words">{error}</p>
+              <p className="text-xs text-danger break-words">{error}</p>
             )}
             {isCompatible && (
               <p className="text-xs text-text-muted">

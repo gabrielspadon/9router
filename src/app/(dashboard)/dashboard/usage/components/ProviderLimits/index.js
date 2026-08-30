@@ -1027,7 +1027,7 @@ export default function ProviderLimits() {
             type="button"
             onClick={() => setExpiringFirst((prev) => !prev)}
             aria-pressed={expiringFirst}
-            className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-border text-text-main hover:bg-surface-2"}`}
+            className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-warning-line bg-warning-soft text-warning" : "border-border text-text-main hover:bg-surface-2"}`}
             title="Sort accounts by earliest quota reset time"
           >
             <span className="material-symbols-outlined text-[14px]">
@@ -1041,7 +1041,7 @@ export default function ProviderLimits() {
             type="button"
             onClick={handleDisableDepleted}
             disabled={bulkToggling}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-red-500/30 px-2 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-danger-line px-2 text-xs text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
             title="Disable connections with depleted quota on the current page"
           >
             <span className="material-symbols-outlined text-[14px]">block</span>
@@ -1053,7 +1053,7 @@ export default function ProviderLimits() {
             type="button"
             onClick={handleEnableAvailable}
             disabled={bulkToggling}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-500/30 px-2 text-xs text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-success-line px-2 text-xs text-success transition-colors hover:bg-success-soft disabled:opacity-50"
             title="Enable connections that still have quota on the current page"
           >
             <span className="material-symbols-outlined text-[14px]">
@@ -1105,7 +1105,7 @@ export default function ProviderLimits() {
 
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <div className="rounded-xl border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning">
           Expiring-first currently reorders accounts inside the current page.
           Cross-page ordering still follows backend pagination.
         </div>
@@ -1194,7 +1194,7 @@ export default function ProviderLimits() {
                             {kiroMethodLabel(conn)}
                           </span>
                           {kiroRegion(conn) && (
-                            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                            <span className="rounded-full bg-info-soft px-2 py-0.5 text-[10px] font-semibold text-info">
                               {kiroRegion(conn)}
                             </span>
                           )}
@@ -1203,9 +1203,9 @@ export default function ProviderLimits() {
                               isInactive
                                 ? "bg-surface-2 text-text-muted"
                                 : conn.testStatus === "active" || conn.testStatus === "success"
-                                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                  ? "bg-success-soft text-success"
                                   : conn.testStatus === "error" || conn.testStatus === "expired" || conn.testStatus === "unavailable"
-                                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                    ? "bg-danger-soft text-danger"
                                     : "bg-surface-2 text-text-muted"
                             }`}
                           >
@@ -1339,7 +1339,7 @@ export default function ProviderLimits() {
                         onClick={() => handleDeleteConnection(conn.id)}
                         disabled={rowBusy}
                         aria-label="Delete connection"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-danger-soft text-danger transition-colors disabled:opacity-50"
                       >
                         <span
                           className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
@@ -1378,7 +1378,7 @@ export default function ProviderLimits() {
                   </div>
                 ) : error ? (
                   <div className="text-center py-5">
-                    <span className="material-symbols-outlined text-[28px] text-red-500">
+                    <span className="material-symbols-outlined text-[28px] text-danger">
                       error
                     </span>
                     <p className="mt-1.5 text-xs text-text-muted">{error}</p>
@@ -1640,7 +1640,7 @@ export default function ProviderLimits() {
                   Loading reset credits...
                 </div>
               ) : resetCreditsState.error ? (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">
+                <div className="rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
                   {resetCreditsState.error}
                 </div>
               ) : resetCreditsState.data?.credits?.length ? (

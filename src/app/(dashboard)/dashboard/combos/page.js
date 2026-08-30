@@ -510,7 +510,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 {judge && (
                   <button
                     onClick={() => onSetStrategy({ judgeModel: "" })}
-                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    className="p-0.5 rounded text-text-muted hover:text-danger hover:bg-danger-soft transition-colors"
                     title="Reset judge to Auto"
                   >
                     <span className="material-symbols-outlined text-[13px]">close</span>
@@ -562,7 +562,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             </button>
             <button
               onClick={onDelete}
-              className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10"
+              className="flex flex-col items-center rounded px-2 py-1 text-danger transition-colors hover:bg-danger-soft"
               title="Delete"
             >
               <span className="material-symbols-outlined text-[18px]">delete</span>
@@ -678,7 +678,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                     <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} className={`leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
                       <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
                     </button>
-                    <button onClick={() => handleRemove(index)} className="leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-red-500">
+                    <button onClick={() => handleRemove(index)} className="leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-danger">
                       <span className="material-symbols-outlined text-[12px]">close</span>
                     </button>
                   </code>
@@ -820,7 +820,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
       {/* Remove */}
       <button
         onClick={onRemove}
-        className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+        className="p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-all"
         title="Remove"
       >
         <span className="material-symbols-outlined text-[12px]">close</span>

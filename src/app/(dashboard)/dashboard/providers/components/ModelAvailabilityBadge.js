@@ -11,11 +11,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
+// Model health maps onto the shared status tokens rather than hard-coded hex,
+// so it flips with the theme. Each state keeps a distinct glyph and a label, so
+// the row never depends on hue alone. See TOKEN-CONTRACT.md section 1.
 const STATUS_CONFIG = {
-  available: { icon: "check_circle", color: "#22c55e", label: "Available" },
-  cooldown: { icon: "schedule", color: "#f59e0b", label: "Cooldown" },
-  unavailable: { icon: "error", color: "#ef4444", label: "Unavailable" },
-  unknown: { icon: "help", color: "#6b7280", label: "Unknown" },
+  available: { icon: "check_circle", tone: "text-success", label: "Available" },
+  cooldown: { icon: "schedule", tone: "text-warning", label: "Cooldown" },
+  unavailable: { icon: "error", tone: "text-danger", label: "Unavailable" },
+  unknown: { icon: "help", tone: "text-text-muted", label: "Unknown" },
 };
 
 export default function ModelAvailabilityBadge() {
@@ -97,8 +100,8 @@ export default function ModelAvailabilityBadge() {
         onClick={() => setExpanded(!expanded)}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
           isHealthy
-            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/15"
-            : "bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/15"
+            ? "bg-success-soft border-success-line text-success hover:bg-success-soft"
+            : "bg-warning-soft border-warning-line text-warning hover:bg-warning-soft"
         }`}
       >
         <span className="material-symbols-outlined text-[14px]">
@@ -110,23 +113,25 @@ export default function ModelAvailabilityBadge() {
       </button> */}
 
       {expanded && (
-        <div className="absolute top-full right-0 mt-2 w-80 bg-surface border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-bg">
+        <div className="absolute top-full right-0 mt-2 w-80 bg-surface border border-border rounded-xl shadow-elev z-50 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-2">
             <div className="flex items-center gap-2">
               <span
-                className="material-symbols-outlined text-[16px]"
-                style={{ color: isHealthy ? "#22c55e" : "#f59e0b" }}
+                className={`material-symbols-outlined text-[16px] ${isHealthy ? "text-success" : "text-warning"}`}
+                aria-hidden="true"
               >
                 {isHealthy ? "verified" : "warning"}
               </span>
               <span className="text-sm font-semibold text-text-main">Model Status</span>
+              <span className="sr-only">{isHealthy ? "All models available" : "Some models degraded"}</span>
             </div>
             <button
               onClick={fetchStatus}
-              className="p-1 rounded-lg hover:bg-surface text-text-muted hover:text-text-main transition-colors"
+              className="focus-ring p-1 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors duration-150"
               title="Refresh"
+              aria-label="Refresh model status"
             >
-              <span className="material-symbols-outlined text-[14px]">refresh</span>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">refresh</span>
             </button>
           </div>
 
@@ -147,16 +152,17 @@ export default function ModelAvailabilityBadge() {
                         return (
                           <div
                             key={`${m.provider}-${m.model}`}
-                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-surface/30"
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-surface-2"
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span
-                                className="material-symbols-outlined text-[14px] shrink-0"
-                                style={{ color: status.color }}
+                                className={`material-symbols-outlined text-[14px] shrink-0 ${status.tone}`}
+                                aria-hidden="true"
                               >
                                 {status.icon}
                               </span>
-                              <span className="font-mono text-xs text-text-main truncate">{m.model}</span>
+                              <span className="sr-only">{status.label}</span>
+                              <span className="font-mono text-xs text-text-main truncate" title={m.model}>{m.model}</span>
                             </div>
                             {m.status === "cooldown" && (
                               <Button
@@ -164,7 +170,7 @@ export default function ModelAvailabilityBadge() {
                                 variant="ghost"
                                 onClick={() => handleClearCooldown(m.provider, m.model)}
                                 disabled={isClearing}
-                                className="text-[10px] px-1.5! py-0.5! ml-2"
+                                className="text-xs px-1.5! py-0.5! ml-2"
                               >
                                 {isClearing ? "..." : "Clear"}
                               </Button>

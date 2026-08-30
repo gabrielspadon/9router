@@ -31,8 +31,12 @@ export default function CooldownTimer({ until }) {
   if (!remaining) return null;
 
   return (
-    <span className="text-xs text-orange-500 font-mono">
-      ⏱ {remaining}
+    <span className="inline-flex items-center gap-1 text-xs text-warning">
+      <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden="true">
+        schedule
+      </span>
+      <span className="metric font-mono">{remaining}</span>
+      <span className="sr-only">cooldown remaining</span>
     </span>
   );
 }

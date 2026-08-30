@@ -371,9 +371,12 @@ export default function RequestDetailsTab() {
               <div>
                 <span className="text-text-muted">Status:</span>{" "}
                 <span className={cn(
-                  "font-medium",
-                  selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
+                  "inline-flex items-center gap-1 font-medium",
+                  selectedDetail.status === "success" ? "text-success" : "text-danger"
                 )}>
+                  <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden="true">
+                    {selectedDetail.status === "success" ? "check_circle" : "error"}
+                  </span>
                   {selectedDetail.status}
                 </span>
               </div>
@@ -419,11 +422,14 @@ export default function RequestDetailsTab() {
                   <span className="material-symbols-outlined text-[18px] text-text-muted">image</span>
                   <span className="font-semibold text-sm text-text-main">PXPIPE</span>
                   <span className={cn(
-                    "text-xs px-2 py-0.5 rounded",
+                    "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border",
                     selectedDetail.pxpipe.applied
-                      ? "bg-green-500/15 text-green-600"
-                      : "bg-amber-500/15 text-amber-600"
+                      ? "bg-success-soft text-success border-success-line"
+                      : "bg-surface-2 text-text-muted border-border"
                   )}>
+                    <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden="true">
+                      {selectedDetail.pxpipe.applied ? "check_circle" : "remove"}
+                    </span>
                     {selectedDetail.pxpipe.applied ? "Activated" : "Skipped"}
                   </span>
                 </div>
@@ -431,19 +437,19 @@ export default function RequestDetailsTab() {
                   <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
                     <div>
                       <span className="text-text-muted block text-xs">Original (est.)</span>
-                      <span className="font-mono">{(selectedDetail.pxpipe.tokensBeforeEst || 0).toLocaleString()} tokens</span>
+                      <span className="font-mono"><span className="metric">{(selectedDetail.pxpipe.tokensBeforeEst || 0).toLocaleString()}</span> tokens</span>
                     </div>
                     <div>
                       <span className="text-text-muted block text-xs">Compressed (est.)</span>
-                      <span className="font-mono">{(selectedDetail.pxpipe.tokensAfterEst || 0).toLocaleString()} tokens</span>
+                      <span className="font-mono"><span className="metric">{(selectedDetail.pxpipe.tokensAfterEst || 0).toLocaleString()}</span> tokens</span>
                     </div>
                     <div>
                       <span className="text-text-muted block text-xs">Saved</span>
-                      <span className="font-mono text-green-600">{selectedDetail.pxpipe.savedPct || 0}%</span>
+                      <span className="metric font-mono text-text-main">{selectedDetail.pxpipe.savedPct || 0}%</span>
                     </div>
                     <div>
                       <span className="text-text-muted block text-xs">Images</span>
-                      <span className="font-mono">{selectedDetail.pxpipe.imageCount || 0} ({selectedDetail.pxpipe.durationMs || 0}ms)</span>
+                      <span className="metric font-mono">{selectedDetail.pxpipe.imageCount || 0} ({selectedDetail.pxpipe.durationMs || 0}ms)</span>
                     </div>
                   </div>
                 ) : (
@@ -488,7 +494,7 @@ export default function RequestDetailsTab() {
                       <span className="material-symbols-outlined text-[16px]">psychology</span>
                       Thinking Process
                     </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
+                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-border bg-surface-2 p-3 font-mono text-xs text-text-main sm:p-4">
                       {selectedDetail.response.thinking}
                     </pre>
                   </div>

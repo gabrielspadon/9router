@@ -41,7 +41,7 @@ export default function NewModelsButton() {
         <span className="material-symbols-outlined text-[16px]">new_releases</span>
         <span className="hidden sm:inline">New Models</span>
         {unseenCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
+          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-danger-solid text-white text-[10px] font-bold px-1">
             {unseenCount > 99 ? "99+" : unseenCount}
           </span>
         )}
@@ -97,13 +97,13 @@ function NewModelsModal({ onClose }) {
             Scanning all providers…
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center gap-2 py-6 text-red-500 text-sm">
+          <div className="flex items-center justify-center gap-2 py-6 text-danger text-sm">
             <span className="material-symbols-outlined text-[18px]">error</span>
             {error}
           </div>
         ) : seeded ? (
           <div className="flex flex-col items-center gap-2 py-8 text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[28px] text-green-500">check_circle</span>
+            <span className="material-symbols-outlined text-[28px] text-success">check_circle</span>
             <span className="font-medium text-text-main">Baseline created</span>
             <span className="text-center text-xs leading-relaxed">
               Your current models have been recorded.
@@ -138,12 +138,12 @@ function NewModelsModal({ onClose }) {
                   {group.models.map((m) => (
                     <div key={m.modelId} className="flex items-center gap-2 px-3 py-1.5">
                       {m.isNew && (
-                        <span className="shrink-0 min-w-[32px] text-center text-[9px] font-bold text-white bg-blue-500 rounded px-1 py-0.5">
+                        <span className="shrink-0 min-w-[32px] text-center text-[9px] font-bold text-white bg-info-solid rounded px-1 py-0.5">
                           NEW
                         </span>
                       )}
                       {m.isFree && (
-                        <span className="shrink-0 min-w-[32px] text-center text-[9px] font-bold text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded px-1 py-0.5">
+                        <span className="shrink-0 min-w-[32px] text-center text-[9px] font-bold text-success bg-success-soft rounded px-1 py-0.5">
                           FREE
                         </span>
                       )}

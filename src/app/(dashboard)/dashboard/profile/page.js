@@ -850,7 +850,7 @@ export default function ProfilePage() {
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="size-10 sm:size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
+              <div className="size-10 sm:size-12 rounded-lg bg-success-soft text-success flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
@@ -921,7 +921,7 @@ export default function ProfilePage() {
             </div>
             {dbStatus.message && (
               <p
-                className={`text-sm ${dbStatus.type === 'error' ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}
+                className={`text-sm ${dbStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
               >
                 {dbStatus.message}
               </p>
@@ -932,7 +932,7 @@ export default function ProfilePage() {
         {/* Language */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="size-10 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
+            <div className="size-10 rounded-lg bg-info-soft text-info flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-[20px]">language</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Language</h3>
@@ -987,9 +987,9 @@ export default function ProfilePage() {
                   </div>
                 )}
                 {/* {!settings.hasPassword && (
-                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <p className="text-sm text-blue-600 dark:text-blue-400">
-                      Setting password for the first time. Leave current password empty or use default: <code className="bg-blue-500/20 px-1 rounded">123456</code>
+                  <div className="p-3 rounded-lg bg-info-soft border border-info-line">
+                    <p className="text-sm text-info">
+                      Setting password for the first time. Leave current password empty or use default: <code className="bg-info-soft px-1 rounded">123456</code>
                     </p>
                   </div>
                 )} */}
@@ -1018,7 +1018,7 @@ export default function ProfilePage() {
 
                 {passStatus.message && (
                   <p
-                    className={`text-xs sm:text-sm ${passStatus.type === 'error' ? 'text-red-500' : 'text-green-500'}`}
+                    className={`text-xs sm:text-sm ${passStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                   >
                     {passStatus.message}
                   </p>
@@ -1046,7 +1046,7 @@ export default function ProfilePage() {
             onClick={() => setOidcExpanded((v) => !v)}
             className="w-full flex items-center gap-3 text-left"
           >
-            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500 shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
             <div className="flex-1 min-w-0">
@@ -1520,7 +1520,7 @@ export default function ProfilePage() {
 
                   {samlTestStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${samlTestStatus.type === 'error' ? 'text-red-500' : 'text-green-500'}`}
+                      className={`text-xs sm:text-sm ${samlTestStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
                       {samlTestStatus.message}
                     </p>
@@ -1528,7 +1528,7 @@ export default function ProfilePage() {
 
                   {samlStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${samlStatus.type === 'error' ? 'text-red-500' : 'text-green-500'}`}
+                      className={`text-xs sm:text-sm ${samlStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
                       {samlStatus.message}
                     </p>
@@ -1621,7 +1621,7 @@ export default function ProfilePage() {
 
                   {oidcTestStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${oidcTestStatus.type === 'error' ? 'text-red-500' : 'text-green-500'}`}
+                      className={`text-xs sm:text-sm ${oidcTestStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
                       {oidcTestStatus.message}
                     </p>
@@ -1629,7 +1629,7 @@ export default function ProfilePage() {
 
                   {oidcStatus.message && (
                     <p
-                      className={`text-xs sm:text-sm ${oidcStatus.type === 'error' ? 'text-red-500' : 'text-green-500'}`}
+                      className={`text-xs sm:text-sm ${oidcStatus.type === 'error' ? 'text-danger' : 'text-success'}`}
                     >
                       {oidcStatus.message}
                     </p>
@@ -1640,14 +1640,14 @@ export default function ProfilePage() {
               {settings.authMode === 'oidc' ||
               settings.authMode === 'saml' ||
               settings.authMode === 'sso' ? (
-                <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                <p className="text-xs sm:text-sm text-warning">
                   SSO login ({settings.ssoType === 'saml' ? 'SAML 2.0' : 'OIDC'}) is currently
                   active. Password login is disabled until you switch back.
                 </p>
               ) : null}
 
               {settings.authMode === 'both' && (
-                <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                <p className="text-xs sm:text-sm text-warning">
                   Password and SSO login ({settings.ssoType === 'saml' ? 'SAML 2.0' : 'OIDC'}) are
                   both active.
                 </p>
@@ -1659,7 +1659,7 @@ export default function ProfilePage() {
         {/* Model */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
+            <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
               <span className="material-symbols-outlined text-[20px]">model_training</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Model</h3>
@@ -1685,7 +1685,7 @@ export default function ProfilePage() {
         {/* Routing Preferences */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+            <div className="p-2 rounded-lg bg-info-soft text-info shrink-0">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Routing Strategy</h3>
@@ -1796,7 +1796,7 @@ export default function ProfilePage() {
         {/* Network */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span className="material-symbols-outlined text-[20px]">wifi</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Network</h3>
@@ -1879,7 +1879,7 @@ export default function ProfilePage() {
 
             {proxyStatus.message && (
               <p
-                className={`text-xs sm:text-sm ${proxyStatus.type === 'error' ? 'text-red-500' : 'text-green-500'} pt-2 border-t border-border/50`}
+                className={`text-xs sm:text-sm ${proxyStatus.type === 'error' ? 'text-danger' : 'text-success'} pt-2 border-t border-border/50`}
               >
                 {proxyStatus.message}
               </p>
@@ -1890,7 +1890,7 @@ export default function ProfilePage() {
         {/* Observability Settings */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
+            <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
               <span className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Observability</h3>
@@ -1913,7 +1913,7 @@ export default function ProfilePage() {
         {/* Claude Code Minimal Mode — hide sidebar entries */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500 shrink-0">
+            <div className="p-2 rounded-lg bg-surface-2 text-text-muted shrink-0">
               <span className="material-symbols-outlined text-[20px]">visibility_off</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Claude Code Minimal Mode</h3>
@@ -1970,7 +1970,7 @@ export default function ProfilePage() {
         {/* Privacy Settings */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
+            <div className="p-2 rounded-lg bg-warning-soft text-warning shrink-0">
               <span className="material-symbols-outlined text-[20px]">privacy_tip</span>
             </div>
             <h3 className="text-base sm:text-lg font-semibold">Privacy</h3>
@@ -1997,7 +1997,7 @@ export default function ProfilePage() {
             fullWidth
             icon="power_settings_new"
             onClick={() => setShutdownOpen(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+            className="text-danger border-danger-line hover:bg-danger-soft hover:border-danger-line"
           >
             Shutdown
           </Button>
