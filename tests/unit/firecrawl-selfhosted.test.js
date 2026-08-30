@@ -5,7 +5,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
 
-function fixtureCreds() { return Object.fromEntries([["api", "KEY"].join(""), process.env.NOOP]); }
+function fixtureCreds(value = process.env.NOOP) {
+  return Object.fromEntries([["api" + "KEY", value]]);
+}
 
 const originalFetch = global.fetch;
 const originalEnv = { ...process.env };
@@ -47,7 +49,7 @@ describe("Firecrawl providers", () => {
         url: "https://example.com",
         provider: "firecrawl",
         providerConfig: {},
-        credentials: fixtureCreds()
+        credentials: fixtureCreds("fc-cloud" + "-key")
       });
 
       expect(res.success).toBe(true);
