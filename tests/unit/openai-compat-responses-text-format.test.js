@@ -12,15 +12,25 @@
 import { describe, it, expect } from 'vitest';
 import { DefaultExecutor } from '../../open-sse/executors/default.js';
 
-function run(provider, body) {
+function run(provider, body, credentials) {
   const executor = new DefaultExecutor(provider);
-  return executor.transformRequest('some-model', body);
+  return executor.transformRequest('some-model', body, undefined, credentials);
 }
 
 const RESPONSES_PROVIDER = 'openai-compatible-responses-1234';
 const CHAT_PROVIDER = 'openai-compatible-chat-1234';
 
 describe('DefaultExecutor: default text.format for openai-compatible responses (#2093)', () => {
+  it('defaults text.format when persisted API type overrides a chat-shaped provider id', () => {
+    const out = run(
+      CHAT_PROVIDER,
+      { input: 'Say OK', text: { verbosity: 'low' } },
+      { providerSpecificData: { apiType: 'responses' } },
+    );
+
+    expect(out.text).toEqual({ verbosity: 'low', format: { type: 'text' } });
+  });
+
   it("defaults text.format to { type: 'text' } when text is an object without format", () => {
     const out = run(RESPONSES_PROVIDER, { input: 'Say OK', text: { verbosity: 'medium' } });
     expect(out.text).toEqual({ verbosity: 'medium', format: { type: 'text' } });
@@ -45,6 +55,16 @@ describe('DefaultExecutor: default text.format for openai-compatible responses (
       messages: [{ role: 'user', content: 'hi' }],
       text: { verbosity: 'medium' },
     });
+    expect(out.text).toEqual({ verbosity: 'medium' });
+  });
+
+  it('does not default text.format when persisted chat API type overrides a responses-shaped id', () => {
+    const out = run(
+      RESPONSES_PROVIDER,
+      { messages: [{ role: 'user', content: 'hi' }], text: { verbosity: 'medium' } },
+      { providerSpecificData: { apiType: 'chat' } },
+    );
+
     expect(out.text).toEqual({ verbosity: 'medium' });
   });
 

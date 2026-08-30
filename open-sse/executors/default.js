@@ -152,7 +152,7 @@ export class DefaultExecutor extends BaseExecutor {
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
       }
-      this.defaultResponsesTextFormat(transformed);
+      this.defaultResponsesTextFormat(transformed, credentials);
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
@@ -170,9 +170,9 @@ export class DefaultExecutor extends BaseExecutor {
   // `text` is an object missing `text.format` with a 400 missing_required_parameter.
   // The Responses API default for that field is { type: "text" }, so default it
   // for openai-compatible "responses" providers before forwarding upstream. #2093
-  defaultResponsesTextFormat(body) {
+  defaultResponsesTextFormat(body, credentials) {
     if (!this.provider?.startsWith?.("openai-compatible-")) return;
-    if (!this.provider.includes("responses")) return;
+    if (resolveOpenAICompatibleApiType(this.provider, credentials) !== "responses") return;
     const text = body.text;
     if (!text || typeof text !== "object" || Array.isArray(text)) return;
     if (text.format !== undefined) return;
