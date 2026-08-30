@@ -672,6 +672,9 @@ export async function handleChatCore({
     model,
     reqTag,
   });
+  const executionSignal = callerSignal
+    ? AbortSignal.any([callerSignal, streamController.signal])
+    : streamController.signal;
 
   const proxyOptions = {
     connectionProxyEnabled:
@@ -734,6 +737,7 @@ export async function handleChatCore({
   let providerResponseFormat = targetFormat;
   const mapTransportError = (error) => {
     if (callerSignal?.aborted && (isCallerAbortError(error) || error.name === "AbortError")) {
+      trackPendingRequest(model, provider, connectionId, false);
       return createCallerAbortResult();
     }
     trackPendingRequest(model, provider, connectionId, false, true);
@@ -790,7 +794,7 @@ export async function handleChatCore({
       body: translatedBody,
       stream,
       credentials,
-      signal: streamController.signal,
+      signal: executionSignal,
       log,
       proxyOptions,
       sourceFormat,
@@ -850,7 +854,7 @@ export async function handleChatCore({
             body: translatedBody,
             stream,
             credentials,
-            signal: streamController.signal,
+            signal: executionSignal,
             log,
             proxyOptions,
             sourceFormat,
@@ -917,7 +921,7 @@ export async function handleChatCore({
             body: stripped,
             stream,
             credentials,
-            signal: streamController.signal,
+            signal: executionSignal,
             log,
             proxyOptions,
             sourceFormat,

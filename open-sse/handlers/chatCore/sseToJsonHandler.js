@@ -366,7 +366,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   const classifierMode = sourceFormat === FORMATS.CLAUDE
     && isClaudeClassifierRequest(body);
 
+  let pendingCleared = false;
+  const trackDoneOnce = () => {
+    if (pendingCleared) return;
+    pendingCleared = true;
+    trackDone();
+  };
   const bodyReadFailure = (error) => {
+    trackDoneOnce();
     if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
     if (isBodyReadTimeoutError(error)) {
       return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
@@ -399,8 +406,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         const sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
         if (classifierMode) assertClassifierGeminiSseLossless(sseText);
         const parsed = parseGeminiSSEToOpenAIResponse(sseText, model);
-        if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
-        if (parsed.error) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
+        if (!parsed) {
+          trackDoneOnce();
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
+        }
+        if (parsed.error) {
+          trackDoneOnce();
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
+        }
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
       } else if (classifierMode && typeof providerResponse.body?.tee === "function") {
         const [conversionStream, projectionStream] = providerResponse.body.tee();
@@ -427,7 +440,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           consume: (reader) => convertResponsesStreamToJson(providerResponse.body, { reader }),
         });
       }
-      trackDone();
+      trackDoneOnce();
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -580,15 +593,19 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   try {
     const sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
     const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    if (!parsed) {
+      trackDoneOnce();
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    }
     if (parsed.error) {
+      trackDoneOnce();
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         parsed.error.message || "Upstream SSE stream failed"
       );
     }
 
-    trackDone();
+    trackDoneOnce();
     if (onRequestSuccess) await onRequestSuccess();
 
     const usage = parsed.usage || {};

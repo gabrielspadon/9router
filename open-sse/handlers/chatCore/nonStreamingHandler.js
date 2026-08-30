@@ -421,7 +421,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     && isClaudeClassifierRequest(body);
   let responseBody;
   let classifierProjection = null;
+  let pendingCleared = false;
+  const trackDoneOnce = () => {
+    if (pendingCleared) return;
+    pendingCleared = true;
+    trackDone();
+  };
   const bodyReadFailure = (error, context) => {
+    trackDoneOnce();
     if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
     if (isBodyReadTimeoutError(error)) {
       return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
@@ -482,6 +489,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       }
       const parsed = parseSSEToOpenAIResponse(sseText, model);
       if (!parsed) {
+        trackDoneOnce();
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
       }
@@ -503,7 +511,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     classifierProjection = projectResponsesClassifierOutput(body, responseBody);
   }
 
-  trackDone();
+  trackDoneOnce();
 
   // Some OpenAI-compatible gateways (e.g. api.cline.bot) wrap the whole completion
   // in { data: {…}, success: true }. Unwrap so the client sees a top-level `choices`.

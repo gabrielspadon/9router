@@ -51,14 +51,6 @@ vi.mock("../../open-sse/utils/bypassHandler.js", () => ({
   handleBypassRequest: vi.fn(() => null),
 }));
 
-vi.mock("../../open-sse/utils/streamHandler.js", () => ({
-  createStreamController: vi.fn(() => ({
-    signal: undefined,
-    handleComplete: vi.fn(),
-    handleError: vi.fn(),
-  })),
-}));
-
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   default: vi.fn(),
   proxyAwareFetch: vi.fn(),
@@ -217,6 +209,80 @@ beforeEach(() => {
 });
 
 describe("chat connect timeout propagation", () => {
+  it("carries caller cancellation into the initial executor attempt", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let started;
+    const executorStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    mocks.execute.mockImplementationOnce(({ signal }) => {
+      started(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+
+    const pending = handleChatCore(options({ callerSignal: caller.signal }));
+    const executorSignal = await executorStarted;
+    caller.abort(reason);
+
+    await expect(pending).resolves.toMatchObject({ success: false, status: 499, clientAborted: true });
+    expect(executorSignal).not.toBe(caller.signal);
+    expect(executorSignal).toMatchObject({ aborted: true, reason });
+  });
+
+  it("carries caller cancellation into the credential-refresh executor attempt", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let started;
+    const retryStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    mocks.execute
+      .mockResolvedValueOnce(response(401))
+      .mockImplementationOnce(({ signal }) => {
+        started(signal);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      });
+
+    const pending = handleChatCore(options({ callerSignal: caller.signal }));
+    const executorSignal = await retryStarted;
+    caller.abort(reason);
+
+    await expect(pending).resolves.toMatchObject({ success: false, status: 499, clientAborted: true });
+    expect(executorSignal).toMatchObject({ aborted: true, reason });
+  });
+
+  it("carries caller cancellation into the field-strip executor attempt", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let started;
+    const retryStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    mocks.execute
+      .mockResolvedValueOnce(response(400))
+      .mockImplementationOnce(({ signal }) => {
+        started(signal);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      });
+
+    const pending = handleChatCore(options({
+      callerSignal: caller.signal,
+      body: { verbosity: "high" },
+    }));
+    const executorSignal = await retryStarted;
+    caller.abort(reason);
+
+    await expect(pending).resolves.toMatchObject({ success: false, status: 499, clientAborted: true });
+    expect(executorSignal).toMatchObject({ aborted: true, reason });
+  });
+
   it("passes the same context to initial and credential-refresh attempts", async () => {
     mocks.execute.mockResolvedValueOnce(response(401)).mockResolvedValueOnce(response(200));
 

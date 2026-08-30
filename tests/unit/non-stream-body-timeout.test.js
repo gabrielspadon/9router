@@ -89,7 +89,7 @@ describe("non-stream body failures", () => {
 
     expect(result).toMatchObject({ success: false, status: 504 });
     expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
-    expect(ctx.trackDone).not.toHaveBeenCalled();
+    expect(ctx.trackDone).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -118,7 +118,7 @@ describe("non-stream body failures", () => {
     expect(stalled.events.cancel).toHaveLength(1);
     expect(stalled.events.cancel[0]).toBeInstanceOf(BodyReadTimeoutError);
     expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
-    expect(ctx.trackDone).not.toHaveBeenCalled();
+    expect(ctx.trackDone).toHaveBeenCalledTimes(1);
   });
 
   it("maps an already-aborted caller to 499 without completion work", async () => {
@@ -135,7 +135,7 @@ describe("non-stream body failures", () => {
 
     expect(result).toMatchObject({ success: false, status: 499, clientAborted: true });
     expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
-    expect(ctx.trackDone).not.toHaveBeenCalled();
+    expect(ctx.trackDone).toHaveBeenCalledTimes(1);
   });
 
   it("does not treat an unrelated reader error as client cancellation", async () => {
@@ -146,6 +146,7 @@ describe("non-stream body failures", () => {
     const result = await handleNonStreamingResponse(ctx);
 
     expect(result).toMatchObject({ success: false, status: 502 });
+    expect(ctx.trackDone).toHaveBeenCalledTimes(1);
   });
 
   it("keeps malformed JSON as an ordinary 502", async () => {
@@ -154,6 +155,7 @@ describe("non-stream body failures", () => {
     const result = await handleNonStreamingResponse(ctx);
 
     expect(result).toMatchObject({ success: false, status: 502 });
+    expect(ctx.trackDone).toHaveBeenCalledTimes(1);
   });
 
   it("maps a Responses endpoint forced-SSE body deadline to 504", async () => {
