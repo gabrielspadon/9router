@@ -19,18 +19,6 @@ export async function deleteModelAlias(alias) {
   await aliasKv.remove(alias);
 }
 
-// Delete all aliases associated with a given provider node.
-export async function deleteModelAliasesByProvider(providerId) {
-  const db = await getAdapter();
-  const encodedPrefix = stringifyJson(`${providerId}/`).slice(0, -1);
-  db.run(
-    `DELETE FROM kv
-     WHERE scope = ?
-       AND substr(value, 1, length(?)) = ?`,
-    ["modelAliases", encodedPrefix, encodedPrefix]
-  );
-}
-
 // customModels: key=`${providerAlias}|${id}|${type}`, value=full model object
 function customKey(providerAlias, id, type) {
   return `${providerAlias}|${id}|${type}`;

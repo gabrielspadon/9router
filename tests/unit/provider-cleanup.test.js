@@ -8,6 +8,10 @@ let cleanup = async () => {};
 
 async function setup(forceAdapter) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-provider-cleanup-"));
+  const signals = ["beforeExit", "SIGINT", "SIGTERM"];
+  const listenerBaseline = Object.fromEntries(
+    signals.map((signal) => [signal, process.listeners(signal).slice()])
+  );
   process.env.DATA_DIR = tempDir;
   delete global._dbAdapter;
   cleanup = async () => {
@@ -17,6 +21,12 @@ async function setup(forceAdapter) {
       // Best effort cleanup for adapters whose close already ran.
     }
     delete global._dbAdapter;
+    for (const signal of signals) {
+      for (const listener of process.listeners(signal)) {
+        if (!listenerBaseline[signal].includes(listener)) process.removeListener(signal, listener);
+      }
+    }
+    delete globalThis.__9routerShutdownState;
     fs.rmSync(tempDir, { recursive: true, force: true });
   };
   vi.resetModules();
@@ -57,6 +67,52 @@ function customModelRequest(body) {
   });
 }
 
+async function expectAtomicProviderDeletionRollback(ctx, providerId) {
+  const targetModel = `${providerId}/model-a`;
+  await ctx.models.createProviderNode({
+    id: providerId,
+    type: "openai-compatible",
+    name: "Rollback",
+    prefix: "rollback",
+    apiType: "chat",
+    baseUrl: "https://rollback.test/v1",
+  });
+  const connection = await ctx.models.createProviderConnection({
+    provider: providerId,
+    authType: "apikey",
+    name: "Rollback connection",
+    apiKey: "rollback-key",
+  });
+  await ctx.models.setModelAlias("rollback-alias", targetModel);
+  const db = await ctx.getAdapter();
+  db.exec(`CREATE TEMP TRIGGER fail_provider_node_delete
+    BEFORE DELETE ON providerNodes
+    BEGIN
+      SELECT RAISE(ABORT, 'forced provider-node delete failure');
+    END`);
+
+  const errorLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  let response;
+  try {
+    response = await ctx.providerNodeRoute.DELETE(
+      new Request("https://9router.local/api/provider-nodes/rollback", { method: "DELETE" }),
+      { params: Promise.resolve({ id: providerId }) }
+    );
+  } finally {
+    errorLog.mockRestore();
+  }
+
+  expect(response.status).toBe(500);
+  expect(await ctx.models.getProviderNodeById(providerId)).not.toBeNull();
+  expect({
+    connections: await ctx.models.getProviderConnections({ provider: providerId }),
+    aliases: await ctx.models.getModelAliases(),
+  }).toEqual({
+    connections: [expect.objectContaining({ id: connection.id, provider: providerId })],
+    aliases: { "rollback-alias": targetModel },
+  });
+}
+
 afterEach(async () => {
   await cleanup();
   cleanup = async () => {};
@@ -84,6 +140,26 @@ describe("provider deletion alias cleanup", () => {
       apiType: "chat",
       baseUrl: "https://target.test/v1",
     });
+    await ctx.models.createProviderNode({
+      id: "openai-compatible-other",
+      type: "openai-compatible",
+      name: "Other",
+      prefix: "other",
+      apiType: "chat",
+      baseUrl: "https://other.test/v1",
+    });
+    await ctx.models.createProviderConnection({
+      provider: providerId,
+      authType: "apikey",
+      name: "Target connection",
+      apiKey: "target-key",
+    });
+    const otherConnection = await ctx.models.createProviderConnection({
+      provider: "openai-compatible-other",
+      authType: "apikey",
+      name: "Other connection",
+      apiKey: "other-key",
+    });
     await ctx.models.setModelAlias("remove-me", targetModel);
     await ctx.models.setModelAlias("keep-lookalike", lookalikeModel);
     await ctx.models.setModelAlias("keep-other", otherModel);
@@ -94,13 +170,44 @@ describe("provider deletion alias cleanup", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
     expect(await ctx.models.getModelAliases()).toEqual({
       "keep-lookalike": lookalikeModel,
       "keep-other": otherModel,
     });
     expect(await ctx.models.getProviderNodeById(providerId)).toBeNull();
+    expect(await ctx.models.getProviderConnections({ provider: providerId })).toEqual([]);
+    expect(await ctx.models.getProviderNodeById("openai-compatible-other")).not.toBeNull();
+    expect(await ctx.models.getProviderConnections({ provider: "openai-compatible-other" })).toEqual([
+      expect.objectContaining({ id: otherConnection.id, provider: "openai-compatible-other" }),
+    ]);
     expect((await ctx.getAdapter()).driver).toMatch(/^(bun:sqlite|better-sqlite3|node:sqlite|sql\.js)$/);
   });
+
+  it("preserves the not-found response when the provider node does not exist", async () => {
+    const ctx = await setup();
+    const response = await ctx.providerNodeRoute.DELETE(
+      new Request("https://9router.local/api/provider-nodes/missing", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "missing" }) }
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Provider node not found" });
+  });
+
+  it("rolls back connection and alias deletion when provider-node deletion fails", async () => {
+    const ctx = await setup();
+    await expectAtomicProviderDeletionRollback(ctx, "openai-compatible-rollback");
+  });
+
+  it.runIf(!process.versions.bun).each(["node:sqlite", "sql.js"])(
+    "rolls back all provider state through the real %s fallback adapter",
+    async (driver) => {
+      const ctx = await setup(driver);
+      await expectAtomicProviderDeletionRollback(ctx, `openai-compatible-rollback-${driver}`);
+      expect((await ctx.getAdapter()).driver).toBe(driver);
+    }
+  );
 
   it.runIf(!process.versions.bun).each(["node:sqlite", "sql.js"])(
     "uses the real %s fallback adapter for exact alias cleanup",
@@ -118,6 +225,12 @@ describe("provider deletion alias cleanup", () => {
         apiType: "chat",
         baseUrl: "https://target.test/v1",
       });
+      await ctx.models.createProviderConnection({
+        provider: providerId,
+        authType: "apikey",
+        name: `${driver} connection`,
+        apiKey: "target-key",
+      });
       await ctx.models.setModelAlias("remove-me", targetModel);
       await ctx.models.setModelAlias("keep-other", otherModel);
 
@@ -129,6 +242,7 @@ describe("provider deletion alias cleanup", () => {
       expect(response.status).toBe(200);
       expect((await ctx.getAdapter()).driver).toBe(driver);
       expect(await ctx.models.getModelAliases()).toEqual({ "keep-other": otherModel });
+      expect(await ctx.models.getProviderConnections({ provider: providerId })).toEqual([]);
     }
   );
 });
