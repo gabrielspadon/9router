@@ -304,7 +304,11 @@ function assertClassifierChatSseLossless(rawSSE) {
     } catch {
       throw new ClaudeClassifierValidationError();
     }
-    for (const choice of parsed?.choices || []) {
+    const choices = parsed?.choices;
+    if (Array.isArray(choices) && choices.length > 1) {
+      throw new ClaudeClassifierValidationError();
+    }
+    for (const choice of choices || []) {
       const delta = choice?.delta;
       if (!delta || typeof delta !== "object" || Array.isArray(delta)) continue;
       if (Object.keys(delta).some((field) => !CLASSIFIER_CHAT_DELTA_FIELDS.has(field))) {
@@ -328,7 +332,11 @@ function assertClassifierGeminiSseLossless(rawSSE) {
       throw new ClaudeClassifierValidationError();
     }
     const response = parsed?.response || parsed;
-    for (const candidate of response?.candidates || []) {
+    const candidates = response?.candidates;
+    if (Array.isArray(candidates) && candidates.length > 1) {
+      throw new ClaudeClassifierValidationError();
+    }
+    for (const candidate of candidates || []) {
       const parts = candidate?.content?.parts;
       if (!Array.isArray(parts)) continue;
       for (const part of parts) {

@@ -2652,3 +2652,142 @@ describe("Task 3 classifier request and model invariants", () => {
     expect(body).toEqual(before);
   });
 });
+
+const safeClassifierChatChoice = {
+  index: 0,
+  message: { role: "assistant", content: "<block>no</block>" },
+  finish_reason: "stop",
+};
+const safeClassifierChatDelta = {
+  index: 0,
+  delta: { content: "<block>no</block>" },
+  finish_reason: "stop",
+};
+const safeClassifierGeminiCandidate = {
+  content: { parts: [{ text: "<block>no</block>" }] },
+  finishReason: "STOP",
+};
+
+describe("classifier alternatives remain fail-closed", () => {
+  it.each([
+    ["tool call", {
+      index: 1,
+      message: {
+        role: "assistant",
+        content: "",
+        tool_calls: [{
+          id: "call_hidden",
+          type: "function",
+          function: { name: "shell", arguments: "{\"cmd\":\"pwd\"}" },
+        }],
+      },
+      finish_reason: "tool_calls",
+    }],
+    ["unknown choice field", {
+      index: 1,
+      message: { role: "assistant", content: "ordinary prose" },
+      finish_reason: "stop",
+      future_action: { command: "pwd" },
+    }],
+    ["malformed choice", null],
+  ])("rejects hidden OpenAI Chat JSON choice 1 with %s", async (_name, hiddenChoice) => {
+    const responseBody = openAICompletion("<block>no</block>");
+    responseBody.choices = [safeClassifierChatChoice, hiddenChoice];
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      providerResponse: jsonProviderResponse(responseBody),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each([
+    ["tool call", {
+      index: 1,
+      delta: {
+        tool_calls: [{
+          index: 0,
+          id: "call_hidden",
+          function: { name: "shell", arguments: "{}" },
+        }],
+      },
+      finish_reason: "tool_calls",
+    }],
+    ["unknown choice field", {
+      index: 1,
+      delta: { content: "ordinary prose" },
+      finish_reason: "stop",
+      future_action: { command: "pwd" },
+    }],
+    ["malformed choice", null],
+  ])("rejects hidden forced Chat SSE choice 1 with %s", async (_name, hiddenChoice) => {
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [
+        `data: ${JSON.stringify({
+          id: "chatcmpl_classifier_alternatives",
+          model: "gpt-5.6-sol",
+          choices: [safeClassifierChatDelta, hiddenChoice],
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+      targetFormat: FORMATS.OPENAI,
+      provider: "op-test-chat",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects a hidden forced Gemini SSE candidate 1 contradiction", async () => {
+    const raw = [
+      `data: ${JSON.stringify({
+        response: {
+          responseId: "gemini_classifier_alternatives",
+          modelVersion: "gemini-3.7-flash-low",
+          candidates: [
+            safeClassifierGeminiCandidate,
+            {
+              content: { parts: [{ text: "<block>yes</block>" }] },
+              finishReason: "STOP",
+            },
+          ],
+        },
+      })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [raw]),
+      targetFormat: FORMATS.GEMINI,
+      provider: "gemini",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects a hidden Gemini JSON candidate 1 contradiction", async () => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      targetFormat: FORMATS.GEMINI,
+      provider: "gemini",
+      providerResponse: jsonProviderResponse({
+        responseId: "gemini_classifier_json_alternatives",
+        modelVersion: "gemini-3.7-flash-low",
+        candidates: [
+          safeClassifierGeminiCandidate,
+          {
+            content: { parts: [{ text: "<block>yes</block>" }] },
+            finishReason: "STOP",
+          },
+        ],
+      }),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+});

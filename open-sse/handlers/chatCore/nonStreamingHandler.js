@@ -397,6 +397,15 @@ function hasLegacyClassifierFunctionCall(responseBody) {
   );
 }
 
+function hasMultipleClassifierAlternatives(responseBody) {
+  if (Array.isArray(responseBody?.choices) && responseBody.choices.length > 1) {
+    return true;
+  }
+  const geminiResponse = responseBody?.response || responseBody;
+  return Array.isArray(geminiResponse?.candidates)
+    && geminiResponse.candidates.length > 1;
+}
+
 /**
  * Handle non-streaming response from provider.
  */
@@ -481,7 +490,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  if (classifierMode && hasLegacyClassifierFunctionCall(responseBody)) {
+  if (classifierMode && (
+    hasLegacyClassifierFunctionCall(responseBody)
+    || hasMultipleClassifierAlternatives(responseBody)
+  )) {
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       CLAUDE_CLASSIFIER_ERROR_MESSAGE,
