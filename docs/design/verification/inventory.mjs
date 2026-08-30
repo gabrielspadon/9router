@@ -29,7 +29,8 @@ if (!["before", "after"].includes(mode)) {
   process.exit(2);
 }
 
-const ROUTES = [
+const ONLY = process.env.ONLY_ROUTE || "";
+const ALL_ROUTES = [
   ["landing", "/landing"],
   ["dashboard-home", "/dashboard"],
   ["providers", "/dashboard/providers"],
@@ -54,6 +55,7 @@ const ROUTES = [
   ["token-saver", "/dashboard/token-saver"],
   ["translator", "/dashboard/translator"],
 ];
+const ROUTES = ALL_ROUTES.filter(([n]) => !ONLY || n === ONLY);
 
 // Runs inside the page. Returns one record per interactive control.
 function collect(depth) {

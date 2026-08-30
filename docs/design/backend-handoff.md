@@ -113,3 +113,71 @@ category.
 can; the remaining values are listed by
 `docs/design/verification/check-tokens.mjs`, which now holds a ratchet so the
 count cannot grow.
+
+---
+
+## 5. There is no right-to-left support, so Persian, Arabic and Hebrew render mirrored against the layout
+
+**Files.** `src/app/layout.js:35`.
+
+**What the design needs.** The root document to carry `lang` and `dir`
+resolved from the locale, so a right-to-left locale mirrors the layout rather
+than only reversing the characters within each line.
+
+**Why it cannot be built here.** `src/app/layout.js` is outside this work's
+writable surface, and the change is behavioural rather than presentational: the
+direction has to be resolved from the locale cookie during the server render.
+Setting it on the client would paint the wrong direction first and then flip.
+
+**Evidence.** `docs/design/verification/audit-i18n.mjs` resolves `dir=ltr` for
+Persian on all four routes measured. The root layout hardcodes
+`<html lang="en">` with no `dir`, and the string `rtl` does not appear anywhere
+under `src/`.
+
+**Recommended owner.** Backend session. Read the locale cookie in the root
+layout, set `lang` and `dir` on `<html>`, and keep one list of the
+right-to-left locales. Migrating physical-direction utilities to logical ones
+is worth nothing until `dir` is actually set, so it should follow rather than
+lead.
+
+**What shipped instead.** The behaviour is measured and documented rather than
+assumed, in `docs/design/evidence/localisation-report.md`.
+
+---
+
+## 6. Four tests assert CSS class names that the accessibility work deliberately replaced
+
+**Files.** `tests/unit/codex-plan-badge.test.js:86`,
+`tests/unit/antigravity-verification-ui.test.js`,
+`tests/unit/provider-strategy-writers.test.js`,
+`tests/unit/provider-brand-icons.test.js`.
+
+**What happens.** Run serially, 393 of 397 tests in the affected files pass and
+these four fail. They are not flaky: they fail deterministically, and they fail
+because the branch changed the exact strings they assert.
+
+| Test | Asserts | Why it now fails |
+|---|---|---|
+| `codex-plan-badge` | markup contains `bg-brand-500/10` | `Badge.js` carried that class at the merge base and no longer does; the legacy primary alias was removed |
+| `antigravity-verification-ui` | markup contains `focus-visible:ring-2` | focus indication was consolidated into one `focus-ring` utility carried by `Button` |
+| `provider-strategy-writers` | source contains `text-red-500` | the raw colour was replaced by a semantic token |
+| `provider-brand-icons` | `firecrawl_custom` is in the list of providers with no icon | the icon now exists at `public/providers/firecrawl_custom.png`, so the expected list of gaps is stale |
+
+**Why they cannot be fixed here.** `tests/` is read-only for this work and the
+fingerprint checker enforces that. Reverting the product to satisfy them would
+undo an accessibility fix in three cases and re-open a missing asset in the
+fourth.
+
+**Note on the fourth.** `provider-brand-icons` fails because a defect was
+closed. A test that encodes the current set of known gaps has to be updated when
+a gap is filled, otherwise fixing a bug turns the suite red.
+
+**Recommended owner.** Whoever owns `tests/`. The durable fix is to assert
+behaviour rather than class names: that the badge is present and named, that the
+control shows a focus indicator, that the element carries the danger role. A
+test coupled to a Tailwind class fails on every restyle without catching a
+single real defect.
+
+**Verification note.** Nineteen further failures seen in a parallel run were
+worker crashes under contention, not defects. They pass on a serial re-run. Only
+run this suite serially when judging it.

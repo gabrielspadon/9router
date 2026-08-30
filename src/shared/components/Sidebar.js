@@ -261,6 +261,7 @@ export default function Sidebar({ onClose }) {
                         {String(visible.indexOf(item) + 1).padStart(2, "0")}
                       </span>
                       <span
+                        aria-hidden="true"
                         className={cn(
                           "material-symbols-outlined text-[18px]",
                           isActive(item.href)
