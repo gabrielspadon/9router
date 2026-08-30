@@ -95,24 +95,30 @@ state the moment one is available.
 
 ---
 
-## 4. Status semantics are not exposed for several inline states
+## 4. Chart series colours are tokenised; the category mapping question is closed
 
 **Files.** `src/app/(dashboard)/dashboard/statistics/StatisticsContent.js`,
 `src/app/(dashboard)/dashboard/usage/components/UsageChart.js`.
 
-**What the design needs.** Chart series drawn from the token layer so they
-follow the theme and stay legible under colour vision deficiency.
+**Status.** Closed by the presentation session. Both files now draw from
+`--color-chart-1` through `--color-chart-6`, declared per theme in
+`src/app/globals.css` and measured in `docs/design/tokens.pairs.json`.
 
-**Why it is partly blocked.** The series colours are hardcoded hex values in
-the chart components. Replacing them with tokens is presentation and has been
-done where the value is purely visual. Where a colour is bound to a semantic
-category supplied by the API, the mapping belongs with whoever owns that
-category.
+**Why it was routed here and no longer needs to be.** The earlier reading was
+that a series colour might be bound to a category the API defines, which would
+make the mapping someone else's to decide. It is not. `StatisticsContent.js:409`
+holds a fixed six-entry map and `UsageChart.js:119` and `:129` two literals,
+both keyed by a local series name, so tokenising them needed no decision from
+whoever owns the data.
 
-**Recommended owner.** Shared. The presentation session has tokenised what it
-can; the remaining values are listed by
-`docs/design/verification/check-tokens.mjs`, which now holds a ratchet so the
-count cannot grow.
+**What it fixed.** Four legend labels on the statistics page failed text
+contrast on the light surface, the worst at 2.54 against 4.5, and they were the
+whole of the audit's remaining contrast findings. The usage chart's cost line
+measured 1.8:1 as a stroke, under the 3:1 it needs to be seen.
+
+**Recommended owner.** Nobody. Closed by the presentation session, and kept in
+the list rather than deleted so a reader of the earlier report can see how it
+resolved.
 
 ---
 
