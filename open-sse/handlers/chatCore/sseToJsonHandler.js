@@ -353,7 +353,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       } else {
         jsonResponse = await convertResponsesStreamToJson(antigravitySseText === null ? providerResponse.body : createSseTextStream(antigravitySseText));
       }
-      if (provider === "antigravity" && hasUsefulForcedSseOutput(jsonResponse)) {
+      const hasUsefulOutput = hasUsefulForcedSseOutput(jsonResponse);
+      if (provider === "antigravity" && !hasUsefulOutput) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Empty response content from ${provider}/${model}`);
+      }
+      if (provider === "antigravity") {
         await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
       }
       if (onRequestSuccess) await onRequestSuccess();
@@ -502,6 +507,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       );
     }
 
+    const hasUsefulOutput = hasUsefulForcedSseOutput(parsed);
+    if (provider === "antigravity" && !hasUsefulOutput) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Empty response content from ${provider}/${model}`);
+    }
+
     if (onRequestSuccess) await onRequestSuccess();
 
     const usage = parsed.usage || {};
@@ -561,7 +572,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       finalBody = parsed;
     }
 
-    if (provider === "antigravity" && hasUsefulForcedSseOutput(finalBody)) {
+    if (provider === "antigravity") {
       await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
     }
 

@@ -14,7 +14,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { classifyAntigravityValidation, redactAntigravityValidationText } from "../../services/antigravityValidation.js";
 import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
 
 /**
@@ -457,6 +457,22 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+    }
+  }
+
+  if (provider === "antigravity") {
+    const validation = classifyAntigravityValidation({
+      status: responseBody?.error?.code ?? responseBody?.error?.status ?? responseBody?.status ?? providerResponse.status,
+      payload: responseBody,
+      source: "chat",
+    });
+    if (validation) {
+      try {
+        await onValidationRequired?.({ validation, observationId: verificationContext?.observationId });
+      } catch {
+        log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+      }
+      return createErrorResult(HTTP_STATUS.FORBIDDEN, "Antigravity account verification required");
     }
   }
 

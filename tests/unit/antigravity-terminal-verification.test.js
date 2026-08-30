@@ -178,6 +178,18 @@ describe("Antigravity terminal verification success", () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
+  it("treats a forced Antigravity structural candidates-empty SSE frame as ordinary empty output", async () => {
+    const notify = terminalSpy();
+    const ctx = forcedCtx(sseResponse(`data: ${JSON.stringify({ candidates: [{ content: { parts: [] } }] })}\n\n`), notify);
+    ctx.targetFormat = "antigravity";
+
+    const result = await handleForcedSSEToJson(ctx);
+
+    expect(result).toMatchObject({ success: false, status: 502 });
+    expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it("defers Antigravity account-health success until terminal stream completion", async () => {
     const notify = terminalSpy();
     const accountHealth = vi.fn();
@@ -388,6 +400,36 @@ describe("Antigravity terminal verification success", () => {
     expect(logger.logProviderResponse).not.toHaveBeenCalled();
     expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
     expect(clientPayload).not.toContain("onboard-secret");
+  });
+
+  it("gates Antigravity 200 JSON validation before non-stream sinks", async () => {
+    const notify = terminalSpy();
+    const onValidationRequired = vi.fn();
+    const logger = { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() };
+    const ctx = {
+      ...nonStreamingCtx(
+        new Response(JSON.stringify(validationFrame()), { headers: { "content-type": "application/json" } }),
+        notify,
+        logger,
+      ),
+      onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-direct-json", challengeIdAtStart: "challenge-direct-json" },
+    };
+
+    const result = await handleNonStreamingResponse(ctx);
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 403 });
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-direct-json",
+    });
+    expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(logger.logProviderResponse).not.toHaveBeenCalled();
+    expect(logger.logConvertedResponse).not.toHaveBeenCalled();
+    expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
+    expect(clientPayload).not.toContain("project-secret");
   });
 
   it("notifies at non-aborted terminal text completion", () => {
