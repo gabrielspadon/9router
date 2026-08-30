@@ -228,7 +228,7 @@ export default function OpenClawToolCard({
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="sm" className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -241,7 +241,7 @@ export default function OpenClawToolCard({
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-xs font-medium bg-warning-soft text-warning border border-warning-line rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-xs font-medium bg-info-soft text-info border border-info-line rounded-full">Other</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -334,7 +334,7 @@ export default function OpenClawToolCard({
                 {/* Per-agent model overrides */}
                 {(openclawStatus.agents || []).filter(a => a.agentDir).map((agent) => (
                   <div key={agent.id} className="flex items-center gap-2 pl-4">
-                    <span className="w-32 shrink-0 text-xs text-primary text-right truncate" title={agent.name || agent.id}>Agent {agent.name || agent.id}</span>
+                    <span className="w-32 shrink-0 text-xs text-primary break-words sm:text-right" title={agent.name || agent.id}>Agent {agent.name || agent.id}</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <div className="relative w-full min-w-0">
                       <input

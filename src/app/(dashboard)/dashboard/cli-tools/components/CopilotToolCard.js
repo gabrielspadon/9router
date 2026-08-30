@@ -179,7 +179,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="sm" className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -192,7 +192,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-xs font-medium bg-warning-soft text-warning border border-warning-line rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-xs font-medium bg-info-soft text-info border border-info-line rounded-full">Other</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -212,7 +212,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
               <div className="flex items-start gap-3 p-3 bg-info-soft border border-info-line rounded-lg">
                 <span className="material-symbols-outlined text-info text-[20px]">info</span>
                 <div className="text-xs text-info">
-                  <p className="font-medium">Writes to <code className="px-1 bg-black/5 dark:bg-white/10 rounded">chatLanguageModels.json</code></p>
+                  <p className="font-medium">Writes to <code className="px-1 bg-surface-2 rounded">chatLanguageModels.json</code></p>
                   <p className="mt-0.5 opacity-80">Reload VS Code after applying for changes to take effect.</p>
                 </div>
               </div>
@@ -242,7 +242,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
                 {/* Models */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Models</span>
+                  <span className="text-sm font-semibold text-text-main sm:text-right sm:pt-1">Models</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-2">
                     <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
@@ -250,7 +250,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                         <span className="text-xs text-text-muted">No models selected</span>
                       ) : (
                         selectedModels.map((model) => (
-                          <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                          <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted border border-transparent hover:border-border">
                             {model}
                             <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} aria-label={`Remove ${model}`} className="ml-0.5 hover:text-danger focus-ring">
                               <span className="material-symbols-outlined text-[12px]">close</span>

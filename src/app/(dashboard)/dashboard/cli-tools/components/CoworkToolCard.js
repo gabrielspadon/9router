@@ -245,7 +245,7 @@ export default function CoworkToolCard({
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="sm" className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -258,7 +258,7 @@ export default function CoworkToolCard({
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-xs font-medium bg-warning-soft text-warning border border-warning-line rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-xs font-medium bg-info-soft text-info border border-info-line rounded-full">Other</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -326,7 +326,7 @@ export default function CoworkToolCard({
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Models</span>
+                  <span className="text-sm font-semibold text-text-main sm:text-right">Models</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   <div className="flex-1 flex items-center gap-2">
                     <div className="flex-1 flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
@@ -334,7 +334,7 @@ export default function CoworkToolCard({
                         <span className="text-xs text-text-muted">No models selected</span>
                       ) : (
                         selectedModels.map((m) => (
-                          <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                          <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted border border-transparent hover:border-border">
                             {m}
                             <button onClick={() => handleRemoveModel(m)} aria-label={`Remove ${m}`} className="ml-0.5 hover:text-danger focus-ring">
                               <span className="material-symbols-outlined text-[12px]">close</span>
@@ -348,20 +348,20 @@ export default function CoworkToolCard({
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-2">MCP</span>
+                  <span className="text-sm font-semibold text-text-main sm:text-right sm:pt-2">MCP</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-2">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-1">
                     {/* Preset plugins */}
                     {plugins.filter((p) => p.name !== "exa").map((p) => (
                       <div key={p.name} className="flex items-center gap-2 px-2 py-1 bg-surface rounded border border-border">
                         <span className="text-xs font-medium min-w-0 truncate flex-shrink-0">{p.title || p.name}</span>
-                        {p.oauth && <span className="text-[8px] text-warning shrink-0">OAuth</span>}
+                        {p.oauth && <span className="text-xs text-warning shrink-0">OAuth</span>}
                         <div className="flex-1 flex flex-wrap gap-1 overflow-hidden" style={{ maxHeight: "1.5rem" }}>
                           {Array.isArray(p.toolNames) && p.toolNames.slice(0, 6).map((t) => (
-                            <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/5 text-text-muted whitespace-nowrap">{t}</span>
+                            <span key={t} className="text-xs px-1 py-0.5 rounded bg-surface-2 text-text-muted whitespace-nowrap">{t}</span>
                           ))}
                           {Array.isArray(p.toolNames) && p.toolNames.length > 6 && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/5 text-text-muted whitespace-nowrap">+{p.toolNames.length - 6}</span>
+                            <span className="text-xs px-1 py-0.5 rounded bg-surface-2 text-text-muted metric whitespace-nowrap">+{p.toolNames.length - 6}</span>
                           )}
                         </div>
                         <button onClick={() => removePlugin(p.name)} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto focus-ring">
@@ -373,8 +373,8 @@ export default function CoworkToolCard({
                     {customPlugins.map((p) => (
                       <div key={p.name} className="flex items-center gap-2 px-2 py-1 bg-surface rounded border border-border">
                         <span className="text-xs font-medium min-w-0 truncate flex-shrink-0">{p.name}</span>
-                        <span className="text-[8px] px-1 py-0.5 rounded bg-surface-2 text-text-muted shrink-0">custom</span>
-                        <span className="flex-1 text-[9px] text-text-muted truncate">{p.url}</span>
+                        <span className="text-xs px-1 py-0.5 rounded bg-surface-2 text-text-muted shrink-0">custom</span>
+                        <span className="flex-1 text-xs text-text-muted truncate">{p.url}</span>
                         <button onClick={() => setCustomPlugins(customPlugins.filter((x) => x.name !== p.name))} aria-label={`Remove ${p.name}`} className="shrink-0 hover:text-danger ml-auto focus-ring">
                           <span className="material-symbols-outlined text-[12px]">close</span>
                         </button>
@@ -387,13 +387,13 @@ export default function CoworkToolCard({
                     <div className="flex items-center gap-2 mt-0.5">
                       <Button variant="secondary" size="sm" onClick={() => setMarketplaceOpen(true)}>+ Browse</Button>
                       <Button variant="secondary" size="sm" onClick={() => { setAddMcpForm({ name: "", url: "" }); setAddMcpOpen(true); }}>+ Custom</Button>
-                      <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="ml-auto rounded-[4px] text-[10px] text-text-muted hover:text-primary underline focus-ring">Find MCPs →</a>
+                      <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="ml-auto rounded-[4px] text-xs text-text-muted hover:text-primary underline focus-ring">Find MCPs →</a>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Tools</span>
+                  <span className="text-sm font-semibold text-text-main sm:text-right sm:pt-1">Tools</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-1.5">
                     {(() => {
@@ -412,7 +412,7 @@ export default function CoworkToolCard({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-medium">Web Search & Fetch (Exa)</div>
-                            <p className="text-[10px] text-text-muted leading-snug">Replaces built-in WebSearch/WebFetch. Auto-strips duplicates from tool list.</p>
+                            <p className="text-xs text-text-muted leading-snug">Replaces built-in WebSearch/WebFetch. Auto-strips duplicates from tool list.</p>
                           </div>
                         </label>
                       );
@@ -431,7 +431,7 @@ export default function CoworkToolCard({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-medium">Browser Control (Browser MCP)</div>
-                            <p className="text-[10px] text-text-muted leading-snug">
+                            <p className="text-xs text-text-muted leading-snug">
                               Controls your running Chrome. Auto-strips Cowork&apos;s built-in browser tools.{" "}
                               <a href={browserDef.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-primary underline focus-ring">Install Chrome extension</a>
                             </p>
@@ -444,7 +444,7 @@ export default function CoworkToolCard({
 
                 {Array.isArray(status?.localStdioPlugins) && status.localStdioPlugins.filter((p) => p.name !== "browsermcp").length > 0 && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                    <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Local Plugins</span>
+                    <span className="text-sm font-semibold text-text-main sm:text-right sm:pt-1">Local Plugins</span>
                     <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                     <div className="flex-1 flex flex-col gap-2">
                       <div className="flex flex-col gap-1.5 px-2 py-1.5 bg-surface rounded border border-border">
@@ -461,21 +461,21 @@ export default function CoworkToolCard({
                               <div className="flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <span className="text-xs font-medium">{p.title}</span>
-                                  <span className="text-[8px] text-warning">stdio</span>
+                                  <span className="text-xs text-warning">stdio</span>
                                 </div>
-                                <p className="text-[10px] text-text-muted leading-snug">{p.description}</p>
+                                <p className="text-xs text-text-muted leading-snug">{p.description}</p>
                                 {p.extensionUrl && (
-                                  <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-[10px] text-primary underline focus-ring">Install Chrome extension</a>
+                                  <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-xs text-primary underline focus-ring">Install Chrome extension</a>
                                 )}
                                 {p.setupUrl && (
-                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-[10px] text-primary underline focus-ring">{p.setupLabel || "Setup guide"}</a>
+                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="rounded-[4px] text-xs text-primary underline focus-ring">{p.setupLabel || "Setup guide"}</a>
                                 )}
                               </div>
                             </label>
                           );
                         })}
                       </div>
-                      <p className="text-[10px] text-text-muted leading-snug">
+                      <p className="text-xs text-text-muted leading-snug">
                         ⚠️ Local plugins run as subprocesses. Install the runtime shown for each plugin before enabling it.
                       </p>
                     </div>
@@ -549,7 +549,7 @@ export default function CoworkToolCard({
       {/* Add Custom MCP modal */}
       {addMcpOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAddMcpOpen(false)}>
-          <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-sm mx-4 p-5 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-surface border border-border rounded-xl shadow-[var(--shadow-elev)] w-full max-w-sm mx-4 p-5 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Add Custom MCP</h3>
               <button onClick={() => setAddMcpOpen(false)} aria-label="Close" className="text-text-muted hover:text-text-main focus-ring">
@@ -559,7 +559,7 @@ export default function CoworkToolCard({
 
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] text-text-muted font-medium">Name</label>
+                <label className="text-xs text-text-muted font-medium">Name</label>
                 <input
                   type="text"
                   placeholder="my-mcp"
@@ -569,7 +569,7 @@ export default function CoworkToolCard({
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] text-text-muted font-medium">SSE URL</label>
+                <label className="text-xs text-text-muted font-medium">SSE URL</label>
                 <input
                   type="text"
                   placeholder="https://your-mcp-server.com/sse"

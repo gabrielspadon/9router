@@ -21,7 +21,7 @@ function ModelField({ label, value, placeholder, onChange, onSelect, disabled, h
     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
       <div className="sm:text-right">
         <span className="text-xs font-semibold text-text-main sm:text-sm">{label}</span>
-        {help && <p className="mt-0.5 text-[10px] leading-tight text-text-muted">{help}</p>}
+        {help && <p className="mt-0.5 text-xs leading-tight text-text-muted">{help}</p>}
       </div>
       <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
       <div className="relative w-full min-w-0">
@@ -246,7 +246,7 @@ export default function GrokBuildToolCard({
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="sm" className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -269,7 +269,7 @@ export default function GrokBuildToolCard({
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-xs font-medium bg-warning-soft text-warning border border-warning-line rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-xs font-medium bg-info-soft text-info border border-info-line rounded-full">Other</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -315,7 +315,7 @@ export default function GrokBuildToolCard({
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                    <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">{configuredModel.base_url} · {configuredModel.model}{configuredModel.context_window ? ` · ${(configuredModel.context_window / 1000).toLocaleString()}K ctx` : ""}</span>
+                    <span className="min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted metric sm:py-1.5">{configuredModel.base_url} · {configuredModel.model}{configuredModel.context_window ? ` · ${(configuredModel.context_window / 1000).toLocaleString()}K ctx` : ""}</span>
                   </div>
                 )}
 
@@ -332,7 +332,7 @@ export default function GrokBuildToolCard({
                     <span className="material-symbols-outlined text-primary text-[16px]">account_tree</span>
                     <div>
                       <p className="text-xs font-semibold text-text-main">Subagent model overrides</p>
-                      <p className="text-[10px] text-text-muted">Leave blank to inherit Main Model. Each override keeps its own context window.</p>
+                      <p className="text-xs text-text-muted">Leave blank to inherit Main Model. Each override keeps its own context window.</p>
                     </div>
                   </div>
                 </div>

@@ -131,7 +131,7 @@ export default function MitmToolCard({
 
   return (
     <>
-      <Card padding="xs" className="overflow-hidden">
+      <Card padding="sm" className="overflow-hidden">
         <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
           <div className="flex min-w-0 items-center gap-3">
             <div className="size-8 flex items-center justify-center shrink-0">
@@ -171,10 +171,10 @@ export default function MitmToolCard({
             {/* Hosts */}
             {mitmHosts.length > 0 && (
               <div className="mt-2 rounded-md border border-border bg-surface/50 px-2 py-1.5">
-                <p className="text-[10px] font-medium tracking-wide text-text-main/80 mb-1">
+                <p className="text-xs font-medium tracking-wide text-text-main/80 mb-1">
                   Edit hosts file manually to add the following entries:
                 </p>
-                <ul className="list-none space-y-0.5 font-mono text-[10px] text-text-muted break-all">
+                <ul className="list-none space-y-0.5 font-mono text-xs text-text-muted break-all">
                   {mitmHosts.map((h) => (
                     <li key={h}>127.0.0.1 {h}</li>
                   ))}
@@ -182,10 +182,10 @@ export default function MitmToolCard({
               </div>
             )}
             {/* Info */}
-            <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
+            <div className="flex flex-col gap-0.5 text-xs text-text-muted px-1">
               <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
               {!dnsActive && (
-                <p className="text-warning text-[10px] mt-1">
+                <p className="text-warning text-xs mt-1">
                   ⚠️ Enable DNS to edit model mappings
                 </p>
               )}
@@ -279,7 +279,7 @@ export default function MitmToolCard({
       {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
+          <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-[var(--shadow-elev)] sm:p-6">
             <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
             <div className="flex items-start gap-3 p-4 bg-warning-soft border border-warning-line rounded-lg">
               <span className="material-symbols-outlined text-warning text-[20px]">warning</span>

@@ -194,7 +194,7 @@ model = "${effectiveSubagentModel}"
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="sm" className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -207,7 +207,7 @@ model = "${effectiveSubagentModel}"
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-xs font-medium bg-warning-soft text-warning border border-warning-line rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-xs font-medium bg-info-soft text-info border border-info-line rounded-full">Other</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -249,12 +249,12 @@ model = "${effectiveSubagentModel}"
                   <div className="space-y-3 text-sm">
                     <div>
                       <p className="text-text-muted mb-1">macOS / Linux / Windows:</p>
-                      <code className="block px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs">npm install -g @openai/codex</code>
+                      <code className="block px-3 py-2 bg-surface-2 rounded font-mono text-xs">npm install -g @openai/codex</code>
                     </div>
-                    <p className="text-text-muted">After installation, run <code className="px-1 bg-black/5 dark:bg-white/5 rounded">codex</code> to verify.</p>
+                    <p className="text-text-muted">After installation, run <code className="px-1 bg-surface-2 rounded">codex</code> to verify.</p>
                     <div className="pt-2 border-t border-border">
                       <p className="text-text-muted text-xs">
-                        Codex uses <code className="px-1 bg-black/5 dark:bg-white/5 rounded">~/.codex/auth.json</code> with <code className="px-1 bg-black/5 dark:bg-white/5 rounded">OPENAI_API_KEY</code>.
+                        Codex uses <code className="px-1 bg-surface-2 rounded">~/.codex/auth.json</code> with <code className="px-1 bg-surface-2 rounded">OPENAI_API_KEY</code>.
                         Click &quot;Apply&quot; to auto-configure.
                       </p>
                     </div>

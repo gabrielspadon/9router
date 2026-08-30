@@ -217,7 +217,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
+    <Card padding="sm" className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -230,7 +230,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-xs font-medium bg-warning-soft text-warning border border-warning-line rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-xs font-medium bg-info-soft text-info border border-info-line rounded-full">Other</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -272,9 +272,9 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                   <div className="space-y-3 text-sm">
                     <div>
                       <p className="text-text-muted mb-1">macOS / Linux:</p>
-                      <code className="block px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs">npm install -g opencode-ai</code>
+                      <code className="block px-3 py-2 bg-surface-2 rounded font-mono text-xs">npm install -g opencode-ai</code>
                     </div>
-                    <p className="text-text-muted">After installation, run <code className="px-1 bg-black/5 dark:bg-white/5 rounded">opencode</code> to verify.</p>
+                    <p className="text-text-muted">After installation, run <code className="px-1 bg-surface-2 rounded">opencode</code> to verify.</p>
                   </div>
                 </div>
               )}
@@ -320,7 +320,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
                 {/* Models */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Models</span>
+                  <span className="text-sm font-semibold text-text-main sm:text-right sm:pt-1">Models</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-2">
                     <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
@@ -352,11 +352,11 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
                               model === activeModel
                                 ? "bg-primary/10 text-primary border border-primary"
-                                : "bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
+                                : "bg-surface-2 text-text-muted border border-transparent hover:border-border"
                             }`}
                             title={model === activeModel ? "Click to clear active model" : "Click to set as active"}
                           >
-                            {model === activeModel && <span className="material-symbols-outlined text-[10px]">star</span>}
+                            {model === activeModel && <span className="material-symbols-outlined text-[12px]">star</span>}
                             {model}
                             <button
                               onClick={async (e) => {

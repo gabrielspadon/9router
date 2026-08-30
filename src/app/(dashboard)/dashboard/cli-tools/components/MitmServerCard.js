@@ -164,10 +164,10 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
           {/* Purpose & How it works */}
           <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50 flex flex-col gap-2">
-            <p className="text-[11px] text-text-muted leading-relaxed">
+            <p className="text-xs text-text-muted leading-relaxed">
               <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router
             </p>
-            <p className="text-[11px] text-text-muted leading-relaxed">
+            <p className="text-xs text-text-muted leading-relaxed">
               <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot
             </p>
           </div>
@@ -273,7 +273,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
+          <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-[var(--shadow-elev)] sm:p-6">
             <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
             <div className="flex items-start gap-3 p-4 bg-warning-soft border border-warning-line rounded-lg">
               <span className="material-symbols-outlined text-warning text-[20px]">warning</span>
@@ -307,7 +307,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       {/* Port 443 Conflict Modal */}
       {port443Conflict && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
+          <div className="mx-4 flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-[var(--shadow-elev)] sm:p-6">
             <h3 className="font-semibold text-text-main">Port 443 Already In Use</h3>
             <div className="flex items-start gap-3 p-4 bg-warning-soft border border-warning-line rounded-lg">
               <span className="material-symbols-outlined text-warning text-[20px]">warning</span>

@@ -99,7 +99,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               aria-label="Clear" className="p-2 text-text-muted hover:text-danger rounded transition-colors focus-ring"
               title="Clear"
             >
-              <span className="material-symbols-outlined text-lg">close</span>
+              <span className="material-symbols-outlined text-[18px]">close</span>
             </button>
           </>
         )}
@@ -138,7 +138,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           
           return (
             <div key={index} className={`flex items-start gap-3 p-3 rounded-lg border ${bgClass}`}>
-              <span className={`material-symbols-outlined text-lg ${iconClass}`}>{icon}</span>
+              <span className={`material-symbols-outlined text-[20px] ${iconClass}`}>{icon}</span>
               <p className={`text-sm ${textClass}`}>{note.text}</p>
             </div>
           );
@@ -257,7 +257,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden overflow-x-hidden">
+    <Card padding="sm" className="overflow-hidden overflow-x-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 rounded-lg flex items-center justify-center shrink-0">
@@ -265,7 +265,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           </div>
           <div className="min-w-0">
             <h3 className="font-medium text-sm">{tool.name}</h3>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted">{tool.description}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>

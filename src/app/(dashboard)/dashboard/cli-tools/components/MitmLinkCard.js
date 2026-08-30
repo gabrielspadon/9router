@@ -29,9 +29,9 @@ export default function MitmLinkCard({ tool }) {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="font-medium text-sm">{tool.name}</h3>
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-surface-2 text-text-muted border border-border rounded-full">MITM</span>
+                <span className="px-1.5 py-0.5 text-xs font-medium bg-surface-2 text-text-muted border border-border rounded-full">MITM</span>
               </div>
-              <p className="text-xs text-text-muted truncate">{tool.description}</p>
+              <p className="text-xs text-text-muted">{tool.description}</p>
             </div>
           </div>
           <span className="material-symbols-outlined text-text-muted text-[20px]">chevron_right</span>
