@@ -244,6 +244,25 @@ describe("required proxy unavailable caller boundaries", () => {
     await expectRequiredProxyUnavailable(await GET(new Request("http://localhost/v1/models")));
   });
 
+  it("v1 combo-only models returns 503 before a static Cursor fallback", async () => {
+    useUnavailableCursorConnection();
+    mocks.getSettings.mockResolvedValue({ exposeComboOnly: true });
+    mocks.getCombos.mockResolvedValue([{ name: "combo-static-fallback" }]);
+    const { GET } = await import("@/app/api/v1/models/route.js");
+
+    await expectRequiredProxyUnavailable(await GET(new Request("http://localhost/v1/models")));
+  });
+
+  it("v1 non-LLM models returns 503 before a static Cursor fallback", async () => {
+    useUnavailableCursorConnection();
+    const { GET } = await import("@/app/api/v1/models/[kind]/route.js");
+
+    await expectRequiredProxyUnavailable(await GET(
+      new Request("http://localhost/v1/models/image"),
+      { params: Promise.resolve({ kind: "image" }) },
+    ));
+  });
+
   it("provider Cursor models returns 503 before catalog or static fallback", async () => {
     useUnavailableCursorConnection();
     const { GET } = await import("@/app/api/providers/[id]/models/route.js");

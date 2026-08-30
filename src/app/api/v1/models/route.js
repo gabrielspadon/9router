@@ -249,7 +249,9 @@ export async function buildModelsList(kindFilter) {
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
+    await assertCursorModelRoutesAvailable(connections);
   } catch (e) {
+    if (isRequiredProxyUnavailableError(e)) throw e;
     console.log("Could not fetch providers, returning all models");
   }
 
