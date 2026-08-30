@@ -46,7 +46,7 @@ export default function RequestLogger() {
             <span>Auto Refresh (3s)</span>
             <div
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`focus-ring relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${autoRefresh ? "bg-primary" : "bg-bg-subtle border border-border"
+              className={`focus-ring relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${autoRefresh ? "bg-primary" : "bg-surface-2 border border-border"
                 }`}
             >
               <span
@@ -65,8 +65,8 @@ export default function RequestLogger() {
           ) : logs.length === 0 ? (
             <div className="p-8 text-center text-text-muted">No logs recorded yet.</div>
           ) : (
-            <table className="w-full text-left border-collapse whitespace-nowrap">
-              <thead className="sticky top-0 bg-bg-subtle border-b border-border z-10">
+            <table className="metric w-full text-left border-collapse whitespace-nowrap">
+              <thead className="sticky top-0 bg-surface-2 border-b border-border z-10">
                 <tr>
                   <th className="px-3 py-2 border-r border-border">DateTime</th>
                   <th className="px-3 py-2 border-r border-border">Model</th>
@@ -92,7 +92,7 @@ export default function RequestLogger() {
                       <td className="px-3 py-1.5 border-r border-border text-text-muted">{parts[0]}</td>
                       <td className="px-3 py-1.5 border-r border-border font-medium">{parts[1]}</td>
                       <td className="px-3 py-1.5 border-r border-border">
-                        <span className="px-1.5 py-0.5 rounded bg-bg-subtle border border-border text-[10px] uppercase font-bold">
+                        <span className="px-1.5 py-0.5 rounded bg-surface-2 border border-border text-[10px] uppercase font-bold">
                           {parts[2]}
                         </span>
                       </td>
@@ -100,7 +100,7 @@ export default function RequestLogger() {
                       <td className="px-3 py-1.5 border-r border-border text-right text-primary">{parts[4]}</td>
                       <td className="px-3 py-1.5 border-r border-border text-right text-success">{parts[5]}</td>
                       <td className={`px-3 py-1.5 font-bold ${isSuccess ? 'text-success' :
-                          isFailed ? 'text-error' :
+                          isFailed ? 'text-danger' :
                             'text-primary animate-pulse'
                         }`}>
                         {status}

@@ -133,7 +133,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
                 <p className="text-xs text-warning">
                   Make sure Cursor IDE has been opened at least once, then click <strong>Retry</strong>. If the problem persists, paste your tokens manually below.
                 </p>
-                <Button onClick={runAutoDetect} variant="outline" fullWidth>
+                <Button onClick={runAutoDetect} variant="secondary" fullWidth>
                   Retry
                 </Button>
               </div>
@@ -161,7 +161,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
                 onChange={(e) => setAccessToken(e.target.value)}
                 placeholder="Access token will be auto-filled..."
                 rows={3}
-                className="focus-ring w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-background focus:border-primary resize-none"
+                className="focus-ring w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface focus:border-primary resize-none"
               />
             </div>
 
