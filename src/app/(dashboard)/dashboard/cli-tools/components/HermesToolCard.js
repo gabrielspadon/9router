@@ -219,10 +219,7 @@ export default function HermesToolCard({
                   </div>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 pl-0 sm:pl-9">
-                  <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">
-                    <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
-                    Manual Config
-                  </Button>
+                  <Button variant="secondary" size="sm" icon="content_copy" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">Manual Config</Button>
                 </div>
               </div>
             </div>
@@ -280,15 +277,9 @@ export default function HermesToolCard({
               )}
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto">
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
-                </Button>
-                <Button variant="secondary" size="sm" onClick={handleReset} disabled={!hermesStatus?.has9Router} loading={restoring} className="w-full sm:w-auto">
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
-                </Button>
+                <Button variant="primary" size="sm" icon="save" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto">Apply</Button>
+                <Button variant="secondary" size="sm" icon="restore" onClick={handleReset} disabled={!hermesStatus?.has9Router} loading={restoring} className="w-full sm:w-auto">Reset</Button>
+                <Button variant="ghost" size="sm" icon="content_copy" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">Manual Config</Button>
               </div>
             </>
           )}

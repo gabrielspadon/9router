@@ -253,10 +253,7 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pl-9">
-                  <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)}>
-                    <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
-                    Manual Config
-                  </Button>
+                  <Button variant="secondary" size="sm" icon="content_copy" onClick={() => setShowManualConfigModal(true)}>Manual Config</Button>
                 </div>
               </div>
             </div>
@@ -343,15 +340,9 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
-                </Button>
-                <Button variant="secondary" size="sm" onClick={handleResetSettings} disabled={!jcodeStatus?.has9Router} loading={restoring}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
-                </Button>
+                <Button variant="primary" size="sm" icon="save" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>Apply</Button>
+                <Button variant="secondary" size="sm" icon="restore" onClick={handleResetSettings} disabled={!jcodeStatus?.has9Router} loading={restoring}>Reset</Button>
+                <Button variant="ghost" size="sm" icon="content_copy" onClick={() => setShowManualConfigModal(true)}>Manual Config</Button>
               </div>
             </>
           )}

@@ -288,7 +288,7 @@ export default function GrokBuildToolCard({
                   <code className="block mt-2 p-2 bg-black/20 rounded text-xs font-mono">curl -fsSL https://x.ai/cli/install.sh | bash</code>
                 </div>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>Manual Config</Button>
+              <Button variant="secondary" size="sm" icon="content_copy" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">Manual Config</Button>
             </div>
           )}
 
@@ -354,9 +354,9 @@ export default function GrokBuildToolCard({
               {message && <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-success-soft text-success border border-success-line" : "bg-danger-soft text-danger border border-danger-line"}`}><span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span><span>{message.text}</span></div>}
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply</Button>
-                <Button variant="secondary" size="sm" onClick={handleReset} disabled={!grokStatus?.has9Router} loading={restoring} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset</Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto"><span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config</Button>
+                <Button variant="primary" size="sm" icon="save" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto">Apply</Button>
+                <Button variant="secondary" size="sm" icon="restore" onClick={handleReset} disabled={!grokStatus?.has9Router} loading={restoring} className="w-full sm:w-auto">Reset</Button>
+                <Button variant="ghost" size="sm" icon="content_copy" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">Manual Config</Button>
               </div>
             </>
           )}

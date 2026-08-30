@@ -377,13 +377,10 @@ export default function AntigravityToolCard({
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
                 <Button
                   variant="primary"
-                  size="sm"
+                  size="sm" icon="save"
                   onClick={handleSaveMappings}
                   disabled={loading || Object.keys(modelMappings).length === 0}
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>
-                  Save Mappings
-                </Button>
+                >Save Mappings</Button>
               </div>
             </>
           )}
