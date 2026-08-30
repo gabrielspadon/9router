@@ -30,6 +30,27 @@
 - **Dashboard**: migrated the dashboard from raw Tailwind palette classes and
   hand-rolled controls to shared design tokens and components, so themes and
   states are defined in one place rather than per file
+- **Design record**: the written design system, the three artboards behind the
+  chosen direction, the verification suite and the captured evidence now ship
+  with the repository under `docs/design/`. They were previously excluded as
+  development artefacts, which left four committed gates that no clean checkout
+  could run. `docs/design/README.md` states how to re-run each of them
+- **README languages**: the repository now ships one README, in English. The
+  translated summaries described above and the `gitbook/` documentation site
+  were both removed; `docs/design/translation-policy.md` states the policy and
+  the bar a pull request adding a language has to clear. The Dependabot npm
+  entry for `/gitbook` is removed with it, since the directory it pointed at no
+  longer exists
+- **CI lint gate**: the `lint` job no longer runs `npx eslint .` as the merge
+  gate. It compares findings per file and per rule against the pull request's
+  base, so a change is judged on whether it introduces a finding rather than on
+  a backlog its author did not create. The whole-tree run stays as a
+  non-blocking report
+- **Chart colours**: the statistics and usage charts draw their series from a
+  six-slot token scale declared per theme instead of raw palette steps. Four
+  legend labels failed text contrast on the light surface, the worst at 2.54
+  against 4.5, and the usage cost line measured 1.8:1 as a stroke against the
+  3:1 it needs
 
 ## Features
 - Added a configurable upstream response-header timeout. Resolution uses a

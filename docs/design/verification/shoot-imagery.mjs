@@ -14,8 +14,13 @@ const SHOTS = [
   { out: "images/fusion-combo-ui.png", path: "/dashboard/combos", theme: "dark", w: 1280, h: 820 },
   { out: "docs/design/evidence/hero/statistics.png", path: "/dashboard/statistics", theme: "dark", w: 1440, h: 900 },
   { out: "docs/design/evidence/hero/endpoint-light.png", path: "/dashboard/endpoint", theme: "light", w: 1440, h: 900 },
+  // The component gallery is the visual regression snapshot for the shared
+  // primitives, so it is regenerated here rather than captured by hand.
+  { out: "docs/design/evidence/gallery/gallery--light.png", path: "/dashboard/gallery", theme: "light", w: 1440, h: 900, full: true },
+  { out: "docs/design/evidence/gallery/gallery--dark.png", path: "/dashboard/gallery", theme: "dark", w: 1440, h: 900, full: true },
 ];
 mkdirSync("docs/design/evidence/hero", { recursive: true });
+mkdirSync("docs/design/evidence/gallery", { recursive: true });
 
 const b = await chromium.launch();
 const auth = await b.newContext({ baseURL: BASE });
@@ -35,7 +40,7 @@ for (const s of SHOTS) {
   const p = await ctx.newPage();
   await p.goto(s.path, { waitUntil: "domcontentloaded" });
   await p.waitForTimeout(2200);
-  await p.screenshot({ path: s.out });
+  await p.screenshot({ path: s.out, fullPage: !!s.full });
   console.log(`${s.out}  ${s.path} ${s.theme} ${s.w}x${s.h}`);
   await ctx.close();
 }
