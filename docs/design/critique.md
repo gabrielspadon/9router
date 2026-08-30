@@ -1,6 +1,6 @@
-# Round 2 critique, from driving the product
+# Critique, from driving the product
 
-Captured on the isolated round-2 instance (port 20135) seeded from a read-only
+Captured on the isolated instance (port 20135) seeded from a read-only
 backup of a live database, so the observations below are against realistic
 routing data rather than an empty install. Six accounts are connected across
 three providers (Claude Code 3, Antigravity 2, OpenAI Codex 1); the remaining
@@ -74,14 +74,14 @@ margins.
 
 ### 8. Status is carried by hue in places
 
-The round-2 audit records hue-only indicators on the login and landing views
+The audit records hue-only indicators on the login and landing views
 (three and one respectively), where a small saturated element carries state with
-no text, icon or accessible name. Round 1 fixed contrast and accessible names
+no text, icon or accessible name. An earlier pass fixed contrast and accessible names
 thoroughly; this class was not in its scope.
 
-## What round 1 already fixed, and must not regress
+## What the earlier pass already fixed, and must not regress
 
-Round 1 measured and closed contrast, focus indication and accessible names.
+The earlier pass measured and closed contrast, focus indication and accessible names.
 The baseline audit records zero contrast failures, zero unnamed icon controls
-and zero missing focus rings across the routes it covers. Round 2 changes
+and zero missing focus rings across the routes it covers. This pass changes
 composition and hierarchy; it inherits that floor and is measured against it.

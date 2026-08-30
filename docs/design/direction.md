@@ -1,4 +1,4 @@
-# Round 2 direction, scored and selected
+# Structural direction, scored and selected
 
 Three structural hypotheses were built as working artboards rather than
 described. Each renders the same three states in both themes, from the same

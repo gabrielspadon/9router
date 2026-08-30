@@ -26,7 +26,7 @@ if (!judgment) {
   process.exit(0);
 }
 
-const doc = "docs/design/r2-direction.md";
+const doc = "docs/design/direction.md";
 if (!existsSync(doc)) { console.log(`missing ${doc}`); process.exit(1); }
 const t = readFileSync(doc, "utf8");
 // A judgment must score every hypothesis on every named criterion, and pick one.
@@ -41,7 +41,7 @@ if (!/## Signature elements/.test(t)) problems.push("no signature elements");
 const sig = (t.match(/## Signature elements[\s\S]*?(?=\n## |$)/) || [""])[0];
 const sigCount = (sig.match(/^\d+\. \*\*/gm) || []).length;
 if (sigCount < 3) problems.push(`only ${sigCount} signature elements, need at least 3`);
-const critique = "docs/design/r2-critique.md";
+const critique = "docs/design/critique.md";
 if (!existsSync(critique)) problems.push(`missing ${critique}`);
 console.log(`judgment: ${CRITERIA.length} criteria, 3 hypotheses, ${sigCount} signature elements`);
 if (problems.length) { problems.forEach((p) => console.log("  " + p)); process.exit(1); }

@@ -4,7 +4,7 @@
 #
 #   1 clean tree                  -> OK      (baseline)
 #   2 source file renamed         -> OK      (a control may MOVE; that is the
-#                                             whole point of the round-2 rule)
+#                                             the whole point of the rule)
 #   3 handler body altered        -> FAIL
 #   4 fetch call removed          -> FAIL
 #   5 read-only path edited       -> FAIL    (trespass)

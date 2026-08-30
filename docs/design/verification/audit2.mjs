@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-// Round-2 browser audit. Extends round 1 with the things the brief names and
-// round 1 did not measure: a laptop viewport, phone coverage on every route
-// rather than a subset, reflow at 200 percent zoom, status cues that survive
-// colour blindness, and full keyboard traversal.
+// Browser audit. Every route, both themes, wide desktop, laptop and phone,
+// plus reflow at 200 percent zoom, status cues that survive colour blindness,
+// and full keyboard traversal.
 //
 //   node docs/design/verification/audit2.mjs before http://127.0.0.1:20135
 //

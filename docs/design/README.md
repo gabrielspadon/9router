@@ -10,9 +10,9 @@ not a gate.
   colour tokens with measured contrast, typography roles, grid and density,
   structure, elevation, radius, motion, focus, and the data visualisation
   grammar. Where asymmetry is allowed and where alignment is mandatory.
-- [r2-direction.md](r2-direction.md). The three structural hypotheses that were
+- [direction.md](direction.md). The three structural hypotheses that were
   drawn, how they scored against the product's four jobs, and why the chosen one
-  won. [r2-critique.md](r2-critique.md) is the honest reading of what the first
+  won. [critique.md](critique.md) is the honest reading of what the first
   pass got wrong.
 - [artboards/](artboards/). The three hypotheses as running HTML, each rendered
   in both themes across three states.
@@ -23,8 +23,9 @@ not a gate.
   that boundary.
 - [translation-policy.md](translation-policy.md). Why the README ships in
   English only.
-- [progressive-tool-disclosure.md](progressive-tool-disclosure.md). A engine
-  behaviour documented here for historical reasons rather than a design page.
+- [progressive-tool-disclosure.md](progressive-tool-disclosure.md). An engine
+  behaviour that is documented under this directory for historical reasons
+  rather than a design page. `docs/README.md` links it from Reference.
 
 ## Evidence
 

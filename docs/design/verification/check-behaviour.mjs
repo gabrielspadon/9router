@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Round 2 behavioural fingerprint. Round 1 compared each changed file against
-// its own past, which forbids exactly the restructuring round 2 needs: moving a
+// Repository-wide behavioural fingerprint. Comparing each changed file against
+// its own past forbids exactly the restructuring a redesign needs: moving a
 // control from one component to another shows as a diff on both sides.
 //
 // This builds ONE multiset over the whole source tree and compares it against

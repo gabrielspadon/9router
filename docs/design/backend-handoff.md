@@ -22,7 +22,7 @@ alongside it is built from data that already exists where it is rendered.
 **What the design needs.** A masthead persistent on every dashboard route
 carrying throughput, p95 latency, error rate, failover rate and spend, so the
 five-second question "is the system healthy" is answered before the eye reaches
-the content. This is signature element 1 in `docs/design/r2-direction.md`.
+the content. This is signature element 1 in `docs/design/direction.md`.
 
 **Why it cannot be built.** The only state in shell scope is the notification
 list (`DashboardLayout.js:38`), connectivity (`Sidebar.js:82`), version and
