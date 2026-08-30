@@ -4,6 +4,7 @@
 
 import { CLIENT_METADATA } from "../../config/appConstants.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation } from "../antigravityValidation.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 
 // Antigravity API config (from Quotio) — urls from registry, oauth client + dynamic UA kept here
@@ -12,6 +13,75 @@ const ANTIGRAVITY_CONFIG = {
   ...ANTIGRAVITY_OAUTH_CLIENT,
   userAgent: ANTIGRAVITY_IDE_USER_AGENT,
 };
+
+const ANTIGRAVITY_PLAN_NAMES = new Set([
+  "Free",
+  "Pro",
+  "Premium",
+  "Google AI Pro",
+  "Google AI Ultra",
+]);
+
+const ANTIGRAVITY_QUOTA_DISPLAY_NAMES = Object.freeze({
+  "gemini-3.7-flash-high": ["Gemini 3.7 Flash (High)", "Gemini 3.7 Flash High"],
+  "gemini-3.7-flash-medium": ["Gemini 3.7 Flash (Medium)", "Gemini 3.7 Flash Medium"],
+  "gemini-3.7-flash-low": ["Gemini 3.7 Flash (Low)", "Gemini 3.7 Flash Low"],
+  "gemini-3.6-flash-high": ["Gemini 3.6 Flash (High)", "Gemini 3.6 Flash High"],
+  "gemini-3.6-flash-medium": ["Gemini 3.6 Flash (Medium)", "Gemini 3.6 Flash Medium"],
+  "gemini-3.6-flash-low": ["Gemini 3.6 Flash (Low)", "Gemini 3.6 Flash Low"],
+  "gemini-3.5-flash-low": ["Gemini 3.5 Flash (Medium)", "Gemini 3.5 Flash Medium"],
+  "gemini-3.5-flash-extra-low": ["Gemini 3.5 Flash (Low)", "Gemini 3.5 Flash Low"],
+  "gemini-pro-agent": ["Gemini 3.1 Pro (High)", "Gemini 3.1 Pro High"],
+  "gemini-3.1-pro-low": ["Gemini 3.1 Pro (Low)", "Gemini 3.1 Pro Low"],
+  "claude-sonnet-4-6": ["Claude Sonnet 4.6 (Thinking)", "Claude Sonnet 4.6 Thinking"],
+  "claude-opus-4-6-thinking": ["Claude Opus 4.6 (Thinking)", "Claude Opus 4.6 Thinking"],
+  "gpt-oss-120b-medium": ["GPT-OSS 120B (Medium)", "GPT-OSS 120B Medium"],
+  "gemini-3.1-flash-image": ["Gemini 3.1 Flash Image"],
+});
+
+const usableAntigravityUsageResults = new WeakSet();
+
+export function isUsableAntigravityUsageResult(result) {
+  return !!result && typeof result === "object" && usableAntigravityUsageResults.has(result);
+}
+
+function safeAntigravityPlan(name) {
+  return typeof name === "string" && ANTIGRAVITY_PLAN_NAMES.has(name) ? name : "Unknown";
+}
+
+function safeAntigravityQuotaDisplayName(modelKey, displayName) {
+  const allowedDisplayNames = ANTIGRAVITY_QUOTA_DISPLAY_NAMES[modelKey];
+  return allowedDisplayNames?.includes(displayName) ? displayName : modelKey;
+}
+
+async function readAntigravityJson(response) {
+  const text = await response.text();
+  try {
+    return { text, data: text ? JSON.parse(text) : null };
+  } catch {
+    return { text, data: null };
+  }
+}
+
+async function notifyAntigravityVerification(hooks, method, payload) {
+  if (typeof hooks?.[method] !== "function") return;
+  try {
+    await hooks[method](payload);
+  } catch {
+    const connectionId = hooks?.verificationContext?.connectionId;
+    console.error(
+      `[Antigravity Usage] ${method} callback failed${connectionId ? ` for ${String(connectionId).slice(0, 12)}` : ""}`,
+    );
+  }
+}
+
+async function reportAntigravityValidation(validation, hooks) {
+  if (!validation) return;
+  await notifyAntigravityVerification(hooks, "onValidationRequired", {
+    validation,
+    observationId: hooks?.verificationContext?.observationId,
+  });
+}
 
 /**
  * Gemini CLI Usage — fetch per-model quota via Cloud Code Assist API.
@@ -83,8 +153,8 @@ export async function getGeminiUsage(accessToken, providerSpecificData, proxyOpt
     }
 
     return { plan, quotas };
-  } catch (error) {
-    return { message: `Gemini CLI error: ${error.message}` };
+  } catch {
+    return { message: "Gemini CLI quota request failed." };
   }
 }
 
@@ -116,10 +186,14 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
 /**
  * Antigravity Usage - Fetch quota from Google Cloud Code API
  */
-export async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null) {
+export async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null, hooks = null) {
   try {
     // Fetch subscription info once — reuse for both projectId and plan
-    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
+    const subscription = await getAntigravitySubscriptionInfo(accessToken, proxyOptions, hooks);
+    if (subscription.validation) {
+      return { message: "Antigravity account verification required.", quotas: {} };
+    }
+    const subscriptionInfo = subscription.data;
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
@@ -136,6 +210,14 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       }),
     }, 10000, proxyOptions);
 
+    const { data } = await readAntigravityJson(response);
+    const validation = classifyAntigravityValidation({
+      status: response.status,
+      payload: data,
+      source: "usage",
+    });
+    await reportAntigravityValidation(validation, hooks);
+
     if (response.status === 403) {
       return {
         message: "Antigravity quota API access forbidden. Chat may still work.",
@@ -151,10 +233,28 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     }
 
     if (!response.ok) {
-      throw new Error(`Antigravity API error: ${response.status}`);
+      const safeStatus = Number.isInteger(response.status) && response.status >= 400 && response.status < 600
+        ? response.status
+        : 502;
+      return {
+        message: `Antigravity quota API request failed (${safeStatus}).`,
+        quotas: {},
+      };
     }
 
-    const data = await response.json();
+    if (
+      !data
+      || typeof data !== "object"
+      || Array.isArray(data)
+      || data.message
+      || data.error
+      || !Object.prototype.hasOwnProperty.call(data, "models")
+      || !data.models
+      || typeof data.models !== "object"
+      || Array.isArray(data.models)
+    ) {
+      return { message: "Antigravity quota response was not usable.", quotas: {} };
+    }
     const quotas = {};
 
     // Parse model quotas (inspired by vscode-antigravity-cockpit)
@@ -204,26 +304,33 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           resetAt: parseResetTime(info.quotaInfo.resetTime),
           remainingPercentage,
           unlimited: false,
-          displayName: info.displayName || modelKey,
+          displayName: safeAntigravityQuotaDisplayName(modelKey, info.displayName),
         };
       }
     }
 
-    return {
-      plan: subscriptionInfo?.currentTier?.name || "Unknown",
+    const result = {
+      plan: safeAntigravityPlan(subscriptionInfo?.currentTier?.name),
       quotas,
-      subscriptionInfo,
     };
+    usableAntigravityUsageResults.add(result);
+    await notifyAntigravityVerification(hooks, "onVerificationSuccess", {
+      challengeId: hooks?.verificationContext?.challengeIdAtStart,
+    });
+    return result;
   } catch (error) {
-    console.error("[Antigravity Usage] Error:", error.message, error.cause);
-    return { message: `Antigravity error: ${error.message}` };
+    console.error("[Antigravity Usage] Error");
+    return {
+      message: "Antigravity usage is temporarily unavailable.",
+      quotas: {},
+    };
   }
 }
 
 /**
  * Get Antigravity subscription info
  */
-async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) {
+async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null, hooks = null) {
   try {
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
@@ -235,10 +342,18 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
     }, 10000, proxyOptions);
 
-    if (!response.ok) return null;
-    return await response.json();
-  } catch (error) {
-    console.error("[Antigravity Subscription] Error:", error.message);
-    return null;
+    const { data } = await readAntigravityJson(response);
+    const validation = classifyAntigravityValidation({
+      status: response.status,
+      payload: data,
+      source: "loadCodeAssist",
+    });
+    await reportAntigravityValidation(validation, hooks);
+    if (validation) return { data: null, validation };
+    if (!response.ok) return { data: null, validation: null };
+    return { data, validation: null };
+  } catch {
+    console.error("[Antigravity Subscription] Error:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+    return { data: null, validation: null };
   }
 }

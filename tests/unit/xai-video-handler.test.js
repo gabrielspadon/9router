@@ -115,6 +115,30 @@ describe("handleVideoCreate", () => {
     expect(await res.json()).toEqual({ request_id: "r1" });
   });
 
+  it("round-trips the exposed create pin header through a GET poll", async () => {
+    authMocks.getProviderCredentials
+      .mockResolvedValueOnce(account({ connectionId: "conn-roundtrip" }))
+      .mockResolvedValueOnce(account({ connectionId: "conn-roundtrip" }));
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse({ request_id: "r-roundtrip" }))
+      .mockResolvedValueOnce(jsonResponse({ status: "pending" }));
+
+    const created = await handleVideoCreate(makeRequest({ prompt: "x" }), "generations");
+    const connectionHeader = created.headers.get("x-9router-connection-id");
+    const poll = await handleVideoGet(new Request("http://localhost/v1/videos/r-roundtrip", {
+      headers: { "x-9router-connection-id": connectionHeader },
+    }), "r-roundtrip");
+
+    expect(created.headers.get("access-control-expose-headers")).toContain("x-9router-connection-id");
+    expect(poll.status).toBe(200);
+    expect(authMocks.getProviderCredentials).toHaveBeenLastCalledWith(
+      "xai", null, null, expect.objectContaining({
+        preferredConnectionId: "conn-roundtrip",
+        strictPreferredConnection: true,
+      })
+    );
+  });
+
   it("honors preferred x-connection-id when selecting the account", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account());
     global.fetch.mockResolvedValueOnce(jsonResponse({ request_id: "r1" }));
@@ -192,6 +216,45 @@ describe("handleVideoCreate", () => {
 });
 
 describe("handleVideoGet", () => {
+  it("returns only the selected all-locked pair's projected status, reason, and retry", async () => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce({
+      allRateLimited: true,
+      retryAfter: new Date(Date.now() + 60_000).toISOString(),
+      retryAfterHuman: "reset after 1m",
+      lastError: "selected video account unavailable",
+      lastErrorCode: 502,
+      clientErrorStatus: 404,
+    });
+
+    const res = await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
+
+    expect(res.status).toBe(404);
+    expect(res.headers.get("retry-after")).toMatch(/^(59|60)$/);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("selected video account unavailable") },
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns generic unavailable for a legacy all-locked video account", async () => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce({
+      allRateLimited: true,
+      retryAfter: new Date(Date.now() + 60_000).toISOString(),
+      retryAfterHuman: "reset after 1m",
+      lastError: null,
+      lastErrorCode: null,
+      clientErrorStatus: null,
+    });
+
+    const res = await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("Unavailable") },
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("polls upstream pinned to the x-connection-id account and passes status through", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account({ connectionId: "conn-5" }));
     global.fetch.mockResolvedValueOnce(jsonResponse({ status: "pending", progress: 42 }));
@@ -204,7 +267,10 @@ describe("handleVideoGet", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "pending", progress: 42 });
     expect(authMocks.getProviderCredentials).toHaveBeenCalledWith(
-      "xai", null, null, expect.objectContaining({ preferredConnectionId: "conn-5" })
+      "xai", null, null, expect.objectContaining({
+        preferredConnectionId: "conn-5",
+        strictPreferredConnection: true,
+      })
     );
     expect(global.fetch.mock.calls[0][0]).toBe("https://api.x.ai/v1/videos/req-1");
   });

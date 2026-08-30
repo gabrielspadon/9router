@@ -170,6 +170,56 @@ openclaude --provider openai
 # openclaude --provider openai`,
     },
   },
+  omp: {
+    id: "omp",
+    name: "Oh My Pi",
+    icon: "terminal",
+    color: "#4F46E5",
+    description: "Oh My Pi coding agent with 9Router model discovery",
+    configType: "guide",
+    notes: [
+      {
+        type: "info",
+        text: "This guide does not detect Oh My Pi or write local configuration. Copy the template into your own models.yml file.",
+      },
+    ],
+    guideSteps: [
+      {
+        step: 1,
+        title: "Install Oh My Pi",
+        value: "curl -fsSL https://omp.sh/install | sh",
+        copyable: true,
+      },
+      {
+        step: 2,
+        title: "Choose a 9Router API key",
+        type: "apiKeySelector",
+      },
+      {
+        step: 3,
+        title: "Create models.yml",
+        desc: "Create ~/.omp/agent/models.yml, then copy the template below.",
+        value: "~/.omp/agent/models.yml",
+        copyable: true,
+      },
+      {
+        step: 4,
+        title: "Discover models in Oh My Pi",
+        desc: "Start Oh My Pi and use its model selection workflow. The provider fetches its model list from 9Router.",
+      },
+    ],
+    codeBlock: {
+      language: "yaml",
+      code: `providers:
+  9router:
+    baseUrl: {{baseUrl}}
+    api: openai-completions
+    apiKey: {{apiKey}}
+    authHeader: true
+    discovery:
+      type: openai-models-list`,
+    },
+  },
   cowork: {
     id: "cowork",
     name: "Claude Cowork",

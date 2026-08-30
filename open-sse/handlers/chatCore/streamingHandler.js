@@ -2,6 +2,8 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
+import { createSseTerminalObserver } from "../../utils/streamTerminal.js";
+import { createCallerAbortResult } from "../../utils/error.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
@@ -9,6 +11,18 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import {
+  classifyAntigravityJsonValidation,
+  classifyAntigravitySseOutcome,
+  createAntigravitySseValidationGate,
+  createSseTextStream,
+  readBoundedAntigravityJson,
+} from "./antigravitySseValidation.js";
+import {
+  ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+  ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE,
+  isAntigravityErrorPayload,
+} from "../../services/antigravityValidation.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -31,20 +45,31 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
+    return {
+      transformStream: createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState),
+      emittedFormat: codexTarget,
+    };
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
+    return {
+      transformStream: createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState),
+      emittedFormat: sourceFormat,
+    };
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState);
+  return {
+    transformStream: createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState),
+    emittedFormat: sourceFormat,
+  };
 }
 
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, reqTag, log, callerSignal }) {
+  if (callerSignal?.aborted) return createCallerAbortResult();
+
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -60,15 +85,24 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     !upstreamContentType.includes('application/x-ndjson') &&
     !upstreamContentType.includes('application/stream+json')
   ) {
-    const bodyText = await providerResponse.text().catch(() => '');
+    let bodyText = '';
+    try {
+      bodyText = await providerResponse.text();
+    } catch {
+      if (callerSignal?.aborted) return createCallerAbortResult();
+    }
+    if (callerSignal?.aborted) return createCallerAbortResult();
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
-    const shortMsg = sanitizedTitle
+    const upstreamMessage = sanitizedTitle
       || (bodyText.length < 200 ? bodyText.replace(/<[^>]*>/g, '').trim().slice(0, 160) : `Upstream returned non-SSE response (${upstreamContentType})`);
-    const status = providerResponse.status || 502;
+    const shortMsg = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : upstreamMessage;
+    const status = Number.isInteger(providerResponse.status) && providerResponse.status >= 400 && providerResponse.status < 600
+      ? providerResponse.status
+      : 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
-    streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
+    streamController?.handleError?.(new Error(shortMsg));
     return {
       success: false,
       status,
@@ -85,7 +119,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // from falsely clearing account errors or committing an unusable stream to the client.
   if (!providerResponse.body) {
     const status = 502;
-    const shortMsg = "Upstream returned no response body";
+    const shortMsg = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream returned no response body";
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
     streamController?.handleError?.(new Error(shortMsg));
     return {
@@ -104,10 +138,16 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   try {
     reader = providerResponse.body.getReader();
     const { done, value } = await reader.read();
+    if (callerSignal?.aborted) {
+      try { reader.releaseLock?.(); } catch {}
+      return createCallerAbortResult();
+    }
     if (done || !value || value.length === 0) {
       try { reader.releaseLock?.(); } catch {}
       const status = 502;
-      const shortMsg = "Upstream stream ended before a valid event (empty stream)";
+      const shortMsg = provider === "antigravity"
+        ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+        : "Upstream stream ended before a valid event (empty stream)";
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
       streamController?.handleError?.(new Error(shortMsg));
       return {
@@ -122,10 +162,17 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
     firstChunk = value;
   } catch (readErr) {
+    try { await reader?.cancel?.(); } catch {}
+    try { reader?.releaseLock?.(); } catch {}
+    if (callerSignal?.aborted) {
+      return createCallerAbortResult();
+    }
     const status = 502;
-    const shortMsg = `Upstream stream read error: ${readErr?.message || readErr}`;
+    const shortMsg = provider === "antigravity"
+      ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+      : `Upstream stream read error: ${readErr?.message || readErr}`;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
-    streamController?.handleError?.(readErr);
+    streamController?.handleError?.(provider === "antigravity" ? new Error(shortMsg) : readErr);
     return {
       success: false,
       status,
@@ -137,26 +184,127 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
+  const reportValidation = async (validation) => {
+    try {
+      await onValidationRequired?.({
+        validation,
+        observationId: verificationContext?.observationId,
+      });
+    } catch {
+      log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+    }
+  };
+  const isAntigravityJsonRpc = provider === "antigravity" && upstreamContentType.includes("application/json");
+  let bufferedAntigravityJson = null;
+  if (isAntigravityJsonRpc) {
+    let jsonCapture;
+    try {
+      jsonCapture = await readBoundedAntigravityJson({ reader, initialChunk: firstChunk });
+    } catch {
+      try { await reader.cancel(); } catch {}
+      try { reader.releaseLock?.(); } catch {}
+      const status = 502;
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
+      streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+      return {
+        success: false,
+        status,
+        error: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+        response: new Response(JSON.stringify({ error: { message: `[${status}]: ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}` } }), {
+          status,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    }
+    if (jsonCapture.exceeded) {
+      try { await reader.cancel(); } catch {}
+      try { reader.releaseLock?.(); } catch {}
+      const status = 502;
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
+      streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+      return {
+        success: false,
+        status,
+        error: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+        response: new Response(JSON.stringify({ error: { message: `[${status}]: ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}` } }), {
+          status,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    }
+    bufferedAntigravityJson = jsonCapture.text;
+  }
+
+  const initialSseOutcome = provider === "antigravity" && !isAntigravityJsonRpc
+    ? classifyAntigravitySseOutcome(new TextDecoder().decode(firstChunk), { includeTrailing: false })
+    : null;
+  const initialValidation = provider === "antigravity"
+    ? isAntigravityJsonRpc
+      ? classifyAntigravityJsonValidation(bufferedAntigravityJson, providerResponse.status)
+      : initialSseOutcome?.validation ?? null
+    : null;
+  if (initialValidation) {
+    await reportValidation(initialValidation);
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock?.(); } catch {}
+    const status = 403;
+    const message = ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE;
+    streamController?.handleError?.(new Error(message));
+    return {
+      success: false,
+      status,
+      error: message,
+      response: new Response(JSON.stringify({ error: { message: `[${status}]: ${message}` } }), {
+        status,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      }),
+    };
+  }
+
+  if (initialSseOutcome?.kind === "error") {
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock?.(); } catch {}
+    const status = 502;
+    if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
+    streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+    return {
+      success: false,
+      status,
+      error: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+      response: new Response(JSON.stringify({ error: { message: `[${status}]: ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}` } }), {
+        status,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      }),
+    };
+  }
+
   // Check if first chunk contains a structured JSON error object returned as 200 OK
   if (firstChunk) {
-    const chunkStr = new TextDecoder().decode(firstChunk);
+    const chunkStr = bufferedAntigravityJson ?? new TextDecoder().decode(firstChunk);
     const trimmed = chunkStr.trim();
     if (trimmed.startsWith("{") && (trimmed.includes('"error"') || trimmed.includes('"error_code"') || trimmed.includes('"detail"'))) {
       try {
         const parsed = JSON.parse(trimmed);
-        if (parsed.error || parsed.error_code || (parsed.detail && !parsed.choices && !parsed.delta)) {
+        if (isAntigravityJsonRpc ? isAntigravityErrorPayload(parsed) : (parsed.error || parsed.error_code || (parsed.detail && !parsed.choices && !parsed.delta))) {
           const errMsg = typeof parsed.error === "string"
             ? parsed.error
             : parsed.error?.message || parsed.error_msg || parsed.detail || JSON.stringify(parsed);
+          const safeErrMsg = provider === "antigravity"
+            ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+            : errMsg;
           const rawStatus = parsed.error?.status || parsed.status || 502;
           const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 502;
-          if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${errMsg}`);
-          streamController?.handleError?.(new Error(errMsg));
+          if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${safeErrMsg}`);
+          streamController?.handleError?.(new Error(safeErrMsg));
+          if (isAntigravityJsonRpc) {
+            try { await reader.cancel(); } catch {}
+            try { reader.releaseLock?.(); } catch {}
+          }
           return {
             success: false,
             status,
-            error: errMsg,
-            response: new Response(JSON.stringify({ error: { message: `[${status}]: ${errMsg}` } }), {
+            error: safeErrMsg,
+            response: new Response(JSON.stringify({ error: { message: `[${status}]: ${safeErrMsg}` } }), {
               status,
               headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
             }),
@@ -168,8 +316,16 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
   }
 
-  // First valid event/chunk confirmed — notify request success callback
-  if (onRequestSuccess) {
+  if (bufferedAntigravityJson != null) {
+    try { reader.releaseLock?.(); } catch {}
+    reader = null;
+    firstChunk = new TextEncoder().encode(bufferedAntigravityJson);
+  }
+
+  // Non-Antigravity streams can clear account health after their first valid
+  // event. Antigravity must wait for terminal completion because a later SSE
+  // frame can still be a validation challenge.
+  if (onRequestSuccess && provider !== "antigravity") {
     Promise.resolve()
       .then(onRequestSuccess)
       .catch(err => {
@@ -177,38 +333,89 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       });
   }
 
-  // Reconstruct ReadableStream with the buffered firstChunk prepended
-  let responseBodyStream = providerResponse.body;
+  // Reconstruct the upstream stream with the buffered first chunk prepended.
+  // Antigravity frames are parsed before every downstream sink, not only once.
+  let responseBodyStream = bufferedAntigravityJson == null
+    ? providerResponse.body
+    : createSseTextStream(bufferedAntigravityJson);
   if (reader && firstChunk) {
-    let yieldedFirst = false;
-    responseBodyStream = new ReadableStream({
-      async pull(controller) {
-        if (!yieldedFirst) {
-          yieldedFirst = true;
-          controller.enqueue(firstChunk);
-          return;
-        }
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
+    if (provider === "antigravity") {
+      responseBodyStream = createAntigravitySseValidationGate({
+        reader,
+        initialChunk: firstChunk,
+        onValidationRequired: async (validation) => {
+          await reportValidation(validation);
+          streamController?.handleError?.(new Error(ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE));
+        },
+        onUpstreamError: () => {
+          streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+        },
+      });
+    } else {
+      let yieldedFirst = false;
+      responseBodyStream = new ReadableStream({
+        async pull(controller) {
+          if (!yieldedFirst) {
+            yieldedFirst = true;
+            controller.enqueue(firstChunk);
             return;
           }
-          controller.enqueue(value);
-        } catch (err) {
-          controller.error(err);
+          try {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(value);
+          } catch (err) {
+            controller.error(err);
+          }
+        },
+        cancel(reason) {
+          return reader.cancel(reason);
         }
-      },
-      cancel(reason) {
-        return reader.cancel(reason);
-      }
-    });
+      });
+    }
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, streamState });
+  let antigravityRequestSuccessNotified = false;
+  let pendingCompletion = null;
+  let completionDelivered = false;
+  const notifyAntigravitySuccess = (...args) => {
+    if (provider !== "antigravity" || antigravityRequestSuccessNotified || typeof onRequestSuccess !== "function") return;
+    const [contentObj, usage, , { aborted = false } = {}] = args;
+    if (aborted || !(contentObj?.content?.trim?.() || contentObj?.thinking?.trim?.() || hasOutputTokens(usage))) return;
+    antigravityRequestSuccessNotified = true;
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(() => {
+        console.error("[ChatCore] onRequestSuccess failed:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      });
+  };
+  const captureTransformCompletion = (...args) => {
+    if (args[3]?.aborted) {
+      onStreamComplete?.(...args);
+      return;
+    }
+    pendingCompletion = args;
+  };
+  const deliverNormalCompletion = () => {
+    if (completionDelivered || !pendingCompletion) return;
+    completionDelivered = true;
+    onStreamComplete?.(...pendingCompletion);
+    notifyAntigravitySuccess(...pendingCompletion);
+  };
+  const completionAwareController = {
+    ...streamController,
+    handleComplete: () => {
+      streamController.handleComplete();
+      deliverNormalCompletion();
+    },
+  };
+  const { transformStream, emittedFormat } = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: captureTransformCompletion, apiKey, streamState });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
-  const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
+  const isResponsesPassthrough = emittedFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const wrappedResponse = {
@@ -216,7 +423,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     body: responseBodyStream,
     headers: providerResponse.headers,
   };
-  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, completionAwareController, {
+    onAbortTerminal,
+    stallTimeoutMs,
+    terminalObserver: createSseTerminalObserver(emittedFormat),
+    callerSignal,
+  });
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
@@ -251,6 +463,17 @@ function hasOutputTokens(usage) {
   return n > 0;
 }
 
+function notifyTerminalVerificationSuccess(callback, connectionId, log) {
+  if (typeof callback !== "function") return;
+  try {
+    Promise.resolve(callback()).catch(() => {
+      log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+    });
+  } catch {
+    log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+  }
+}
+
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  * @param {Function} [onEmptyStream] - called (no args) once, after the stream
@@ -261,7 +484,7 @@ function hasOutputTokens(usage) {
  *   rotation for the *next* request (see chat.js), which is what actually
  *   gets a retried request routed to a different backend.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat, notifyTerminalVerificationSuccess: notifyTerminal }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   // One-shot finalization guard shared by onStreamComplete (flush/cancel paths)
@@ -304,6 +527,14 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     if (onEmptyStream && !contentObj?.content?.trim?.() && !contentObj?.thinking?.trim?.() && !hasOutputTokens(usage)) {
       if (log?.warn) log.warn("CHATCORE", `${provider}/${model} stream completed with no content/thinking/output tokens — locking for next request`);
       try { onEmptyStream(); } catch (e) { console.error("[Stream] onEmptyStream failed:", e?.message || e); }
+    }
+
+    if (
+      provider === "antigravity"
+      && !aborted
+      && (contentObj?.content?.trim?.() || contentObj?.thinking?.trim?.() || hasOutputTokens(usage))
+    ) {
+      notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
     }
   };
 

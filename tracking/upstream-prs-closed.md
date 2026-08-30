@@ -1,5 +1,75 @@
 # Upstream PRs — closed (processed)
 
+## PR #3276 — fix(cursor): tunnel AgentService through HTTP/2 proxy so vendor models stream
+
+- url: https://github.com/decolua/9router/pull/3276
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-pr3276
+- local-ref: 31eb48b4c
+- disposition: adapted
+- validation: independent task and whole-branch reviews approved; composed strict-proxy and Cursor union 205/205, final focused checks 153/153 plus recheck 47/47
+- notes: replaced raw upstream patch with route-provenance HTTP/2 leases, strict pool snapshots and migration, required-unavailable zero-egress boundaries, and Cursor catalog 503 preflight
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits f2971fe22 through fa61ffbea, composed with master in 31eb48b4c. Preserves B31 model-lock metadata and Antigravity verification ordering while enforcing proxy route ownership across AgentService, refresh, provider tests, usage, quota, and all Cursor model routes.
+
+## PR #3272 — feat: add Oh My Pi (omp) CLI tool integration
+
+- url: https://github.com/decolua/9router/pull/3272
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: design/pr3272-omp-guide-spec
+- local-ref: e6c0491e8
+- disposition: adapted
+- validation: independent design, plan, task, and whole-slice reviews approved; focused guide union 16/16, scoped ESLint, guarded CLI packaging with archive cleanup
+- notes: accepted only a model-less default-card guide with one normalized /v1 template; rejected upstream writer, status, project, package, and runtime integration
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits d5caacdc8 and e6c0491e8 add the copyable OMP v18 discovery YAML and preserve existing guide substitutions. No OMP-specific route, writer, status adapter, model selector, probe, or CLI change was introduced.
+
+## PR #3268 — feat(codex): support fast service tier for image generation
+
+- url: https://github.com/decolua/9router/pull/3268
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: review/pr3268-codex-fast-image-tier
+- local-ref: a7803b699
+- disposition: rejected
+- validation: upstream head 015de35e applies cleanly, but no controlled live image proof; current Fast policy and UI remain chat-only
+- notes: maintainer reported no image speed change with service_tier and requested closure; no product change justified
+- final-disposition: rejected
+- closed: 2026-08-30
+- detail: rejected after upstream discussion and live fork-shape review. Its request serialization tests do not establish endpoint benefit, while its executor normalization broadens exact fast/priority behavior. Reconsider only after an authoritative controlled image-endpoint experiment.
+
+## PR #3635 — Adding a link to verify your antigravity account
+
+- url: https://github.com/decolua/9router/pull/3635
+- upstream-state: open (discovered 2026-08-30)
+- local-status: in-progress
+- branch: integration/task6-pr3635
+- local-ref: a885318bc
+- disposition: adapted
+- validation: 616 passed, 6 documented skips in final combined review; whole-branch review approved
+- notes: strict structured validation provenance, bounded connection-scoped state, terminal-only success, route-local access and CSRF boundary, safe UI action and locale coverage; rejected upstream global SSE/banner and fingerprint changes
+- final-disposition: adapted
+- closed: 2026-08-30
+- detail: merged master safety, classifier, and Codex dashboard work through 24e6eef42 without semantic loss. Adaptation preserves 499 caller abort, 502 header/error, 504 body deadlines, strict safe URL/diagnostic projection, and no remote dashboard refresh. Final test-only mock repair a885318bc restored hot-reload route collection.
+
+## PR #3210 — feat(dashboard): show effective Codex plan badges
+
+- url: https://github.com/decolua/9router/pull/3210
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task8-pr3210
+- local-ref: 7aa2ae7e5
+- disposition: adapted
+- validation: 10/10 dedicated TDD, 27/27 Codex badge/UI/route adjacency, scoped ESLint 0 errors, diff check clean
+- notes: persisted safe provider data only, no dashboard fetch/usage refresh/write, no ProviderLimits changes
+- final-disposition: adapted
+- closed: 2026-08-30
+- detail: design and plan were independently reviewed. Adapted only the persisted Codex subscription badge, with precedence and invalid-value fallback, SSR accessible markup, and zero-fetch proof. Branch fast-forwarded to master at 7aa2ae7e5.
+
 ## PR #3608 — Add error message for preventing abuse
 
 - url: https://github.com/decolua/9router/pull/3608
@@ -6495,3 +6565,73 @@
 - final-disposition: adapted and integrated
 - closed: 2026-08-30
 - detail: commits 12832ff34 through b58b98d06; opt-in post-translation Sol Fast policy, explicit Codex tier preservation, strict atomic settings, rollback-safe accessible UI, Codex-local orphan filtering, and exact fixture cleanup passed independent review, 161 canonical focused tests, and a 140-route production build
+
+## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
+
+- url: https://github.com/decolua/9router/pull/3629
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 54c2771c0 through 2a4483c6e; provider-keyed auth selection queues, graceful LRU proxy-dispatcher eviction, and allocation-reduced SSE scanning passed independent review, 132 combined focused tests, a 3,498-test no-regression gate, exact provider/alias/OAuth baselines, and a 140-route production build; indefinite caches and content chunk arrays were rejected
+
+## PR #3319 — fix(claude): hỗ trợ Auto Mode khi dùng model Codex
+
+- url: https://github.com/decolua/9router/pull/3319
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task7-pr3319
+- local-ref: 4e95d3f2e
+- disposition: adapt
+- validation: .superpowers/sdd/PLAN/task-7-pr3319-review.md
+- notes: upstream patch was adapted into a fail-closed, source-format-scoped classifier across all response families
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 3ca10771c through af4e0e76b, merged 4e95d3f2e; classifier validation preserves every actionable response alternative before lossy conversion, rejects malformed or hidden output, keeps 499 terminal, and preserves Codex Fast and real -1m behavior. Independent final review approved; canonical focused replay 216/216.
+
+## PR #3220 — fix(chatCore): bound non-streaming body reads, return 504 on stall
+
+- url: https://github.com/decolua/9router/pull/3220
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as reader-owned body deadline rather than the raw patch
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c preserves caller abort as terminal 499, existing header deadline as 502, and bounded post-header read stall as 504 with one normal fallback. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.
+
+## PR #3221 — fix(chat): key error state to its model, and preserve the upstream status class
+
+- url: https://github.com/decolua/9router/pull/3221
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as model-keyed safe metadata with selected-account projection
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c scopes lock metadata to exact model or __all, retains raw fallback status, prevents cross-model and cross-account stale errors, and pins video polling to its selected account. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.
+
+## PR #3222 — fix(stream): synthesize a terminal when upstream drops mid-response
+
+- url: https://github.com/decolua/9router/pull/3222
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: integration/task5-b31-response-safety
+- local-ref: 318c66e2c
+- disposition: adapt
+- validation: joint B31 design, plan, phase reviews, and post-rebase final review
+- notes: adapted as bounded post-transform typed terminal observation, not the raw tracker port
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: canonical 318c66e2c rejects mismatched SSE event/type records, preserves positional TTFT and keepalive compatibility, emits exactly one typed terminal for supported incomplete streams, and emits none for caller cancellation. Post-rebase review approved, 98 focused safety tests and isolated 140-route build passed.

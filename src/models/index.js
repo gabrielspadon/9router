@@ -4,6 +4,7 @@ export {
   getProviderConnectionById,
   createProviderConnection,
   updateProviderConnection,
+  updateConnectionProxyPoolSnapshotIfBound,
   deleteProviderConnection,
   getProviderNodes,
   getProviderNodeById,
@@ -15,6 +16,7 @@ export {
   getProxyPoolById,
   createProxyPool,
   updateProxyPool,
+  updateProxyPoolWithBoundSnapshots,
   deleteProxyPool,
   deleteProviderConnectionsByProvider,
   getCombos,
@@ -36,6 +38,7 @@ export {
   deleteApiKey,
   validateApiKey,
   isCloudEnabled,
+  updateProviderStrategyProxyPoolSnapshotIfBound,
 } from "@/lib/localDb";
 
 // Seen models (New Models discovery)

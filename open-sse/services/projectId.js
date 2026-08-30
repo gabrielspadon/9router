@@ -8,6 +8,7 @@
  */
 
 import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation, redactAntigravityValidationText } from "./antigravityValidation.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // connectionId -> { projectId: string, fetchedAt: number }
@@ -17,7 +18,7 @@ const projectIdCache = new Map();
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 // ─── Pending-fetch deduplication ─────────────────────────────────────────────
-// connectionId -> { promise: Promise<string|null>, controller: AbortController, startedAt: number }
+// connectionId -> typed pending project operation
 const pendingFetches = new Map();
 
 /** Abort and evict a pending fetch that has been running longer than this (2 min). */
@@ -45,6 +46,7 @@ export function cleanupNow() {
             continue;
         }
         if (now - item.startedAt > PENDING_TTL_MS) {
+            item.released = true;
             try { item.controller.abort(); } catch (_) { /* ignore */ }
             pendingFetches.delete(id);
         }
@@ -81,9 +83,10 @@ startCacheCleanup();
  *
  * @param {string} connectionId - The connection identifier for cache keying
  * @param {string} accessToken  - Valid OAuth access token
+ * @param {object} [hooks] - Trusted verification callback context
  * @returns {Promise<string|null>} Real project ID or null
  */
-export async function getProjectIdForConnection(connectionId, accessToken, provider = "gemini-cli") {
+export async function getProjectIdForConnection(connectionId, accessToken, provider = "gemini-cli", hooks = {}) {
     if (!connectionId || !accessToken) return null;
 
     // Return cached value if still fresh
@@ -93,32 +96,40 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
     }
 
     // Deduplicate concurrent fetches for the same connection
-    if (pendingFetches.has(connectionId)) {
-        return pendingFetches.get(connectionId).promise;
+    let pendingEntry = pendingFetches.get(connectionId);
+    if (!pendingEntry) {
+        const controller = new AbortController();
+        pendingEntry = {
+            controller,
+            startedAt: Date.now(),
+            observationId: hooks?.verificationContext?.observationId ?? crypto.randomUUID(),
+            challengeIdAtStart: hooks?.verificationContext?.challengeIdAtStart ?? null,
+            released: false,
+            promise: null,
+        };
+        pendingFetches.set(connectionId, pendingEntry);
+        pendingEntry.promise = fetchProjectOutcome(accessToken, controller.signal, provider)
+            .then((outcome) => {
+                if (outcome.kind === "project" && pendingFetches.get(connectionId) === pendingEntry && !pendingEntry.released) {
+                    projectIdCache.set(connectionId, {projectId: outcome.projectId, fetchedAt: Date.now()});
+                }
+                return outcome;
+            })
+            .catch((error) => {
+                const message = provider === "antigravity"
+                    ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                    : redactAntigravityValidationText(error?.message || String(error));
+                console.warn("[ProjectId] project lookup failed", connectionId.slice(0, 8), message.slice(0, 200));
+                return { kind: "failure" };
+            })
+            .finally(() => {
+                if (pendingFetches.get(connectionId) === pendingEntry) pendingFetches.delete(connectionId);
+            });
     }
 
-    // Each fetch gets its own AbortController so it can be canceled via removeConnection()
-    const controller = new AbortController();
-
-    const promise = (async () => {
-        try {
-            const projectId = await fetchProjectId(accessToken, controller.signal, provider);
-            if (projectId) {
-                projectIdCache.set(connectionId, {projectId, fetchedAt: Date.now()});
-                return projectId;
-            }
-            console.warn("[ProjectId] could not fetch projectId for connection", connectionId.slice(0, 8));
-            return null;
-        } catch (error) {
-            console.warn(`[ProjectId] Error fetching project ID: ${error.message}`);
-            return null;
-        } finally {
-            pendingFetches.delete(connectionId);
-        }
-    })();
-
-    pendingFetches.set(connectionId, {promise, controller, startedAt: Date.now()});
-    return promise;
+    const outcome = await pendingEntry.promise;
+    await notifyVerificationOutcome(outcome, pendingEntry, hooks, connectionId);
+    return outcome.kind === "project" ? outcome.projectId : null;
 }
 
 /**
@@ -132,6 +143,7 @@ export function removeConnection(connectionId) {
     projectIdCache.delete(connectionId);
     const pending = pendingFetches.get(connectionId);
     if (pending) {
+        pending.released = true;
         try { pending.controller.abort(); } catch (_) { /* ignore */ }
         pendingFetches.delete(connectionId);
     }
@@ -145,9 +157,9 @@ export function removeConnection(connectionId) {
  *
  * @param {string}      accessToken
  * @param {AbortSignal} signal
- * @returns {Promise<string|null>}
+ * @returns {Promise<{kind: "project", projectId: string}|{kind: "validation_required", validation: object}|{kind: "failure"}>}
  */
-async function fetchProjectId(accessToken, signal, provider) {
+async function fetchProjectOutcome(accessToken, signal, provider) {
     const endpoints = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const response = await fetch(endpoints.loadCodeAssist, {
@@ -157,18 +169,21 @@ async function fetchProjectId(accessToken, signal, provider) {
         signal
     });
 
+    const { data, text } = await readResponseBody(response);
+    const validation = classifyAntigravityValidation({ status: response.status, payload: data, source: "loadCodeAssist" });
+    if (validation) return { kind: "validation_required", validation };
     if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(`loadCodeAssist failed: HTTP ${response.status} ${errorText.slice(0, 200)}`);
+        const message = provider === "antigravity"
+            ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+            : `loadCodeAssist failed: HTTP ${response.status} ${redactAntigravityValidationText(text).slice(0, 200)}`;
+        throw new Error(message);
     }
-
-    const data = await response.json();
     const projectId = extractProjectId(data);
-    if (projectId) return projectId;
+    if (projectId) return { kind: "project", projectId };
 
     // Determine the tier to use for onboarding
     let tierID = "legacy-tier";
-    if (Array.isArray(data.allowedTiers)) {
+    if (Array.isArray(data?.allowedTiers)) {
         for (const tier of data.allowedTiers) {
             if (tier && typeof tier === "object" && tier.isDefault === true) {
                 if (tier.id && typeof tier.id === "string" && tier.id.trim()) {
@@ -188,7 +203,7 @@ async function fetchProjectId(accessToken, signal, provider) {
  * @param {string}      accessToken
  * @param {string}      tierID
  * @param {AbortSignal} externalSignal  – propagated from the connection's AbortController
- * @returns {Promise<string|null>}
+ * @returns {Promise<{kind: "project", projectId: string}|{kind: "validation_required", validation: object}|{kind: "failure"}>}
  */
 async function onboardUser(accessToken, tierID, externalSignal, endpoints, provider) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
@@ -199,7 +214,7 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         // Bail out immediately if the connection was removed
-        if (externalSignal?.aborted) return null;
+        if (externalSignal?.aborted) return { kind: "failure" };
 
         // Per-attempt timeout controller; forwards external abort as well
         const localCtrl = new AbortController();
@@ -217,24 +232,31 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
 
             clearTimeout(timeoutId);
 
+            const { data, text } = await readResponseBody(response);
+            const validation = classifyAntigravityValidation({ status: response.status, payload: data, source: "onboardUser" });
+            if (validation) return { kind: "validation_required", validation };
             if (!response.ok) {
-                const errorText = await response.text().catch(() => "");
-                throw new Error(`onboardUser HTTP ${response.status}: ${errorText.slice(0, 200)}`);
+                const message = provider === "antigravity"
+                    ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                    : `onboardUser HTTP ${response.status}: ${redactAntigravityValidationText(text).slice(0, 200)}`;
+                throw new Error(message);
             }
 
-            const data = await response.json();
-
-            if (data.done === true) {
+            if (data?.done === true) {
                 const projectId = extractProjectIdFromOnboard(data);
                 if (projectId) {
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
-                    return projectId;
+                    return { kind: "project", projectId };
                 }
                 // done:true with no usable project id is terminal: Google returns an
                 // empty cloudaicompanionProject object for accounts it won't provision.
                 // Retrying cannot change the answer, so bail out immediately.
-                console.warn("[ProjectId] onboardUser finished without a project ID (account not provisioned)");
-                return null;
+                console.warn(
+                    provider === "antigravity"
+                        ? `[ProjectId] ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`
+                        : "[ProjectId] onboardUser finished without a project ID (account not provisioned)",
+                );
+                return { kind: "failure" };
             }
 
             // Server not done yet – wait and retry
@@ -244,16 +266,26 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
         } catch (error) {
             clearTimeout(timeoutId);
             if (error.name === "AbortError") {
-                console.warn(`[ProjectId] onboardUser attempt ${attempt} aborted (timeout or connection removed)`);
-                if (externalSignal?.aborted) return null;   // connection gone – stop retrying
+                console.warn(
+                    provider === "antigravity"
+                        ? `[ProjectId] ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`
+                        : `[ProjectId] onboardUser attempt ${attempt} aborted (timeout or connection removed)`,
+                );
+                if (externalSignal?.aborted) return { kind: "failure" };   // connection gone – stop retrying
                 continue;
             }
             if (attempt === MAX_ATTEMPTS) {
-                console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${error.message}`);
-                return null;
+                const message = provider === "antigravity"
+                    ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                    : redactAntigravityValidationText(error?.message || "unknown error");
+                console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${message}`);
+                return { kind: "failure" };
             }
             // Continue to next attempt instead of throwing (which would skip remaining retries)
-            console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${error.message}, retrying...`);
+            const message = provider === "antigravity"
+                ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+                : redactAntigravityValidationText(error?.message || "unknown error");
+            console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${message}, retrying...`);
             await new Promise(resolve => setTimeout(resolve, 2000));
         } finally {
             clearTimeout(timeoutId);
@@ -261,7 +293,37 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
         }
     }
 
-    return null;
+    return { kind: "failure" };
+}
+
+async function readResponseBody(response) {
+    // Production fetch Responses always expose text(). Keep the legacy unit-test
+    // response doubles that predate the single-read contract compatible without
+    // changing the production read path.
+    if (typeof response?.text !== "function") {
+        const data = typeof response?.json === "function" ? await response.json() : null;
+        return { text: JSON.stringify(data), data };
+    }
+    const text = await response.text();
+    try {
+        return { text, data: JSON.parse(text) };
+    } catch {
+        return { text, data: null };
+    }
+}
+
+async function notifyVerificationOutcome(outcome, pendingEntry, hooks, connectionId) {
+    if (pendingEntry.released || !hooks || typeof hooks !== "object") return;
+    try {
+        if (outcome.kind === "validation_required" && typeof hooks.onValidationRequired === "function") {
+            await hooks.onValidationRequired({ validation: outcome.validation, observationId: pendingEntry.observationId });
+        } else if (outcome.kind === "project" && typeof hooks.onVerificationSuccess === "function") {
+            await hooks.onVerificationSuccess({ challengeId: pendingEntry.challengeIdAtStart });
+        }
+    } catch {
+        const callback = outcome.kind === "validation_required" ? "validation" : "success";
+        console.warn("[ProjectId] verification callback failed", callback, connectionId.slice(0, 8));
+    }
 }
 
 /**

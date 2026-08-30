@@ -112,6 +112,21 @@ async function readRaw() {
   return row ? parseJson(row.data, {}) : {};
 }
 
+function deleteClearedProxyPoolSnapshots(providerStrategies) {
+  if (!providerStrategies || typeof providerStrategies !== "object" || Array.isArray(providerStrategies)) {
+    return providerStrategies;
+  }
+  return Object.fromEntries(Object.entries(providerStrategies).map(([providerId, values]) => {
+    if (!values || typeof values !== "object" || Array.isArray(values) || values.proxyPoolId !== null) {
+      return [providerId, values];
+    }
+    const normalized = { ...values };
+    delete normalized.proxyPoolId;
+    delete normalized.strictProxy;
+    return [providerId, normalized];
+  }));
+}
+
 // Merge raw settings with defaults; backward-compat for missing keys
 export function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
@@ -181,6 +196,12 @@ export async function updateSettings(updates) {
         updates = { ...updates, [key]: { ...seeded[key], ...updates[key] } };
       }
     }
+    if (Object.prototype.hasOwnProperty.call(updates, "providerStrategies")) {
+      updates = {
+        ...updates,
+        providerStrategies: deleteClearedProxyPoolSnapshots(updates.providerStrategies),
+      };
+    }
     next = { ...mergedCurrent, ...updates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
@@ -215,6 +236,43 @@ export async function updateProviderStrategy(providerId, values) {
     );
   });
   return mergeWithDefaults(next);
+}
+
+// Conditional ownership prevents a migration writer from overwriting a newer
+// no-auth strategy selection that raced with its read.
+export async function updateProviderStrategyProxyPoolSnapshotIfBound(providerId, expectedPoolId, pair) {
+  const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
+  if (dangerousKeys.has(providerId)) {
+    throw new TypeError("Invalid provider strategy key");
+  }
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const strategies = { ...(current.providerStrategies || {}) };
+    const strategy = strategies[providerId];
+    if (
+      !strategy
+      || typeof strategy !== "object"
+      || Array.isArray(strategy)
+      || strategy.proxyPoolId !== expectedPoolId
+    ) {
+      return;
+    }
+    const updatedStrategy = {
+      ...strategy,
+      proxyPoolId: pair.proxyPoolId,
+      strictProxy: pair.strictProxy === true,
+    };
+    strategies[providerId] = updatedStrategy;
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson({ ...current, providerStrategies: strategies })],
+    );
+    result = updatedStrategy;
+  });
+  return result;
 }
 
 export async function isCloudEnabled() {

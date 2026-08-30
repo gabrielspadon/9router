@@ -8,53 +8,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 ---
 
-## PR #3319 — fix(claude): hỗ trợ Auto Mode khi dùng model Codex
-
-- url: https://github.com/decolua/9router/pull/3319
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3276 — fix(cursor): tunnel AgentService through HTTP/2 proxy so vendor models stream
-
-- url: https://github.com/decolua/9router/pull/3276
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3273 — feat(usage): live Sessions tab + CLI custom URL presets
 
 - url: https://github.com/decolua/9router/pull/3273
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3272 — feat: add Oh My Pi (omp) CLI tool integration
-
-- url: https://github.com/decolua/9router/pull/3272
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3268 — feat(codex): support fast service tier for image generation
-
-- url: https://github.com/decolua/9router/pull/3268
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -162,53 +118,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #3222 — fix(stream): synthesize a terminal when upstream drops mid-response
-
-- url: https://github.com/decolua/9router/pull/3222
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3221 — fix(chat): key error state to its model, and preserve the upstream status class
-
-- url: https://github.com/decolua/9router/pull/3221
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3220 — fix(chatCore): bound non-streaming body reads, return 504 on stall
-
-- url: https://github.com/decolua/9router/pull/3220
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #3214 — fix(antigravity): harden Gemini streaming and 3.6 handling
 
 - url: https://github.com/decolua/9router/pull/3214
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #3210 — feat(dashboard): show effective Codex plan badges
-
-- url: https://github.com/decolua/9router/pull/3210
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -4111,18 +4023,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes:
 
-## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
-
-- url: https://github.com/decolua/9router/pull/3629
-- upstream-state: open (discovered 2026-08-30)
-- local-status: in-progress
-- branch: 
-- local-ref: 
-- disposition: adapt
-- validation: .superpowers/sdd/PLAN/task-6-b29-pr3629-review.md
-- notes: retain provider auth mutex, dispatcher eviction cleanup, and index-based SSE parsing; reject indefinite caches and content chunk arrays
-
-
 ## PR #3625 — feat(kiro): flatten top-level tool schema combinators + degrade overs…
 
 - url: https://github.com/decolua/9router/pull/3625
@@ -4141,18 +4041,7 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - upstream-state: open (discovered 2026-08-30)
 - local-status: in-progress
 - branch: 
-- local-ref: 
+- local-ref: 7e3796171
 - disposition: adapt
 - validation: .superpowers/sdd/PLAN/task-6-b29-pr3624-review.md
-- notes: official Ollama web-fetch contract retained; implementation must honor proxy policy, routing, format, size, timeout, and independent capability state
-
-## PR #3635 — Adding a link to verify your antigravity account
-
-- url: https://github.com/decolua/9router/pull/3635
-- upstream-state: open (discovered 2026-08-30)
-- local-status: in-progress
-- branch: 
-- local-ref: 
-- disposition: adapt
-- validation: .superpowers/sdd/PLAN/task-6-b29-pr3635-review.md
-- notes: retain strict structured validation detection and connection-scoped verification; reject sensitive general-SSE/global-banner design and fingerprint regressions
+- notes: reviewed Transport subproject integrated through 7e3796171 with bounded proxy-aware core, abort cleanup, explicit global proxy installation, 97/97 canonical replay, full no-regression verifier, and isolated build; public contract/discovery, account pinning, and capability-specific state/fallback remain deferred to the approved later subprojects

@@ -7,7 +7,14 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getFreeModels } from "@/lib/localDb";
+import {
+  getProviderConnections,
+  getCombos,
+  getCustomModels,
+  getModelAliases,
+  getFreeModels,
+  updateConnectionProxyPoolSnapshotIfBound,
+} from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -20,7 +27,11 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { discoverDevinModels } from "open-sse/services/devinModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import {
+  isRequiredProxyUnavailableError,
+  resolveConnectionProxyConfig,
+  toConnectionProxyOptions,
+} from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getSettings } from "@/lib/localDb";
 import { readClaudeCompat, rewriteModelsListForClaude } from "@/lib/claudeCompat";
@@ -119,11 +130,11 @@ const LIVE_MODEL_RESOLVERS = {
     });
     return result?.models?.length ? { models: result.models } : null;
   },
-  cursor: async (conn) => {
+  cursor: async (conn, proxyOptions) => {
     const result = await resolveCursorModels({
       accessToken: conn.accessToken,
       providerSpecificData: conn.providerSpecificData || {},
-    }, { log: console });
+    }, { log: console, proxyOptions });
     return result?.models?.length ? { models: result.models } : null;
   },
   zed: async (conn) => {
@@ -147,6 +158,38 @@ const LIVE_MODEL_RESOLVERS = {
     return models.length ? { models } : null;
   },
 };
+
+function cursorSnapshotOwner(connection) {
+  const data = connection?.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
+
+async function resolveCursorModelProxyOptions(connection) {
+  const config = await resolveConnectionProxyConfig(
+    connection?.providerSpecificData || {},
+    cursorSnapshotOwner(connection),
+  );
+  return toConnectionProxyOptions(config);
+}
+
+export async function assertCursorModelRoutesAvailable(connections) {
+  let candidates = connections;
+  if (!candidates) {
+    try {
+      candidates = await getProviderConnections();
+    } catch {
+      return;
+    }
+  }
+  for (const connection of candidates) {
+    if (connection?.provider !== "cursor" || connection.isActive === false) continue;
+    await resolveCursorModelProxyOptions(connection);
+  }
+}
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
@@ -206,7 +249,9 @@ export async function buildModelsList(kindFilter) {
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
+    await assertCursorModelRoutesAvailable(connections);
   } catch (e) {
+    if (isRequiredProxyUnavailableError(e)) throw e;
     console.log("Could not fetch providers, returning all models");
   }
 
@@ -372,6 +417,9 @@ export async function buildModelsList(kindFilter) {
         Array.isArray(enabledModels) && enabledModels.length > 0;
       const isCompatibleProvider =
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+      const cursorProxyOptions = providerId === "cursor"
+        ? await resolveCursorModelProxyOptions(conn)
+        : undefined;
 
       // Build kind lookup for static models so we can filter even when only IDs are exposed
       const staticModelKindById = new Map(
@@ -416,7 +464,7 @@ export async function buildModelsList(kindFilter) {
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
-          const live = await liveResolver(conn);
+          const live = await liveResolver(conn, cursorProxyOptions);
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
             liveModelKindById = new Map(
@@ -431,6 +479,7 @@ export async function buildModelsList(kindFilter) {
             );
           }
         } catch (err) {
+          if (isRequiredProxyUnavailableError(err)) throw err;
           console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
         }
       }
@@ -634,6 +683,12 @@ export async function GET(request) {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
+    if (isRequiredProxyUnavailableError(error)) {
+      return Response.json(
+        { error: "Required proxy is unavailable", code: error.code },
+        { status: error.status, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
     console.log("Error fetching models:", error);
     return Response.json(
       { error: { message: error.message, type: "server_error" } },

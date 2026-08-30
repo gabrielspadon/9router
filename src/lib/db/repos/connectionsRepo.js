@@ -204,6 +204,39 @@ export async function updateProviderConnection(id, data) {
   return result;
 }
 
+// Conditional ownership prevents a migration writer from overwriting a newer
+// user-selected pool that raced with its read.
+export async function updateConnectionProxyPoolSnapshotIfBound(id, expectedPoolId, pair) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!row) return;
+    const existing = rowToConn(row);
+    const providerSpecificData = existing.providerSpecificData;
+    if (
+      !providerSpecificData
+      || typeof providerSpecificData !== "object"
+      || Array.isArray(providerSpecificData)
+      || providerSpecificData.proxyPoolId !== expectedPoolId
+    ) {
+      return;
+    }
+    const updated = {
+      ...existing,
+      providerSpecificData: {
+        ...providerSpecificData,
+        proxyPoolId: pair.proxyPoolId,
+        strictProxy: pair.strictProxy === true,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    upsert(db, updated);
+    result = updated;
+  });
+  return result;
+}
+
 export async function deleteProviderConnection(id) {
   const db = await getAdapter();
   let ok = false;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { buildModelsList } from "@/app/api/v1/models/route.js";
+import { assertCursorModelRoutesAvailable, buildModelsList } from "@/app/api/v1/models/route.js";
+import { isRequiredProxyUnavailableError } from "@/lib/network/connectionProxy";
 import {
   reconcileSeenModels,
   getUnseenModels,
@@ -100,6 +101,7 @@ async function discoverNewModels() {
 // GET /api/models/new
 export async function GET() {
   try {
+    await assertCursorModelRoutesAvailable();
     const cached = getCachedResult();
     if (cached) {
       return NextResponse.json(cached);
@@ -109,6 +111,12 @@ export async function GET() {
     setCachedResult(data);
     return NextResponse.json(data);
   } catch (error) {
+    if (isRequiredProxyUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "Required proxy is unavailable", code: error.code },
+        { status: error.status },
+      );
+    }
     console.error("Error discovering new models:", error);
     return NextResponse.json(
       { error: "Failed to discover models", groups: [], total: 0, totalUnseen: 0, seeded: false },

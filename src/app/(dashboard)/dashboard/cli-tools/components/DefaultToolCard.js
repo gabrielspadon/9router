@@ -7,6 +7,27 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Image from "next/image";
 import ApiKeySelect from "./ApiKeySelect";
 
+export function replaceGuideVariables(text, {
+  baseUrl,
+  apiKey,
+  cloudEnabled = false,
+  model,
+} = {}) {
+  const keyToUse = (apiKey && apiKey.trim())
+    ? apiKey
+    : (!cloudEnabled ? "sk_9router" : "your-api-key");
+  const configuredBaseUrl = baseUrl || "http://localhost:20128";
+  const normalizedBaseUrl = configuredBaseUrl.replace(/\/+$/, "");
+  const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1")
+    ? normalizedBaseUrl
+    : `${normalizedBaseUrl}/v1`;
+
+  return text
+    .replace(/\{\{baseUrl\}\}/g, baseUrlWithV1)
+    .replace(/\{\{apiKey\}\}/g, keyToUse)
+    .replace(/\{\{model\}\}/g, model || "provider/model-id");
+}
+
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
   const [copiedField, setCopiedField] = useState(null);
   const [showModelModal, setShowModelModal] = useState(false);
@@ -17,22 +38,12 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     apiKeys?.length > 0 ? apiKeys[0].key : ""
   );
 
-  const replaceVars = (text) => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
-      ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "your-api-key");
-    
-    // Add /v1 suffix only if not already present (DRY - avoid duplicate)
-    const normalizedBaseUrl = baseUrl || "http://localhost:20128";
-    const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1") 
-      ? normalizedBaseUrl 
-      : `${normalizedBaseUrl}/v1`;
-    
-    return text
-      .replace(/\{\{baseUrl\}\}/g, baseUrlWithV1)
-      .replace(/\{\{apiKey\}\}/g, keyToUse)
-      .replace(/\{\{model\}\}/g, modelValue || "provider/model-id");
-  };
+  const replaceVars = (text) => replaceGuideVariables(text, {
+    baseUrl,
+    apiKey: selectedApiKey,
+    cloudEnabled,
+    model: modelValue,
+  });
 
   const { copy: copyToClipboard } = useCopyToClipboard();
 
@@ -282,4 +293,3 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     </Card>
   );
 }
-

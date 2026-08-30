@@ -1,4 +1,5 @@
 import { buildModelsList } from "../route.js";
+import { isRequiredProxyUnavailableError } from "@/lib/network/connectionProxy";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -48,6 +49,12 @@ export async function GET(_request, { params }) {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
+    if (isRequiredProxyUnavailableError(error)) {
+      return Response.json(
+        { error: "Required proxy is unavailable", code: error.code },
+        { status: error.status, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
     console.log("Error fetching models by kind:", error);
     return Response.json(
       { error: { message: error.message, type: "server_error" } },

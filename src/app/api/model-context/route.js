@@ -9,7 +9,8 @@ import {
 } from "open-sse/providers/capabilities.js";
 import { AI_MODELS } from "@/shared/constants/models.js";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
-import { buildModelsList } from "@/app/api/v1/models/route.js";
+import { assertCursorModelRoutesAvailable, buildModelsList } from "@/app/api/v1/models/route.js";
+import { isRequiredProxyUnavailableError } from "@/lib/network/connectionProxy";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +70,7 @@ export async function GET() {
     // key by registry id (e.g. "antigravity") while AI_MODELS keys by alias
     // (e.g. "ag"), so resolve the alias back to the registry id before matching.
     const connections = await getProviderConnections();
+    await assertCursorModelRoutesAvailable(connections);
 
     // Custom compatible connections key by their providerNodes id
     // ("anthropic-compatible-<uuid>"), while model rows key by the node's
@@ -137,6 +139,7 @@ export async function GET() {
         });
       }
     } catch (e) {
+      if (isRequiredProxyUnavailableError(e)) throw e;
       console.log("Could not build v1 models for default visibility:", e);
     }
 
@@ -195,6 +198,12 @@ export async function GET() {
       { headers: HEADERS }
     );
   } catch (error) {
+    if (isRequiredProxyUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "Required proxy is unavailable", code: error.code },
+        { status: error.status },
+      );
+    }
     console.log("Error fetching model context:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

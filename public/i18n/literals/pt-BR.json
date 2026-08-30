@@ -986,5 +986,11 @@
   "sk_9router (default)": "sk_9router (padrão)",
   "tree-sitter AST compression for code responses": "Compressão AST tree-sitter para respostas de código",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM intercepta tráfego HTTPS de ferramentas IDE (Antigravity, GitHub Copilot, Kiro) via CA local para redirecionar solicitações aos seus provedores. Pode violar ToS → risco de banimento de conta. Use por sua conta e risco.",
-  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Aviso de Risco: Este provedor usa uma sessão de assinatura/OAuth não licenciada oficialmente para uso de proxy/roteador. A conta pode ser restrita ou banida. Use por sua conta e risco."
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Aviso de Risco: Este provedor usa uma sessão de assinatura/OAuth não licenciada oficialmente para uso de proxy/roteador. A conta pode ser restrita ou banida. Use por sua conta e risco.",
+  "Verify Antigravity account": "Verificar conta do Antigravity",
+  "Check verification": "Verificar validação",
+  "Antigravity account verification required": "É necessário verificar a conta do Antigravity",
+  "Sign in or use the local dashboard to verify Antigravity": "Entre ou use o painel local para verificar o Antigravity",
+  "Verification link expired": "O link de verificação expirou",
+  "Unable to load verification link": "Não foi possível carregar o link de verificação"
 }

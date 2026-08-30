@@ -69,7 +69,6 @@ describe("Command Code ZDR connection persistence", () => {
       expect(updateResponse.status).toBe(200);
       expect((await ctx.getProviderConnectionById(id)).providerSpecificData).toMatchObject({
         zdrEnabled: false,
-        connectionProxyEnabled: false,
       });
     } finally {
       ctx.cleanup();

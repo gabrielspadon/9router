@@ -1407,5 +1407,11 @@
   "Start": "开始",
   "End": "结束",
   "All accounts": "所有账号",
-  "All models": "所有模型"
+  "All models": "所有模型",
+  "Verify Antigravity account": "验证 Antigravity 账号",
+  "Check verification": "检查验证状态",
+  "Antigravity account verification required": "需要验证 Antigravity 账号",
+  "Sign in or use the local dashboard to verify Antigravity": "请登录或使用本地控制面板验证 Antigravity",
+  "Verification link expired": "验证链接已过期",
+  "Unable to load verification link": "无法加载验证链接"
 }

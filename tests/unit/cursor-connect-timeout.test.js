@@ -2,13 +2,19 @@ import { EventEmitter } from "node:events";
 import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { http2Connect, proxyFetch } = vi.hoisted(() => ({
+const { http2Connect, proxyFetch, resolveProxyRoute, agentConnect } = vi.hoisted(() => ({
   http2Connect: vi.fn(),
   proxyFetch: vi.fn(),
+  resolveProxyRoute: vi.fn(),
+  agentConnect: vi.fn(),
 }));
 
 vi.mock("http2", () => ({ connect: http2Connect }));
-vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: proxyFetch }));
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: proxyFetch,
+  resolveEffectiveProxyRoute: resolveProxyRoute,
+}));
+vi.mock("../../open-sse/utils/http2Connect.js", () => ({ connectHttp2: agentConnect }));
 
 import { CursorExecutor } from "../../open-sse/executors/cursor.js";
 
@@ -22,6 +28,21 @@ function fakeHttp2Session(sessions) {
   client.request = vi.fn(() => request);
   sessions.push({ client, request });
   return client;
+}
+
+function fakeAgentLease(sessions, leases, effectiveRoute = {
+  kind: "direct",
+  strictProxy: false,
+  cacheIdentity: "direct",
+}) {
+  const session = fakeHttp2Session(sessions);
+  const lease = {
+    session,
+    effectiveRoute,
+    close: vi.fn(() => session.close()),
+  };
+  leases.push(lease);
+  return lease;
 }
 
 function hangUntilAbort(calls, safetyMs) {
@@ -91,13 +112,23 @@ function expectAbortListenersRemoved(addSpy, removeSpy) {
 
 describe("Cursor response-header deadlines", () => {
   const sessions = [];
+  const leases = [];
 
   beforeEach(() => {
     vi.useFakeTimers();
     sessions.length = 0;
+    leases.length = 0;
     proxyFetch.mockReset();
+    resolveProxyRoute.mockReset();
+    agentConnect.mockReset();
     http2Connect.mockReset();
     http2Connect.mockImplementation(() => fakeHttp2Session(sessions));
+    resolveProxyRoute.mockReturnValue({
+      kind: "direct",
+      strictProxy: false,
+      cacheIdentity: "direct",
+    });
+    agentConnect.mockImplementation(async () => fakeAgentLease(sessions, leases));
   });
 
   afterEach(() => {
@@ -133,6 +164,59 @@ describe("Cursor response-header deadlines", () => {
     controller.abort(reason);
     await expect(pending).rejects.toBe(reason);
     expect(calls[0].signal.reason).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("forwards execute proxy options as the resolved route and composed deadline signal to the AgentService adapter", async () => {
+    const route = {
+      kind: "proxy",
+      proxyUrl: "http://proxy.example.test:8080",
+      strictProxy: true,
+      cacheIdentity: "proxy:fixed",
+    };
+    resolveProxyRoute.mockReturnValue(route);
+    const executor = new CursorExecutor({ connectHttp2: agentConnect });
+    const proxyOptions = { resolutionKind: "selected-proxy", strictProxy: true };
+    const pending = executor.execute(agentArgs({
+      proxyOptions,
+      connectTimeout: { globalTimeout: 15000 },
+    }));
+    await flush();
+
+    expect(resolveProxyRoute).toHaveBeenCalledWith(
+      "https://agent.api5.cursor.sh/agent.v1.AgentService/Run",
+      proxyOptions,
+    );
+    expect(agentConnect).toHaveBeenCalledWith(
+      "https://agent.api5.cursor.sh/agent.v1.AgentService/Run",
+      expect.objectContaining({ route, signal: expect.any(AbortSignal) }),
+    );
+    sessions[0].request.emit("response", { ":status": 200 });
+    sessions[0].request.emit("end");
+    await expect(pending).resolves.toMatchObject({ response: expect.any(Response) });
+  });
+
+  it.each([
+    ["direct", { resolutionKind: "intentional-direct" }],
+    ["strict proxy", { resolutionKind: "selected-proxy", strictProxy: true }],
+  ])("rejects a %s AgentService setup with the response-header deadline", async (_name, proxyOptions) => {
+    agentConnect.mockImplementationOnce((_url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    const pending = new CursorExecutor({ connectHttp2: agentConnect }).openAgentHttp2Stream(
+      "https://agent.api5.cursor.sh/agent.v1.AgentService/Run",
+      {},
+      undefined,
+      proxyOptions,
+      { providerOverride: 8000, globalTimeout: 15000 },
+    );
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: "ConnectTimeoutError",
+      timeoutMs: 8000,
+    });
+    await vi.advanceTimersByTimeAsync(8000);
+    await assertion;
+    expect(agentConnect).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -231,9 +315,9 @@ describe("Cursor response-header deadlines", () => {
     const executor = new CursorExecutor();
     const pending = mode === "standard"
       ? executor.makeHttp2Request("https://api2.cursor.sh/chat", {}, Buffer.from("body"), controller.signal, { globalTimeout: 15000 })
-      : Promise.resolve().then(() => executor.openAgentHttp2Stream("https://agent.api5.cursor.sh/run", {}, controller.signal, { globalTimeout: 15000 }));
+      : Promise.resolve().then(() => executor.openAgentHttp2Stream("https://agent.api5.cursor.sh/run", {}, controller.signal, null, { globalTimeout: 15000 }));
     await expect(pending).rejects.toBe(reason);
-    expect(http2Connect).not.toHaveBeenCalled();
+    expect(mode === "standard" ? http2Connect : agentConnect).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -260,10 +344,11 @@ describe("Cursor response-header deadlines", () => {
   it("AgentService preserves caller abort after headers", async () => {
     const controller = new AbortController();
     const reason = new DOMException("Agent caller left after headers", "AbortError");
-    const session = new CursorExecutor().openAgentHttp2Stream(
+    const session = await new CursorExecutor().openAgentHttp2Stream(
       "https://agent.api5.cursor.sh/agent.v1.AgentService/Run",
       {},
       controller.signal,
+      null,
       { globalTimeout: 15000 },
     );
     sessions[0].request.emit("response", { ":status": 200 });
@@ -271,6 +356,25 @@ describe("Cursor response-header deadlines", () => {
     controller.abort(reason);
     await expect(session.read()).rejects.toBe(reason);
     expect(sessions[0].request.destroy).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["end", "close"])("rejects an AgentService request %s before headers and closes its lease", async (eventName) => {
+    const session = await new CursorExecutor().openAgentHttp2Stream(
+      "https://agent.api5.cursor.sh/agent.v1.AgentService/Run",
+      {},
+      undefined,
+      null,
+      { globalTimeout: 15000 },
+    );
+    let headerError;
+    void session.responseHeaders.catch(error => { headerError = error; });
+
+    sessions[0].request.emit(eventName);
+    await flush();
+
+    expect(headerError).toMatchObject({ code: "http2_connection_closed" });
+    expect(leases[0].close).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -288,10 +392,11 @@ describe("Cursor response-header deadlines", () => {
     const controller = new AbortController();
     const addSpy = vi.spyOn(controller.signal, "addEventListener");
     const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
-    const session = new CursorExecutor().openAgentHttp2Stream(
+    const session = await new CursorExecutor().openAgentHttp2Stream(
       "https://agent.api5.cursor.sh/agent.v1.AgentService/Run",
       {},
       controller.signal,
+      null,
       { globalTimeout: 15000 },
     );
     const native = sessions[0];
@@ -316,7 +421,34 @@ describe("Cursor response-header deadlines", () => {
     session.close();
     expect(removeSpy.mock.calls.filter(([type, listener]) => type === "abort" && listener === callerListener)).toHaveLength(1);
     expect(native.request.destroy).toHaveBeenCalled();
-    expect(native.client.close).toHaveBeenCalled();
+    expect(leases[0].close).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["request error", "normal end", "caller abort"])("closes the AgentService SessionLease exactly once on %s", async (ending) => {
+    const controller = new AbortController();
+    const pending = new CursorExecutor().executeAgent(agentArgs({
+      signal: controller.signal,
+      connectTimeout: { globalTimeout: 15000 },
+    }));
+    await flush();
+    const native = sessions[0];
+
+    if (ending === "request error") {
+      native.request.emit("error", new Error("agent request failed"));
+      await expect(pending).rejects.toThrow("agent request failed");
+    } else if (ending === "normal end") {
+      native.request.emit("response", { ":status": 200 });
+      native.request.emit("end");
+      await expect(pending).resolves.toMatchObject({ response: expect.any(Response) });
+    } else {
+      native.request.emit("response", { ":status": 200 });
+      const reason = new DOMException("caller left AgentService", "AbortError");
+      controller.abort(reason);
+      await expect(pending).rejects.toBe(reason);
+    }
+
+    expect(leases[0].close).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -348,9 +480,9 @@ describe("Cursor response-header deadlines", () => {
     controller.abort(reason);
 
     await expect(pending).rejects.toBe(reason);
-    expect(http2Connect).toHaveBeenCalledTimes(1);
+    expect(agentConnect).toHaveBeenCalledTimes(1);
     expect(sessions[0].request.destroy).toHaveBeenCalled();
-    expect(sessions[0].client.close).toHaveBeenCalled();
+    expect(leases[0].close).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -388,20 +520,20 @@ describe("Cursor response-header deadlines", () => {
   );
 
   it.each(["connect", "request", "frame", "write"])(
-    "AgentService cleans up a synchronous %s failure",
+    "AgentService cleans up an adapter %s failure",
     async (stage) => {
       const controller = new AbortController();
       const addSpy = vi.spyOn(controller.signal, "addEventListener");
       const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
       const failure = new Error(`agent ${stage} failed`);
       if (stage === "connect") {
-        http2Connect.mockImplementationOnce(() => { throw failure; });
+        agentConnect.mockImplementationOnce(async () => { throw failure; });
       } else {
-        http2Connect.mockImplementationOnce(() => {
-          const client = fakeHttp2Session(sessions);
-          if (stage === "request") client.request.mockImplementationOnce(() => { throw failure; });
+        agentConnect.mockImplementationOnce(async () => {
+          const lease = fakeAgentLease(sessions, leases);
+          if (stage === "request") lease.session.request.mockImplementationOnce(() => { throw failure; });
           if (stage === "write") sessions.at(-1).request.write.mockImplementationOnce(() => { throw failure; });
-          return client;
+          return lease;
         });
       }
       if (stage === "frame") {
@@ -421,7 +553,7 @@ describe("Cursor response-header deadlines", () => {
 
       expect(result.response.status).toBe(500);
       expect(await result.response.text()).toContain(failure.message);
-      if (stage !== "connect") expect(sessions[0].client.close).toHaveBeenCalled();
+      if (stage !== "connect") expect(leases[0].close).toHaveBeenCalledTimes(1);
       if (stage === "frame" || stage === "write") expect(sessions[0].request.destroy).toHaveBeenCalled();
       expectAbortListenersRemoved(addSpy, removeSpy);
       expect(vi.getTimerCount()).toBe(0);

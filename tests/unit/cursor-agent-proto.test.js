@@ -14,6 +14,7 @@ import {
 import {
   isAgentCapableRequest,
   buildAgentRunFrame,
+  resolveCursorAgentModel,
 } from "../../open-sse/executors/cursor.js";
 
 // AgentService (agent.v1) codec tests — validate the production implementation
@@ -246,6 +247,26 @@ describe("Cursor AgentService executor helpers (cursor.js)", () => {
       const run = decodeMessage(clientMsg.get(1)[0].value);
       expect(run.has(2)).toBe(true); // action
       expect(run.has(9)).toBe(true); // requested_model
+    });
+
+    it.each([
+      ["final Fable fast", "claude-fable-5-thinking-max-fast", "claude-fable-5-thinking-max"],
+      ["case-insensitive Fable prefix", "CLAUDE-FABLE-5-fast", "CLAUDE-FABLE-5"],
+      ["Opus fast", "claude-opus-4-fast", "claude-opus-4-fast"],
+      ["GPT fast", "gpt-5-fast", "gpt-5-fast"],
+      ["Grok fast", "grok-4-fast", "grok-4-fast"],
+      ["non-final Fable fast", "claude-fable-fast-extra", "claude-fable-fast-extra"],
+    ])("encodes RequestedModel model_id only for %s", (_label, model, expected) => {
+      const frame = unwrap(buildAgentRunFrame([{ role: "user", content: "hi" }], model));
+      const clientMsg = decodeMessage(frame);
+      const run = decodeMessage(clientMsg.get(1)[0].value);
+      const requested = decodeMessage(
+        decodeMessage(run.get(9)[0].value).get(1)[0].value,
+      );
+
+      expect(resolveCursorAgentModel(model)).toBe(expected);
+      expect(Buffer.from(requested.get(1)[0].value).toString("utf8")).toBe(expected);
+      expect(requested.has(7)).toBe(false);
     });
 
     it("encodes mcp_tools (field 4) when tools are provided", () => {

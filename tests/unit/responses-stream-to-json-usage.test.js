@@ -68,4 +68,22 @@ describe("convertResponsesStreamToJson usage passthrough", () => {
     expect(out.usage.output_tokens_details.reasoning_tokens).toBe(90);
     expect(out.usage.total_tokens).toBe(420); // input + output when upstream omits total
   });
+
+  it("leaves a supplied reader release to its outer deadline owner", async () => {
+    const stream = sseFromEvents(baseEvents({ input_tokens: 3, output_tokens: 2, total_tokens: 5 }));
+    const reader = stream.getReader();
+    const releaseLock = reader.releaseLock.bind(reader);
+    let releases = 0;
+    reader.releaseLock = () => {
+      releases += 1;
+      return releaseLock();
+    };
+
+    const out = await convertResponsesStreamToJson(stream, { reader });
+
+    expect(out.usage).toMatchObject({ input_tokens: 3, output_tokens: 2, total_tokens: 5 });
+    expect(releases).toBe(0);
+    reader.releaseLock();
+    expect(releases).toBe(1);
+  });
 });

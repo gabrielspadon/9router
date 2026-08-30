@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { decryptSecretJson, encryptSecretJson } from "../helpers/secretCol.js";
 
 function rowToPool(row) {
   if (!row) return null;
@@ -85,6 +86,74 @@ export async function updateProxyPool(id, data) {
     if (!row) return;
     const merged = { ...rowToPool(row), ...data, updatedAt: new Date().toISOString() };
     upsert(db, merged);
+    result = merged;
+  });
+  return result;
+}
+
+function updateBoundConnectionSnapshotsInTx(db, proxyPoolId, strictProxy, now) {
+  const rows = db.all(`SELECT id, data FROM providerConnections`);
+  for (const row of rows) {
+    const connectionData = decryptSecretJson(row.data, {});
+    const providerSpecificData = connectionData.providerSpecificData;
+    if (
+      !providerSpecificData
+      || typeof providerSpecificData !== "object"
+      || Array.isArray(providerSpecificData)
+      || providerSpecificData.proxyPoolId !== proxyPoolId
+    ) {
+      continue;
+    }
+    connectionData.providerSpecificData = {
+      ...providerSpecificData,
+      proxyPoolId,
+      strictProxy,
+    };
+    db.run(
+      `UPDATE providerConnections SET data = ?, updatedAt = ? WHERE id = ?`,
+      [encryptSecretJson(connectionData), now, row.id],
+    );
+  }
+}
+
+function updateBoundStrategySnapshotsInTx(db, proxyPoolId, strictProxy) {
+  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+  const current = row ? parseJson(row.data, {}) : {};
+  const strategies = { ...(current.providerStrategies || {}) };
+  let changed = false;
+  for (const [providerId, strategy] of Object.entries(strategies)) {
+    if (
+      !strategy
+      || typeof strategy !== "object"
+      || Array.isArray(strategy)
+      || strategy.proxyPoolId !== proxyPoolId
+    ) {
+      continue;
+    }
+    strategies[providerId] = { ...strategy, proxyPoolId, strictProxy };
+    changed = true;
+  }
+  if (!changed) return;
+  db.run(
+    `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+    [stringifyJson({ ...current, providerStrategies: strategies })],
+  );
+}
+
+// Strictness is part of a durable selected-pool pair. The pool, normal
+// connections, and no-auth strategies must commit or roll back together.
+export async function updateProxyPoolWithBoundSnapshots(id, data) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
+    if (!row) return;
+    const now = new Date().toISOString();
+    const merged = { ...rowToPool(row), ...data, updatedAt: now };
+    merged.strictProxy = merged.strictProxy === true;
+    upsert(db, merged);
+    updateBoundConnectionSnapshotsInTx(db, id, merged.strictProxy, now);
+    updateBoundStrategySnapshotsInTx(db, id, merged.strictProxy);
     result = merged;
   });
   return result;

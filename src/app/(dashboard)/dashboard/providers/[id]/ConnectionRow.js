@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
+import { translate } from "@/i18n/runtime";
 import CooldownTimer from "./CooldownTimer";
 
 const HOT_RELOAD_BADGE_VARIANTS = {
@@ -14,7 +15,22 @@ const HOT_RELOAD_BADGE_VARIANTS = {
   partial: "warning",
 };
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, hotReload = null, hotReloadStatus = null }) {
+export function getPersistedCodexPlan(connection) {
+  if (connection?.provider !== "codex") return null;
+
+  const candidates = [
+    connection.providerSpecificData?.codexSubscriptionPlan,
+    connection.providerSpecificData?.chatgptPlanType,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const plan = candidate.trim();
+    if (plan && plan.toLowerCase() !== "unknown") return plan;
+  }
+  return null;
+}
+
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, hotReload = null, hotReloadStatus = null, verification = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -91,6 +107,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
       ? connection.displayName.trim()
       : null;
+  const verificationError = verification?.error === "Verification link expired" || verification?.error === "Unable to load verification link"
+    ? verification.error
+    : null;
+  const codexPlan = getPersistedCodexPlan(connection);
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -188,6 +208,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {codexPlan && (
+              <Badge variant="primary" size="sm">
+                <span className="sr-only">Codex subscription plan </span>
+                {codexPlan}
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -217,6 +243,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {getHotReloadLabel()}
               </Badge>
             )}
+            {verification && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                {translate("Antigravity account verification required")}
+              </span>
+            )}
+            {verificationError && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                {translate(verificationError)}
+              </span>
+            )}
           </div>
           {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
@@ -238,7 +274,31 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </div>
       </div>
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-        <div className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-none">
+        <div className="flex flex-1 flex-wrap gap-1 sm:flex-none">
+          {verification?.href && (
+            <a
+              href={verification.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${translate("Verify Antigravity account")} ${displayName}`}
+              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">verified_user</span>
+              <span className="text-[10px] leading-tight">{translate("Verify Antigravity account")}</span>
+            </a>
+          )}
+          {verification && (
+            <button
+              onClick={verification.onRecheck}
+              disabled={verification.rechecking}
+              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className={`material-symbols-outlined text-[18px] ${verification.rechecking ? "animate-spin" : "refresh"}`}>
+                {verification.rechecking ? "progress_activity" : "refresh"}
+              </span>
+              <span className="text-[10px] leading-tight">{translate("Check verification")}</span>
+            </button>
+          )}
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
@@ -320,6 +380,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 ConnectionRow.propTypes = {
   connection: PropTypes.shape({
     id: PropTypes.string,
+    provider: PropTypes.string,
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
@@ -329,6 +390,10 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    providerSpecificData: PropTypes.shape({
+      codexSubscriptionPlan: PropTypes.string,
+      chatgptPlanType: PropTypes.string,
+    }),
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
@@ -362,5 +427,14 @@ ConnectionRow.propTypes = {
   hotReloadStatus: PropTypes.shape({
     state: PropTypes.string,
     error: PropTypes.string,
+  }),
+  verification: PropTypes.shape({
+    connectionId: PropTypes.string,
+    challengeId: PropTypes.string,
+    expiresAt: PropTypes.number,
+    href: PropTypes.string,
+    rechecking: PropTypes.bool,
+    error: PropTypes.string,
+    onRecheck: PropTypes.func,
   }),
 };

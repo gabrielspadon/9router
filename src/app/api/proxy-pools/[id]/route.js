@@ -3,7 +3,7 @@ import {
   deleteProxyPool,
   getProviderConnections,
   getProxyPoolById,
-  updateProxyPool,
+  updateProxyPoolWithBoundSnapshots,
 } from "@/models";
 
 function normalizeProxyPoolUpdate(body = {}) {
@@ -83,7 +83,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: normalized.error }, { status: 400 });
     }
 
-    const updated = await updateProxyPool(id, normalized.updates);
+    const updated = await updateProxyPoolWithBoundSnapshots(id, normalized.updates);
     return NextResponse.json({ proxyPool: updated });
   } catch (error) {
     console.log("Error updating proxy pool:", error);

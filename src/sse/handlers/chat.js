@@ -27,6 +27,11 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel, normalizeClaudeModelName, buildClaudeRoutingIndex, readClaudeCompat } from "@/lib/claudeCompat";
 
+async function createAntigravityVerificationHooks(connectionId) {
+  const { createAntigravityVerificationHooks: createHooks } = await import("@/lib/antigravityVerification");
+  return createHooks(connectionId);
+}
+
 // Simple in-memory sliding-window rate limiter to stop abuse of the expensive AI calls below
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 60;
@@ -286,8 +291,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -304,7 +309,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
+      const projectVerificationHooks = provider === "antigravity"
+        ? await createAntigravityVerificationHooks(credentials.connectionId)
+        : {};
+      const pid = await getProjectIdForConnection(
+        credentials.connectionId,
+        refreshedCredentials.accessToken,
+        provider,
+        projectVerificationHooks,
+      );
       if (pid) {
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately
@@ -319,10 +332,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       providerOverride: chatSettings.providerStrategies?.[provider]?.connectTimeoutMs,
       globalTimeout: chatSettings.connectTimeoutMs,
     };
+    const chatVerificationHooks = provider === "antigravity"
+      ? await createAntigravityVerificationHooks(credentials.connectionId)
+      : {};
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
+      callerSignal: request?.signal,
       log,
       clientRawRequest,
       connectionId: credentials.connectionId,
@@ -358,6 +375,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       } : null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      verificationContext: chatVerificationHooks.verificationContext,
+      onValidationRequired: chatVerificationHooks.onValidationRequired,
+      onVerificationSuccess: chatVerificationHooks.onVerificationSuccess,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -388,6 +408,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
+    if (result.clientAborted || result.status === 499) return result.response;
     if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
       requestReplayAttempted = true;
       requestReplayConnectionId = credentials.connectionId;
@@ -396,7 +417,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const accountFailureArgs = [
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider,
+      model,
+      result.resetsAtMs,
+    ];
+    if (result.failureMetadata) accountFailureArgs.push(result.failureMetadata);
+    const { shouldFallback } = await markAccountUnavailable(...accountFailureArgs);
 
     if (shouldFallback) {
       lastError = result.error;

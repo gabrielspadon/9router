@@ -8,6 +8,9 @@ import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
 import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
+import { createCallerAbortResult, createErrorResult, isCallerAbortError } from "../utils/error.js";
+import { consumeResponseBodyWithDeadline, isBodyReadTimeoutError } from "../utils/bodyTimeout.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Handle /v1/responses request
@@ -22,7 +25,7 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
-export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId, toolDisclosure }) {
+export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId, toolDisclosure, callerSignal }) {
   // Convert Responses API format to Chat Completions format
   const convertedBody = convertResponsesApiFormat(body);
 
@@ -44,7 +47,8 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onDisconnect,
     connectionId,
     sourceFormatOverride: "openai-responses",
-    toolDisclosure
+    toolDisclosure,
+    callerSignal,
   });
 
   if (!result.success || !result.response) {
@@ -57,7 +61,11 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
   // Case 1: Client wants non-streaming, but got SSE (provider forced it, e.g., Codex)
   if (!clientRequestedStreaming && contentType.includes("text/event-stream")) {
     try {
-      const jsonResponse = await convertResponsesStreamToJson(response.body);
+      const jsonResponse = await consumeResponseBodyWithDeadline({
+        body: response.body,
+        callerSignal,
+        consume: (reader) => convertResponsesStreamToJson(response.body, { reader }),
+      });
 
       return {
         success: true,
@@ -72,11 +80,11 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
       };
     } catch (error) {
       console.error("[Responses API] Stream-to-JSON conversion failed:", error);
-      return {
-        success: false,
-        status: 500,
-        error: "Failed to convert streaming response to JSON"
-      };
+      if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+      if (isBodyReadTimeoutError(error)) {
+        return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, "Upstream response body timed out");
+      }
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
     }
   }
 
@@ -97,4 +105,3 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
   // Case 3: Non-SSE response (error or non-streaming from provider) - return as-is
   return result;
 }
-

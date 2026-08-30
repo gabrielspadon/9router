@@ -6,15 +6,28 @@ import {
   getProviderConnectionById,
   updateProviderConnection,
 } from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { getCodexSubscriptionEntitlement } from "open-sse/services/usage/codex.js";
 import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
+import { runAntigravityUsageProbe } from "@/lib/antigravityVerification";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE } from "open-sse/services/antigravityValidation.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
+
+function snapshotOwner(connection) {
+  const data = connection.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
+
 function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
@@ -151,15 +164,17 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 
-    // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
-    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-    const proxyOptions = {
-      connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-      connectionNoProxy: proxyConfig.connectionNoProxy || "",
-      vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-      strictProxy: false,
-    };
+    // Resolve the persisted route before refresh or usage egress.
+    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData, snapshotOwner(connection));
+    if (proxyConfig?.kind === "required-unavailable") {
+      return Response.json({
+        error: "Required proxy is unavailable",
+        code: "required_proxy_unavailable",
+      }, { status: 503 });
+    }
+    const proxyOptions = proxyConfig?.kind === "usable"
+      ? toConnectionProxyOptions(proxyConfig)
+      : { ...(proxyConfig || {}), strictProxy: proxyConfig?.strictProxy === true };
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
     if (isOAuth) {
@@ -167,15 +182,18 @@ export async function GET(request, { params }) {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
       } catch (refreshError) {
-        console.error("[Usage API] Credential refresh failed:", refreshError);
+        const safeError = connection.provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : refreshError;
+        console.error("[Usage API] Credential refresh failed:", safeError);
         return Response.json({
-          error: `Credential refresh failed: ${refreshError.message}`
+          error: connection.provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Credential refresh failed: ${refreshError.message}`
         }, { status: 401 });
       }
     }
 
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection, proxyOptions, { force });
+    let usage = connection.provider === "antigravity"
+      ? await runAntigravityUsageProbe(connection, proxyOptions, { force })
+      : await getUsageForProvider(connection, proxyOptions, { force });
 
     // Best-effort: persist a quota snapshot so routing can skip this account
     // when its remaining % drops to/below the per-account pause threshold
@@ -192,9 +210,14 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection, proxyOptions, { force });
+        usage = connection.provider === "antigravity"
+          ? await runAntigravityUsageProbe(connection, proxyOptions, { force })
+          : await getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
-        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+        console.warn(
+          `[Usage] ${connection.provider}: force refresh failed:`,
+          connection.provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : retryError.message,
+        );
       }
     }
 
@@ -256,7 +279,11 @@ export async function GET(request, { params }) {
     return Response.json(usage);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
-    console.warn(`[Usage] ${provider}: ${error.message}`);
-    return Response.json({ error: error.message }, { status: 500 });
+    const isAntigravity = provider === "antigravity";
+    console.warn(`[Usage] ${provider}:`, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
+    return Response.json(
+      { error: isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message },
+      { status: isAntigravity ? 502 : 500 },
+    );
   }
 }

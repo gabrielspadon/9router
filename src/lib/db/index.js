@@ -6,6 +6,7 @@ import { decryptSecretJson, encryptSecretJson } from "./helpers/secretCol.js";
 // Settings
 export {
   getSettings, updateSettings, updateProviderStrategy,
+  updateProviderStrategyProxyPoolSnapshotIfBound,
   isCloudEnabled, getCloudUrl, exportSettings,
 } from "./repos/settingsRepo.js";
 
@@ -13,6 +14,7 @@ export {
 export {
   getProviderConnections, getProviderConnectionById,
   createProviderConnection, updateProviderConnection,
+  updateConnectionProxyPoolSnapshotIfBound,
   deleteProviderConnection, deleteProviderConnectionsByProvider,
   reorderProviderConnections, cleanupProviderConnections,
 } from "./repos/connectionsRepo.js";
@@ -26,7 +28,7 @@ export {
 // Proxy pools
 export {
   getProxyPools, getProxyPoolById,
-  createProxyPool, updateProxyPool, deleteProxyPool,
+  createProxyPool, updateProxyPool, updateProxyPoolWithBoundSnapshots, deleteProxyPool,
 } from "./repos/proxyPoolsRepo.js";
 
 // API keys
