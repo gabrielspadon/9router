@@ -2054,31 +2054,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #1976 — feat(provider): add SenseNova free tier provider
-
-- url: https://github.com/decolua/9router/pull/1976
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #1959 — improve(antigravity): harden client fingerprint to match real Antigravity/Electron
 
 - url: https://github.com/decolua/9router/pull/1959
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #1958 — fix(antigravity): preserve inlineData parts for image-to-image editing
-
-- url: https://github.com/decolua/9router/pull/1958
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -2131,28 +2109,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #1919 — fix(quota): collapse quota rows, sort by remaining desc
-
-- url: https://github.com/decolua/9router/pull/1919
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #1902 — Initialize params in transformRequest method
-
-- url: https://github.com/decolua/9router/pull/1902
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #1900 — feat(usage): add cached tokens and cache hit % metrics
 
 - url: https://github.com/decolua/9router/pull/1900
@@ -2189,17 +2145,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #1829 — fix(dashboard): unify custom provider icon fallbacks
 
 - url: https://github.com/decolua/9router/pull/1829
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #1827 — fix: bump better-sqlite3 to 12.10.1 for Node 26 compatibility
-
-- url: https://github.com/decolua/9router/pull/1827
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -4248,4 +4193,3 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - disposition: 
 - validation: 
 - notes: 
-

@@ -6341,3 +6341,101 @@
 - final-disposition: integrated
 - closed: 2026-08-30
 - detail: merge e5267709a; Ark runtime model assertions passed
+
+## PR #3633 — fix(codex): label quota windows by duration
+
+- url: https://github.com/decolua/9router/pull/3633
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commit a2be5f0fe; duration-derived session and weekly windows passed focused and adjacent 76/76, with full verifier no regression
+
+## PR #1958 — fix(antigravity): preserve inlineData parts for image-to-image editing
+
+- url: https://github.com/decolua/9router/pull/1958
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits c6d36b319, 2ef9eb784, cc02cd4da; translated image MIME and malformed-part coverage passed focused and adjacent 63/63
+
+## PR #1976 — feat(provider): add SenseNova free tier provider
+
+- url: https://github.com/decolua/9router/pull/1976
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 51d363fa5 and f3a6fbedc; official current models, image filtering, quota notice, registry, aliases, and routes passed 180/180 with exact baselines
+
+## PR #3632 — feat(routing): global + per-provider connect-timeout setting
+
+- url: https://github.com/decolua/9router/pull/3632
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: 21 commits through c9d251808; final review 0 findings, focused 91/91, combined 484 pass plus 39 exact base failures, full verifier 3306 pass and 61 catalogued failures
+
+## PR #1919 — fix(quota): collapse quota rows, sort by remaining desc
+
+- url: https://github.com/decolua/9router/pull/1919
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: superseded
+- closed: 2026-08-30
+- detail: current ten-row pagination, persisted provider-specific visibility, flex rows, expiry wording, and quota value types supersede the stale two-row collapse and unsafe default sort
+
+## PR #1902 — Initialize params in transformRequest method
+
+- url: https://github.com/decolua/9router/pull/1902
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: superseded
+- closed: 2026-08-30
+- detail: translator, registry forceStream, and executor already guarantee CommandCode params.stream; focused CommandCode and force-stream coverage passed
+
+## PR #1827 — fix: bump better-sqlite3 to 12.10.1 for Node 26 compatibility
+
+- url: https://github.com/decolua/9router/pull/1827
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: superseded
+- closed: 2026-08-30
+- detail: accepted commit e4b2f0d7c already pins 12.10.1 with bounded postinstall-only fallback logic; focused Batch 28 supersession set passed 21/21
