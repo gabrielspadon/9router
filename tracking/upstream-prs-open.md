@@ -12,12 +12,12 @@ Entries marked `status: in-progress` remain in this file until the local work me
 
 - url: https://github.com/decolua/9router/pull/3273
 - upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
+- local-status: in-progress
+- branch: design/pr3273-safe-split
+- local-ref: 75a0a4cfd336c5508bc15a9ed9cc59c073531381
+- disposition: adapt
+- validation: docs/superpowers/specs/2026-08-30-pr3273-safe-live-requests-and-cli-presets-design.md
+- notes: independently reviewed safe split is design-only and awaits user review. It permits URL-only local presets and aggregate-only live-request presentation, never the upstream FIFO tracker, spoofable header metadata, or session identity reuse.
 
 ## PR #3261 — fix(proxy): rotate no-auth pools after rate limits
 
@@ -4028,8 +4028,8 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - url: https://github.com/decolua/9router/pull/3625
 - upstream-state: open (discovered 2026-08-30)
 - local-status: in-progress
-- branch: 
-- local-ref: 
+- branch: master
+- local-ref: fbbb42ce89e5c67bce4af4886e151f0088285dc8
 - disposition: adapt
 - validation: .superpowers/sdd/PLAN/task-6-b29-pr3625-review.md
 - notes: schema normalization is integrated on master through fbbb42ce with independent review, focused 97/97, baseline verifier, and build. Payload degradation remains separately unstarted because the upstream patch corrupts tool histories, image order, byte accounting, and error classification.
@@ -4040,8 +4040,8 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - url: https://github.com/decolua/9router/pull/3624
 - upstream-state: open (discovered 2026-08-30)
 - local-status: in-progress
-- branch: 
-- local-ref: 7e3796171
+- branch: design/pr3624-release-specs
+- local-ref: a2aa43718b3ee11b9dad46d4383fe8851c80c668
 - disposition: adapt
 - validation: .superpowers/sdd/PLAN/task-6-b29-pr3624-review.md
-- notes: reviewed Transport subproject integrated through 7e3796171 with bounded proxy-aware core, abort cleanup, explicit global proxy installation, 97/97 canonical replay, full no-regression verifier, and isolated build; public contract/discovery, account pinning, and capability-specific state/fallback remain deferred to the approved later subprojects
+- notes: reviewed private Transport is integrated through 7e3796171 with bounded proxy-aware core, abort cleanup, explicit global proxy installation, canonical replay, no-regression verifier, and isolated build. Independently reviewed public-contract and state/fallback designs at a2aa43718 await user review before public registry exposure, account pinning, and capability-specific state/fallback implementation.
