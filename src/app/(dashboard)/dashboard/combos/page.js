@@ -673,10 +673,10 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                   >
                     <span>{model}</span>
                     <CapacityBadges caps={getCaps?.(model)} />
-                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title={`Move ${model} earlier`} aria-label={`Move ${model} earlier`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-subtle" : "text-text-muted hover:text-brand"}`}>
+                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title={`Move ${model} earlier`} aria-label={`Move ${model} earlier`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted" : "text-text-muted hover:text-brand"}`}>
                       <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_upward</span>
                     </button>
-                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} title={`Move ${model} later`} aria-label={`Move ${model} later`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-subtle" : "text-text-muted hover:text-brand"}`}>
+                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} title={`Move ${model} later`} aria-label={`Move ${model} later`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted" : "text-text-muted hover:text-brand"}`}>
                       <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_downward</span>
                     </button>
                     <button onClick={() => handleRemove(index)} title={`Remove ${model}`} aria-label={`Remove ${model}`} className="focus-ring leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-danger">
@@ -804,7 +804,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
           variant="bare" size="icon-sm"
           onClick={onMoveUp}
           disabled={isFirst}
-          className={isFirst ? "text-text-subtle cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
+          className={isFirst ? "text-text-muted cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
           title="Move up"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[12px]">arrow_upward</span>
@@ -813,7 +813,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
           variant="bare" size="icon-sm"
           onClick={onMoveDown}
           disabled={isLast}
-          className={isLast ? "text-text-subtle cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
+          className={isLast ? "text-text-muted cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
           title="Move down"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[12px]">arrow_downward</span>

@@ -698,16 +698,16 @@ function ModelContextPage() {
                       {!r.enabledModel && (
                         <span
                           title={r.providerActive ? "供应商已有启用的连接，但该模型不在 /v1/models 中（未勾选）" : "该供应商没有启用的连接"}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-text-subtle ml-1"
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-text-muted ml-1"
                         >
                           未启用
                         </span>
                       )}
-                      <code className="text-[10px] font-mono bg-surface-2 px-1 py-0.5 rounded text-text-subtle ml-1">{r.provider}</code>
+                      <code className="text-[10px] font-mono bg-surface-2 px-1 py-0.5 rounded text-text-muted ml-1">{r.provider}</code>
                     </td>
                     <td className="px-4 py-3 max-w-[260px]">
                       <code className="text-xs font-mono bg-surface-2 text-text-main px-1.5 py-0.5 rounded truncate block">{r.model}</code>
-                      {r.name && r.name !== r.model ? <span className="text-[10px] text-text-subtle truncate block">{r.name}</span> : null}
+                      {r.name && r.name !== r.model ? <span className="text-[10px] text-text-muted truncate block">{r.name}</span> : null}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap metric">
                       {editing?.rowKey === r.fullKey ? (
@@ -743,7 +743,7 @@ function ModelContextPage() {
                       ) : r.src ? (
                         <div>
                           <span className="text-text-main font-semibold">{fmtInt(r.eff)}</span>{" "}
-                          <s className="text-text-subtle">{fmtInt(r.base)}</s>
+                          <s className="text-text-muted">{fmtInt(r.base)}</s>
                         </div>
                       ) : (
                         <span className="text-text-main">{fmtInt(r.eff)}</span>
@@ -758,7 +758,7 @@ function ModelContextPage() {
                           {r.src.type === "scoped" ? "手动" : r.src.type === "bare" ? "全局" : "glob"}
                         </span>
                       ) : (
-                        <span className="text-text-subtle">—</span>
+                        <span className="text-text-muted">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -770,7 +770,7 @@ function ModelContextPage() {
                           <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
                         </Button>
                       ) : r.src ? (
-                        <span title="由此行的覆盖键控制，可在「覆盖键」面板管理" className="inline-block p-1 text-text-subtle">
+                        <span title="由此行的覆盖键控制，可在「覆盖键」面板管理" className="inline-block p-1 text-text-muted">
                           <span className="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span>
                         </span>
                       ) : null}

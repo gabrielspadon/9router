@@ -784,7 +784,7 @@ export default function BasicChatPageClient() {
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium text-text-main">{model.name}</p>
-                                  <p className="truncate text-xs text-text-subtle">{model.requestModel}</p>
+                                  <p className="truncate text-xs text-text-muted">{model.requestModel}</p>
                                 </div>
                                 {isActive ? <span className="material-symbols-outlined text-[18px] text-brand">check_circle</span> : null}
                               </div>
@@ -839,7 +839,7 @@ export default function BasicChatPageClient() {
                         <p className="truncate text-sm font-medium text-text-main">{session.title}</p>
                         <p className="mt-1 truncate text-xs text-text-muted">{textValue(latestMessage?.content) || "Empty chat"}</p>
                       </div>
-                      <span className="text-xs text-text-subtle shrink-0">{formatRelativeTime(session.updatedAt)}</span>
+                      <span className="text-xs text-text-muted shrink-0">{formatRelativeTime(session.updatedAt)}</span>
                     </div>
                   </button>
                 );
@@ -933,7 +933,7 @@ export default function BasicChatPageClient() {
                   placeholder="Message AI"
                   rows={1}
                   aria-label="Message"
-                  className="focus-ring w-full resize-none bg-transparent px-2 text-sm leading-6 text-text-main outline-none placeholder:text-text-subtle custom-scrollbar max-h-[25vh] overflow-y-auto"
+                  className="focus-ring w-full resize-none bg-transparent px-2 text-sm leading-6 text-text-main outline-none placeholder:text-text-muted custom-scrollbar max-h-[25vh] overflow-y-auto"
                 />
 
                 <div className="mt-2 flex items-center justify-between gap-3">
@@ -942,7 +942,7 @@ export default function BasicChatPageClient() {
                       <span className="material-symbols-outlined text-[20px]" aria-hidden="true">attach_file</span>
                     </Button>
                     <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleAttachFiles} />
-                    <span className="text-xs font-medium text-text-subtle truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
+                    <span className="text-xs font-medium text-text-muted truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -951,7 +951,7 @@ export default function BasicChatPageClient() {
                         <span className="material-symbols-outlined text-[16px]" aria-hidden="true">stop</span>
                       </Button>
                     ) : null}
-                    <Button variant="bare" size="icon" onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`rounded-full transition-opacity ${canSend ? 'bg-brand-solid text-brand-on hover:opacity-90' : 'bg-surface-3 text-text-subtle cursor-not-allowed'}`}>
+                    <Button variant="bare" size="icon" onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`rounded-full transition-opacity ${canSend ? 'bg-brand-solid text-brand-on hover:opacity-90' : 'bg-surface-3 text-text-muted cursor-not-allowed'}`}>
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_upward</span>
                     </Button>
                   </div>

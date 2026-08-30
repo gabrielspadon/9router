@@ -109,10 +109,10 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     <div className={`group flex flex-col gap-3 p-2 rounded-lg sm:flex-row sm:items-center sm:justify-between hover:bg-surface-2 transition-colors duration-150 ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex w-full min-w-0 flex-1 items-start gap-3 sm:items-center">
         <div className="flex flex-col">
-          <Button variant="bare" size="icon-sm" onClick={onMoveUp} disabled={isFirst} title="Raise connection priority" aria-label="Raise connection priority" className={isFirst ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}>
+          <Button variant="bare" size="icon-sm" onClick={onMoveUp} disabled={isFirst} title="Raise connection priority" aria-label="Raise connection priority" className={isFirst ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}>
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
           </Button>
-          <Button variant="bare" size="icon-sm" onClick={onMoveDown} disabled={isLast} title="Lower connection priority" aria-label="Lower connection priority" className={isLast ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}>
+          <Button variant="bare" size="icon-sm" onClick={onMoveDown} disabled={isLast} title="Lower connection priority" aria-label="Lower connection priority" className={isLast ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}>
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
           </Button>
         </div>

@@ -182,7 +182,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             variant="bare" size="icon-sm"
             onClick={onMoveUp}
             disabled={isFirst}
-            className={isFirst ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
+            className={isFirst ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
             title="Raise connection priority"
             aria-label="Raise connection priority"
           >
@@ -192,7 +192,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             variant="bare" size="icon-sm"
             onClick={onMoveDown}
             disabled={isLast}
-            className={isLast ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
+            className={isLast ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
             title="Lower connection priority"
             aria-label="Lower connection priority"
           >
