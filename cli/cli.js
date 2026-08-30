@@ -66,6 +66,7 @@ const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { resolveHeapFlags } = require("./hooks/nodeFlags");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { cleanupMitmHostsFile } = require("./hooks/cleanupMitmHosts");
 const args = process.argv.slice(2);
 
 // Subcommands (`9router xai video …`) run against an already-running gateway
@@ -255,6 +256,7 @@ function killAllAppProcesses(appPort) {
       // killing them doesn't free the app port, so don't block the critical path.
       // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
       setImmediate(() => {
+        try { cleanupMitmHostsFile(); } catch {}
         try { killProxyByPidFile(); } catch {}
         // Kill Headroom proxy by PID file — detached process that outlives the main server.
         // Must stop before npm rename; it holds a handle on the app/ directory on Windows (#2265).
@@ -645,6 +647,10 @@ function startServer(updatePromise) {
     if (isCleaningUp) return;
     isCleaningUp = true;
     try {
+      // Parent CLI must clean hosts — Next.js child is SIGKILL'd below and
+      // never runs initializeApp's removeAllDNSEntriesSync().
+      cleanupMitmHostsFile();
+
       // Kill tray if running
       try {
         const { killTray } = require("./src/cli/tray/tray");
@@ -656,12 +662,19 @@ function startServer(updatePromise) {
       killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid"));
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
+      // Graceful stop so Next.js can flush DB / run its own cleanup
+      if (server?.pid) {
+        try { process.kill(server.pid, "SIGTERM"); } catch (e) { }
+        sleepSync(400);
+      }
       // Kill server process directly
-      if (server.pid) {
-        process.kill(server.pid, "SIGKILL");
+      if (server?.pid) {
+        try { process.kill(server.pid, "SIGKILL"); } catch (e) { }
       }
       // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+      if (server?.pid) {
+        try { process.kill(-server.pid, "SIGKILL"); } catch (e) { }
+      }
     } catch (e) { }
   }
 
