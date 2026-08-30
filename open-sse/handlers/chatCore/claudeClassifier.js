@@ -18,7 +18,9 @@ export class ClaudeClassifierValidationError extends Error {
 
 export function isClaudeClassifierRequest(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  if (Object.hasOwn(body, "stream") && body.stream !== false) return false;
+  if (Object.hasOwn(body, "stream")
+      && body.stream !== false
+      && body.stream !== undefined) return false;
 
   const systemText = typeof body.system === "string"
     ? body.system
@@ -54,22 +56,68 @@ export function projectResponsesClassifierOutput(body, responseBody) {
   return { entries: [], evidence: [] };
 }
 
+function projectClaudeContent(content) {
+  return content.map((block, blockIndex) => {
+    const base = {
+      eventOrdinal: null,
+      outputIndex: null,
+      itemIndex: null,
+      blockIndex,
+      type: typeof block?.type === "string" ? block.type : null,
+      text: null,
+    };
+    if (block?.type === CLAUDE_BLOCK.TEXT) {
+      return typeof block.text === "string"
+        ? { ...base, kind: "text", text: block.text }
+        : { ...base, kind: "malformed" };
+    }
+    if (block?.type === CLAUDE_BLOCK.THINKING) {
+      return typeof block.thinking === "string"
+        ? { ...base, kind: "thinking" }
+        : { ...base, kind: "malformed" };
+    }
+    if (block?.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+      return typeof block.data === "string"
+        ? { ...base, kind: "thinking" }
+        : { ...base, kind: "malformed" };
+    }
+    if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
+      return { ...base, kind: "actionable" };
+    }
+    return { ...base, kind: "unknown" };
+  });
+}
+
+function decisionFromEntries(entries, evidence) {
+  if (!Array.isArray(entries) || !Array.isArray(evidence)) return null;
+  if (evidence.some((record) => record?.resolved !== true)) return null;
+
+  let decision = null;
+  for (const entry of entries) {
+    if (entry?.kind === "thinking") continue;
+    if (entry?.kind !== "text" || typeof entry.text !== "string") return null;
+    const candidate = entry.text.trim();
+    if (decision !== null || !DECISIONS.has(candidate)) return null;
+    decision = candidate;
+  }
+  return decision;
+}
+
 export function validateClaudeClassifierMessage(body, message, projection = null) {
   if (!isClaudeClassifierRequest(body)) return message;
-  const content = message?.type === "message"
-    && message?.role === "assistant"
-    && Array.isArray(message?.content)
-      ? message.content
-      : null;
-  const decision = projection === null
-    && content?.length === 1
-    && content[0]?.type === CLAUDE_BLOCK.TEXT
-    && typeof content[0]?.text === "string"
-      ? content[0].text.trim()
-      : null;
-  if (decision === null || !DECISIONS.has(decision)) {
+  if (message?.type !== "message"
+      || message?.role !== "assistant"
+      || !Array.isArray(message?.content)) {
     throw new ClaudeClassifierValidationError();
   }
+
+  const entries = projection === null
+    ? projectClaudeContent(message.content)
+    : projection?.entries;
+  const evidence = projection === null ? [] : projection?.evidence;
+  const decision = decisionFromEntries(entries, evidence);
+  if (decision === null) throw new ClaudeClassifierValidationError();
+
   return {
     ...message,
     content: [{ type: CLAUDE_BLOCK.TEXT, text: decision }],
