@@ -21,7 +21,7 @@ export default function Select({
       {label && (
         <label className="text-sm font-medium text-text-main">
           {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
+          {required && <span className="text-danger ml-1">*</span>}
         </label>
       )}
       <div className="relative">
@@ -29,13 +29,15 @@ export default function Select({
           value={value}
           onChange={onChange}
           disabled={disabled}
+          aria-invalid={error ? "true" : undefined}
           className={cn(
-            "w-full py-2.5 px-3 pr-10 text-sm text-text-main",
-            "bg-surface-2 border border-transparent rounded-[10px] appearance-none",
-            "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
-            "transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
+            // One field treatment, shared with Input. The ring is the
+            // product-wide focus-ring utility; error recolours the border only.
+            "focus-ring w-full py-2.5 px-3 pr-10 text-sm text-text-main",
+            "bg-surface border border-border rounded-[10px] appearance-none",
+            "transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
             "text-[16px] sm:text-sm",
-            error && "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
+            error && "border-danger",
             selectClassName
           )}
           {...props}
@@ -54,7 +56,7 @@ export default function Select({
         </div>
       </div>
       {error && (
-        <p className="text-xs text-red-500 flex items-center gap-1">
+        <p className="text-xs text-danger flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">error</span>
           {error}
         </p>
