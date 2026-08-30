@@ -250,12 +250,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </Badge>
             )}
             {verification && (
-              <span className="text-xs text-amber-600 dark:text-amber-400">
+              <span className="text-xs text-warning">
                 {translate("Antigravity account verification required")}
               </span>
             )}
             {verificationError && (
-              <span className="text-xs text-amber-600 dark:text-amber-400">
+              <span className="text-xs text-warning">
                 {translate(verificationError)}
               </span>
             )}
@@ -287,7 +287,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`${translate("Verify Antigravity account")} ${displayName}`}
-              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-warning"
             >
               <span className="material-symbols-outlined text-[18px]" aria-hidden="true">verified_user</span>
               <span className="text-[10px] leading-tight">{translate("Verify Antigravity account")}</span>
@@ -297,9 +297,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <button
               onClick={verification.onRecheck}
               disabled={verification.rechecking}
-              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-warning transition-colors duration-150 hover:bg-warning-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className={`material-symbols-outlined text-[18px] ${verification.rechecking ? "animate-spin" : "refresh"}`}>
+              <span className={`material-symbols-outlined text-[18px] ${verification.rechecking ? "animate-spin" : ""}`}>
                 {verification.rechecking ? "progress_activity" : "refresh"}
               </span>
               <span className="text-[10px] leading-tight">{translate("Check verification")}</span>
