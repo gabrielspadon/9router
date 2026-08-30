@@ -318,6 +318,27 @@ describe("Kiro root schema normalization", () => {
     expect(out.properties.fromExamples).toEqual({ $ref: "#/definitions/examples" });
   });
 
+  it("preserves keyword-shaped dependentRequired names", () => {
+    const out = specSchema({
+      properties: {
+        title: { type: "string" },
+        default: { type: "string" },
+        additionalProperties: { type: "string" },
+      },
+      dependentRequired: {
+        title: ["default", "additionalProperties"],
+        default: ["title"],
+        additionalProperties: ["title", "default"],
+      },
+    });
+
+    expect(out.dependentRequired).toEqual({
+      title: ["default", "additionalProperties"],
+      default: ["title"],
+      additionalProperties: ["title", "default"],
+    });
+  });
+
   it("clones object-valued enum and const data byte-for-byte", () => {
     const enumValue = {
       title: "literal enum title",

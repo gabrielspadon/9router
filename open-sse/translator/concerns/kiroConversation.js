@@ -54,6 +54,7 @@ const ROOT_COMBINATORS = ["allOf", "oneOf", "anyOf"];
 const SCHEMA_MAP_KEYS = new Set([
   "properties", "patternProperties", "$defs", "definitions", "dependentSchemas",
 ]);
+const STRING_ARRAY_MAP_KEYS = new Set(["dependentRequired"]);
 
 function isSchemaObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -67,6 +68,11 @@ function cleanSchemaMap(value) {
   ]));
 }
 
+function cleanStringArrayMap(value) {
+  if (!isSchemaObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, clone(child)]));
+}
+
 function cleanSchemaValue(value) {
   if (Array.isArray(value)) return value.map(cleanSchemaValue);
   if (!isSchemaObject(value)) return value;
@@ -74,6 +80,7 @@ function cleanSchemaValue(value) {
     if (STRIPPED_SCHEMA_KEYS.has(key)) return [];
     if (key === "required" && Array.isArray(child) && child.length === 0) return [];
     if (SCHEMA_MAP_KEYS.has(key)) return [[key, cleanSchemaMap(child)]];
+    if (STRING_ARRAY_MAP_KEYS.has(key)) return [[key, cleanStringArrayMap(child)]];
     if (key === "enum" || key === "const") return [[key, clone(child)]];
     return [[key, cleanSchemaValue(child)]];
   }));
