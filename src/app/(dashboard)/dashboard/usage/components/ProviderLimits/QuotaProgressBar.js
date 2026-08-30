@@ -114,7 +114,7 @@ export default function QuotaProgressBar({
           aria-valuenow={Math.min(remaining, 100)}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={label}
+          aria-label={label || "Quota remaining"}
         >
           <div
             className={cn("h-full transition-[width] duration-150", colors.bg)}
