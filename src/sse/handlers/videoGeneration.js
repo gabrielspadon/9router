@@ -189,8 +189,18 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
-  if (!credentials || credentials.allRateLimited) {
+  if (!credentials) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+  }
+  if (credentials.allRateLimited) {
+    const errorMsg = credentials.lastError || "Unavailable";
+    const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+    return unavailableResponse(
+      status,
+      `[${provider}/video] ${errorMsg}`,
+      credentials.retryAfter,
+      credentials.retryAfterHuman,
+    );
   }
 
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);

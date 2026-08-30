@@ -192,6 +192,45 @@ describe("handleVideoCreate", () => {
 });
 
 describe("handleVideoGet", () => {
+  it("returns only the selected all-locked pair's projected status, reason, and retry", async () => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce({
+      allRateLimited: true,
+      retryAfter: new Date(Date.now() + 60_000).toISOString(),
+      retryAfterHuman: "reset after 1m",
+      lastError: "selected video account unavailable",
+      lastErrorCode: 502,
+      clientErrorStatus: 404,
+    });
+
+    const res = await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
+
+    expect(res.status).toBe(404);
+    expect(res.headers.get("retry-after")).toMatch(/^(59|60)$/);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("selected video account unavailable") },
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns generic unavailable for a legacy all-locked video account", async () => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce({
+      allRateLimited: true,
+      retryAfter: new Date(Date.now() + 60_000).toISOString(),
+      retryAfterHuman: "reset after 1m",
+      lastError: null,
+      lastErrorCode: null,
+      clientErrorStatus: null,
+    });
+
+    const res = await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("Unavailable") },
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("polls upstream pinned to the x-connection-id account and passes status through", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account({ connectionId: "conn-5" }));
     global.fetch.mockResolvedValueOnce(jsonResponse({ status: "pending", progress: 42 }));
