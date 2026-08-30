@@ -5838,3 +5838,171 @@
 - closed: 2026-08-29
 - detail: merge 2061da7c3 (84ce16ff0); OLLAMA_LOCAL_CONNECT_TIMEOUT_MS in runtimeConfig + 502/503/504 retry disable + debug diagnostics; base.js fmtBytes
 
+## PR #2709 — fix(logging): redact credentials from request logs
+
+- url: https://github.com/decolua/9router/pull/2709
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: superseded
+- closed: 2026-08-29
+- detail: maskSensitiveHeaders active since PR 2822 merge (0d4ddde27, batch 22); same allowlist + last-4 scheme; request-logger-masking.test.js in tree
+
+## PR #2600 — fix(huggingface): add sttConfig so HF STT presets are dispatchable
+
+- url: https://github.com/decolua/9router/pull/2600
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge b994d82ff (f1d7cd60d); huggingface sttConfig (api-inference models, bearer, huggingface-asr format); hf-model-routing tests
+
+## PR #2573 — fix(byteplus): use standard ModelArk endpoint, not Coding Plan endpoint
+
+- url: https://github.com/decolua/9router/pull/2573
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 147a0f727; byteplus transport.baseUrl /api/coding/v3 -> /api/v3; golden-url-header snapshot updated in f2913bbb9
+
+## PR #2554 — fix(console-log): fall back when tunnels buffer SSE
+
+- url: https://github.com/decolua/9router/pull/2554
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge cb3f64a9b (17732dfc8); console-log transport: REST snapshot, SSE 5s watchdog, ETag/304 poll fallback; buffer revision counter; 5 tests
+
+## PR #2542 — fix(headroom): allow larger prompt compression to finish
+
+- url: https://github.com/decolua/9router/pull/2542
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 1a771b882 (30da32743+d0c0eedaa); rtk headroom DEFAULT_TIMEOUT_MS 3000->15000 (chatCore plumbing already present); fixed pre-existing missing beforeEach import; headroom.test.js 49/49
+
+## PR #2526 — fix(combos): hide disabled provider connections
+
+- url: https://github.com/decolua/9router/pull/2526
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge f6387ec1b (3834dc3cf); filterActiveConnections in connectionStatus + combos page wiring; connection-status.test.js
+
+## PR #2443 — fix: prevent duplicate system prompt injection in multi-turn conversations
+
+- url: https://github.com/decolua/9router/pull/2443
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge e127c4341 (11b02faa5); isPromptAlreadyInjected 100-char signature guard across all six systemInject paths (OpenAI/Responses/Claude/Gemini); 20 dedup tests
+
+## PR #2437 — feat: add Chenzk API provider
+
+- url: https://github.com/decolua/9router/pull/2437
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 79287b136 (de93245ee+cff328d08); chenzk registry p126 + icon + 16 seed models + baselines re-snapshotted; chenzk-provider.test.js
+
+## PR #2399 — fix(translator): register openai response projection for gemini-family clients
+
+- url: https://github.com/decolua/9router/pull/2399
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 723150e6f (e40ca0c81); openai-to-gemini response projection for GEMINI/GEMINI_CLI/VERTEX + translator index wiring; 6 tests
+
+## PR #2396 — fix(translator): make commandcode ensureState idempotent regardless of pre-set responseId
+
+- url: https://github.com/decolua/9router/pull/2396
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge 1256a6d99 (53a77d94a); ensureState field-wise ??= idempotency; fork error-role tests preserved (upstream replacement would delete them); self-check script 4/4
+
+## PR #2340 — fix(kimchi): implement dynamic User-Agent version detection
+
+- url: https://github.com/decolua/9router/pull/2340
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge f85d613df (d71911d8f); kimchiUserAgent dynamic GitHub release lookup (1h throttle/4h refresh), registry headers getter, oauth-only; fixes pre-existing category test failure; golden snapshot updated
+
+## PR #2324 — fix(cli): stop Headroom proxy on shutdown and before npm upgrade (EBUSY #2265)
+
+- url: https://github.com/decolua/9router/pull/2324
+- upstream-state: open (seeded 2026-08-28)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes:
+- final-disposition: integrated
+- closed: 2026-08-29
+- detail: merge e5fa6564e (de81793f2); cli.js headroom proxy.pid cleanup at both kill sites (killByPidFile reuse); PR's other files out of brief
+

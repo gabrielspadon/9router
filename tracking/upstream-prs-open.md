@@ -1130,17 +1130,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2709 — fix(logging): redact credentials from request logs
-
-- url: https://github.com/decolua/9router/pull/2709
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2705 — fix(minimax): align request body with selected transport
 
 - url: https://github.com/decolua/9router/pull/2705
@@ -1317,17 +1306,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2600 — fix(huggingface): add sttConfig so HF STT presets are dispatchable
-
-- url: https://github.com/decolua/9router/pull/2600
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2589 — feat: harden proxy routing and couple MITM lifecycle
 
 - url: https://github.com/decolua/9router/pull/2589
@@ -1383,31 +1361,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2573 — fix(byteplus): use standard ModelArk endpoint, not Coding Plan endpoint
-
-- url: https://github.com/decolua/9router/pull/2573
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2565 — fix(grok-cli): move PSD refreshToken bridge to generic layer, fix proactive refresh for all providers
 
 - url: https://github.com/decolua/9router/pull/2565
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2554 — fix(console-log): fall back when tunnels buffer SSE
-
-- url: https://github.com/decolua/9router/pull/2554
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1438,17 +1394,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2542 — fix(headroom): allow larger prompt compression to finish
-
-- url: https://github.com/decolua/9router/pull/2542
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2534 — fix(xai): strip reasoning_effort for grok-composer; dashboard thinking None
 
 - url: https://github.com/decolua/9router/pull/2534
@@ -1463,17 +1408,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2533 — fix(minimax): route M3 tool calls through standard API
 
 - url: https://github.com/decolua/9router/pull/2533
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2526 — fix(combos): hide disabled provider connections
-
-- url: https://github.com/decolua/9router/pull/2526
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1548,31 +1482,9 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2443 — fix: prevent duplicate system prompt injection in multi-turn conversations
-
-- url: https://github.com/decolua/9router/pull/2443
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2439 — feat(xai): expose current Grok models and bare routing
 
 - url: https://github.com/decolua/9router/pull/2439
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2437 — feat: add Chenzk API provider
-
-- url: https://github.com/decolua/9router/pull/2437
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1595,28 +1507,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2401 — fix(translator): preserve reasoning/thinking history across the OpenAI request bridge
 
 - url: https://github.com/decolua/9router/pull/2401
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2399 — fix(translator): register openai response projection for gemini-family clients
-
-- url: https://github.com/decolua/9router/pull/2399
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2396 — fix(translator): make commandcode ensureState idempotent regardless of pre-set responseId
-
-- url: https://github.com/decolua/9router/pull/2396
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
@@ -1713,17 +1603,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
-## PR #2340 — fix(kimchi): implement dynamic User-Agent version detection
-
-- url: https://github.com/decolua/9router/pull/2340
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
 ## PR #2329 — fix(i18n): wrap hardcoded UI strings in Combos page, Header, and embedding modal
 
 - url: https://github.com/decolua/9router/pull/2329
@@ -1738,17 +1617,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 ## PR #2325 — fix(github): use goldeneye-free-auto as default model for Copilot free tier (#2276)
 
 - url: https://github.com/decolua/9router/pull/2325
-- upstream-state: open (seeded 2026-08-28)
-- local-status: queued
-- branch: 
-- local-ref: 
-- disposition: 
-- validation: 
-- notes: 
-
-## PR #2324 — fix(cli): stop Headroom proxy on shutdown and before npm upgrade (EBUSY #2265)
-
-- url: https://github.com/decolua/9router/pull/2324
 - upstream-state: open (seeded 2026-08-28)
 - local-status: queued
 - branch: 
