@@ -11,9 +11,20 @@ const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
   label: p.name,
 }));
 
+// AUTH_METHODS entries carry only an id, so `m.name` is undefined and these
+// three controls rendered as an icon with no text. Copy and iconography live in
+// this layer, so the labels and glyphs are named here; the missing `name` field
+// itself belongs to src/shared/constants/providers.js and is in the handoff.
+const AUTH_METHOD_COPY = {
+  oauth: { label: "OAuth", icon: "shield_person" },
+  apikey: { label: "API key", icon: "key" },
+  cookie: { label: "Cookie", icon: "cookie" },
+};
+
 const authMethodOptions = Object.values(AUTH_METHODS).map((m) => ({
   value: m.id,
-  label: m.name,
+  label: AUTH_METHOD_COPY[m.id]?.label || m.name || m.id,
+  icon: AUTH_METHOD_COPY[m.id]?.icon || "lock",
 }));
 
 export default function NewProviderPage() {
@@ -78,9 +89,9 @@ export default function NewProviderPage() {
       <div className="mb-8">
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors duration-150 mb-4"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
         <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
@@ -109,7 +120,7 @@ export default function NewProviderPage() {
               <div
                 className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border"
               >
-                <span
+                <span aria-hidden="true"
                   className="material-symbols-outlined text-xl"
                   style={{ color: selectedProvider.color }}
                 >
@@ -128,7 +139,7 @@ export default function NewProviderPage() {
           {/* Auth Method */}
           <div className="flex flex-col gap-3">
             <label className="text-sm font-medium">
-              Authentication Method <span className="text-red-500">*</span>
+              Authentication Method <span className="text-danger">*</span>
             </label>
             <div className="flex gap-3">
               {authMethodOptions.map((method) => (
@@ -136,14 +147,14 @@ export default function NewProviderPage() {
                   key={method.value}
                   type="button"
                   onClick={() => handleChange("authMethod", method.value)}
-                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border transition-all ${
+                  className={`focus-ring flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border transition-colors duration-150 ${
                     formData.authMethod === method.value
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:border-primary/50"
+                      ? "border-brand bg-brand-soft text-brand"
+                      : "border-border hover:border-brand-line"
                   }`}
                 >
-                  <span className="material-symbols-outlined">
-                    {method.value === "api_key" ? "key" : "lock"}
+                  <span aria-hidden="true" className="material-symbols-outlined">
+                    {method.icon}
                   </span>
                   <span className="font-medium">{method.label}</span>
                 </button>
@@ -196,7 +207,7 @@ export default function NewProviderPage() {
 
           {/* Error Message */}
           {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+            <div className="p-4 rounded-lg bg-danger-soft border border-danger-line text-danger text-sm">
               {errors.submit}
             </div>
           )}

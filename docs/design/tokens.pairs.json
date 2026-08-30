@@ -1,0 +1,48 @@
+{
+  "note": "Every text and control colour pair the system declares. Measured by docs/design/verification/contrast.mjs against the live values in src/app/globals.css. 4.5 is WCAG AA for body text, 3.0 is AA for large text and for non-text control boundaries.",
+  "pairs": [
+    { "fg": "--color-text", "bg": "--color-bg", "use": "body text on the page ground", "min": 4.5 },
+    { "fg": "--color-text", "bg": "--color-bg-alt", "use": "body text on the alternate ground", "min": 4.5 },
+    { "fg": "--color-text", "bg": "--color-surface", "use": "body text on a raised surface", "min": 4.5 },
+    { "fg": "--color-text", "bg": "--color-surface-2", "use": "body text on an inset region", "min": 4.5 },
+    { "fg": "--color-text", "bg": "--color-surface-3", "use": "body text on a sunken region", "min": 4.5 },
+    { "fg": "--color-text-muted", "bg": "--color-bg", "use": "secondary text on the page ground", "min": 4.5 },
+    { "fg": "--color-text-muted", "bg": "--color-surface", "use": "secondary text on a raised surface", "min": 4.5 },
+    { "fg": "--color-text-muted", "bg": "--color-surface-2", "use": "secondary text on an inset region", "min": 4.5 },
+    { "fg": "--color-text-muted", "bg": "--color-surface-3", "use": "secondary text on a sunken region", "min": 4.5 },
+    { "fg": "--color-text-subtle", "bg": "--color-bg", "use": "tertiary text on the page ground", "min": 4.5 },
+    { "fg": "--color-text-subtle", "bg": "--color-surface", "use": "tertiary text on a raised surface", "min": 4.5 },
+
+    { "fg": "--color-brand", "bg": "--color-surface", "use": "accent text on a raised surface", "min": 4.5 },
+    { "fg": "--color-brand", "bg": "--color-bg", "use": "accent text on the page ground", "min": 4.5 },
+    { "fg": "--color-brand-on", "bg": "--color-brand-solid", "use": "label on a solid accent control", "min": 4.5 },
+    { "fg": "--color-brand-on", "bg": "--color-brand-solid-hover", "use": "label on a hovered accent control", "min": 4.5 },
+    { "fg": "--color-brand", "bg": "--color-brand-soft", "use": "accent text on its own soft field", "min": 4.5 },
+    { "fg": "--color-brand-solid", "bg": "--color-surface", "use": "focus ring against a raised surface", "min": 3.0 },
+    { "fg": "--color-brand-solid", "bg": "--color-bg", "use": "focus ring against the page ground", "min": 3.0 },
+
+    { "fg": "--color-danger", "bg": "--color-surface", "use": "danger text on a raised surface", "min": 4.5 },
+    { "fg": "--color-danger", "bg": "--color-bg", "use": "danger text on the page ground", "min": 4.5 },
+    { "fg": "--color-danger", "bg": "--color-danger-soft", "use": "danger text on its own soft field", "min": 4.5 },
+    { "fg": "--color-danger-on", "bg": "--color-danger-solid", "use": "label on a solid danger control", "min": 4.5 },
+    { "fg": "--color-danger-on", "bg": "--color-danger-solid-hover", "use": "label on a hovered danger control", "min": 4.5 },
+
+    { "fg": "--color-success", "bg": "--color-surface", "use": "success text on a raised surface", "min": 4.5 },
+    { "fg": "--color-success", "bg": "--color-bg", "use": "success text on the page ground", "min": 4.5 },
+    { "fg": "--color-success", "bg": "--color-success-soft", "use": "success text on its own soft field", "min": 4.5 },
+    { "fg": "--color-success-on", "bg": "--color-success-solid", "use": "label on a solid success control", "min": 4.5 },
+    { "fg": "--color-success-on", "bg": "--color-success-solid-hover", "use": "label on a hovered success control", "min": 4.5 },
+
+    { "fg": "--color-warning", "bg": "--color-surface", "use": "warning text on a raised surface", "min": 4.5 },
+    { "fg": "--color-warning", "bg": "--color-bg", "use": "warning text on the page ground", "min": 4.5 },
+    { "fg": "--color-warning", "bg": "--color-warning-soft", "use": "warning text on its own soft field", "min": 4.5 },
+    { "fg": "--color-warning-on", "bg": "--color-warning-solid", "use": "label on a solid warning control", "min": 4.5 },
+    { "fg": "--color-warning-on", "bg": "--color-warning-solid-hover", "use": "label on a hovered warning control", "min": 4.5 },
+
+    { "fg": "--color-info", "bg": "--color-surface", "use": "info text on a raised surface", "min": 4.5 },
+    { "fg": "--color-info", "bg": "--color-bg", "use": "info text on the page ground", "min": 4.5 },
+    { "fg": "--color-info", "bg": "--color-info-soft", "use": "info text on its own soft field", "min": 4.5 },
+    { "fg": "--color-info-on", "bg": "--color-info-solid", "use": "label on a solid info control", "min": 4.5 },
+    { "fg": "--color-info-on", "bg": "--color-info-solid-hover", "use": "label on a hovered info control", "min": 4.5 }
+  ]
+}

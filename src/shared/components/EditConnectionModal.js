@@ -63,7 +63,7 @@ function QuotaPauseField({ connection, thresholds, onChange }) {
                   onChange={(e) =>
                     onChange(w.key, Number.parseInt(e.target.value, 10) || 0)
                   }
-                  className="w-16 px-2 py-1 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                  className="focus-ring w-16 px-2 py-1 text-sm border border-border rounded-lg bg-surface focus:border-brand-solid"
                 />
                 <span className="text-xs text-text-muted">%</span>
               </div>

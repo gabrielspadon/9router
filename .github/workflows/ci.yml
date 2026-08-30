@@ -1,0 +1,203 @@
+name: CI
+
+# No paths / paths-ignore filter belongs on this on: block. These jobs carry
+# required check names, and a run skipped by a path filter reports neither
+# success nor failure, leaving the check Pending and the pull request
+# unmergeable forever. Skip work at job level with if:, which still reports
+# success.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The blocking lint step diffs against the base commit, which a
+          # depth-1 checkout does not contain.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # package-lock.json is in .gitignore and no lockfile is committed, so
+      # `npm ci` cannot resolve a tree and setup-node's npm cache has nothing to
+      # key on. `npm install` is the install command everywhere in this repo,
+      # matching gitbook-pages.yml.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Two-tier on purpose. `npx eslint .` is red on master with a backlog of
+      # react-hooks findings in the routing and store layers that predate this
+      # workflow, so making it the merge gate would wedge every pull request on
+      # debt its author did not create. The blocking gate is therefore the diff:
+      # every file a pull request touches must lint clean. The whole-tree run
+      # stays as a visible, non-blocking report so the backlog does not go quiet.
+      - name: ESLint (new findings in changed files, blocking)
+        run: |
+          # The gate is that a pull request introduces no NEW finding, not that
+          # every file it touches is already clean. Requiring the latter wedges
+          # exactly the pull request this comment says it wants to protect: a
+          # file carrying pre-existing react-hooks debt blocks anyone who edits
+          # a class name in it, on debt they did not create.
+          #
+          # Both sides are linted with the same config and dependencies, and the
+          # comparison keys on file and rule rather than line, so a finding that
+          # merely moved down a file is not counted as new.
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "no usable base ref, linting the whole tree instead"
+            npx eslint .
+            exit $?
+          fi
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$base"...HEAD \
+            | grep -E '\.(js|jsx|mjs)$' | while read -r f; do [ -f "$f" ] && echo "$f"; done)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no changed JavaScript files"
+            exit 0
+          fi
+          printf 'comparing %d changed file(s) against %s\n' "${#files[@]}" "$base"
+          npx eslint --no-error-on-unmatched-pattern -f json "${files[@]}" > /tmp/head.json || true
+
+          wt=$(mktemp -d)
+          git worktree add --detach "$wt" "$base" >/dev/null 2>&1
+          ln -sfn "$PWD/node_modules" "$wt/node_modules"
+          cp eslint.config.mjs "$wt/eslint.config.mjs" 2>/dev/null || true
+          base_files=()
+          for f in "${files[@]}"; do [ -f "$wt/$f" ] && base_files+=("$f"); done
+          if [ "${#base_files[@]}" -gt 0 ]; then
+            ( cd "$wt" && npx eslint --no-error-on-unmatched-pattern -f json "${base_files[@]}" > /tmp/base.json 2>/dev/null ) || true
+          else
+            echo '[]' > /tmp/base.json
+          fi
+          git worktree remove --force "$wt" >/dev/null 2>&1 || true
+
+          node - /tmp/base.json /tmp/head.json <<'NODE'
+          const fs = require("node:fs");
+          const [, , baseP, headP] = process.argv;
+          const load = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; } };
+          const tally = (rs) => {
+            const m = new Map();
+            for (const r of rs) {
+              const f = r.filePath.replace(/^.*?\/(src|docs|cli|tests)\//, "$1/");
+              for (const msg of r.messages || []) {
+                const k = `${f}|${msg.ruleId || "syntax"}`;
+                m.set(k, (m.get(k) || 0) + 1);
+              }
+            }
+            return m;
+          };
+          const base = tally(load(baseP)), head = tally(load(headP));
+          const grew = [];
+          for (const [k, n] of head) { const was = base.get(k) || 0; if (n > was) grew.push(`${k}  ${was} -> ${n}`); }
+          const sum = (m) => [...m.values()].reduce((a, b) => a + b, 0);
+          console.log(`findings in changed files: ${sum(base)} at base, ${sum(head)} on this branch`);
+          if (grew.length) {
+            console.log(`NEW_LINT_FINDINGS=${grew.length}`);
+            grew.slice(0, 40).forEach((g) => console.log("  " + g));
+            process.exit(1);
+          }
+          console.log("no new lint findings");
+          NODE
+
+      - name: ESLint (whole tree, reporting only)
+        continue-on-error: true
+        run: npx eslint .
+
+  baseline:
+    name: Baseline regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Root dependencies first. The suite imports from src/ and open-sse/, so
+      # it cannot run on the tests package alone.
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund
+
+      # tests/ is an independent ESM package with its own package.json.
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+
+      # The suite is deliberately not green on a plain checkout. A set of
+      # failures predates this fork and is catalogued in
+      # tests/__baseline__/known-fails.txt, so vitest exits nonzero by design and
+      # its exit code is not the verdict. Swallow it here, then fail if no report
+      # was written, which is what a crash rather than a test failure looks like.
+      #
+      # Both reporters are needed. The json reporter is the gate's only input,
+      # and on its own it silences the console, leaving a failure with no message
+      # to read. The default reporter puts that detail back in this job's log.
+      #
+      # The raised timeouts are not a way of letting slow code pass. Several
+      # tests dynamically import a large module graph inside the test body, and
+      # vitest's 5000ms default counts that import against the test. On a loaded
+      # machine, and a 2-vCPU hosted runner is one, those tests time out for
+      # reasons that have nothing to do with the change under review, which would
+      # make the gate below report phantom regressions. Raising a timeout can
+      # only turn a failing test into a passing one, and the gate flags only the
+      # pass to fail direction, so it cannot hide a real regression. If phantom
+      # failures persist, lower --maxConcurrency (the config sets 60, for real
+      # provider runs) before raising these further.
+      - name: Run the suite and write a JSON report
+        working-directory: tests
+        run: |
+          # `devin-cli-executor` asserts the executor does not set
+          # XDG_CONFIG_HOME when DEVIN_MCP_SERVERS is absent. GitHub runners
+          # define XDG_CONFIG_HOME in the ambient environment, so the assertion
+          # sees an inherited value and fails there while passing on a developer
+          # machine where it is unset. Reproduced locally by exporting it, and
+          # fixed by unsetting rather than blanking: the assertion is on the
+          # variable being defined, so an empty string still fails.
+          unset XDG_CONFIG_HOME
+          npx vitest run \
+            --testTimeout=30000 \
+            --hookTimeout=30000 \
+            --reporter=default \
+            --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/vitest-results.json" || true
+          test -s "$RUNNER_TEMP/vitest-results.json"
+
+      # The verdict. Exits 0 only when every currently failing test is already in
+      # the baseline, and names the offenders otherwise. Reads the report path as
+      # its one argument, which is the interface the script defines.
+      - name: Verify no regression against the baseline
+        run: node tests/__baseline__/verify-no-regression.mjs "$RUNNER_TEMP/vitest-results.json"
+
+      # Byte-for-byte snapshots of the provider registry, alias resolution and
+      # OAuth endpoints. Each takes no arguments and exits nonzero on any drift.
+      # They are cheap and independent of the suite, so they run even when the
+      # gate above has already failed.
+      - name: Verify provider registry snapshot
+        if: always()
+        run: node tests/__baseline__/verify-providers.mjs
+
+      - name: Verify alias resolution snapshot
+        if: always()
+        run: node tests/__baseline__/verify-alias.mjs
+
+      - name: Verify OAuth URL snapshot
+        if: always()
+        run: node tests/__baseline__/verify-oauth-urls.mjs

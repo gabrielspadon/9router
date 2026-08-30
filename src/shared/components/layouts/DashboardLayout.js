@@ -5,28 +5,29 @@ import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
+import Button from "@/shared/components/Button";
 
 function getToastStyle(type) {
   if (type === "success") {
     return {
-      wrapper: "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400",
+      wrapper: "border-success-line bg-success-soft text-success",
       icon: "check_circle",
     };
   }
   if (type === "error") {
     return {
-      wrapper: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+      wrapper: "border-danger-line bg-danger-soft text-danger",
       icon: "error",
     };
   }
   if (type === "warning") {
     return {
-      wrapper: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      wrapper: "border-warning-line bg-warning-soft text-warning",
       icon: "warning",
     };
   }
   return {
-    wrapper: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    wrapper: "border-info-line bg-info-soft text-info",
     icon: "info",
   };
 }
@@ -45,7 +46,7 @@ export default function DashboardLayout({ children }) {
           return (
             <div
               key={n.id}
-              className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${style.wrapper}`}
+              className={`rounded-lg border px-3 py-2 shadow-elev backdrop-blur-sm ${style.wrapper}`}
             >
               <div className="flex items-start gap-2">
                 <span className="material-symbols-outlined text-[18px] leading-5">{style.icon}</span>
@@ -54,14 +55,15 @@ export default function DashboardLayout({ children }) {
                   <p className="text-xs whitespace-pre-wrap break-words">{n.message}</p>
                 </div>
                 {n.dismissible ? (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     type="button"
                     onClick={() => removeNotification(n.id)}
                     className="text-current/70 hover:text-current"
                     aria-label="Dismiss notification"
                   >
                     <span className="material-symbols-outlined text-[16px]">close</span>
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

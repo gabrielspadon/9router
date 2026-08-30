@@ -298,14 +298,14 @@ export default function AddApiKeyModal({
               )}
             </p>
             <textarea
-              className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
+              className="focus-ring w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px]"
               placeholder={bulkPlaceholder}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
             {bulkResult && (
               <div
-                className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-yellow-400" : "text-green-400"}`}
+                className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-warning" : "text-success"}`}
               >
                 ✓ {bulkResult.success} added
                 {bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ""}
@@ -406,7 +406,7 @@ export default function AddApiKeyModal({
                       href={website}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary underline"
+                      className="focus-ring text-brand underline"
                     >
                       Open {website.replace(/^https?:\/\//, "")}
                     </a>
@@ -466,7 +466,7 @@ export default function AddApiKeyModal({
               </Badge>
             )}
             {error && (
-              <p className="text-xs text-red-500 break-words">{error}</p>
+              <p className="text-xs text-danger break-words">{error}</p>
             )}
             {isCompatible && (
               <p className="text-xs text-text-muted">
@@ -496,7 +496,7 @@ export default function AddApiKeyModal({
                     href="https://dash.cloudflare.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary underline"
+                    className="focus-ring text-brand underline"
                   >
                     dash.cloudflare.com
                   </a>

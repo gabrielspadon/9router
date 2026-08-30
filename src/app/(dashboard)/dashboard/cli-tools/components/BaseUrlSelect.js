@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import Button from "@/shared/components/Button";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
@@ -147,7 +148,7 @@ export default function BaseUrlSelect({
         <select
           value={mode}
           onChange={handleSelect}
-          className="flex-1 min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+          className="flex-1 min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus-ring sm:py-1.5"
         >
           {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -155,9 +156,9 @@ export default function BaseUrlSelect({
           {canSave && <option value={SAVE_VALUE}>+ Save current as...</option>}
         </select>
         {isSaved && (
-          <button type="button" onClick={handleDeleteSaved} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors shrink-0" title="Delete saved endpoint">
+          <Button variant="bare" size="icon-sm" type="button" onClick={handleDeleteSaved} aria-label="Delete saved endpoint" className="text-text-muted hover:text-danger shrink-0" title="Delete saved endpoint">
             <span className="material-symbols-outlined text-[14px]">delete</span>
-          </button>
+          </Button>
         )}
       </div>
       {isCustom && (
@@ -166,7 +167,7 @@ export default function BaseUrlSelect({
           value={customInput}
           onChange={handleCustomInput}
           placeholder={withV1 ? "https://example.com/v1" : "https://example.com"}
-          className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+          className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5"
         />
       )}
     </div>

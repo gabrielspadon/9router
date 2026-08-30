@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/shared/components/Card";
+import Button from "@/shared/components/Button";
 import PricingModal from "@/shared/components/PricingModal";
 
 export default function PricingSettingsPage() {
@@ -51,54 +52,53 @@ export default function PricingSettingsPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Pricing Settings</h1>
-          <p className="text-text-muted mt-1">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-text-main">Pricing Settings</h1>
+          <p className="text-xs text-text-muted mt-1">
             Configure pricing rates for cost tracking and calculations
           </p>
         </div>
-        <button
+        <Button
+          variant="primary"
+          icon="edit"
+          className="focus-ring"
           onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 transition-colors"
         >
           Edit Pricing
-        </button>
+        </Button>
       </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-4">
-          <div className="text-text-muted text-sm uppercase font-semibold">
-            Total Models
-          </div>
-          <div className="text-2xl font-bold mt-1">
+        <Card padding="sm">
+          <div className="text-xs text-text-muted">Total Models</div>
+          <div className="text-lg font-semibold text-text-main metric mt-1">
             {loading ? "..." : getModelCount()}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-text-muted text-sm uppercase font-semibold">
-            Providers
-          </div>
-          <div className="text-2xl font-bold mt-1">
+        <Card padding="sm">
+          <div className="text-xs text-text-muted">Providers</div>
+          <div className="text-lg font-semibold text-text-main metric mt-1">
             {loading ? "..." : getProviders().length}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-text-muted text-sm uppercase font-semibold">
-            Status
-          </div>
-          <div className="text-2xl font-bold mt-1 text-success">
+        <Card padding="sm">
+          <div className="text-xs text-text-muted">Status</div>
+          <div className="flex items-center gap-1.5 text-lg font-semibold text-success mt-1">
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              check_circle
+            </span>
             {loading ? "..." : "Active"}
           </div>
         </Card>
       </div>
 
       {/* Info Section */}
-      <Card className="p-6">
-        <h2 className="text-xl font-semibold mb-4">How Pricing Works</h2>
+      <Card padding="none" className="p-5">
+        <h2 className="text-sm font-semibold text-text-main mb-4">How Pricing Works</h2>
         <div className="space-y-3 text-sm text-text-muted">
           <p>
             <strong>Cost Calculation:</strong> Costs are calculated based on token usage and pricing rates.
@@ -126,37 +126,39 @@ export default function PricingSettingsPage() {
       </Card>
 
       {/* Current Pricing Preview */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Current Pricing Overview</h2>
-          <button
+      <Card padding="none" className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <h2 className="text-sm font-semibold text-text-main min-w-0">Current Pricing Overview</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="focus-ring"
             onClick={() => setShowModal(true)}
-            className="text-primary hover:underline text-sm"
           >
             View Full Details
-          </button>
+          </Button>
         </div>
 
         {loading ? (
-          <div className="text-center py-4 text-text-muted">Loading pricing data...</div>
+          <div className="text-center py-4 text-sm text-text-muted">Loading pricing data...</div>
         ) : currentPricing ? (
           <div className="space-y-3">
             {Object.keys(currentPricing).slice(0, 5).map(provider => (
-              <div key={provider} className="text-sm">
-                <span className="font-semibold">{provider.toUpperCase()}:</span>{" "}
+              <div key={provider} className="text-sm text-text-main">
+                <span className="font-semibold">{provider.toUpperCase()}</span>{" "}
                 <span className="text-text-muted">
-                  {Object.keys(currentPricing[provider]).length} models
+                  <span className="metric">{Object.keys(currentPricing[provider]).length}</span> models
                 </span>
               </div>
             ))}
             {Object.keys(currentPricing).length > 5 && (
               <div className="text-sm text-text-muted">
-                + {Object.keys(currentPricing).length - 5} more providers
+                + <span className="metric">{Object.keys(currentPricing).length - 5}</span> more providers
               </div>
             )}
           </div>
         ) : (
-          <div className="text-text-muted">No pricing data available</div>
+          <div className="text-sm text-text-muted">No pricing data available</div>
         )}
       </Card>
 

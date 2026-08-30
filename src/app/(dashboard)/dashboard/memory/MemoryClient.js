@@ -69,15 +69,15 @@ export default function MemoryClient() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       {/* Header Banner */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-3xl text-primary">
+          <span className="material-symbols-outlined text-[24px] text-text-muted" aria-hidden="true">
             psychology
           </span>
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-text-main flex items-center gap-2">
               AI Memory & Context Management
             </h1>
             <p className="text-sm text-text-muted">
@@ -86,7 +86,7 @@ export default function MemoryClient() {
                 href="https://github.com/akitaonrails/ai-memory"
                 target="_blank"
                 rel="noreferrer"
-                className="text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-brand underline hover:no-underline"
               >
                 ai-memory
               </a>
@@ -100,8 +100,8 @@ export default function MemoryClient() {
       <Card id="tool-pruning">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">build_circle</span>
-            <h2 className="text-lg font-semibold">Historical Tool Output Pruning</h2>
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">build_circle</span>
+            <h2 className="text-sm font-semibold text-text-main">Historical Tool Output Pruning</h2>
           </div>
           <Toggle checked={memoryToolPruningEnabled} onChange={handleMemoryToolPruning} />
         </div>
@@ -110,7 +110,7 @@ export default function MemoryClient() {
         </p>
 
         {memoryToolPruningEnabled && (
-          <div className="bg-surface-2 p-4 rounded-lg border border-border grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="bg-surface-2 p-4 rounded-[var(--radius-brand)] border border-border grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">
                 Keep Recent Tool Turns Full
@@ -125,10 +125,10 @@ export default function MemoryClient() {
                   setMemoryMaxToolTurnsKeepFull(val);
                   patchSetting({ memoryMaxToolTurnsKeepFull: val });
                 }}
-                className="w-full rounded border border-border bg-surface px-3 py-1.5 font-mono text-sm"
+                className="focus-ring w-full rounded-[var(--radius-brand)] border border-border bg-surface px-3 py-1.5 font-mono text-sm text-text-main metric"
               />
               <span className="text-xs text-text-muted mt-1 block">
-                The most recent {memoryMaxToolTurnsKeepFull} tool results will never be truncated.
+                The most recent <span className="metric">{memoryMaxToolTurnsKeepFull}</span> tool results will never be truncated.
               </span>
             </div>
             <div>
@@ -146,10 +146,10 @@ export default function MemoryClient() {
                   setMemoryMaxHistoricalToolChars(val);
                   patchSetting({ memoryMaxHistoricalToolChars: val });
                 }}
-                className="w-full rounded border border-border bg-surface px-3 py-1.5 font-mono text-sm"
+                className="focus-ring w-full rounded-[var(--radius-brand)] border border-border bg-surface px-3 py-1.5 font-mono text-sm text-text-main metric"
               />
               <span className="text-xs text-text-muted mt-1 block">
-                Older tool turns beyond recent window are bounded to {memoryMaxHistoricalToolChars} chars.
+                Older tool turns beyond recent window are bounded to <span className="metric">{memoryMaxHistoricalToolChars}</span> chars.
               </span>
             </div>
           </div>
@@ -160,8 +160,8 @@ export default function MemoryClient() {
       <Card id="media-pruning">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">image</span>
-            <h2 className="text-lg font-semibold">Historical Media & Attachment Pruning</h2>
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">image</span>
+            <h2 className="text-sm font-semibold text-text-main">Historical Media & Attachment Pruning</h2>
           </div>
           <Toggle checked={memoryMediaPruningEnabled} onChange={handleMemoryMediaPruning} />
         </div>
@@ -174,8 +174,8 @@ export default function MemoryClient() {
       <Card id="compaction">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">compress</span>
-            <h2 className="text-lg font-semibold">Sliding Window Context Compaction</h2>
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">compress</span>
+            <h2 className="text-sm font-semibold text-text-main">Sliding Window Context Compaction</h2>
           </div>
           <Toggle checked={memoryCompactionEnabled} onChange={handleMemoryCompaction} />
         </div>
@@ -184,7 +184,7 @@ export default function MemoryClient() {
         </p>
 
         {memoryCompactionEnabled && (
-          <div className="bg-surface-2 p-4 rounded-lg border border-border grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="bg-surface-2 p-4 rounded-[var(--radius-brand)] border border-border grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">
                 Compaction Token Threshold
@@ -200,10 +200,10 @@ export default function MemoryClient() {
                   setMemoryCompactionThresholdTokens(val);
                   patchSetting({ memoryCompactionThresholdTokens: val });
                 }}
-                className="w-full rounded border border-border bg-surface px-3 py-1.5 font-mono text-sm"
+                className="focus-ring w-full rounded-[var(--radius-brand)] border border-border bg-surface px-3 py-1.5 font-mono text-sm text-text-main metric"
               />
               <span className="text-xs text-text-muted mt-1 block">
-                Trigger compaction only when estimated history exceeds {memoryCompactionThresholdTokens.toLocaleString()} tokens.
+                Trigger compaction only when estimated history exceeds <span className="metric">{memoryCompactionThresholdTokens.toLocaleString()}</span> tokens.
               </span>
             </div>
             <div>
@@ -220,10 +220,10 @@ export default function MemoryClient() {
                   setMemoryRecentTurnsToKeep(val);
                   patchSetting({ memoryRecentTurnsToKeep: val });
                 }}
-                className="w-full rounded border border-border bg-surface px-3 py-1.5 font-mono text-sm"
+                className="focus-ring w-full rounded-[var(--radius-brand)] border border-border bg-surface px-3 py-1.5 font-mono text-sm text-text-main metric"
               />
               <span className="text-xs text-text-muted mt-1 block">
-                The latest {memoryRecentTurnsToKeep} conversation turns will remain uncompacted.
+                The latest <span className="metric">{memoryRecentTurnsToKeep}</span> conversation turns will remain uncompacted.
               </span>
             </div>
           </div>
@@ -235,8 +235,8 @@ export default function MemoryClient() {
       <Card id="handoff">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">sync_alt</span>
-            <h2 className="text-lg font-semibold">Cross-Session Handoff Continuity</h2>
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">sync_alt</span>
+            <h2 className="text-sm font-semibold text-text-main">Cross-Session Handoff Continuity</h2>
           </div>
           <Toggle checked={memoryHandoffEnabled} onChange={handleMemoryHandoff} />
         </div>

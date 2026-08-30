@@ -13,7 +13,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className="bg-[#FCFBF9] text-[#6B7280]">
+      <body className="bg-bg text-text-muted">
         {children}
       </body>
     </html>

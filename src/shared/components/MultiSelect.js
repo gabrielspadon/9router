@@ -57,11 +57,10 @@ export default function MultiSelect({
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "w-full h-10 px-3 flex items-center justify-between gap-2 text-sm",
-          "bg-surface-2 border border-transparent rounded-[10px]",
-          "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
-          "transition-all duration-150 cursor-pointer hover:border-border",
-          open && "ring-2 ring-brand-500/30 border-brand-500/40"
+          "focus-ring w-full h-10 px-3 flex items-center justify-between gap-2 text-sm",
+          "bg-surface border border-border rounded-[var(--radius-brand)]",
+          "transition-colors duration-150 cursor-pointer hover:border-brand-line",
+          open && "border-brand-line"
         )}
       >
         <span className={cn(selected.length === 0 || allSelected ? "text-text-muted" : "text-text-main")}>
@@ -73,7 +72,7 @@ export default function MultiSelect({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-[10px] border border-border bg-surface shadow-lg max-h-64 overflow-auto py-1">
+        <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-[10px] border border-border bg-surface shadow-elev max-h-64 overflow-auto py-1">
           <button
             type="button"
             onClick={() => { onChange([]); }}
@@ -85,7 +84,7 @@ export default function MultiSelect({
             <span
               className={cn(
                 "flex h-4 w-4 items-center justify-center rounded border",
-                allSelected ? "bg-brand-500 border-brand-500 text-white" : "border-border"
+                allSelected ? "bg-brand-solid border-brand-solid text-brand-on" : "border-border"
               )}
             >
               {allSelected && <span className="material-symbols-outlined text-[13px]">check</span>}
@@ -104,7 +103,7 @@ export default function MultiSelect({
                 <span
                   className={cn(
                     "flex h-4 w-4 items-center justify-center rounded border",
-                    isSel ? "bg-brand-500 border-brand-500 text-white" : "border-border"
+                    isSel ? "bg-brand-solid border-brand-solid text-brand-on" : "border-border"
                   )}
                 >
                   {isSel && <span className="material-symbols-outlined text-[13px]">check</span>}

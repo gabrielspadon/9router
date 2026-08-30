@@ -37,13 +37,13 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
 
   const renderStatus = () => {
     if (isNoAuth) return <Badge variant="success" size="sm">Ready</Badge>;
-    if (allDisabled) return <Badge variant="default" size="sm">Disabled</Badge>;
+    if (allDisabled) return <Badge variant="neutral" size="sm">Disabled</Badge>;
     if (total === 0) return <span className="text-xs text-text-muted">No connections</span>;
     return (
       <>
         {connected > 0 && <Badge variant="success" size="sm" dot>{connected} Connected</Badge>}
-        {error > 0 && <Badge variant="error" size="sm" dot>{error} Error</Badge>}
-        {connected === 0 && error === 0 && <Badge variant="default" size="sm">{total} Added</Badge>}
+        {error > 0 && <Badge variant="danger" size="sm" dot>{error} Error</Badge>}
+        {connected === 0 && error === 0 && <Badge variant="neutral" size="sm">{total} Added</Badge>}
       </>
     );
   };
@@ -52,7 +52,7 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
     <Link href={`/dashboard/media-providers/${kind}/${provider.id}`} className="group">
       <Card
         padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        className={`h-full hover:bg-surface-2 transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -70,9 +70,9 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
               />
             </div>
             <div className="min-w-0">
-              <h3 className="font-semibold text-sm">{provider.name}</h3>
+              <h3 className="text-sm font-semibold text-text-main">{provider.name}</h3>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                {isCustom && <Badge variant="default" size="sm">Custom</Badge>}
+                {isCustom && <Badge variant="neutral" size="sm">Custom</Badge>}
                 {renderStatus()}
               </div>
             </div>
@@ -102,10 +102,10 @@ function ComboList({ combos }) {
     <div className="flex flex-col gap-2">
       {combos.map((combo) => (
         <Link key={combo.id} href={`/dashboard/media-providers/combo/${combo.id}`}>
-          <Card padding="xs" className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors cursor-pointer">
+          <Card padding="xs" className="hover:bg-surface-2 transition-colors cursor-pointer">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
-              <code className="text-sm font-mono font-medium flex-1 truncate">{combo.name}</code>
+              <span className="material-symbols-outlined text-text-muted text-[18px]" aria-hidden="true">layers</span>
+              <code className="text-sm font-mono font-medium text-text-main flex-1 truncate">{combo.name}</code>
               <div className="flex flex-wrap items-center gap-1 sm:shrink-0">
                 {combo.models.slice(0, 6).map((entry, i) => {
                   const pid = typeof entry === "string" ? entry.split("/")[0] : "";
@@ -124,11 +124,11 @@ function ComboList({ combos }) {
                   );
                 })}
                 {combo.models.length > 6 && (
-                  <span className="text-[10px] text-text-muted ml-1">+{combo.models.length - 6}</span>
+                  <span className="text-[10px] text-text-muted ml-1 metric">+{combo.models.length - 6}</span>
                 )}
               </div>
-              <span className="text-[11px] text-text-muted shrink-0">{combo.models.length}</span>
-              <span className="material-symbols-outlined text-text-muted text-[16px]">chevron_right</span>
+              <span className="text-xs text-text-muted shrink-0 metric">{combo.models.length}</span>
+              <span className="material-symbols-outlined text-text-muted text-[16px]" aria-hidden="true">chevron_right</span>
             </div>
           </Card>
         </Link>
@@ -185,7 +185,7 @@ export default function MediaProviderKindPage() {
   const customProviders = customNodes.map((n) => ({
     id: n.id,
     name: n.name || "Custom Embedding",
-    color: "#6366F1",
+    color: "#6B7280",
     textIcon: "CE",
   }));
 
@@ -247,7 +247,7 @@ export default function MediaProviderKindPage() {
       )}
 
       {allProviders.length === 0 ? (
-        <div className="text-center py-12 border border-dashed border-border rounded-xl text-text-muted text-sm">
+        <div className="text-center py-12 border border-dashed border-border rounded-[var(--radius-brand-lg)] text-text-muted text-sm">
           No providers support <strong>{kindConfig.label}</strong> yet.
         </div>
       ) : (

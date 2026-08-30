@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useReducer } from "react";
 import { translate, onLocaleChange } from "@/i18n/runtime";
+import Badge from "@/shared/components/Badge";
 import {
   AreaChart,
   Area,
@@ -13,7 +14,7 @@ import {
   
   Legend,
 } from "recharts";
-import { Card, SegmentedControl, MultiSelect } from "@/shared/components";
+import { Button, Card, MultiSelect, SegmentedControl } from "@/shared/components";
 import Pagination from "@/shared/components/Pagination";
 
 const PERIODS = [
@@ -169,7 +170,7 @@ export default function StatisticsContent({ initialData }) {
   const hasFilter = provider.length || account.length || model.length || period !== "all" || customRange;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-6">
       {/* Filter bar */}
       <Card padding="md">
         <div className="flex flex-wrap items-end gap-3">
@@ -225,7 +226,7 @@ export default function StatisticsContent({ initialData }) {
                   type="datetime-local"
                   value={customStart}
                   onChange={(e) => setCustomStart(e.target.value)}
-                  className="h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  className="focus-ring h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -234,39 +235,46 @@ export default function StatisticsContent({ initialData }) {
                   type="datetime-local"
                   value={customEnd}
                   onChange={(e) => setCustomEnd(e.target.value)}
-                  className="h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  className="focus-ring h-9 rounded-lg border border-border bg-surface-2 px-3 text-sm text-text-main"
                 />
               </div>
-              <button
+              <Button
+                variant="primary" size="md"
                 onClick={applyCustomRange}
-                className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-medium transition-colors hover:opacity-90 cursor-pointer"
               >
                 Apply
-              </button>
+              </Button>
             </div>
           )}
           {hasFilter && (
-            <button
+            <Button
+              variant="ghost" size="md"
               onClick={resetFilters}
-              className="h-9 px-3 text-sm text-text-muted hover:text-text-main transition-colors cursor-pointer"
             >
               Reset
-            </button>
+            </Button>
           )}
         </div>
       </Card>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-9">
-        <StatCard label="Requests" value={loading ? "…" : String(summary?.totalRequests ?? 0)} />
-        <StatCard label="Total Tokens" value={loading ? "…" : fmtTokens(summary?.totalTokens)} />
-        <StatCard label="Input Tokens" value={loading ? "…" : fmtTokens(summary?.inputTokens)} />
-        <StatCard label="Output Tokens" value={loading ? "…" : fmtTokens(summary?.outputTokens)} />
-        <StatCard label="Cache Read" value={loading ? "…" : fmtTokens(summary?.cacheReadTokens)} />
-        <StatCard label="Cache Write" value={loading ? "…" : fmtTokens(summary?.cacheCreationTokens)} />
-        <StatCard label="Cache Hit Rate" value={loading ? "…" : fmtPct(summary?.cacheHitRate)} />
-        <StatCard label="Avg Response" value={loading ? "…" : fmtDur(summary?.latency?.avgLatencyMs)} />
-        <StatCard label="Avg TTFT" value={loading ? "…" : fmtDur(summary?.latency?.avgTtftMs)} />
+      {/* Summary. Nine figures given identical weight made the page a wall of
+          equal numbers, most of them zero. Requests and total tokens orient the
+          reader; the other seven support them and are set in a dense band.
+          Every figure is still present. */}
+      <div className="grid gap-px bg-border border border-border">
+        <div className="grid grid-cols-1 gap-px sm:grid-cols-2">
+          <StatCard lead label="Requests" value={loading ? "…" : String(summary?.totalRequests ?? 0)} />
+          <StatCard lead label="Total Tokens" value={loading ? "…" : fmtTokens(summary?.totalTokens)} />
+        </div>
+        <div className="grid grid-cols-2 gap-px sm:grid-cols-4 xl:grid-cols-7">
+          <StatCard label="Input Tokens" value={loading ? "…" : fmtTokens(summary?.inputTokens)} />
+          <StatCard label="Output Tokens" value={loading ? "…" : fmtTokens(summary?.outputTokens)} />
+          <StatCard label="Cache Read" value={loading ? "…" : fmtTokens(summary?.cacheReadTokens)} />
+          <StatCard label="Cache Write" value={loading ? "…" : fmtTokens(summary?.cacheCreationTokens)} />
+          <StatCard label="Cache Hit Rate" value={loading ? "…" : fmtPct(summary?.cacheHitRate)} />
+          <StatCard label="Avg Response" value={loading ? "…" : fmtDur(summary?.latency?.avgLatencyMs)} />
+          <StatCard label="Avg TTFT" value={loading ? "…" : fmtDur(summary?.latency?.avgTtftMs)} />
+        </div>
       </div>
 
       {/* Trend chart */}
@@ -274,12 +282,12 @@ export default function StatisticsContent({ initialData }) {
         padding="md"
         title="Trends"
         action={
-          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1">
+          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-surface-2 p-1">
             {["tokens", "hitRate"].map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${viewMode === mode ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text-main"}`}
+                className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors duration-150 cursor-pointer ${viewMode === mode ? "bg-brand-solid text-brand-on shadow-soft" : "text-text-muted hover:text-text-main"}`}
               >
                 {mode === "tokens" ? "Tokens" : "Hit Rate"}
               </button>
@@ -354,9 +362,9 @@ export default function StatisticsContent({ initialData }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
-              <tr className="border-b border-border-subtle text-left text-xs text-text-muted">
+              <tr className="border-b border-border text-left text-xs text-text-muted">
                 {["Time", "Provider", "Account", "Model", "Input", "Output", "Cache Read", "Cache Write", "Hit Rate", "Time/TTFT", "Status"].map((h) => (
-                  <th key={h} className="px-4 py-2.5 font-medium whitespace-nowrap">{t(h)}</th>
+                  <th key={h} scope="col" className="px-4 py-3 font-medium">{t(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -365,18 +373,18 @@ export default function StatisticsContent({ initialData }) {
                 <tr><td colSpan={11} className="px-4 py-8 text-center text-text-muted">{t("No records for this selection")}</td></tr>
               )}
               {items.map((it) => (
-                <tr key={it.id} className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2/50">
-                  <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">{fmtTime(it.timestamp)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{providerNameMap[it.provider] || it.provider || "-"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{it.account || "-"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{it.model || "-"}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtTokens(it.inputTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtTokens(it.outputTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-blue-500">{fmtTokens(it.cacheReadTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-purple-500">{fmtTokens(it.cacheCreationTokens)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtPct(it.cacheHitRate)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtLatencyPair(it.latencyMs, it.ttftMs)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
+                <tr key={it.id} className="border-b border-border last:border-b-0 hover:bg-surface-2/50">
+                  <td className="px-4 py-3 text-text-muted whitespace-nowrap">{fmtTime(it.timestamp)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{providerNameMap[it.provider] || it.provider || "-"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{it.account || "-"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{it.model || "-"}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.inputTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.outputTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.cacheReadTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtTokens(it.cacheCreationTokens)}</td>
+                  <td className="px-4 py-3 text-right metric">{fmtPct(it.cacheHitRate)}</td>
+                  <td className="px-4 py-3 text-right metric whitespace-nowrap">{fmtLatencyPair(it.latencyMs, it.ttftMs)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <StatusBadge status={it.status} />
                   </td>
                 </tr>
@@ -384,7 +392,7 @@ export default function StatisticsContent({ initialData }) {
             </tbody>
           </table>
         </div>
-        <div className="px-4 border-t border-border-subtle">
+        <div className="px-4 border-t border-border">
           <Pagination
             currentPage={pagination.page}
             pageSize={pagination.pageSize}
@@ -416,25 +424,34 @@ const SERIES_LABELS = {
   cacheHitRate: "Hit Rate",
 };
 
-function StatCard({ label, value }) {
+// Hairlines come from the parent grid's gap, so the figures read as one
+// instrument face rather than nine separate cards. A card is for a portable
+// object, and a summary figure is not one.
+function StatCard({ label, value, lead = false }) {
   return (
-    <div className="rounded-[14px] border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
-      <p className="text-xs text-text-muted">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-text-main truncate">{value}</p>
+    <div className={`bg-surface ${lead ? "px-5 py-4" : "px-4 py-3"}`}>
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+        {label}
+      </p>
+      <p
+        className={`metric mt-1 truncate font-semibold text-text-main ${
+          lead ? "text-3xl" : "text-base"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
 
+// Request outcome. Badge supplies the glyph for the tone, so the result never
+// depends on hue alone. See TOKEN-CONTRACT.md section 1.
 function StatusBadge({ status }) {
   const ok = status === "success" || status === "ok" || status === "200 OK";
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-        ok ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"
-      }`}
-    >
+    <Badge variant={ok ? "success" : "danger"} size="sm">
       {ok ? "ok" : status || "error"}
-    </span>
+    </Badge>
   );
 }
 

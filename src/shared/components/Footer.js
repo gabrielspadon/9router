@@ -29,7 +29,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="col-span-2 lg:col-span-2">
             <div className="flex items-center gap-2 mb-6">
-              <div className="size-6 text-primary">
+              <div className="size-6 text-brand">
                 <svg className="w-full h-full" fill="currentColor" viewBox="0 0 48 48">
                   <path
                     clipRule="evenodd"
@@ -49,7 +49,7 @@ export default function Footer() {
             <div className="flex gap-4">
               <a
                 href="#"
-                className="text-gray-400 hover:text-primary transition-colors"
+                className="text-text-subtle hover:text-brand transition-colors"
                 aria-label="Twitter"
               >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -58,7 +58,7 @@ export default function Footer() {
               </a>
               <a
                 href="#"
-                className="text-gray-400 hover:text-primary transition-colors"
+                className="text-text-subtle hover:text-brand transition-colors"
                 aria-label="GitHub"
               >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -74,7 +74,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.product.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="hover:text-primary transition-colors">
+                  <Link href={link.href} className="hover:text-brand transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -88,7 +88,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.resources.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="hover:text-primary transition-colors">
+                  <Link href={link.href} className="hover:text-brand transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -102,7 +102,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.company.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="hover:text-primary transition-colors">
+                  <Link href={link.href} className="hover:text-brand transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -117,10 +117,10 @@ export default function Footer() {
             © {new Date().getFullYear()} {APP_CONFIG.name} Inc. All rights reserved.
           </p>
           <div className="flex gap-6 text-sm text-text-muted">
-            <Link href="#" className="hover:text-primary transition-colors">
+            <Link href="#" className="hover:text-brand transition-colors">
               Privacy Policy
             </Link>
-            <Link href="#" className="hover:text-primary transition-colors">
+            <Link href="#" className="hover:text-brand transition-colors">
               Terms of Service
             </Link>
           </div>

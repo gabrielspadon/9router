@@ -142,8 +142,12 @@ export default function LoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-text-muted mt-4">Loading...</p>
+          <div
+            className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand"
+            role="status"
+            aria-label="Loading"
+          ></div>
+          <p className="text-sm text-text-muted mt-4">Loading...</p>
         </div>
       </div>
     );
@@ -154,9 +158,17 @@ export default function LoginPage() {
       {/* Faint grid background */}
       <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">
+        <div className="flex flex-col items-center text-center gap-3 mb-6">
+          <div className="flex items-center gap-2.5">
+            <span
+              className="flex size-8 items-center justify-center rounded-[10px] bg-brand-soft border border-brand-line text-brand"
+              aria-hidden="true"
+            >
+              <span className="material-symbols-outlined text-[18px]">hub</span>
+            </span>
+            <h1 className="text-lg font-semibold text-text-main">9Router</h1>
+          </div>
+          <p className="text-sm text-text-muted">
             {samlAvailable
               ? "Sign in with SAML 2.0 Single Sign-On"
               : oidcAvailable
@@ -165,38 +177,58 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <Card>
+        <Card padding="none" className="p-5">
           {mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
-              <p className="text-sm text-amber-600 dark:text-amber-400 text-center">
-                Set a new password before accessing the dashboard remotely.
+              <p className="flex items-start gap-1.5 text-xs text-warning">
+                <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                  key
+                </span>
+                <span className="min-w-0">Set a new password before accessing the dashboard remotely.</span>
               </p>
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">New password</label>
+                <label className="text-sm font-medium text-text-main" htmlFor="new-password">
+                  New password
+                </label>
                 <Input
+                  id="new-password"
                   type="password"
                   placeholder="Enter new password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                   autoFocus
+                  inputClassName="focus-ring"
                 />
-                {error && <p className="text-xs text-red-500">{error}</p>}
+                {error && (
+                  <p className="flex items-start gap-1.5 text-xs text-danger" role="alert">
+                    <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                      error
+                    </span>
+                    <span className="min-w-0">{error}</span>
+                  </p>
+                )}
               </div>
-              <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!newPassword}>
+              <Button
+                type="submit"
+                variant="primary"
+                className="w-full focus-ring"
+                loading={loading}
+                disabled={!newPassword}
+              >
                 Set password
               </Button>
             </form>
           ) : (
           <div className="flex flex-col gap-4">
             {samlAvailable && (
-              <Button type="button" variant="primary" className="w-full" onClick={handleSamlLogin}>
+              <Button type="button" variant="primary" className="w-full focus-ring" onClick={handleSamlLogin}>
                 {samlLoginLabel}
               </Button>
             )}
 
             {oidcAvailable && (
-              <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
+              <Button type="button" variant="primary" className="w-full focus-ring" onClick={handleOidcLogin}>
                 {oidcLoginLabel}
               </Button>
             )}
@@ -206,36 +238,57 @@ export default function LoginPage() {
             {passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 {isSsoEnabled && !ssoAvailable && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                    {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login is enabled, but configuration is incomplete. Password login is still available for recovery.
+                  <p className="flex items-start gap-1.5 text-xs text-warning">
+                    <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                      warning
+                    </span>
+                    <span className="min-w-0">
+                      {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login is enabled, but configuration is incomplete. Password login is still available for recovery.
+                    </span>
                   </p>
                 )}
 
                 {authMode === "both" && ssoAvailable && (
-                  <p className="text-xs text-text-muted text-center">
+                  <p className="text-xs text-text-muted">
                     Password and {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login are both enabled.
                   </p>
                 )}
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Password</label>
+                  <label className="text-sm font-medium text-text-main" htmlFor="password">
+                    Password
+                  </label>
                   <Input
+                    id="password"
                     type="password"
                     placeholder="Enter password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     autoFocus={!oidcAvailable}
+                    inputClassName="focus-ring"
                   />
-                  {error && <p className="text-xs text-red-500">{error}</p>}
+                  {error && (
+                    <p className="flex items-start gap-1.5 text-xs text-danger" role="alert">
+                      <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                        error
+                      </span>
+                      <span className="min-w-0">{error}</span>
+                    </p>
+                  )}
                   {retryAfter > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                    <p className="flex items-start gap-1.5 text-xs text-warning">
+                      <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                        lock_clock
+                      </span>
+                      <span className="min-w-0">
+                        Locked. Retry in <span className="font-mono metric">{retryAfter}s</span>.
+                      </span>
                     </p>
                   )}
                   {resetHint && (
                     <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      Forgot password? Open <code className="bg-surface-2 px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
                     </p>
                   )}
                 </div>
@@ -243,7 +296,7 @@ export default function LoginPage() {
                 <Button
                   type="submit"
                   variant="primary"
-                  className="w-full"
+                  className="w-full focus-ring"
                   loading={loading}
                   disabled={retryAfter > 0}
                 >
@@ -251,16 +304,28 @@ export default function LoginPage() {
                 </Button>
 
                 <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                  Default password is <code className="bg-surface-2 px-1 rounded">123456</code>
                 </p>
                 {hasPassword === false && (
-                  <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                    Security risk: no password set. You will be asked to set one when logging in remotely.
+                  <p className="flex items-start gap-1.5 text-xs text-warning">
+                    <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                      warning
+                    </span>
+                    <span className="min-w-0">
+                      Security risk: no password set. You will be asked to set one when logging in remotely.
+                    </span>
                   </p>
                 )}
               </form>
             ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
+              error && (
+                <p className="flex items-start gap-1.5 text-xs text-danger" role="alert">
+                  <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                    error
+                  </span>
+                  <span className="min-w-0">{error}</span>
+                </p>
+              )
             )}
           </div>
           )}

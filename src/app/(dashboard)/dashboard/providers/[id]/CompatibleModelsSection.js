@@ -6,9 +6,9 @@ import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
-    ? "border-green-500/40"
+    ? "border-success-line"
     : testStatus === "error"
-    ? "border-red-500/40"
+    ? "border-danger-line"
     : "border-border";
 
   const iconColor = testStatus === "ok"
@@ -19,8 +19,8 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
 
   return (
     <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
-      <span
-        className="material-symbols-outlined text-base text-text-muted"
+      <span aria-hidden="true"
+        className="material-symbols-outlined text-sm text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
       >
         {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
@@ -30,43 +30,50 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
-            <button
+            <Button
+              variant="bare" size="icon-sm"
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
-              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+              title={copied === `model-${modelId}` ? "Copied" : "Copy model id"}
+              aria-label={copied === `model-${modelId}` ? "Copied" : "Copy model id"}
+              className="hover:bg-sidebar text-text-muted hover:text-brand"
             >
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined text-sm" aria-hidden="true">
                 {copied === `model-${modelId}` ? "check" : "content_copy"}
               </span>
-            </button>
-            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            </Button>
+            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-150">
               {copied === `model-${modelId}` ? "Copied!" : "Copy"}
             </span>
           </div>
           {onTest && (
             <div className="relative group/btn">
-              <button
+              <Button
+                variant="bare" size="icon-sm"
                 onClick={onTest}
                 disabled={isTesting}
-                className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+                title={isTesting ? "Testing model" : "Test model"}
+                aria-label={isTesting ? "Testing model" : "Test model"}
+                className="hover:bg-sidebar text-text-muted hover:text-brand"
               >
-                <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                   {isTesting ? "progress_activity" : "science"}
                 </span>
-              </button>
-              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              </Button>
+              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-150">
                 {isTesting ? "Testing..." : "Test"}
               </span>
             </div>
           )}
         </div>
       </div>
-      <button
+      <Button
+        variant="bare" size="icon-sm"
         onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
+        className="hover:bg-danger-soft text-danger"
         title="Remove model"
       >
-        <span className="material-symbols-outlined text-sm">delete</span>
-      </button>
+        <span aria-hidden="true" className="material-symbols-outlined text-sm">delete</span>
+      </Button>
     </div>
   );
 }
@@ -176,7 +183,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand"
           />
         </div>
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>

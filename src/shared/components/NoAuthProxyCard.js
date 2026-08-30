@@ -104,7 +104,7 @@ export default function NoAuthProxyCard({ providerId }) {
   return (
     <Card>
       <div className="flex items-center gap-3 mb-4">
-        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-success-soft text-success">
           <span className="material-symbols-outlined text-[20px]">lock_open</span>
         </div>
         <div className="flex-1">
@@ -132,7 +132,7 @@ export default function NoAuthProxyCard({ providerId }) {
           value={rotateStrategy}
           onChange={(e) => handleStrategyChange(e.target.value)}
           disabled={saving}
-          className="py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all disabled:opacity-50"
+          className="focus-ring py-2 px-3 text-sm text-text-main bg-surface border border-border rounded-md focus:border-brand-solid transition-all disabled:opacity-50"
         >
           {STRATEGIES.map((s) => (
             <option key={s.value} value={s.value} disabled={s.value !== "none" && !canRotate}>
@@ -149,7 +149,7 @@ export default function NoAuthProxyCard({ providerId }) {
                 : `Picking a random pool from ${proxyPools.length} active pools each request.`
               : `Uses the selected pool above. Set to Round-robin or Random to rotate across all active pools.`}
         </p>
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
       </div>
     </Card>
   );

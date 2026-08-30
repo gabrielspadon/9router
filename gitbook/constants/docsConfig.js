@@ -85,7 +85,12 @@ const TRANSLATIONS = {
     faq: "FAQ",
     goToApp: "Go to App",
     selectLanguage: "Select Language",
-    onThisPage: "On this page"
+    onThisPage: "On this page",
+    docsNav: "Documentation",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+    close: "Close",
+    switchLanguage: "Switch language"
   },
   vi: {
     gettingStarted: "Bắt đầu",
@@ -116,7 +121,12 @@ const TRANSLATIONS = {
     faq: "Câu hỏi thường gặp",
     goToApp: "Vào ứng dụng",
     selectLanguage: "Chọn ngôn ngữ",
-    onThisPage: "Trên trang này"
+    onThisPage: "Trên trang này",
+    docsNav: "Tài liệu",
+    openMenu: "Mở menu",
+    closeMenu: "Đóng menu",
+    close: "Đóng",
+    switchLanguage: "Đổi ngôn ngữ"
   },
   "zh-CN": {
     gettingStarted: "开始使用",
@@ -147,7 +157,12 @@ const TRANSLATIONS = {
     faq: "常见问题",
     goToApp: "前往应用",
     selectLanguage: "选择语言",
-    onThisPage: "本页内容"
+    onThisPage: "本页内容",
+    docsNav: "文档",
+    openMenu: "打开菜单",
+    closeMenu: "关闭菜单",
+    close: "关闭",
+    switchLanguage: "切换语言"
   },
   es: {
     gettingStarted: "Comenzar",
@@ -178,7 +193,12 @@ const TRANSLATIONS = {
     faq: "Preguntas frecuentes",
     goToApp: "Ir a la app",
     selectLanguage: "Seleccionar idioma",
-    onThisPage: "En esta página"
+    onThisPage: "En esta página",
+    docsNav: "Documentación",
+    openMenu: "Abrir menú",
+    closeMenu: "Cerrar menú",
+    close: "Cerrar",
+    switchLanguage: "Cambiar idioma"
   },
   ja: {
     gettingStarted: "はじめに",
@@ -209,7 +229,12 @@ const TRANSLATIONS = {
     faq: "よくある質問",
     goToApp: "アプリへ",
     selectLanguage: "言語を選択",
-    onThisPage: "このページ"
+    onThisPage: "このページ",
+    docsNav: "ドキュメント",
+    openMenu: "メニューを開く",
+    closeMenu: "メニューを閉じる",
+    close: "閉じる",
+    switchLanguage: "言語を切り替える"
   }
 };
 

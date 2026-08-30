@@ -50,45 +50,45 @@ const ICON_MAP = {
 
 // Emoji to lucide icon mapping (auto-converted in markdown)
 const EMOJI_ICON_MAP = {
-  "✅": { Icon: CheckCircle, color: "text-green-600" },
-  "✓": { Icon: Check, color: "text-green-600" },
-  "❌": { Icon: AlertTriangle, color: "text-red-500" },
-  "⚠️": { Icon: AlertTriangle, color: "text-yellow-600" },
-  "⚠": { Icon: AlertTriangle, color: "text-yellow-600" },
-  "🚨": { Icon: Siren, color: "text-red-500" },
-  "🛑": { Icon: OctagonX, color: "text-red-500" },
-  "💡": { Icon: Lightbulb, color: "text-yellow-500" },
-  "🔄": { Icon: GitBranch, color: "text-[#E68A6E]" },
-  "🚀": { Icon: Rocket, color: "text-[#E68A6E]" },
-  "⚡": { Icon: Zap, color: "text-yellow-500" },
-  "🔌": { Icon: Plug, color: "text-[#E68A6E]" },
-  "☁️": { Icon: Cloud, color: "text-blue-500" },
-  "☁": { Icon: Cloud, color: "text-blue-500" },
-  "📦": { Icon: Package, color: "text-[#E68A6E]" },
-  "💰": { Icon: Wallet, color: "text-green-600" },
-  "🎁": { Icon: Gift, color: "text-pink-500" },
-  "📊": { Icon: BarChart3, color: "text-[#E68A6E]" },
-  "💻": { Icon: Code2, color: "text-gray-700" },
-  "✨": { Icon: Sparkles, color: "text-[#E68A6E]" },
-  "🖥️": { Icon: Server, color: "text-gray-700" },
-  "🖥": { Icon: Server, color: "text-gray-700" },
-  "📖": { Icon: BookOpen, color: "text-[#E68A6E]" },
-  "🔒": { Icon: Lock, color: "text-gray-700" },
-  "➡️": { Icon: ArrowRight, color: "text-[#E68A6E]" },
-  "📱": { Icon: Smartphone, color: "text-[#E68A6E]" },
-  "📂": { Icon: Folder, color: "text-[#E68A6E]" },
-  "📁": { Icon: Folder, color: "text-[#E68A6E]" },
-  "🖱️": { Icon: Mouse, color: "text-[#E68A6E]" },
-  "🎉": { Icon: PartyPopper, color: "text-pink-500" },
-  "🔗": { Icon: Link2, color: "text-blue-500" },
-  "🎯": { Icon: Target, color: "text-red-500" },
-  "❤": { Icon: Heart, color: "text-red-500" },
-  "❤️": { Icon: Heart, color: "text-red-500" },
-  "🏠": { Icon: Home, color: "text-[#E68A6E]" },
-  "🔧": { Icon: Wrench, color: "text-gray-700" },
-  "🔍": { Icon: Search, color: "text-gray-700" },
-  "🌐": { Icon: Globe, color: "text-blue-500" },
-  "🐳": { Icon: Container, color: "text-blue-500" }
+  "✅": { Icon: CheckCircle, color: "text-success" },
+  "✓": { Icon: Check, color: "text-success" },
+  "❌": { Icon: AlertTriangle, color: "text-danger" },
+  "⚠️": { Icon: AlertTriangle, color: "text-warning" },
+  "⚠": { Icon: AlertTriangle, color: "text-warning" },
+  "🚨": { Icon: Siren, color: "text-danger" },
+  "🛑": { Icon: OctagonX, color: "text-danger" },
+  "💡": { Icon: Lightbulb, color: "text-warning" },
+  "🔄": { Icon: GitBranch, color: "text-brand" },
+  "🚀": { Icon: Rocket, color: "text-brand" },
+  "⚡": { Icon: Zap, color: "text-warning" },
+  "🔌": { Icon: Plug, color: "text-brand" },
+  "☁️": { Icon: Cloud, color: "text-info" },
+  "☁": { Icon: Cloud, color: "text-info" },
+  "📦": { Icon: Package, color: "text-brand" },
+  "💰": { Icon: Wallet, color: "text-success" },
+  "🎁": { Icon: Gift, color: "text-text-muted" },
+  "📊": { Icon: BarChart3, color: "text-brand" },
+  "💻": { Icon: Code2, color: "text-text-main" },
+  "✨": { Icon: Sparkles, color: "text-brand" },
+  "🖥️": { Icon: Server, color: "text-text-main" },
+  "🖥": { Icon: Server, color: "text-text-main" },
+  "📖": { Icon: BookOpen, color: "text-brand" },
+  "🔒": { Icon: Lock, color: "text-text-main" },
+  "➡️": { Icon: ArrowRight, color: "text-brand" },
+  "📱": { Icon: Smartphone, color: "text-brand" },
+  "📂": { Icon: Folder, color: "text-brand" },
+  "📁": { Icon: Folder, color: "text-brand" },
+  "🖱️": { Icon: Mouse, color: "text-brand" },
+  "🎉": { Icon: PartyPopper, color: "text-text-muted" },
+  "🔗": { Icon: Link2, color: "text-info" },
+  "🎯": { Icon: Target, color: "text-danger" },
+  "❤": { Icon: Heart, color: "text-danger" },
+  "❤️": { Icon: Heart, color: "text-danger" },
+  "🏠": { Icon: Home, color: "text-brand" },
+  "🔧": { Icon: Wrench, color: "text-text-main" },
+  "🔍": { Icon: Search, color: "text-text-main" },
+  "🌐": { Icon: Globe, color: "text-info" },
+  "🐳": { Icon: Container, color: "text-info" }
 };
 
 const EMOJI_REGEX = new RegExp(`^(${Object.keys(EMOJI_ICON_MAP).map(e => e.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")).join("|")})\\s*`);
@@ -169,7 +169,7 @@ export function MarkdownRenderer({ content }) {
             
             return (
               <li {...props}>
-                {IconComponent && <IconComponent className="inline-block mr-2 w-4 h-4 text-[#E68A6E]" />}
+                {IconComponent && <IconComponent className="inline-block mr-2 w-4 h-4 text-brand" />}
                 {restText}
               </li>
             );

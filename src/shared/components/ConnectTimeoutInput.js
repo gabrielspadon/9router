@@ -90,7 +90,7 @@ export default function ConnectTimeoutInput({
           : "Upstream response headers, 1000 to 120000 ms. Empty uses 15000."}
       </p>
       {status.type === "error" && (
-        <p className="text-xs text-red-500">{status.message}</p>
+        <p className="text-xs text-danger">{status.message}</p>
       )}
     </div>
   );

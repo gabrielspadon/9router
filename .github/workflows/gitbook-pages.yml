@@ -1,5 +1,15 @@
 name: Deploy GitBook to 9router.github.io
 
+# The paths filter on the on: block below is safe here because this workflow is
+# a deploy that carries no required check. Nothing in branch protection waits on
+# its name, so a push that the filter skips leaves no status Pending and blocks
+# no merge. It only means the docs site was not redeployed, which is correct
+# when the push did not touch the docs.
+#
+# Do not copy this pattern into a workflow whose name is a required check. There
+# a skipped run reports neither success nor failure, the check stays Pending
+# forever, and the pull request can never merge. Gate that work at job level with
+# if:, which still reports success. See .github/workflows/ci.yml.
 on:
   push:
     branches: [main, master]

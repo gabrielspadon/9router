@@ -172,12 +172,12 @@ export default function ClaudeCompatPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-0">
+    <div className="max-w-3xl mx-auto">
       {/* Claude Compat (Anthropic-protocol clients) */}
       <Card id="claude-compat">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">smart_toy</span>
+          <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">smart_toy</span>
             Claude Compat
           </h2>
           <Toggle
@@ -202,7 +202,7 @@ export default function ClaudeCompatPage() {
             value={claudeSuffixMode}
             onChange={(e) => handleClaudeSuffixMode(e.target.value)}
             disabled={!claudeCompatEnabled}
-            className="text-sm border border-border rounded-md px-2 py-1.5 bg-background"
+            className="focus-ring text-sm text-text-main border border-border rounded-[var(--radius-brand)] px-2 py-1.5 bg-surface-2"
           >
             <option value="off">Off — never add</option>
             <option value="auto">Auto — context ≥ 1M</option>
@@ -247,14 +247,14 @@ export default function ClaudeCompatPage() {
               settings.json is touched.
             </p>
 
-            <div className="grid grid-cols-[80px_1fr_1fr_44px] gap-2 text-xs text-text-muted pb-1">
+            <div className="grid grid-cols-[minmax(80px,max-content)_1fr_1fr_44px] gap-2 text-xs text-text-muted pb-1">
               <span>Role</span>
               <span>Display name</span>
               <span>Model</span>
               <span className="text-right">1M</span>
             </div>
             {CLAUDE_ROLE_KEYS.map((role) => (
-              <div key={role} className="grid grid-cols-[80px_1fr_1fr_44px] gap-2 items-center py-1">
+              <div key={role} className="grid grid-cols-[minmax(80px,max-content)_1fr_1fr_44px] gap-2 items-center py-1">
                 <span className="text-sm capitalize">{role}</span>
                 <Input
                   value={claudeDefaults[role].name}
@@ -270,12 +270,13 @@ export default function ClaudeCompatPage() {
                   type="checkbox"
                   checked={claudeDefaults[role].oneM}
                   onChange={(e) => updateClaudeRole(role, "oneM", e.target.checked)}
-                  className="justify-self-end w-4 h-4 accent-indigo-600"
+                  className="focus-ring justify-self-end w-4 h-4 accent-brand-500"
+                  aria-label="Declare 1M context ([1M] suffix)"
                   title="Declare 1M context ([1M] suffix)"
                 />
               </div>
             ))}
-            <div className="grid grid-cols-[80px_1fr_1fr_44px] gap-2 items-center py-1">
+            <div className="grid grid-cols-[minmax(80px,max-content)_1fr_1fr_44px] gap-2 items-center py-1">
               <span className="text-sm">SubModel</span>
               <span className="text-xs text-text-muted">not shown in /model menu</span>
               <ClaudeModelField
@@ -287,7 +288,8 @@ export default function ClaudeCompatPage() {
                 type="checkbox"
                 checked={claudeDefaults.subagent.oneM}
                 onChange={(e) => updateClaudeRole("subagent", "oneM", e.target.checked)}
-                className="justify-self-end w-4 h-4 accent-indigo-600"
+                className="focus-ring justify-self-end w-4 h-4 accent-brand-500"
+                aria-label="Declare 1M context ([1M] suffix)"
                 title="Declare 1M context ([1M] suffix)"
               />
             </div>
@@ -297,7 +299,7 @@ export default function ClaudeCompatPage() {
               {claudeJsonDirty && (
                 <button
                   onClick={() => setClaudeJsonDirty(false)}
-                  className="text-xs text-text-muted hover:text-text-main cursor-pointer"
+                  className="focus-ring rounded-sm text-xs text-text-muted hover:text-text-main transition-colors duration-150 cursor-pointer"
                 >
                   Regenerate from table
                 </button>
@@ -308,10 +310,13 @@ export default function ClaudeCompatPage() {
               onChange={(e) => { setClaudeEnvJson(e.target.value); setClaudeJsonDirty(true); }}
               spellCheck={false}
               rows={Math.min(14, Math.max(4, claudeEnvJson.split("\n").length))}
-              className="w-full rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              className="focus-ring w-full rounded-[var(--radius-brand)] border border-border bg-surface-2 p-3 font-mono text-xs text-text-main leading-relaxed focus:outline-none"
             />
             {claudeWriteMsg && (
-              <p className={`text-xs mt-1.5 ${claudeWriteMsg.ok ? "text-green-600" : "text-red-500"}`}>
+              <p className={`text-xs mt-1.5 inline-flex items-start gap-1.5 ${claudeWriteMsg.ok ? "text-success" : "text-danger"}`}>
+                <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">
+                  {claudeWriteMsg.ok ? "check_circle" : "error"}
+                </span>
                 {claudeWriteMsg.text}
               </p>
             )}
@@ -337,7 +342,7 @@ function ClaudeModelField({ value, onChange, options }) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="text-sm border border-border rounded-md px-2 py-1.5 bg-background w-full"
+      className="focus-ring text-sm text-text-main border border-border rounded-[var(--radius-brand)] px-2 py-1.5 bg-surface-2 w-full"
     >
       <option value="">— none —</option>
       {list.map((id) => (

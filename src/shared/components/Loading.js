@@ -14,7 +14,7 @@ export function Spinner({ size = "md", className }) {
   return (
     <span
       className={cn(
-        "material-symbols-outlined animate-spin text-brand-500",
+        "material-symbols-outlined animate-spin text-brand",
         sizes[size],
         className
       )}
@@ -39,7 +39,9 @@ export function Skeleton({ className, ...props }) {
   return (
     <div
       className={cn(
-        "animate-pulse rounded-[10px] bg-surface-2",
+        // motion-safe so a reduced-motion preference stops the pulse rather
+        // than animating regardless, and the system's near-rectilinear radius.
+        "motion-safe:animate-pulse rounded-[2px] bg-surface-2",
         className
       )}
       {...props}

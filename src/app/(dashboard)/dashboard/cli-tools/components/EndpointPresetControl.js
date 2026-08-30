@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/shared/components";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 
@@ -95,7 +96,7 @@ export default function EndpointPresetControl({
       <select
         value={selectedName}
         onChange={(event) => handleSelect(event.target.value)}
-        className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+        className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus-ring"
       >
         <option value="">Manual / current endpoint</option>
         {presets.map((preset) => (
@@ -104,24 +105,27 @@ export default function EndpointPresetControl({
           </option>
         ))}
       </select>
-      <button
+      <Button
+        variant="secondary"
+        size="sm"
         type="button"
         onClick={handleSave}
         disabled={!baseUrl || !apiKey}
-        className="px-2 py-1.5 rounded border text-xs bg-surface border-border text-text-main hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         title="Save current Base URL and API key as a browser-local preset"
+        className="shrink-0"
       >
         Save
-      </button>
+      </Button>
       {selectedPreset && (
-        <button
+        <Button
+          variant="bare" size="icon-sm"
           type="button"
           onClick={handleDelete}
-          className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
+          aria-label="Delete selected preset" className="text-text-muted hover:text-danger"
           title="Delete selected preset"
         >
           <span className="material-symbols-outlined text-[14px]">delete</span>
-        </button>
+        </Button>
       )}
     </div>
   );

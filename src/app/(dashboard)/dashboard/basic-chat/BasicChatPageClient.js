@@ -739,36 +739,37 @@ export default function BasicChatPageClient() {
   const modelSubLabel = activeModel ? activeModel.requestModel : "Choose from connected providers";
 
   return (
-    <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-[#212121] text-white overflow-hidden">
+    <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-bg text-text-main overflow-hidden">
       <div className="relative mx-auto flex flex-1 h-full min-h-0 w-full max-w-4xl flex-col">
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 lg:px-6">
           <div ref={modelMenuRef} className="relative">
             <button
               type="button"
               onClick={() => setModelMenuOpen((value) => !value)}
-              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:bg-white/8"
+              aria-expanded={modelMenuOpen}
+              className="flex items-center gap-3 focus-ring rounded-[var(--radius-brand)] border border-border bg-surface-2 px-4 py-3 text-left transition-colors duration-150 hover:bg-surface-3"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-white">{modelLabel}</span>
-                  <span className="material-symbols-outlined text-[18px] text-white/70">expand_more</span>
+                  <span className="text-sm font-semibold text-text-main">{modelLabel}</span>
+                  <span className="material-symbols-outlined text-[18px] text-text-muted" aria-hidden="true">expand_more</span>
                 </div>
-                <p className="truncate text-xs text-white/55">{modelSubLabel}</p>
+                <p className="truncate text-xs text-text-muted">{modelSubLabel}</p>
               </div>
             </button>
 
             {modelMenuOpen ? (
-              <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-white/10 bg-[#262626] shadow-2xl shadow-black/50">
-                <div className="border-b border-white/10 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.22em] text-white/45">Models</p>
-                  <p className="text-sm text-white/75">Only from connected providers</p>
+              <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[var(--radius-brand-lg)] border border-border bg-surface shadow-[var(--shadow-elev)]">
+                <div className="border-b border-border px-4 py-3">
+                  <p className="text-xs text-text-muted">Models</p>
+                  <p className="text-sm text-text-muted">Only from connected providers</p>
                 </div>
                 <div className="max-h-[60vh] overflow-y-auto p-2 custom-scrollbar">
                   {providerGroups.map((group) => (
-                    <div key={group.providerId} className="mb-2 rounded-[16px] border border-white/10 bg-black/20 p-2">
+                    <div key={group.providerId} className="mb-2 rounded-[var(--radius-brand)] border border-border bg-surface-2 p-2">
                       <div className="flex items-center justify-between px-2 py-2">
-                        <p className="text-sm font-semibold text-white">{group.providerName}</p>
-                        <Badge size="sm" variant="default">{group.models.length}</Badge>
+                        <p className="text-sm font-semibold text-text-main">{group.providerName}</p>
+                        <Badge size="sm" variant="neutral">{group.models.length}</Badge>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {group.models.map((model) => {
@@ -778,14 +779,14 @@ export default function BasicChatPageClient() {
                               key={model.id}
                               type="button"
                               onClick={() => handleSelectModel(model.id)}
-                              className={`rounded-[14px] border px-3 py-3 text-left transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-white/10 bg-white/5 hover:bg-white/8"}`}
+                              className={`focus-ring rounded-[var(--radius-brand)] border px-3 py-3 text-left transition-colors duration-150 ${isActive ? "border-brand-line bg-brand-soft" : "border-border bg-surface-2 hover:bg-surface-3"}`}
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-white">{model.name}</p>
-                                  <p className="truncate text-[11px] text-white/45">{model.requestModel}</p>
+                                  <p className="truncate text-sm font-medium text-text-main">{model.name}</p>
+                                  <p className="truncate text-xs text-text-muted">{model.requestModel}</p>
                                 </div>
-                                {isActive ? <span className="material-symbols-outlined text-[18px] text-blue-300">check_circle</span> : null}
+                                {isActive ? <span className="material-symbols-outlined text-[18px] text-brand">check_circle</span> : null}
                               </div>
                             </button>
                           );
@@ -802,7 +803,8 @@ export default function BasicChatPageClient() {
             <button
               type="button"
               onClick={() => setHistoryOpen((value) => !value)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 transition hover:bg-white/8"
+              aria-expanded={historyOpen}
+              className="focus-ring rounded-[var(--radius-brand)] border border-border bg-surface-2 px-4 py-3 text-sm text-text-main transition-colors duration-150 hover:bg-surface-3"
             >
               History
             </button>
@@ -813,13 +815,13 @@ export default function BasicChatPageClient() {
         </div>
 
         {historyOpen ? (
-          <div ref={historyMenuRef} className="absolute right-4 top-[72px] z-20 w-[min(360px,calc(100vw-2rem))] rounded-[20px] border border-white/10 bg-[#262626] p-2 shadow-2xl shadow-black/50 lg:right-6">
+          <div ref={historyMenuRef} className="absolute right-4 top-[72px] z-20 w-[min(360px,calc(100vw-2rem))] rounded-[var(--radius-brand-lg)] border border-border bg-surface p-2 shadow-[var(--shadow-elev)] lg:right-6">
             <div className="px-3 py-2">
-              <p className="text-xs uppercase tracking-[0.22em] text-white/45">Recent chats</p>
+              <p className="text-xs text-text-muted">Recent chats</p>
             </div>
             <div className="max-h-[48vh] space-y-2 overflow-y-auto p-1 custom-scrollbar">
               {sessionItems.length === 0 ? (
-                <div className="rounded-[16px] border border-dashed border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                <div className="rounded-[var(--radius-brand)] border border-dashed border-border bg-surface-2 p-4 text-sm text-text-muted">
                   No conversations yet.
                 </div>
               ) : sessionItems.map((session) => {
@@ -830,14 +832,14 @@ export default function BasicChatPageClient() {
                     key={session.id}
                     type="button"
                     onClick={() => handleSelectSession(session.id)}
-                    className={`w-full rounded-[16px] border px-3 py-3 text-left transition ${isActive ? "border-blue-400/40 bg-blue-500/15" : "border-white/10 bg-white/5 hover:bg-white/8"}`}
+                    className={`focus-ring w-full rounded-[var(--radius-brand)] border px-3 py-3 text-left transition-colors duration-150 ${isActive ? "border-brand-line bg-brand-soft" : "border-border bg-surface-2 hover:bg-surface-3"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white">{session.title}</p>
-                        <p className="mt-1 truncate text-xs text-white/50">{textValue(latestMessage?.content) || "Empty chat"}</p>
+                        <p className="truncate text-sm font-medium text-text-main">{session.title}</p>
+                        <p className="mt-1 truncate text-xs text-text-muted">{textValue(latestMessage?.content) || "Empty chat"}</p>
                       </div>
-                      <span className="text-[10px] text-white/40 shrink-0">{formatRelativeTime(session.updatedAt)}</span>
+                      <span className="text-xs text-text-muted shrink-0">{formatRelativeTime(session.updatedAt)}</span>
                     </div>
                   </button>
                 );
@@ -847,9 +849,9 @@ export default function BasicChatPageClient() {
         ) : null}
 
         {loadError ? (
-          <div className="mt-4 rounded-[18px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-rose-100">
+          <div className="mt-4 rounded-[var(--radius-brand)] border border-danger-line bg-danger-soft p-4 text-danger">
             <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-[20px]">error</span>
+              <span className="material-symbols-outlined text-[20px] shrink-0" aria-hidden="true">error</span>
               <p className="text-sm leading-6">{loadError}</p>
             </div>
           </div>
@@ -860,12 +862,12 @@ export default function BasicChatPageClient() {
             {currentMessages.length === 0 ? (
               <div className="flex min-h-[50vh] items-center justify-center px-4 text-center">
                 <div className="max-w-xl space-y-4">
-                  <div className="mx-auto flex size-16 items-center justify-center rounded-[20px] border border-white/10 bg-white/5 text-white/80">
-                    <span className="material-symbols-outlined text-[30px]">chat</span>
+                  <div className="mx-auto flex size-16 items-center justify-center rounded-[var(--radius-brand)] border border-border bg-surface-2 text-text-muted">
+                    <span className="material-symbols-outlined text-[30px]" aria-hidden="true">chat</span>
                   </div>
                   <div className="space-y-2">
-                    <h2 className="text-2xl font-semibold text-white">Start a conversation</h2>
-                    <p className="text-sm leading-6 text-white/60">
+                    <h2 className="text-lg font-semibold text-text-main">Start a conversation</h2>
+                    <p className="text-sm leading-6 text-text-muted">
                       Simple chat interface to interact with any AI model from connected providers. Select a model and start chatting!
                     </p>
                   </div>
@@ -882,7 +884,7 @@ export default function BasicChatPageClient() {
 
                 return (
                   <div key={message.id} className={`flex w-full ${isUser ? "justify-end" : "justify-start"} mb-6`}>
-                    <div className={`max-w-[min(88%,42rem)] ${isUser ? "rounded-3xl bg-[#2f2f2f] px-5 py-3.5 text-white" : "text-white/90"}`}>
+                    <div className={`max-w-[min(88%,42rem)] ${isUser ? "rounded-[var(--radius-brand-lg)] bg-surface-2 px-5 py-3.5 text-text-main" : "text-text-main"}`}>
                       <div className="mb-1 flex items-center justify-between gap-3">
                         <span className="text-xs font-semibold">{isUser ? "You" : activeModel?.name || "Assistant"}</span>
                       </div>
@@ -890,16 +892,16 @@ export default function BasicChatPageClient() {
                       {message.attachments?.length ? (
                         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 mt-2">
                           {message.attachments.map((attachment) => (
-                            <a key={attachment.id} href={attachment.dataUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[18px] border border-white/10 bg-black/20">
+                            <a key={attachment.id} href={attachment.dataUrl} target="_blank" rel="noreferrer" className="focus-ring overflow-hidden rounded-[var(--radius-brand)] border border-border bg-surface-2">
                               <img src={attachment.dataUrl} alt={attachment.name} className="h-28 w-full object-cover" loading="lazy" decoding="async" />
                             </a>
                           ))}
                         </div>
                       ) : null}
 
-                      <div className="whitespace-pre-wrap break-words text-[15px] leading-7">
+                      <div className="whitespace-pre-wrap break-words text-sm leading-7">
                         {content}
-                        {isAssistant && isStreaming && !streamingText ? <span className="inline-block animate-pulse">▋</span> : null}
+                        {isAssistant && isStreaming && !streamingText ? <span className="inline-block text-text-muted">▋</span> : null}
                       </div>
                     </div>
                   </div>
@@ -912,52 +914,53 @@ export default function BasicChatPageClient() {
             {attachments.length > 0 ? (
               <div className="mx-auto mb-3 flex w-full max-w-3xl flex-wrap gap-2 px-4">
                 {attachments.map((attachment) => (
-                  <div key={attachment.id} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                    <span className="text-xs text-white/80 max-w-[12rem] truncate">{attachment.name}</span>
-                    <button type="button" onClick={() => removeAttachment(attachment.id)} className="text-white/55 hover:text-white" aria-label="Remove attachment">
-                      <span className="material-symbols-outlined text-[18px]">close</span>
-                    </button>
+                  <div key={attachment.id} className="flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-2">
+                    <span className="text-xs text-text-muted max-w-[12rem] truncate">{attachment.name}</span>
+                    <Button variant="bare" size="icon-sm" type="button" onClick={() => removeAttachment(attachment.id)} className="text-text-muted hover:text-text-main" aria-label="Remove attachment">
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">close</span>
+                    </Button>
                   </div>
                 ))}
               </div>
             ) : null}
 
             <div className="mx-auto w-full max-w-3xl px-4 pb-2">
-              <div className="rounded-[26px] bg-[#2f2f2f] px-3 pt-3 pb-2 shadow-[0_0_15px_rgba(0,0,0,0.10)] ring-1 ring-white/5">
+              <div className="rounded-[var(--radius-brand-lg)] border border-border bg-surface-2 px-3 pt-3 pb-2 shadow-[var(--shadow-soft)]">
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Message AI"
                   rows={1}
-                  className="w-full resize-none bg-transparent px-2 text-[15px] leading-6 text-white outline-none placeholder:text-white/40 custom-scrollbar max-h-[25vh] overflow-y-auto"
+                  aria-label="Message"
+                  className="focus-ring w-full resize-none bg-transparent px-2 text-sm leading-6 text-text-main outline-none placeholder:text-text-muted custom-scrollbar max-h-[25vh] overflow-y-auto"
                 />
 
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!activeModel || loadingData} className="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/5">
-                      <span className="material-symbols-outlined text-[20px]">attach_file</span>
-                    </button>
+                    <Button variant="bare" size="icon" type="button" onClick={() => fileInputRef.current?.click()} disabled={!activeModel || loadingData} aria-label="Attach image" className="text-text-muted hover:text-text-main rounded-full hover:bg-surface-3">
+                      <span className="material-symbols-outlined text-[20px]" aria-hidden="true">attach_file</span>
+                    </Button>
                     <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleAttachFiles} />
-                    <span className="text-xs font-medium text-white/30 truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
+                    <span className="text-xs font-medium text-text-muted truncate max-w-[120px]">{activeModel ? activeModel.name : "No model"}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     {isSending ? (
-                      <button type="button" onClick={handleStop} className="p-2 text-white bg-white/10 hover:bg-white/20 transition rounded-full h-8 w-8 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[16px]">stop</span>
-                      </button>
+                      <Button variant="bare" size="icon" type="button" onClick={handleStop} aria-label="Stop generating" className="text-text-main bg-surface-3 hover:opacity-90 transition-opacity rounded-full">
+                        <span className="material-symbols-outlined text-[16px]" aria-hidden="true">stop</span>
+                      </Button>
                     ) : null}
-                    <button onClick={sendMessage} disabled={!canSend} className={`h-8 w-8 rounded-full flex items-center justify-center transition ${canSend ? 'bg-white text-black hover:opacity-90' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
-                      <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
-                    </button>
+                    <Button variant="bare" size="icon" onClick={sendMessage} disabled={!canSend} aria-label="Send message" className={`rounded-full transition-colors ${canSend ? 'bg-brand-solid text-brand-on hover:bg-brand-solid-hover' : 'bg-surface-3 text-text-muted cursor-not-allowed'}`}>
+                      <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_upward</span>
+                    </Button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <p className="mx-auto mt-2 max-w-3xl px-4 pb-4 text-center text-[11px] text-white/30">
+          <p className="mx-auto mt-2 max-w-3xl px-4 pb-4 text-center text-xs text-text-subtle">
             Model list is filtered from connected providers.
           </p>
         </div>

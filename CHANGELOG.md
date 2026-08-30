@@ -1,5 +1,36 @@
 # Unreleased
 
+## Repository and presentation
+- **Documentation**: restructured the front page and the documentation set. The
+  English `README.md` is the single canonical page; `README.zh-CN.md` and the
+  files under `i18n/` are short localised summaries that link back to it and to
+  the documentation index, instead of full translations that drift out of date
+  with every provider added
+- **Community health**: added `CONTRIBUTING.md`, `SECURITY.md`,
+  `CODE_OF_CONDUCT.md` and `SUPPORT.md`, plus GitHub issue forms for bug
+  reports, provider requests and feature requests, an issue-template
+  `config.yml` that disables blank issues and routes questions and
+  vulnerabilities to the right place, and a pull request template. `SECURITY.md`
+  gives a private disclosure route through GitHub security advisories and states
+  the scope for a gateway that stores provider API keys, OAuth access tokens and
+  refresh tokens locally
+- **CI**: added `.github/workflows/ci.yml`, running on pull requests and on
+  pushes to `master`. A `lint` job runs `npx eslint .`. A `baseline` job installs
+  the root and `tests/` packages, writes a vitest JSON report, and runs
+  `tests/__baseline__/verify-no-regression.mjs` against it, so a change is judged
+  by whether it turns a passing test into a failing one rather than by a raw
+  pass count. The provider registry, alias and OAuth URL snapshot baselines run
+  in the same job. Neither job carries a `paths` filter on its `on:` block,
+  which would leave a required check pending forever
+- **Dependencies**: filled in `.github/dependabot.yml`, which previously
+  declared no updates at all. Weekly npm updates now cover the four package
+  manifests in the repository (root, `cli/`, `gitbook/`, `tests/`) plus GitHub
+  Actions, grouped so minor and patch bumps arrive together and majors arrive
+  alone
+- **Dashboard**: migrated the dashboard from raw Tailwind palette classes and
+  hand-rolled controls to shared design tokens and components, so themes and
+  states are defined in one place rather than per file
+
 ## Features
 - Added a configurable upstream response-header timeout. Resolution uses a
   provider override first, then an executor or registry transport timeout,

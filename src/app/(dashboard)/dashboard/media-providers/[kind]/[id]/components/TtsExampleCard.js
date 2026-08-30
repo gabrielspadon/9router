@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card } from "@/shared/components";
+import { Button, Card } from "@/shared/components";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -248,31 +248,31 @@ export function TtsExampleCard({ providerId }) {
   return (
     <>
       <Card>
-        <h2 className="text-lg font-semibold mb-4">Example</h2>
+        <h2 className="text-sm font-semibold text-text-main mb-4">Example</h2>
 
         <div className="flex flex-col gap-2.5">
           {/* Endpoint + API Key as read-only text */}
           <Row label="Endpoint">
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
+              <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-surface-2 rounded-[var(--radius-brand)] truncate">
                 {endpoint}/v1/audio/speech
               </span>
               {tunnelEndpoint && (
                 <button
                   onClick={() => setUseTunnel((v) => !v)}
                   title={useTunnel ? "Using tunnel" : "Using local"}
-                  className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border shrink-0 transition-colors ${
-                    useTunnel ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"
+                  className={`focus-ring flex items-center gap-1 text-xs px-2 py-1.5 rounded-[var(--radius-brand)] border shrink-0 transition-colors duration-150 ${
+                    useTunnel ? "border-brand-line bg-brand-soft text-brand" : "border-border text-text-muted hover:text-brand"
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[14px]">wifi_tethering</span>
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">wifi_tethering</span>
                   Tunnel
                 </button>
               )}
             </div>
           </Row>
           <Row label="API Key">
-            <span className="px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate block">
+            <span className="px-3 py-1.5 text-sm font-mono text-text-main bg-surface-2 rounded-[var(--radius-brand)] truncate block">
               {apiKey
                 ? `${apiKey.slice(0, 8)}${"•".repeat(Math.min(20, apiKey.length - 8))}`
                 : connectionCount > 0
@@ -287,7 +287,7 @@ export function TtsExampleCard({ providerId }) {
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                className="w-full px-3 py-1.5 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
               >
                 {(() => {
                   const ttsModels = getModelsByProviderId(providerId).filter(m => getModelKind(m) === "tts");
@@ -305,7 +305,7 @@ export function TtsExampleCard({ providerId }) {
               <select
                 value={languageHint}
                 onChange={(e) => setLanguageHint(e.target.value)}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                className="w-full px-3 py-1.5 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
               >
                 <option value="">Auto-detect</option>
                 {(config.languageOptions || GOOGLE_TTS_LANGUAGES).map((l) =>
@@ -323,7 +323,7 @@ export function TtsExampleCard({ providerId }) {
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                 <button
                   onClick={openModal}
-                  className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm border border-border rounded-lg bg-background font-mono truncate text-left hover:border-primary/40 transition-colors"
+                  className="focus-ring w-full min-w-0 flex-1 px-3 py-1.5 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 font-mono truncate text-left hover:border-brand-line transition-colors duration-150"
                 >
                   {selectedLang
                     ? <span className="text-text-main">{languages.find((l) => l.code === selectedLang)?.name || selectedLang}</span>
@@ -331,9 +331,9 @@ export function TtsExampleCard({ providerId }) {
                 </button>
                 <button
                   onClick={openModal}
-                  className="flex w-full items-center justify-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors sm:w-auto sm:shrink-0"
+                  className="focus-ring flex w-full items-center justify-center gap-1 text-xs px-2.5 py-1.5 rounded-[var(--radius-brand)] border border-border text-text-muted hover:text-brand hover:border-brand-line transition-colors duration-150 sm:w-auto sm:shrink-0"
                 >
-                  <span className="material-symbols-outlined text-[14px]">language</span>
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">language</span>
                   Select language
                 </button>
               </div>
@@ -352,20 +352,21 @@ export function TtsExampleCard({ providerId }) {
                       setSelectedVoiceName(v.name);
                       if (config.hasVoiceIdInput) setVoiceId(v.id);
                     }}
-                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                    aria-pressed={selectedVoice === v.id}
+                    className={`focus-ring px-2.5 py-1 rounded-full text-xs border transition-colors duration-150 ${
                       selectedVoice === v.id
-                        ? "bg-primary/15 border-primary/40 text-primary font-medium"
-                        : "border-border text-text-muted hover:text-primary hover:border-primary/40"
+                        ? "bg-brand-soft border-brand-line text-brand font-medium"
+                        : "border-border text-text-muted hover:text-brand hover:border-brand-line"
                     }`}
                   >
                     {v.name}
                     {v.language ? ` · ${v.language}` : ""}
                     {v.gender ? ` · ${v.gender[0].toUpperCase()}` : ""}
                     {v.free_users_allowed === true && (
-                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-semibold rounded bg-green-500/15 text-green-600 border border-green-500/20">Free</span>
+                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-semibold rounded bg-success-soft text-success border border-success-line">Free</span>
                     )}
                     {v.free_users_allowed === false && (
-                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-semibold rounded bg-amber-500/15 text-amber-600 border border-amber-500/20">Paid</span>
+                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-semibold rounded bg-warning-soft text-warning border border-warning-line">Paid</span>
                     )}
                   </button>
                 ))}
@@ -385,16 +386,18 @@ export function TtsExampleCard({ providerId }) {
                       setSelectedVoice(e.target.value);
                     }}
                     placeholder="e.g. CwhRBWXzGAHq8TQ4Fs17"
-                    className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
+                    className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none font-mono"
                   />
                   {voiceId && (
-                    <button
+                    <Button
+                      variant="bare" size="icon-sm"
                       type="button"
                       onClick={() => { setVoiceId(""); setSelectedVoice(""); }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+                      aria-label="Clear voice ID"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
                     >
-                      <span className="material-symbols-outlined text-[14px]">close</span>
-                    </button>
+                      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -411,7 +414,7 @@ export function TtsExampleCard({ providerId }) {
                   setSelectedVoice(e.target.value);
                   setSelectedVoiceName(m?.name || e.target.value);
                 }}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                className="w-full px-3 py-1.5 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
               >
                 {getModelsByProviderId(providerId).filter((m) => getModelKind(m) === "tts").map((m) => (
                   <option key={m.id} value={m.id}>{m.name || m.id}</option>
@@ -426,16 +429,18 @@ export function TtsExampleCard({ providerId }) {
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
               />
               {input && (
-                <button
+                <Button
+                  variant="bare" size="icon-sm"
                   type="button"
                   onClick={() => setInput("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+                  aria-label="Clear input"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
                 >
-                  <span className="material-symbols-outlined text-[14px]">close</span>
-                </button>
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
+                </Button>
               )}
             </div>
           </Row>
@@ -449,16 +454,18 @@ export function TtsExampleCard({ providerId }) {
                   onChange={(e) => setStyle(e.target.value)}
                   placeholder={translate("e.g. a warm, gentle voice, speaking slowly with a British accent")}
                   rows={2}
-                  className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-none"
+                  className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none resize-none"
                 />
                 {style && (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     type="button"
                     onClick={() => setStyle("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+                    aria-label="Clear style"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-brand"
                   >
-                    <span className="material-symbols-outlined text-[14px]">close</span>
-                  </button>
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>
+                  </Button>
                 )}
               </div>
             </Row>
@@ -469,7 +476,7 @@ export function TtsExampleCard({ providerId }) {
             <select
               value={responseFormat}
               onChange={(e) => setResponseFormat(e.target.value)}
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              className="w-full px-3 py-1.5 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
             >
               <option value="mp3">MP3 (Binary)</option>
               <option value="json">JSON (Base64)</option>
@@ -479,41 +486,42 @@ export function TtsExampleCard({ providerId }) {
           {/* Curl + Run */}
           <div className="mt-1">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Request</span>
+              <span className="text-xs font-semibold text-text-muted">Request</span>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                 <button
                   onClick={() => copyCurl(curlSnippet)}
-                  className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                  className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150"
                 >
-                  <span className="material-symbols-outlined text-[14px]">{copiedCurl ? "check" : "content_copy"}</span>
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">{copiedCurl ? "check" : "content_copy"}</span>
                   {copiedCurl ? "Copied" : "Copy"}
                 </button>
-                <button
+                <Button
+                  variant="primary" size="sm"
                   onClick={handleRun}
                   disabled={running || !input.trim() || !modelFull}
-                  className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto"
                 >
                   <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
                     play_arrow
                   </span>
                   {running ? "Generating..." : "Run"}
-                </button>
+                </Button>
               </div>
             </div>
-            <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">{curlSnippet}</pre>
+            <pre className="bg-surface-2 rounded-[var(--radius-brand)] px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">{curlSnippet}</pre>
           </div>
 
-          {error && <p className="text-xs text-red-500 break-words">{error}</p>}
+          {error && <p className="text-xs text-danger break-words">{error}</p>}
 
           {/* Audio player */}
           {audioUrl ? (
             <div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-                <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-                  Response {latency && <span className="font-normal normal-case">&#9889; {latency}ms</span>}
+                <span className="text-xs font-semibold text-text-muted">
+                  Response {latency && <span className="font-normal metric">&#9889; {latency}ms</span>}
                 </span>
-                <a href={audioUrl} download="speech.mp3" className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined text-[14px]">download</span>
+                <a href={audioUrl} download="speech.mp3" className="focus-ring rounded-sm inline-flex items-center gap-1 text-xs text-text-muted hover:text-brand transition-colors duration-150">
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">download</span>
                   Download
                 </a>
               </div>
@@ -523,9 +531,9 @@ export function TtsExampleCard({ providerId }) {
               {jsonResponse && (
                 <div className="mt-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-                    <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">JSON Response</span>
+                    <span className="text-xs font-semibold text-text-muted">JSON Response</span>
                   </div>
-                  <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">
+                  <pre className="bg-surface-2 rounded-[var(--radius-brand)] px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">
                     {JSON.stringify({
                       format: jsonResponse.format,
                       audio: jsonResponse.audio ? `${jsonResponse.audio.substring(0, 100)}...` : ""
@@ -536,8 +544,8 @@ export function TtsExampleCard({ providerId }) {
             </div>
           ) : (
             <div>
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Response</span>
-            <pre className="mt-1.5 bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-50">{DEFAULT_TTS_RESPONSE_EXAMPLE}</pre>
+            <span className="text-xs font-semibold text-text-muted">Response</span>
+            <pre className="mt-1.5 bg-surface-2 rounded-[var(--radius-brand)] px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-50">{DEFAULT_TTS_RESPONSE_EXAMPLE}</pre>
           </div>
           )}
         </div>
@@ -551,16 +559,16 @@ export function TtsExampleCard({ providerId }) {
           onClick={() => setModalOpen(false)}
         >
           <div
-            className="border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[80vh]"
+            className="border border-border rounded-[var(--radius-brand-lg)] shadow-[var(--shadow-elev)] w-full max-w-md mx-4 flex flex-col max-h-[80vh]"
             style={{ backgroundColor: "var(--color-bg)", isolation: "isolate" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 rounded-t-xl">
               <h3 className="text-sm font-semibold">Select Language</h3>
-              <button onClick={() => setModalOpen(false)} className="text-text-muted hover:text-primary transition-colors">
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
+              <Button variant="bare" size="icon" onClick={() => setModalOpen(false)} aria-label="Close" className="text-text-muted hover:text-brand">
+                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
+              </Button>
             </div>
 
             {/* Search */}
@@ -570,13 +578,13 @@ export function TtsExampleCard({ providerId }) {
                 value={modalSearch}
                 onChange={(e) => setModalSearch(e.target.value)}
                 placeholder="Search language..."
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                className="w-full px-3 py-1.5 text-sm border border-border rounded-[var(--radius-brand)] bg-surface-2 text-text-main focus-ring focus:outline-none"
               />
             </div>
 
             {/* Language list */}
             <div className="overflow-y-auto flex-1 p-2">
-              {modalError && <p className="text-xs text-red-500 px-2 py-1">{modalError}</p>}
+              {modalError && <p className="text-xs text-danger px-2 py-1">{modalError}</p>}
               {modalLoading ? (
                 <p className="text-xs text-text-muted px-2 py-3">Loading...</p>
               ) : (
@@ -585,15 +593,15 @@ export function TtsExampleCard({ providerId }) {
                     <button
                       key={c.code}
                       onClick={() => handlePickLanguage(c)}
-                      className={`flex items-center justify-between w-full px-3 py-2 rounded-lg text-left hover:bg-sidebar transition-colors ${
-                        selectedLang === c.code ? "bg-primary/10 text-primary" : ""
+                      className={`focus-ring flex items-center justify-between w-full px-3 py-2 rounded-[var(--radius-brand)] text-left hover:bg-surface-2 transition-colors duration-150 ${
+                        selectedLang === c.code ? "bg-brand-soft text-brand" : "text-text-main"
                       }`}
                     >
                       <span className="text-sm">{c.name}</span>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs text-text-muted">{c.voices.length} voices</span>
+                        <span className="text-xs text-text-muted metric">{c.voices.length} voices</span>
                         {selectedLang === c.code && (
-                          <span className="material-symbols-outlined text-[16px] text-primary">check</span>
+                          <span className="material-symbols-outlined text-[16px] text-brand" aria-hidden="true">check</span>
                         )}
                       </div>
                     </button>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle, Tooltip } from "@/shared/components";
+import { Badge, Button, Toggle, Tooltip } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
 import CooldownTimer from "./CooldownTimer";
 
@@ -174,26 +174,32 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   };
 
   return (
-    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors duration-150 hover:bg-surface-2 sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
-          <button
+          <Button
+            variant="bare" size="icon-sm"
             onClick={onMoveUp}
             disabled={isFirst}
-            className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            className={isFirst ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
+            title="Raise connection priority"
+            aria-label="Raise connection priority"
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
-          </button>
-          <button
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
+          </Button>
+          <Button
+            variant="bare" size="icon-sm"
             onClick={onMoveDown}
             disabled={isLast}
-            className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            className={isLast ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
+            title="Lower connection priority"
+            aria-label="Lower connection priority"
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
-          </button>
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
+          </Button>
         </div>
-        <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
+        <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-sm text-text-muted">
           {authIcon}
         </span>
         <div className="flex-1 min-w-0">
@@ -221,7 +227,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
-              <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
+              <span className="max-w-full truncate text-xs text-danger sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
               </span>
             )}
@@ -244,28 +250,28 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </Badge>
             )}
             {verification && (
-              <span className="text-xs text-amber-600 dark:text-amber-400">
+              <span className="text-xs text-warning">
                 {translate("Antigravity account verification required")}
               </span>
             )}
             {verificationError && (
-              <span className="text-xs text-amber-600 dark:text-amber-400">
+              <span className="text-xs text-warning">
                 {translate(verificationError)}
               </span>
             )}
           </div>
           {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
+              <span className="max-w-full truncate text-xs text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
                 {proxyDisplayText}
               </span>
               {maskedProxyUrl && (
-                <code className="max-w-full truncate rounded bg-black/5 px-1 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[260px]">
+                <code className="max-w-full truncate rounded bg-surface-2 px-1 py-0.5 font-mono text-xs text-text-muted sm:max-w-[260px]">
                   {maskedProxyUrl}
                 </code>
               )}
               {noProxyText && (
-                <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[320px]" title={noProxyText}>
+                <span className="max-w-full truncate text-xs text-text-muted sm:max-w-[320px]" title={noProxyText}>
                   no_proxy: {noProxyText}
                 </span>
               )}
@@ -281,7 +287,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`${translate("Verify Antigravity account")} ${displayName}`}
-              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-warning"
             >
               <span className="material-symbols-outlined text-[18px]" aria-hidden="true">verified_user</span>
               <span className="text-[10px] leading-tight">{translate("Verify Antigravity account")}</span>
@@ -291,9 +297,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <button
               onClick={verification.onRecheck}
               disabled={verification.rechecking}
-              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-warning transition-colors duration-150 hover:bg-warning-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className={`material-symbols-outlined text-[18px] ${verification.rechecking ? "animate-spin" : "refresh"}`}>
+              <span className={`material-symbols-outlined text-[18px] ${verification.rechecking ? "animate-spin" : ""}`}>
                 {verification.rechecking ? "progress_activity" : "refresh"}
               </span>
               <span className="text-[10px] leading-tight">{translate("Check verification")}</span>
@@ -304,19 +310,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors duration-150 hover:bg-surface-2 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
-                <span className="material-symbols-outlined text-[18px]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                   {updatingProxy ? "progress_activity" : "lan"}
                 </span>
-                <span className="text-[10px] leading-tight">Proxy</span>
+                <span className="text-xs leading-tight">Proxy</span>
               </button>
               {showProxyDropdown && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg">
+                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-elev">
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`focus-ring w-full text-left px-3 py-1.5 text-sm hover:bg-surface-2 ${!boundProxyPoolId ? "text-brand font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -324,7 +330,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`focus-ring w-full text-left px-3 py-1.5 text-sm hover:bg-surface-2 ${boundProxyPoolId === pool.id ? "text-brand font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
@@ -337,10 +343,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Tooltip text={autoPingTooltip}>
               <button
                 onClick={() => autoPing.onToggle(!autoPing.on)}
-                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors duration-150 hover:bg-surface-2 ${autoPing.on ? "text-brand" : "text-text-muted hover:text-brand"}`}
               >
-                <span className="material-symbols-outlined text-[18px]">bolt</span>
-                <span className="text-[10px] leading-tight">Auto-ping</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
+                <span className="text-xs leading-tight">Auto-ping</span>
               </button>
             </Tooltip>
           )}
@@ -350,20 +356,20 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 onClick={hotReload.onRun}
                 disabled={hotReload.running}
                 title={hotReloadStatus?.state === "failed" ? hotReloadStatus.error : undefined}
-                className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+                className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand"
               >
-                <span className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
-                <span className="text-[10px] leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
+                <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
+                <span className="text-xs leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
               </button>
             </Tooltip>
           )}
-          <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-            <span className="text-[10px] leading-tight">Edit</span>
+          <button onClick={onEdit} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="text-xs leading-tight">Edit</span>
           </button>
-          <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-            <span className="text-[10px] leading-tight">Delete</span>
+          <button onClick={onDelete} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-danger hover:bg-danger-soft">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="text-xs leading-tight">Delete</span>
           </button>
         </div>
         <Toggle

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { getNavigation } from "@/constants/docsConfig";
+import { getNavigation, t } from "@/constants/docsConfig";
 import { DEFAULT_LANG } from "@/constants/languages";
 import { ChevronDown, ChevronRight, BookOpen, Rocket, Terminal, Monitor, HelpCircle, MessageCircle, Layers, Plug, Cloud, Zap, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server } from "lucide-react";
 
@@ -63,15 +63,19 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
   };
 
   const buildHref = (slug) => (slug ? `/${lang}/${slug}` : `/${lang}`);
-  const isActive = (slug) => pathname === buildHref(slug);
+  // next.config.mjs sets trailingSlash: true, so usePathname() returns
+  // "/en/providers/free/" while buildHref returns "/en/providers/free".
+  // Compared raw these never match and no entry is ever marked active.
+  const normalize = (path) => (path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path);
+  const isActive = (slug) => normalize(pathname || "") === buildHref(slug);
 
   const handleLinkClick = () => {
     if (isMobile && onClose) onClose();
   };
 
   return (
-    <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-white border-gray-200 ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
-      <nav className="p-4 space-y-6">
+    <aside className={`${isMobile ? 'w-full' : 'w-64'} border-r bg-surface border-border ${isMobile ? 'h-full' : 'h-[calc(100vh-4rem)] sticky top-16'} overflow-y-auto`}>
+      <nav aria-label={t(lang, "docsNav")} className="p-4 space-y-6">
         {navigation.map((section, sectionIndex) => {
           const SectionIcon = SECTION_ICONS[section.key] || BookOpen;
 
@@ -79,16 +83,17 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
             <div key={section.key}>
               <button
                 onClick={() => toggleSection(sectionIndex)}
-                className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-2 hover:text-[#E68A6E] transition-colors"
+                aria-expanded={openSections.includes(sectionIndex)}
+                className="flex items-center justify-between w-full text-sm font-semibold text-text-main mb-2 hover:text-brand transition-colors duration-150"
               >
                 <span className="flex items-center gap-2">
                   <SectionIcon className="w-4 h-4" />
                   {section.title}
                 </span>
                 {openSections.includes(sectionIndex) ? (
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown aria-hidden="true" className="w-4 h-4" />
                 ) : (
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight aria-hidden="true" className="w-4 h-4" />
                 )}
               </button>
 
@@ -102,10 +107,11 @@ export default function DocsSidebar({ isMobile = false, onClose, lang = DEFAULT_
                         <Link
                           href={buildHref(item.slug)}
                           onClick={handleLinkClick}
-                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+                          aria-current={isActive(item.slug) ? "page" : undefined}
+                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-brand transition-colors duration-150 ${
                             isActive(item.slug)
-                              ? "bg-[#E68A6E]/10 text-[#E68A6E] font-medium"
-                              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                              ? "bg-brand-soft text-brand font-medium"
+                              : "text-text-muted hover:bg-surface-2 hover:text-text-main"
                           }`}
                         >
                           <ItemIcon className="w-4 h-4" />

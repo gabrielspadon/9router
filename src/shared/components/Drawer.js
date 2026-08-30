@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { cn } from "@/shared/utils/cn";
+import Button from "@/shared/components/Button";
 
 export default function Drawer({
   isOpen,
@@ -63,13 +64,14 @@ export default function Drawer({
               <h2 className="text-lg font-semibold text-text-main">{title}</h2>
             )}
           </div>
-          <button
+          <Button
+            variant="ghost" size="icon"
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+            aria-label="Close"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+          </Button>
         </div>
 
         {/* Body */}
