@@ -92,6 +92,7 @@ export async function handleJsonProxy(request, kind) {
       await clearAccountError(credentials.connectionId, credentials, model);
       return result.response;
     }
+    if (result.clientAborted) return result.response;
 
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId, result.status, result.error, provider, model

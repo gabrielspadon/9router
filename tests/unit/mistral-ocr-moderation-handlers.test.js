@@ -26,6 +26,12 @@ vi.mock("@/lib/localDb", () => ({
 vi.mock("@/sse/utils/logger.js", () => ({
   request: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), maskKey: vi.fn(),
 }));
+// The handler deliberately uses the proxy-aware transport. Delegate that
+// transport to the test's fetch spy so these are app behavior tests, not an
+// accidental live Mistral call.
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: (...args) => global.fetch(...args.slice(0, 2)),
+}));
 
 import { handleModerations } from "@/sse/handlers/moderations.js";
 import { handleOcr } from "@/sse/handlers/ocr.js";

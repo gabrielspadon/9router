@@ -9,6 +9,8 @@ const KIND_ENDPOINT = {
   tts: "/v1/audio/speech",
   stt: "/v1/audio/transcriptions",
   embedding: "/v1/embeddings",
+  ocr: "/v1/ocr",
+  moderation: "/v1/moderations",
   imageToText: "/v1/chat/completions",
   webSearch: "/v1/search",
   webFetch: "/v1/fetch",
