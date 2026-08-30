@@ -77,9 +77,9 @@ quota ceiling on one account is not a ceiling on the combo. Accounts hit by a
 429 are locked with exponential backoff rather than retried immediately.
 
 Credentials live in the dashboard. OAuth connections are refreshed in the
-background before they expire, API keys and tokens are encrypted at rest in a
-local SQLite database, and token usage, cost estimates and quota resets are
-tracked per provider and per model.
+background before they expire, provider secrets are encrypted at rest in a local
+SQLite database, and token usage, cost estimates and quota resets are tracked
+per provider and per model.
 
 Token savers run before the request is dispatched and are all fail-open, so any
 error inside one leaves the request untouched. RTK rewrites bulky tool results

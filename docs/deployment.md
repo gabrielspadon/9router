@@ -91,6 +91,13 @@ buffering has to be off in the proxy or every answer arrives at once when the
 stream closes. In nginx that is `proxy_buffering off;` on the location, plus a
 `proxy_read_timeout` long enough for a slow model.
 
+Match the proxy's idle timeout against the gateway's own. A reasoning model can
+be silent for up to `STREAM_FIRST_CHUNK_TIMEOUT_MS`, 200 seconds by default,
+before its first token, which is longer than nginx's 60 second default read
+timeout. 9Router emits a keepalive ping every `SSE_KEEPALIVE_MS`, 10 seconds by
+default, during that silence, so a proxy that forwards the ping keeps the
+connection alive; one that buffers it does not.
+
 ## On CapRover
 
 `captain-definition` at the repository root declares schema version 2 and points
@@ -118,8 +125,8 @@ value. The table below is the operational subset.
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for the stable machine id hash |
 | `DB_ENCRYPTION_KEY` | derived from the machine | Encrypts connection secrets at rest |
-| `ENABLE_REQUEST_LOGS` | `false` | Writes request and response logs under `logs/` |
-| `OBSERVABILITY_ENABLED` | `true` | Runtime observability signals |
+| `ENABLE_REQUEST_LOGS` | `false` | Writes request and response logs under `logs/`, and acts as the older fallback for the flag below |
+| `OBSERVABILITY_ENABLED` | the dashboard toggle, off | Records request details into the database |
 | `BASE_URL` | `http://localhost:20128` | Server-side base URL used by cloud sync jobs |
 | `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:20128` | Public base URL, kept for compatibility |
@@ -132,6 +139,10 @@ value. The table below is the operational subset.
 | `HEADROOM_API_KEY` | unset | Bearer token sent outbound to the proxy |
 | `HEADROOM_PROXY_TOKEN` | unset | Inbound secret for a proxy this app spawns |
 | `FETCH_CONNECT_TIMEOUT_MS` | `60000` | Last-resort upstream response-header timeout |
+| `STREAM_FIRST_CHUNK_TIMEOUT_MS` | `200000` | Time to first token, covering prompt prefill |
+| `STREAM_STALL_TIMEOUT_MS` | `360000` | Inter-chunk stall timeout once tokens are flowing |
+| `SSE_KEEPALIVE_MS` | `10000` | Downstream keepalive ping while the provider is silent, 0 disables |
+| `JSON_PROXY_TIMEOUT_MS` | `FETCH_CONNECT_TIMEOUT_MS` | Upstream wait for single-response OCR and moderation calls |
 | `OLLAMA_LOCAL_CONNECT_TIMEOUT_MS` | `120000` | Ollama Local first-token timeout |
 | `SEARXNG_URL` | `http://localhost:8888/search` | Built-in unauthenticated web-search provider |
 | `FIRECRAWL_BASE_URL` | `https://api.firecrawl.dev` | Firecrawl web fetch endpoint |
