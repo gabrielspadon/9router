@@ -9,7 +9,7 @@ const ALLOWED_DOMAINS = new Set([
 ]);
 const ALLOWED_SOURCES = new Set(["loadCodeAssist", "onboardUser", "usage", "chat"]);
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
-const GOOGLE_URL_RE = /https:\/\/accounts\.google\.com[^\s"'<>\\]*/g;
+const GOOGLE_URL_RE = /https:\/\/accounts\.google\.com[^\s"'<>\\]*/gi;
 
 function byteLength(value) {
   return new TextEncoder().encode(value).length;

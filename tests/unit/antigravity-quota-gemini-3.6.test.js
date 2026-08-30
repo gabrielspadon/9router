@@ -1,9 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const proxyAwareFetch = vi.fn(async (url) => ({
-  ok: true,
-  status: 200,
-  json: async () => url.includes(":loadCodeAssist")
+function payloadFor(url) {
+  return url.includes(":loadCodeAssist")
     ? { cloudaicompanionProject: "project-1", currentTier: { name: "Pro" } }
     : {
         models: {
@@ -29,8 +27,14 @@ const proxyAwareFetch = vi.fn(async (url) => ({
             quotaInfo: { remainingFraction: 0.5 },
           },
         },
-      },
-  text: async () => "{}",
+      };
+}
+
+const proxyAwareFetch = vi.fn(async (url) => ({
+  ok: true,
+  status: 200,
+  json: async () => payloadFor(url),
+  text: async () => JSON.stringify(payloadFor(url)),
 }));
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({

@@ -147,4 +147,12 @@ describe("redaction", () => {
   it("redacts malformed raw accounts links", () => {
     expectRedacted(redactAntigravityValidationText(`validation needed at ${URL} then continue`));
   });
+
+  it("redacts uppercase raw accounts links without changing URL acceptance", () => {
+    const uppercase = "HTTPS://accounts.google.com/AccountChooser?token=uppercase-secret";
+    const redacted = redactAntigravityValidationText(`validation needed at ${uppercase} then continue`);
+    expect(redacted).not.toContain(uppercase);
+    expect(redacted).not.toContain("uppercase-secret");
+    expect(redacted).toContain("validation needed");
+  });
 });
