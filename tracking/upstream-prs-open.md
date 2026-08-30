@@ -4298,3 +4298,86 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes:
 
+## PR #3631 — feat(codex): default gpt-5.6-sol to fast (priority) tier + local patches on v0.5.59
+
+- url: https://github.com/decolua/9router/pull/3631
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3630 — feat(security): comprehensive OWASP ASVS v5.0.0 security hardening
+
+- url: https://github.com/decolua/9router/pull/3630
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
+
+- url: https://github.com/decolua/9router/pull/3629
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3626 — feat(cline): live model catalog for free Cline connections
+
+- url: https://github.com/decolua/9router/pull/3626
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3625 — feat(kiro): flatten top-level tool schema combinators + degrade overs…
+
+- url: https://github.com/decolua/9router/pull/3625
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3624 — feat(fetch): add Ollama Cloud web fetch provider
+
+- url: https://github.com/decolua/9router/pull/3624
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## PR #3623 — fix(models): expose only configured custom-compatible models
+
+- url: https://github.com/decolua/9router/pull/3623
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+

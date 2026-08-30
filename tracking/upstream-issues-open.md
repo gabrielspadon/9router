@@ -11019,3 +11019,26 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes: 
 
+## Issue #3628 — Windows: Autostart cannot be disabled
+
+- url: https://github.com/decolua/9router/issues/3628
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
+
+## Issue #3622 — Long MCP tool names collide after truncation when translating to Vertex/Gemini function declarations
+
+- url: https://github.com/decolua/9router/issues/3622
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch: 
+- local-ref: 
+- disposition: 
+- validation: 
+- notes: 
+
