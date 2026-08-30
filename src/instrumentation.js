@@ -1,5 +1,10 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Rename process to distinguish 9router from generic next-server
+    if (process.title.startsWith("next-server")) {
+      process.title = process.title.replace("next-server", "9router");
+    }
+
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();
 
