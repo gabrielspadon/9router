@@ -24,8 +24,6 @@ export function applyCodexFastMode(
     || typeof body !== "object"
     || Array.isArray(body)
     || provider !== "codex"
-    || enabled !== true
-    || !CODEX_SOL_FAST_MODELS.has(normalizeModelId(model))
   ) {
     return body;
   }
@@ -33,6 +31,9 @@ export function applyCodexFastMode(
   if (Object.prototype.hasOwnProperty.call(body, "service_tier")) return body;
   if (clientServiceTierSpecified) {
     return { ...body, service_tier: clientServiceTier };
+  }
+  if (enabled !== true || !CODEX_SOL_FAST_MODELS.has(normalizeModelId(model))) {
+    return body;
   }
 
   return { ...body, service_tier: "priority" };

@@ -333,16 +333,23 @@ describe("Codex Sol Fast policy", () => {
     expect(mocks.execute.mock.calls[0][0].body).not.toHaveProperty("service_tier");
   });
 
-  it.each(["default", "priority", "unsupported"])(
-    'preserves explicit service tier "%s" for executor validation',
-    async (serviceTier) => {
+  it.each([
+    ["default", true, "gpt-5.6-sol"],
+    ["priority", true, "gpt-5.6-sol"],
+    ["unsupported", true, "gpt-5.6-sol"],
+    ["priority", false, "gpt-5.6-sol"],
+    ["priority", true, "gpt-5.6-terra"],
+    ["default", false, "gpt-5.6-luna"],
+  ])(
+    'preserves explicit service tier "%s" with Fast=%s for %s',
+    async (serviceTier, codexFastMode, model) => {
     mocks.execute.mockResolvedValueOnce(response(200));
 
     await handleChatCore(options({
       body: { service_tier: serviceTier },
-      modelInfo: { provider: "codex", model: "gpt-5.6-sol" },
+      modelInfo: { provider: "codex", model },
       sourceFormatOverride: "claude",
-      codexFastMode: true,
+      codexFastMode,
     }));
 
       expect(mocks.execute.mock.calls[0][0].body.service_tier).toBe(serviceTier);
