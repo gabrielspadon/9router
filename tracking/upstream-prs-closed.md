@@ -6481,3 +6481,17 @@
 - final-disposition: adapted and integrated
 - closed: 2026-08-30
 - detail: commit f7166ddce; compatible public model lists now expose only saved custom models and aliases, preserve explicit import discovery, and pass independent review
+
+## PR #3631 — feat(codex): default gpt-5.6-sol to fast (priority) tier + local patches on v0.5.59
+
+- url: https://github.com/decolua/9router/pull/3631
+- upstream-state: open (discovered 2026-08-30)
+- local-status: queued
+- branch:
+- local-ref:
+- disposition:
+- validation:
+- notes:
+- final-disposition: adapted and integrated
+- closed: 2026-08-30
+- detail: commits 12832ff34 through b58b98d06; opt-in post-translation Sol Fast policy, explicit Codex tier preservation, strict atomic settings, rollback-safe accessible UI, Codex-local orphan filtering, and exact fixture cleanup passed independent review, 161 canonical focused tests, and a 140-route production build

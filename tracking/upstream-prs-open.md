@@ -4111,18 +4111,6 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - validation: 
 - notes:
 
-## PR #3631 — feat(codex): default gpt-5.6-sol to fast (priority) tier + local patches on v0.5.59
-
-- url: https://github.com/decolua/9router/pull/3631
-- upstream-state: open (discovered 2026-08-30)
-- local-status: in-progress
-- branch: integration/task6-pr3631
-- local-ref: f656847fc
-- disposition: adapt and split
-- validation: .superpowers/sdd/PLAN/task-6-b29-pr3631-review.md
-- notes: post-translation Sol Fast policy and Codex-local orphan-output filtering only; reject bundled capability, random ID, and arbitrary tier changes
-
-
 ## PR #3629 — perf: optimize concurrency, L1 db caching, streaming allocations and socket handling
 
 - url: https://github.com/decolua/9router/pull/3629
