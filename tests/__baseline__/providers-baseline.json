@@ -29,7 +29,7 @@
     ],
     "format": "antigravity",
     "headers": {
-      "User-Agent": "antigravity/ide/2.1.1 darwin/arm64"
+      "User-Agent": "antigravity/ide/2.5.5 darwin/arm64"
     },
     "retry": {
       "429": {
@@ -199,7 +199,9 @@
     "usage": {
       "url": "https://chatgpt.com/backend-api/wham/usage",
       "resetCreditsUrl": "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
-      "resetCreditsConsumeUrl": "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
+      "resetCreditsConsumeUrl": "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+      "accountsCheckUrl": "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27",
+      "subscriptionsUrl": "https://chatgpt.com/backend-api/subscriptions"
     },
     "clientId": "app_EMoamEEZ73f0CkXaXp7hrann",
     "tokenUrl": "https://auth.openai.com/oauth/token"
@@ -575,7 +577,8 @@
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
     "quirks": {
-      "dropOutputConfig": true
+      "dropOutputConfig": true,
+      "ensureThinkingSignature": true
     },
     "reasoningInject": {
       "scope": "all"
@@ -626,7 +629,8 @@
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
     "quirks": {
-      "dropOutputConfig": true
+      "dropOutputConfig": true,
+      "ensureThinkingSignature": true
     },
     "reasoningInject": {
       "scope": "all"
@@ -1019,6 +1023,14 @@
     "baseUrl": "https://api.tokenrouter.com/v1/chat/completions",
     "validateUrl": "https://api.tokenrouter.com/v1/models",
     "thinkingFormat": "tokenrouter",
+    "usage": {
+      "url": "https://api.tokenrouter.com/api/management"
+    },
+    "format": "openai"
+  },
+  "opencode-zen": {
+    "baseUrl": "https://opencode.ai/zen/v1",
+    "headers": {},
     "format": "openai"
   },
   "alitp-intl": {
@@ -1031,6 +1043,22 @@
   },
   "nous": {
     "baseUrl": "https://inference-api.nousresearch.com/v1/chat/completions",
+    "format": "openai"
+  },
+  "meta": {
+    "baseUrl": "https://api.meta.ai/v1/chat/completions",
+    "validateUrl": "https://api.meta.ai/v1/models",
+    "thinkingFormat": "meta",
+    "format": "openai"
+  },
+  "chenzk": {
+    "baseUrl": "https://chenzk.top/v1/chat/completions",
+    "validateUrl": "https://chenzk.top/v1/models",
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer"
+    },
     "format": "openai"
   }
 }
