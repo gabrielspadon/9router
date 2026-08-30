@@ -4129,10 +4129,10 @@ Entries marked `status: in-progress` remain in this file until the local work me
 - upstream-state: open (discovered 2026-08-30)
 - local-status: in-progress
 - branch: 
-- local-ref: 
+- local-ref: 7e3796171
 - disposition: adapt
 - validation: .superpowers/sdd/PLAN/task-6-b29-pr3624-review.md
-- notes: official Ollama web-fetch contract retained; implementation must honor proxy policy, routing, format, size, timeout, and independent capability state
+- notes: reviewed Transport subproject integrated through 7e3796171 with bounded proxy-aware core, abort cleanup, explicit global proxy installation, 97/97 canonical replay, full no-regression verifier, and isolated build; public contract/discovery, account pinning, and capability-specific state/fallback remain deferred to the approved later subprojects
 
 ## PR #3635 — Adding a link to verify your antigravity account
 
