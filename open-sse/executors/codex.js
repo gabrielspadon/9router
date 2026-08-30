@@ -90,6 +90,68 @@ function stripStoredItemReferences(body) {
   });
 }
 
+// Codex uses store=false, so every tool output must be paired with a call in
+// the submitted input. Compacted clients can leave outputs behind after their
+// calls disappear, and duplicate results are invalid for the same call.
+function stripOrphanedToolOutputs(body) {
+  if (!Array.isArray(body.input)) return;
+
+  const functionCallIds = new Set();
+  const customCallIds = new Set();
+  let outputCount = 0;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (
+      item.type === "function_call"
+      && typeof item.call_id === "string"
+      && item.call_id.trim()
+    ) {
+      functionCallIds.add(item.call_id);
+    }
+    if (
+      item.type === "custom_tool_call"
+      && typeof item.call_id === "string"
+      && item.call_id.trim()
+    ) {
+      customCallIds.add(item.call_id);
+    }
+    if (Array.isArray(item.tool_calls)) {
+      for (const toolCall of item.tool_calls) {
+        if (typeof toolCall?.id === "string" && toolCall.id.trim()) {
+          functionCallIds.add(toolCall.id);
+        }
+      }
+    }
+    if (
+      item.type === "function_call_output"
+      || item.type === "custom_tool_call_output"
+    ) {
+      outputCount++;
+    }
+  }
+  if (outputCount === 0) return;
+
+  const seenOutputs = new Set();
+  body.input = body.input.filter((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+    const isFunctionOutput = item.type === "function_call_output";
+    const isCustomOutput = item.type === "custom_tool_call_output";
+    if (!isFunctionOutput && !isCustomOutput) return true;
+    if (typeof item.call_id !== "string" || !item.call_id.trim()) return false;
+
+    const validIds = isFunctionOutput ? functionCallIds : customCallIds;
+    const outputKey = `${item.type}\0${item.call_id}`;
+    if (!validIds.has(item.call_id) || seenOutputs.has(outputKey)) return false;
+    seenOutputs.add(outputKey);
+    return true;
+  });
+
+  const removed = outputCount - seenOutputs.size;
+  if (removed > 0) {
+    dbg("CODEX", `stripOrphanedToolOutputs | removed=${removed} kept=${seenOutputs.size}`);
+  }
+}
+
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
 function normalizeCodexTools(body) {
   if (!Array.isArray(body.tools)) return;
@@ -502,6 +564,7 @@ export class CodexExecutor extends BaseExecutor {
     normalizeCodexMessageItems(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body);
+    stripOrphanedToolOutputs(body);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
