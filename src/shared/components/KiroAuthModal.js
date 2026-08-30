@@ -563,7 +563,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 value={cliProxyJson}
                 onChange={(e) => setCliProxyJson(e.target.value)}
                 placeholder={'{"auth_method":"external_idp","access_token":"...","refresh_token":"...","client_id":"...","token_endpoint":"https://login.microsoftonline.com/.../oauth2/v2.0/token","profile_arn":"...","scopes":"..."}'}
-                className="min-h-40 w-full rounded-md border border-border bg-background p-3 font-mono text-sm outline-none focus:border-primary"
+                className="focus-ring min-h-40 w-full rounded-md border border-border bg-background p-3 font-mono text-sm focus:border-primary"
               />
             </div>
 

@@ -57,11 +57,10 @@ export default function MultiSelect({
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "w-full h-10 px-3 flex items-center justify-between gap-2 text-sm",
-          "bg-surface-2 border border-transparent rounded-[10px]",
-          "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
-          "transition-all duration-150 cursor-pointer hover:border-border",
-          open && "ring-2 ring-brand-500/30 border-brand-500/40"
+          "focus-ring w-full h-10 px-3 flex items-center justify-between gap-2 text-sm",
+          "bg-surface border border-border rounded-[var(--radius-brand)]",
+          "transition-colors duration-150 cursor-pointer hover:border-brand-line",
+          open && "border-brand-line"
         )}
       >
         <span className={cn(selected.length === 0 || allSelected ? "text-text-muted" : "text-text-main")}>

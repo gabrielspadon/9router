@@ -112,12 +112,12 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or description..."
-            className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="focus-ring flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border"
           />
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="focus-ring px-2 py-1.5 bg-surface rounded text-xs border border-border"
           >
             <option value="all">All</option>
             <option value="authless">Authless</option>
