@@ -11,7 +11,7 @@ const LEDGER_CAP = 1024;
 const liveByConnection = new Map();
 const seenObservations = new Map();
 const activeLifetimeByConnection = new Map();
-const latestHookIssuanceByConnection = new Map();
+const latestRecordedHookIssuanceByConnection = new Map();
 const events = new EventEmitter();
 let generation = 0;
 let hookIssuance = 0;
@@ -83,12 +83,17 @@ function nextGeneration() {
 function issueHook(connectionId) {
   if (hookIssuance >= Number.MAX_SAFE_INTEGER) throw new Error("Antigravity verification hook issuance exhausted");
   hookIssuance += 1;
-  latestHookIssuanceByConnection.set(connectionId, hookIssuance);
   return hookIssuance;
 }
 
-function hookIssuanceIsCurrent(connectionId, issuance) {
-  return issuance === undefined || latestHookIssuanceByConnection.get(connectionId) === issuance;
+function hookIssuanceCanRecordOutcome(connectionId, issuance) {
+  if (issuance === undefined) return true;
+  const latestRecorded = latestRecordedHookIssuanceByConnection.get(connectionId);
+  return latestRecorded === undefined || issuance >= latestRecorded;
+}
+
+function recordHookOutcomeIssuance(connectionId, issuance) {
+  if (issuance !== undefined) latestRecordedHookIssuanceByConnection.set(connectionId, issuance);
 }
 
 export function getAntigravityVerificationSnapshot() {
@@ -120,7 +125,7 @@ export function recordAntigravityValidation(connectionId, { validation, observat
     !connectionId
     || !observationId
     || !lifetimeIsCurrent(connectionId, connectionLifetime)
-    || !hookIssuanceIsCurrent(connectionId, issuance)
+    || !hookIssuanceCanRecordOutcome(connectionId, issuance)
   ) return false;
   const url = validateAntigravityVerificationUrl(validation?.url);
   if (!url || validation?.kind !== "antigravity_validation_required") return false;
@@ -140,11 +145,13 @@ export function recordAntigravityValidation(connectionId, { validation, observat
     challengeId: crypto.randomUUID(),
     generation: nextGeneration(),
     observationId,
+    issuance,
     url,
     observedAt: now,
     expiresAt: now + TTL_MS,
   };
   liveByConnection.set(connectionId, entry);
+  recordHookOutcomeIssuance(connectionId, issuance);
   events.emit("change", { type: "upsert", ...publicEntry(entry) });
   return true;
 }
@@ -154,18 +161,19 @@ export function clearAntigravityVerificationIfCurrent(connectionId, challengeId,
     !connectionId
     || !challengeId
     || !lifetimeIsCurrent(connectionId, connectionLifetime)
-    || !hookIssuanceIsCurrent(connectionId, issuance)
+    || !hookIssuanceCanRecordOutcome(connectionId, issuance)
   ) return false;
   evictExpired();
   const current = liveByConnection.get(connectionId);
   if (!current || current.challengeId !== challengeId) return false;
+  recordHookOutcomeIssuance(connectionId, issuance);
   return removeLiveEntry(connectionId, current);
 }
 
 export function invalidateAntigravityVerificationConnection(connectionId) {
   if (!connectionId) return false;
   const hadLifetime = activeLifetimeByConnection.delete(connectionId);
-  const hadHookIssuance = latestHookIssuanceByConnection.delete(connectionId);
+  const hadHookIssuance = latestRecordedHookIssuanceByConnection.delete(connectionId);
   const hadLive = removeLiveEntry(connectionId);
   let hadLedger = false;
   for (const [key, entry] of seenObservations) {

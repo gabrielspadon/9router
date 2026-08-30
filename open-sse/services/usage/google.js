@@ -14,10 +14,44 @@ const ANTIGRAVITY_CONFIG = {
   userAgent: ANTIGRAVITY_IDE_USER_AGENT,
 };
 
+const ANTIGRAVITY_PLAN_NAMES = new Set([
+  "Free",
+  "Pro",
+  "Premium",
+  "Google AI Pro",
+  "Google AI Ultra",
+]);
+
+const ANTIGRAVITY_QUOTA_DISPLAY_NAMES = Object.freeze({
+  "gemini-3.7-flash-high": ["Gemini 3.7 Flash (High)", "Gemini 3.7 Flash High"],
+  "gemini-3.7-flash-medium": ["Gemini 3.7 Flash (Medium)", "Gemini 3.7 Flash Medium"],
+  "gemini-3.7-flash-low": ["Gemini 3.7 Flash (Low)", "Gemini 3.7 Flash Low"],
+  "gemini-3.6-flash-high": ["Gemini 3.6 Flash (High)", "Gemini 3.6 Flash High"],
+  "gemini-3.6-flash-medium": ["Gemini 3.6 Flash (Medium)", "Gemini 3.6 Flash Medium"],
+  "gemini-3.6-flash-low": ["Gemini 3.6 Flash (Low)", "Gemini 3.6 Flash Low"],
+  "gemini-3.5-flash-low": ["Gemini 3.5 Flash (Medium)", "Gemini 3.5 Flash Medium"],
+  "gemini-3.5-flash-extra-low": ["Gemini 3.5 Flash (Low)", "Gemini 3.5 Flash Low"],
+  "gemini-pro-agent": ["Gemini 3.1 Pro (High)", "Gemini 3.1 Pro High"],
+  "gemini-3.1-pro-low": ["Gemini 3.1 Pro (Low)", "Gemini 3.1 Pro Low"],
+  "claude-sonnet-4-6": ["Claude Sonnet 4.6 (Thinking)", "Claude Sonnet 4.6 Thinking"],
+  "claude-opus-4-6-thinking": ["Claude Opus 4.6 (Thinking)", "Claude Opus 4.6 Thinking"],
+  "gpt-oss-120b-medium": ["GPT-OSS 120B (Medium)", "GPT-OSS 120B Medium"],
+  "gemini-3.1-flash-image": ["Gemini 3.1 Flash Image"],
+});
+
 const usableAntigravityUsageResults = new WeakSet();
 
 export function isUsableAntigravityUsageResult(result) {
   return !!result && typeof result === "object" && usableAntigravityUsageResults.has(result);
+}
+
+function safeAntigravityPlan(name) {
+  return typeof name === "string" && ANTIGRAVITY_PLAN_NAMES.has(name) ? name : "Unknown";
+}
+
+function safeAntigravityQuotaDisplayName(modelKey, displayName) {
+  const allowedDisplayNames = ANTIGRAVITY_QUOTA_DISPLAY_NAMES[modelKey];
+  return allowedDisplayNames?.includes(displayName) ? displayName : modelKey;
 }
 
 async function readAntigravityJson(response) {
@@ -270,13 +304,13 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           resetAt: parseResetTime(info.quotaInfo.resetTime),
           remainingPercentage,
           unlimited: false,
-          displayName: info.displayName || modelKey,
+          displayName: safeAntigravityQuotaDisplayName(modelKey, info.displayName),
         };
       }
     }
 
     const result = {
-      plan: subscriptionInfo?.currentTier?.name || "Unknown",
+      plan: safeAntigravityPlan(subscriptionInfo?.currentTier?.name),
       quotas,
     };
     usableAntigravityUsageResults.add(result);

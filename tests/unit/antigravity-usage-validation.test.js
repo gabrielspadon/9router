@@ -331,6 +331,52 @@ describe("Antigravity usage verification", () => {
     expect(serialized).not.toContain(MIXED_OPAQUE_VALUE);
   });
 
+  it("projects unallowlisted successful labels through the usage route without upstream diagnostics", async () => {
+    const google = await loadGoogle([
+      jsonResponse({
+        currentTier: { name: MIXED_ACTION_URL },
+        cloudaicompanionProject: MIXED_OPAQUE_VALUE,
+      }),
+      jsonResponse({
+        models: {
+          "gemini-3.7-flash-high": {
+            displayName: MIXED_ACTION_URL,
+            opaque: MIXED_OPAQUE_VALUE,
+            quotaInfo: { remainingFraction: 0.5 },
+          },
+        },
+      }),
+    ]);
+    const usage = await google.getAntigravityUsage("token", {});
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage",
+      provider: "antigravity",
+      authType: "oauth",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.updateProviderConnection.mockResolvedValue(undefined);
+    routeMocks.getUsageForProvider.mockResolvedValue(usage);
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(
+      new Request("http://localhost:20128/api/usage/conn-usage"),
+      { params: Promise.resolve({ connectionId: "conn-usage" }) },
+    );
+    const payload = await response.json();
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toMatchObject({
+      plan: "Unknown",
+      quotas: { "gemini-3.7-flash-high": { displayName: "gemini-3.7-flash-high" } },
+    });
+    expect(serialized).not.toContain(MIXED_ACTION_URL);
+    expect(serialized).not.toContain("mixed-action-secret");
+    expect(serialized).not.toContain(MIXED_OPAQUE_VALUE);
+  });
+
   it("does not expose a non-JSON quota diagnostic through the usage endpoint", async () => {
     const google = await loadGoogle([
       jsonResponse({ currentTier: { name: "Premium" } }),

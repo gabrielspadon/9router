@@ -71,6 +71,42 @@ describe("Antigravity verification state", () => {
     expect(store.getAntigravityVerification("conn-a").challengeId).toBe(current.challengeId);
   });
 
+  it("allows an older validation callback until a newer hook records an outcome", async () => {
+    const store = await loadStore();
+    const olderA = store.createAntigravityVerificationHooks("conn-a");
+    const newerB = store.createAntigravityVerificationHooks("conn-a");
+
+    expect(olderA.onValidationRequired({
+      validation,
+      observationId: olderA.verificationContext.observationId,
+    })).toBe(true);
+    const first = store.getAntigravityVerification("conn-a");
+
+    expect(newerB.onValidationRequired({
+      validation,
+      observationId: newerB.verificationContext.observationId,
+    })).toBe(true);
+    const current = store.getAntigravityVerification("conn-a");
+
+    expect(olderA.onValidationRequired({
+      validation,
+      observationId: `${olderA.verificationContext.observationId}-late`,
+    })).toBe(false);
+    expect(current.challengeId).not.toBe(first.challengeId);
+    expect(store.getAntigravityVerification("conn-a").challengeId).toBe(current.challengeId);
+  });
+
+  it("allows an older matching success until a newer hook records an outcome", async () => {
+    const store = await loadStore();
+    record(store, "conn-a", "pending");
+    const pending = store.getAntigravityVerification("conn-a");
+    const olderA = store.createAntigravityVerificationHooks("conn-a");
+    store.createAntigravityVerificationHooks("conn-a");
+
+    expect(olderA.onVerificationSuccess({ challengeId: pending.challengeId })).toBe(true);
+    expect(store.getAntigravityVerification("conn-a")).toBeNull();
+  });
+
   it("rejects an older hook callback after a newer hook has observed its challenge", async () => {
     const store = await loadStore();
     const olderA = store.createAntigravityVerificationHooks("conn-a");
