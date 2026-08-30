@@ -22,27 +22,35 @@ const COMBINED_WEB_ITEM = {
   href: "/dashboard/media-providers/web",
 };
 
+// The rail is grouped by what the product actually does. A flat list of ten
+// destinations made the reader work out the shape of the product; naming the
+// four jobs states it. `job` is presentational grouping only: the hrefs, the
+// hideable ids and the active-route logic are unchanged.
+const NAV_JOBS = ["Connect", "Compose", "Point", "Watch"];
+
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { href: "/dashboard/providers", label: "Providers", icon: "dns", job: "Connect" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   {
     href: "/dashboard/combos",
     label: "Combo & Vision Adapter",
     icon: "layers",
+    job: "Compose",
   },
-  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
-  { href: "/dashboard/statistics", label: "Statistics", icon: "insights" },
-  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
-  { href: "/dashboard/memory", label: "Memory & Context", icon: "psychology" },
+  { href: "/dashboard/memory", label: "Memory & Context", icon: "psychology", job: "Compose" },
   {
     href: "/dashboard/claude-compat",
     label: "Claude Compat",
     icon: "smart_toy",
+    job: "Compose",
   },
+  { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api", job: "Point" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal", job: "Point" },
+  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart", job: "Watch" },
+  { href: "/dashboard/statistics", label: "Statistics", icon: "insights", job: "Watch" },
+  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage", job: "Watch" },
+  { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings", job: "Watch" },
 ];
 
 // Entries hideable via Settings → Claude Code Minimal Mode. Persisted as
@@ -218,37 +226,61 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems
-            .filter((item) => !isNavHidden(NAV_ID_BY_HREF[item.href]))
-            .map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-brand-soft text-brand"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main",
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href)
-                      ? "fill-1"
-                      : "group-hover:text-brand transition-colors",
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
-            ))}
+          {(() => {
+            // Grouped by job, numbered across the whole rail so a number is a
+            // stable address someone can quote. The filter, the active-route
+            // test and the close behaviour are exactly as before.
+            const visible = navItems.filter(
+              (item) => !isNavHidden(NAV_ID_BY_HREF[item.href]),
+            );
+            return NAV_JOBS.map((job) => {
+              const items = visible.filter((item) => item.job === job);
+              if (!items.length) return null;
+              return (
+                <div key={job} className="pb-2">
+                  <p className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
+                    {job}
+                  </p>
+                  {items.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onClose}
+                      aria-current={isActive(item.href) ? "page" : undefined}
+                      className={cn(
+                        "group flex items-center gap-2.5 border-l-2 px-3 py-1.5 transition-colors",
+                        isActive(item.href)
+                          ? "border-brand bg-brand-soft text-brand"
+                          : "border-transparent text-text-muted hover:bg-surface-2 hover:text-text-main",
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="w-[18px] shrink-0 font-mono text-[10px] tabular-nums text-text-subtle"
+                      >
+                        {String(visible.indexOf(item) + 1).padStart(2, "0")}
+                      </span>
+                      <span
+                        className={cn(
+                          "material-symbols-outlined text-[18px]",
+                          isActive(item.href)
+                            ? "fill-1"
+                            : "transition-colors group-hover:text-brand",
+                        )}
+                      >
+                        {item.icon}
+                      </span>
+                      <span className="min-w-0 text-[13px] font-medium">{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              );
+            });
+          })()}
 
           {/* System section */}
           <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+            <p className="mb-1 px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
               System
             </p>
 
