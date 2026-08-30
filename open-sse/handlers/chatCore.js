@@ -39,7 +39,6 @@ import {
   buildRequestDetail,
   extractRequestConfig,
 } from "./chatCore/requestDetail.js";
-import { resolveUpstreamRoute } from "./chatCore/upstreamRoute.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { clientRequestedStreaming as requestedStreaming } from "./chatCore/streamMode.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
