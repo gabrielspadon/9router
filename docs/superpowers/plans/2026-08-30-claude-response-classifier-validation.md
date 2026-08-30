@@ -165,9 +165,9 @@ const terminalFrame = (output, eol = "\n") => frame(
 - Consumes: `ROLE`, `CLAUDE_BLOCK`, and `RESPONSES_ITEM` from `open-sse/translator/schema/index.js`; the raw `ReadableStream` and request body already passed to `handleForcedSSEToJson`.
 - Produces: the four exported leaf functions and typed error above; a classifier-only stream tee; a canonical Claude Message or fixed 502 from the forced Responses SSE path.
 
-- [ ] **Step 1: Add and run only the first load-bearing RED**
+- [ ] **Step 1: Prove the current forced Responses behavior before the leaf exists**
 
-Mock only `@/lib/usageDb.js`, import the real `FORMATS` and `handleForcedSSEToJson`, and send one `response.output_item.done` containing `This looks safe to me.` followed by one successful terminal frame.
+Create the test module with only the existing-handler imports needed for this case. Do not import or mock `claudeClassifier.js` yet. Mock only `@/lib/usageDb.js`, import the real `FORMATS` and `handleForcedSSEToJson`, and send one `response.output_item.done` containing `This looks safe to me.` followed by one successful terminal frame.
 
 ```js
 it("rejects malformed classifier prose from forced Responses SSE", async () => {
@@ -192,7 +192,134 @@ npx vitest run --config vitest.config.js \
 
 Expected RED is one failed test because current `abacb8a40` returns success and HTTP 200 with the prose. Save the output before any production edit.
 
-- [ ] **Step 2: Add the complete detector and direct validator RED matrices**
+- [ ] **Step 2: Add the minimal leaf and forced Responses final seam**
+
+Create `claudeClassifier.js` with the exact constants, typed error, detector, two intentionally empty projector results, and minimal final-Message validator below. The later projector REDs will therefore exercise returned values from callable exports.
+
+```js
+import { CLAUDE_BLOCK } from "../../translator/schema/index.js";
+
+const CLASSIFIER_SYSTEM_PREFIX =
+  "You are a security monitor for autonomous AI coding agents";
+const DECISIONS = new Set(["<block>no</block>", "<block>yes</block>"]);
+
+export const CLAUDE_CLASSIFIER_ERROR_MESSAGE =
+  "Claude Code classifier returned an invalid decision; expected exactly <block>no</block> or <block>yes</block>.";
+
+export class ClaudeClassifierValidationError extends Error {
+  constructor() {
+    super(CLAUDE_CLASSIFIER_ERROR_MESSAGE);
+    this.name = "ClaudeClassifierValidationError";
+  }
+  code = "CLAUDE_CLASSIFIER_INVALID_DECISION";
+}
+
+export function isClaudeClassifierRequest(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  if (Object.hasOwn(body, "stream") && body.stream !== false) return false;
+
+  const systemText = typeof body.system === "string"
+    ? body.system
+    : Array.isArray(body.system)
+      && body.system[0]?.type === CLAUDE_BLOCK.TEXT
+      && typeof body.system[0]?.text === "string"
+        ? body.system[0].text
+        : null;
+  if (systemText == null || !systemText.startsWith(CLASSIFIER_SYSTEM_PREFIX)) {
+    return false;
+  }
+  const next = systemText[CLASSIFIER_SYSTEM_PREFIX.length];
+  if (next !== undefined && next !== "." && next !== ":" && !/\s/u.test(next)) {
+    return false;
+  }
+
+  if (!Object.hasOwn(body, "stop_sequences")) return true;
+  if (!Array.isArray(body.stop_sequences)) return false;
+  if (body.stop_sequences.length === 0) return true;
+  return body.stop_sequences.some(
+    (value) => typeof value === "string" && value.trim() === "</block>",
+  );
+}
+
+export async function projectResponsesClassifierStream(body, stream) {
+  if (!isClaudeClassifierRequest(body)) return null;
+  return { entries: [], evidence: [] };
+}
+
+export function projectResponsesClassifierOutput(body, responseBody) {
+  if (!isClaudeClassifierRequest(body)) return null;
+  return { entries: [], evidence: [] };
+}
+
+export function validateClaudeClassifierMessage(body, message, projection = null) {
+  if (!isClaudeClassifierRequest(body)) return message;
+  const content = message?.type === "message"
+    && message?.role === "assistant"
+    && Array.isArray(message?.content)
+      ? message.content
+      : null;
+  const decision = projection === null
+    && content?.length === 1
+    && content[0]?.type === CLAUDE_BLOCK.TEXT
+    && typeof content[0]?.text === "string"
+      ? content[0].text.trim()
+      : null;
+  if (decision === null || !DECISIONS.has(decision)) {
+    throw new ClaudeClassifierValidationError();
+  }
+  return { ...message, content: [{ type: CLAUDE_BLOCK.TEXT, text: decision }] };
+}
+```
+
+Import only `isClaudeClassifierRequest`, `validateClaudeClassifierMessage`, the typed error, and fixed message into `sseToJsonHandler.js`. After the SSE content-type gate, compute the handler-wide mode.
+
+```js
+const classifierMode = sourceFormat === FORMATS.CLAUDE
+  && isClaudeClassifierRequest(body);
+```
+
+After the actual Responses Claude branch builds `finalResp`, validate it without a projection. Do not touch Gemini or the stream body in this slice.
+
+```js
+if (classifierMode && !isGeminiSse) {
+  finalResp = validateClaudeClassifierMessage(body, finalResp, null);
+}
+```
+
+Map the typed error before the existing generic conversion error.
+
+```js
+if (err instanceof ClaudeClassifierValidationError) {
+  return createErrorResult(
+    HTTP_STATUS.BAD_GATEWAY,
+    CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+  );
+}
+```
+
+Rerun the initial named case.
+
+```bash
+npx vitest run --config vitest.config.js \
+  unit/claude-auto-mode-classifier.test.js \
+  -t "rejects malformed classifier prose from forced Responses SSE"
+node --check ../open-sse/handlers/chatCore/claudeClassifier.js
+node --check ../open-sse/handlers/chatCore/sseToJsonHandler.js
+```
+
+Expected is one passed test. The same live path that returned HTTP 200 in Step 1 now returns the fixed 502. Commit this independently working slice.
+
+```bash
+git add open-sse/handlers/chatCore/claudeClassifier.js \
+  open-sse/handlers/chatCore/sseToJsonHandler.js \
+  tests/unit/claude-auto-mode-classifier.test.js
+git commit -m "fix(claude): reject malformed classifier prose"
+git log --oneline -1
+```
+
+Expected HEAD subject is exactly `fix(claude): reject malformed classifier prose` and status is clean.
+
+- [ ] **Step 3: Complete the detector and direct validator through RED then GREEN**
 
 Add table-driven detector cases for all of the following exact rows.
 
@@ -232,11 +359,17 @@ Add direct Message validation rows.
 | Thinking-only, malformed thinking, malformed redacted thinking, tool-use, image, document, tool-result, and unknown block |
 | Exact decision plus tool-use and exact decision plus unknown block |
 
-For each classifier rejection, assert `toThrowError(ClaudeClassifierValidationError)`, exact `.code`, exact message, and absence of the invalid output from the thrown text. Deep-freeze the original Message and assert it remains byte-equal. Deep-freeze one supplied Responses projection and assert validation edits neither its entries nor its evidence and replaces none of their objects. A hand-built projection with one exact text entry but one `resolved:false` evidence record must reject.
+For each classifier rejection, assert `toThrowError(ClaudeClassifierValidationError)`, exact `.code`, exact message, and absence of the invalid output from the thrown text. Deep-freeze the original Message and assert it remains byte-equal. At this stage the two accepted thinking rows are the only REDs because the minimal validator rejects all multi-block content.
 
-Run the dedicated file. Expected RED is module-not-found for the new leaf plus the original handler gap. Do not weaken assertions to get a partial green.
+```bash
+npx vitest run --config vitest.config.js \
+  unit/claude-auto-mode-classifier.test.js \
+  -t "validates classifier Messages directly"
+```
 
-- [ ] **Step 3: Add the complete JSON and raw SSE projection RED matrices**
+Expected is exactly two failed cases, the well-formed thinking plus decision and redacted-thinking plus decision rows. Extend the validator to adapt every final content block into the same entry policy later used by projections. It accepts exactly one decision text, discards only well-formed thinking or redacted-thinking blocks, rejects every other block, and returns a new Message and content array without mutating input. When `projection` is non-null, validate the Message envelope but derive the decision only from `projection.entries`; require every supplied evidence row to have `resolved:true`. Rerun the named matrix and expect every row green.
+
+- [ ] **Step 4: Add the JSON and terminal-SSE projector RED matrices**
 
 Direct JSON projector tests must assert exact `kind`, `text`, `itemIndex`, `blockIndex`, and entry order for these rows.
 
@@ -274,16 +407,9 @@ Direct stream projector tests use raw bytes, not aggregated JSON. Cover each row
 | Function call, custom-tool call, unknown item, or unknown nested block beside a decision | Preserved rejecting entry |
 | Missing done item, non-integer index, negative index, malformed JSON, or hidden item/content/output on unknown event | Malformed entry |
 | Duplicate terminal, incomplete, failed, unsuccessful terminal status, and EOF without successful terminal | Malformed entry |
-| Matching output-item-added, content-part, output-text, reasoning-summary, call-argument, and custom-tool fragments followed by authoritative logical items | Resolved evidence, with no text reconstructed from fragments |
-| Output-item-added message or custom-tool item with no matching done or terminal item | Unresolved evidence plus malformed entry |
-| Content-part-added or content-part-done with no matching final item/block | Unresolved evidence plus malformed entry |
-| Function-call-arguments or custom-tool-input fragment with no matching final call item | Unresolved evidence plus malformed entry |
-| Fragment output index, item ID, item type, block index, or block type that disagrees with the authoritative item | Unresolved evidence plus malformed entry |
-| Content-free lifecycle metadata and `[DONE]` | No projection entry and no pending evidence |
+| Content-free lifecycle metadata and `[DONE]` | No projection entry |
 
-Assert event ordinals increase in arrival order, duplicate output indexes remain distinct, evidence order matches frame arrival, and every successful projection has only `resolved:true` evidence. Assert `projectResponsesClassifierStream` returns `null` without calling `getReader()` for a non-classifier body.
-
-Add five load-bearing real-handler REDs whose final terminal output otherwise contains one valid decision. The preceding hidden evidence is an unpaired `custom_tool_call` in `response.output_item.added`, an unpaired unknown `response.content_part.added`, an unpaired `response.function_call_arguments.delta`, an unpaired `response.custom_tool_call_input.delta`, and an output-text fragment whose item ID disagrees with the terminal message. Each must expect the fixed 502.
+Assert event ordinals increase in arrival order and duplicate output indexes remain distinct. Assert `projectResponsesClassifierStream` returns `null` without calling `getReader()` for a non-classifier body, and the JSON projector returns `null` without inspecting a throwing `responseBody.output` getter for a non-classifier body.
 
 Add one forced Responses non-Claude near-miss. Use the exact classifier-shaped body with `sourceFormat: FORMATS.OPENAI`, return arbitrary prose, and assert the existing successful Chat response remains deeply equal while all four leaf spies stay at zero calls.
 
@@ -315,67 +441,11 @@ vi.mock("../../open-sse/handlers/chatCore/claudeClassifier.js", async (importOri
 
 In `beforeEach`, call `.mockClear()` on each spy. Do not use `.mockReset()` or `.mockRestore()`, which would remove the passthrough implementation.
 
-Run these five rows before implementing evidence reconciliation.
+Run the dedicated file. Expected REDs are value and shape mismatches because classifier calls still receive empty projector results. The non-classifier null cases and initial forced-Responses behavior remain green.
 
-```bash
-npx vitest run --config vitest.config.js \
-  unit/claude-auto-mode-classifier.test.js \
-  -t "rejects unresolved Responses transport evidence"
-```
+- [ ] **Step 5: Implement lossless JSON and terminal-SSE projection without fragment evidence**
 
-Expected RED is five failed tests because the current aggregator and the first plan revision ignore added and fragment frames, then accept the terminal decision.
-
-- [ ] **Step 4: Implement the pure leaf**
-
-Import only schema constants. Do not import Node helpers or another production module.
-
-```js
-import { CLAUDE_BLOCK, RESPONSES_ITEM, ROLE } from "../../translator/schema/index.js";
-
-const CLASSIFIER_SYSTEM_PREFIX =
-  "You are a security monitor for autonomous AI coding agents";
-const DECISIONS = new Set(["<block>no</block>", "<block>yes</block>"]);
-
-export const CLAUDE_CLASSIFIER_ERROR_MESSAGE =
-  "Claude Code classifier returned an invalid decision; expected exactly <block>no</block> or <block>yes</block>.";
-
-export class ClaudeClassifierValidationError extends Error {
-  constructor() {
-    super(CLAUDE_CLASSIFIER_ERROR_MESSAGE);
-    this.name = "ClaudeClassifierValidationError";
-  }
-  code = "CLAUDE_CLASSIFIER_INVALID_DECISION";
-}
-```
-
-Implement detection with exact own-member semantics.
-
-```js
-export function isClaudeClassifierRequest(body) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  if (Object.hasOwn(body, "stream") && body.stream !== false) return false;
-
-  const systemText = typeof body.system === "string"
-    ? body.system
-    : Array.isArray(body.system)
-      && body.system[0]?.type === CLAUDE_BLOCK.TEXT
-      && typeof body.system[0]?.text === "string"
-        ? body.system[0].text
-        : null;
-  if (systemText == null || !systemText.startsWith(CLASSIFIER_SYSTEM_PREFIX)) return false;
-  const next = systemText[CLASSIFIER_SYSTEM_PREFIX.length];
-  if (next !== undefined && next !== "." && next !== ":" && !/\s/u.test(next)) return false;
-
-  if (!Object.hasOwn(body, "stop_sequences")) return true;
-  if (!Array.isArray(body.stop_sequences)) return false;
-  if (body.stop_sequences.length === 0) return true;
-  return body.stop_sequences.some(
-    (value) => typeof value === "string" && value.trim() === "</block>",
-  );
-}
-```
-
-Use one internal `projectOutput(output, eventOrdinal = null)` function for JSON, terminal-only SSE, and done-frame SSE. A message must be assistant-role with a non-empty content array. Each `output_text` string becomes one text entry. A reasoning item with absent or empty summary produces one thinking entry with `text:null`; every present summary member must be `summary_text` with string text. Call and tool token types are actionable. Unknown types are unknown. Recognized items with malformed required members are malformed.
+Expand the schema import to `CLAUDE_BLOCK`, `RESPONSES_ITEM`, and `ROLE`. Use one internal `projectOutput(output, eventOrdinal = null)` function for JSON, terminal-only SSE, and done-frame SSE. A message must be assistant-role with a non-empty content array. Each `output_text` string becomes one text entry. A reasoning item with absent or empty summary produces one thinking entry with `text:null`; every present summary member must be `summary_text` with string text. Call and tool token types are actionable. Unknown types are unknown. Recognized items with malformed required members are malformed.
 
 Use `/(^|_)(?:tool|call)(?:_|$)/u` for the conservative actionable-type fallback after the fixed `RESPONSES_ITEM` cases. Stable reasoning metadata such as `id`, `status`, and encrypted content does not add entries and cannot become a decision.
 
@@ -383,7 +453,7 @@ Implement an internal recursive structural equality function that compares primi
 
 The stream projector must use one streaming `TextDecoder("utf-8", { fatal: false })`, preserve incomplete UTF-8 between reads, accept LF and CRLF, join all data lines with `\n`, and dispatch a trailing frame at EOF. For each parsed frame, the explicit `event:` value wins over `parsed.type`.
 
-Treat these exact fragment events as transport-only announcements. They never create decision text, but each creates pending evidence that must resolve against an authoritative logical item.
+Define these exact fragment events now, but in Step 5 treat them as transport-only and ignore them. This creates the deliberate fragment-blind state required for the five Step 6 REDs. They never create decision text.
 
 ```js
 const RESPONSES_FRAGMENT_EVENTS = new Set([
@@ -405,9 +475,7 @@ const RESPONSES_FRAGMENT_EVENTS = new Set([
 
 Ignore content-free lifecycle metadata such as `response.created`, `response.queued`, and `response.in_progress`. An event outside the fixed terminal, done-item, fragment, and metadata cases is malformed when it exposes `item`, `content`, or `response.output`; otherwise ignore it as content-free metadata.
 
-Maintain `doneRecords`, `terminalFrames`, `entries`, and `evidence`. Append every done item before reconciliation, even with a duplicate or invalid index. A successful terminal is `response.completed` or `response.done` with absent, `completed`, or `done` status. Any other terminal or terminal count other than one adds a malformed entry.
-
-Build one evidence record for every fragment with `resolved:false`, and maintain an internal `invalidEvidence` set. Record `output_index` and the item identity and type for every row. `response.output_item.added` reads `item.id` and `item.type`. All other fragment events read `item_id`. Content-part events also read `content_index` and `part.type`. Output-text events require `content_index` and infer `message` plus `output_text`. Reasoning-summary events require `summary_index` and infer `reasoning` plus `summary_text`. Function-call-argument and custom-tool-input events infer `function_call` and `custom_tool_call`, respectively, and have no block index. A missing, negative, or non-integer required index, a missing, empty, or non-string item ID, or a missing announced or inferred type adds that evidence object to `invalidEvidence` and adds a malformed entry immediately.
+Maintain `doneRecords`, `terminalFrames`, and `entries`. Append every done item before reconciliation, even with a duplicate or invalid index. A successful terminal is `response.completed` or `response.done` with absent, `completed`, or `done` status. Any other terminal or terminal count other than one adds a malformed entry.
 
 First reconcile done and terminal items into `authoritativeByIndex`, without changing the arrival-ordered `entries`.
 
@@ -467,7 +535,85 @@ if (doneRecords.length === 0) {
 }
 ```
 
-Then resolve every evidence record with this exact predicate. Rows already marked unresolved by malformed required fields stay unresolved. Do not concatenate or compare fragment text.
+Invalid JSON in a non-empty data frame adds a malformed entry. Ignore `[DONE]`, the fixed fragment set, and content-free metadata. An unrecognized event exposing `item`, `content`, or `response.output` adds a malformed entry. Both public projectors call the detector first. JSON then projects `responseBody.output`; SSE consumes the stream exactly once.
+
+Update the actual Responses handler branch to import the stream projector and tee only under `classifierMode`.
+
+```js
+let classifierProjection = null;
+if (
+  !isGeminiSse
+  && classifierMode
+) {
+  const [conversionStream, projectionStream] = providerResponse.body.tee();
+  [jsonResponse, classifierProjection] = await Promise.all([
+    convertResponsesStreamToJson(conversionStream),
+    projectResponsesClassifierStream(body, projectionStream),
+  ]);
+} else {
+  jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+}
+```
+
+After the Claude branch builds `finalResp`, keep the actual-Responses-only final guard and pass `classifierProjection`. This leaves the distinct Gemini RED for Task 2.
+
+```js
+if (classifierMode && !isGeminiSse) {
+  finalResp = validateClaudeClassifierMessage(
+    body,
+    finalResp,
+    classifierProjection,
+  );
+}
+```
+
+```js
+if (err instanceof ClaudeClassifierValidationError) {
+  return createErrorResult(
+    HTTP_STATUS.BAD_GATEWAY,
+    CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+  );
+}
+```
+
+Do not tee or validate Gemini-created Responses bodies in Task 1. Do not tee Responses clients, Chat SSE, or ordinary Claude requests.
+
+Run the dedicated file before adding any unresolved-evidence test.
+
+```bash
+npx vitest run --config vitest.config.js \
+  unit/claude-auto-mode-classifier.test.js
+node --check ../open-sse/handlers/chatCore/claudeClassifier.js
+node --check ../open-sse/handlers/chatCore/sseToJsonHandler.js
+```
+
+Expected is one file passed with zero skips. The terminal and JSON projection matrices are green, `evidence` is still always empty, and the fragment set is specifically ignored. Confirm the ordinary Responses fixture receives the same body reference in the converter spy, projector and validator spies remain at zero calls for ordinary Claude fixtures, all four leaf spies remain at zero calls for non-Claude fixtures, the classifier conversion branch sees the same bytes as the projector, and every deep-frozen input remains unchanged.
+
+- [ ] **Step 6: Add exactly five unresolved-transport-evidence REDs**
+
+Use a terminal-only authoritative message with `id:"msg_classifier_safe"`, one `output_text` block containing `<block>no</block>`, and no second output item. Add exactly these five real-handler cases under the shared title prefix `rejects unresolved Responses transport evidence`.
+
+1. `response.output_item.added` announces `output_index:1` and `{ id:"ct_hidden", type:"custom_tool_call" }` with no done or terminal item at index 1.
+2. `response.content_part.added` announces `output_index:0`, `item_id:"msg_classifier_safe"`, `content_index:1`, and `{ type:"unknown_part" }`, while the terminal message has only block 0.
+3. `response.function_call_arguments.delta` announces `output_index:1` and `item_id:"fc_hidden"` with no authoritative function-call item.
+4. `response.custom_tool_call_input.delta` announces `output_index:1` and `item_id:"ct_hidden"` with no authoritative custom-tool item.
+5. `response.output_text.delta` announces `output_index:0`, `item_id:"msg_wrong"`, and `content_index:0`, which conflicts with the terminal message ID.
+
+Each result must be the fixed 502. Run only this prefix against the deliberate Step 5 state.
+
+```bash
+npx vitest run --config vitest.config.js \
+  unit/claude-auto-mode-classifier.test.js \
+  -t "rejects unresolved Responses transport evidence"
+```
+
+Expected is exactly five tests run and exactly five failed. Each fails because the fragment-blind projector returns `evidence:[]` and accepts the terminal decision. No other test is selected.
+
+- [ ] **Step 7: Implement transport-evidence reconciliation and complete its matrix**
+
+Build one evidence record for every fragment with `resolved:false`, and maintain an internal `invalidEvidence` set. Record `output_index` and the item identity and type for every row. `response.output_item.added` reads `item.id` and `item.type`. All other fragment events read `item_id`. Content-part events also read `content_index` and `part.type`. Output-text events require `content_index` and infer `message` plus `output_text`. Reasoning-summary events require `summary_index` and infer `reasoning` plus `summary_text`. Function-call-argument and custom-tool-input events infer `function_call` and `custom_tool_call`, respectively, and have no block index. A missing, negative, or non-integer required index, a missing, empty, or non-string item ID, or a missing announced or inferred type adds that evidence object to `invalidEvidence` and adds a malformed entry immediately.
+
+Resolve every evidence record after the Step 5 done/terminal reconciliation has built `authoritativeByIndex`. Rows already marked invalid stay unresolved. Do not concatenate or compare fragment text.
 
 ```js
 for (const record of evidence) {
@@ -498,93 +644,44 @@ for (const record of evidence) {
 }
 ```
 
-Call-argument evidence resolves against the call item itself because its block index is null. Invalid JSON in a non-empty data frame adds a malformed entry. Ignore only `[DONE]` and content-free metadata. An unrecognized event exposing `item`, `content`, or `response.output` adds a malformed entry. The validator requires every supplied evidence record to be resolved in addition to the exact entry policy.
+Call-argument evidence resolves against the call item itself because its block index is null. The validator requires every supplied evidence record to have `resolved:true`. Deep-freeze one supplied projection and assert validation edits neither entries nor evidence and replaces none of their objects. A hand-built projection with one exact text entry but one `resolved:false` evidence row must reject.
 
-Both public projectors call the detector first. JSON then projects `responseBody.output`; SSE then consumes the stream exactly once.
+Complete the direct stream matrix with these rows.
 
-The validator adapts final Claude blocks only when projection is null. It requires object Message, `type:"message"`, `role:"assistant"`, array content, exactly one text entry, zero actionable, unknown, or malformed entries, and only well-formed thinking beside the text. For a supplied projection, it still validates the Message envelope but uses only projection entries for the decision. It returns this clone.
+| Raw SSE row | Expected projection result |
+|---|---|
+| Matching output-item-added, content-part, output-text, reasoning-summary, call-argument, and custom-tool fragments followed by authoritative logical items | Resolved evidence, with no text reconstructed from fragments |
+| Output-item-added message or custom-tool item with no matching done or terminal item | Unresolved evidence plus malformed entry |
+| Content-part-added or content-part-done with no matching final item/block | Unresolved evidence plus malformed entry |
+| Function-call-arguments or custom-tool-input fragment with no matching final call item | Unresolved evidence plus malformed entry |
+| Fragment output index, item ID, item type, block index, or block type that disagrees with the authoritative item | Unresolved evidence plus malformed entry |
+| Content-free lifecycle metadata and `[DONE]` | No projection entry and no pending evidence |
 
-```js
-return {
-  ...message,
-  content: [{ type: CLAUDE_BLOCK.TEXT, text: decision.trim() }],
-};
-```
-
-Every invalid classifier shape throws a new `ClaudeClassifierValidationError`. A non-classifier returns `message` by identity.
-
-- [ ] **Step 5: Tee and validate only the forced Responses SSE classifier path**
-
-Add leaf imports to `sseToJsonHandler.js`. After the SSE content-type gate, compute the handler-wide mode once.
-
-```js
-const classifierMode = sourceFormat === FORMATS.CLAUDE
-  && isClaudeClassifierRequest(body);
-```
-
-In the actual Responses branch only, tee when `classifierMode` is true.
-
-```js
-let classifierProjection = null;
-if (
-  !isGeminiSse
-  && classifierMode
-) {
-  const [conversionStream, projectionStream] = providerResponse.body.tee();
-  [jsonResponse, classifierProjection] = await Promise.all([
-    convertResponsesStreamToJson(conversionStream),
-    projectResponsesClassifierStream(body, projectionStream),
-  ]);
-} else {
-  jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
-}
-```
-
-After the Claude branch builds `finalResp` and before line 438 returns success, validate only the actual Responses path in Task 1. This leaves the distinct Gemini RED for Task 2. In the existing catch, map only the typed error before the generic conversion error.
-
-```js
-if (classifierMode && !isGeminiSse) {
-  finalResp = validateClaudeClassifierMessage(
-    body,
-    finalResp,
-    classifierProjection,
-  );
-}
-```
-
-```js
-if (err instanceof ClaudeClassifierValidationError) {
-  return createErrorResult(
-    HTTP_STATUS.BAD_GATEWAY,
-    CLAUDE_CLASSIFIER_ERROR_MESSAGE,
-  );
-}
-```
-
-Do not tee or validate Gemini-created Responses bodies in Task 1. Do not tee Responses clients, Chat SSE, or ordinary Claude requests.
-
-- [ ] **Step 6: Run Task 1 GREEN and mutation checks**
+Assert evidence order matches frame arrival and every successful projection has only `resolved:true` evidence. Rerun the exact five-case prefix first, then the full Task 1 file.
 
 ```bash
+npx vitest run --config vitest.config.js \
+  unit/claude-auto-mode-classifier.test.js \
+  -t "rejects unresolved Responses transport evidence"
 npx vitest run --config vitest.config.js \
   unit/claude-auto-mode-classifier.test.js
 node --check ../open-sse/handlers/chatCore/claudeClassifier.js
 node --check ../open-sse/handlers/chatCore/sseToJsonHandler.js
 ```
 
-Expected is one file passed with zero skips and every Task 1 matrix row green. Record the displayed count as `task1_classifier_count`. Confirm the ordinary Responses fixture receives the same body reference in the converter spy, projector and validator spies remain at zero calls for ordinary Claude fixtures, all four leaf spies remain at zero calls for non-Claude fixtures, the classifier conversion branch sees the same bytes as the projector, and every deep-frozen input remains unchanged.
+Expected first result is exactly five passed. Expected full result is one file passed with zero skips and every Task 1 matrix row green. Record the displayed full-file count as `task1_classifier_count` for later arithmetic.
 
-- [ ] **Step 7: Commit the Responses vertical slice**
+- [ ] **Step 8: Commit the lossless Responses projection**
 
 ```bash
 git add open-sse/handlers/chatCore/claudeClassifier.js \
   open-sse/handlers/chatCore/sseToJsonHandler.js \
   tests/unit/claude-auto-mode-classifier.test.js
-git commit -m "fix(claude): validate Responses classifier decisions"
+git commit -m "fix(claude): preserve classifier Responses evidence"
 git log --oneline -1
 ```
 
-Expected HEAD subject is exactly `fix(claude): validate Responses classifier decisions` and `git status --short` is empty.
+Expected HEAD subject is exactly `fix(claude): preserve classifier Responses evidence` and `git status --short` is empty.
 
 ### Task 2: Complete every non-streaming response family
 
@@ -603,12 +700,39 @@ Before any Task 2 production edit, add one independently named load-bearing RED 
 
 1. Forced Chat Completions SSE.
 2. OpenAI Chat Completions JSON.
-3. OpenAI Responses JSON with earlier prose followed by an exact decision, proving the raw JSON projector is required.
+3. OpenAI Responses JSON with one exact decision plus an `additional_tools` item that the live converter drops, proving the raw JSON projector is required.
 4. Native Claude JSON.
 5. Unexpected Responses SSE with a hidden custom-tool done item, proving the raw stream tee is required.
 6. Gemini SSE converted to a final Claude Message.
 
 Each RED asserts status 502 and exact `CLASSIFIER_ERROR`. Each current failure must be HTTP 200 or the existing generic path, never a missing fixture or mock exception. Do not add a Task 2 call site until all six saved RED receipts exist, so the shared non-streaming final seam cannot make a later family test accidentally green before its lossless capture requirement is proved.
+
+Use this exact Responses JSON body for row 3. The current `openAIResponsesBodyToChatCompletion` loop reads messages, reasoning, function calls, and custom-tool calls but ignores `additional_tools`. Final-only validation therefore sees one valid decision and incorrectly returns HTTP 200. The raw JSON projector retains the second item as actionable and makes the test pass with 502.
+
+```js
+const RESPONSES_JSON_WITH_DROPPED_ITEM = Object.freeze({
+  id: "resp_classifier_json_dropped_item",
+  object: "response",
+  created_at: 1700000000,
+  model: "gpt-5.6-sol",
+  status: "completed",
+  output: [
+    {
+      id: "msg_classifier_decision",
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: "<block>no</block>" }],
+    },
+    {
+      id: "tools_classifier_hidden",
+      type: "additional_tools",
+      tools: [{ type: "web_search" }],
+    },
+  ],
+  usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
+});
+```
 
 Run the exact named cases separately from `tests/`.
 
@@ -616,7 +740,7 @@ Run the exact named cases separately from `tests/`.
 red_cases=(
   "rejects malformed classifier prose from forced Chat SSE"
   "rejects malformed classifier prose from OpenAI Chat JSON"
-  "rejects earlier Responses JSON prose before an exact decision"
+  "rejects a Responses JSON item dropped by final conversion"
   "rejects malformed classifier prose from native Claude JSON"
   "rejects a hidden custom tool from unexpected Responses SSE"
   "rejects malformed classifier prose from Gemini SSE"
@@ -637,7 +761,7 @@ Add these path-specific rejection rows.
 
 - OpenAI Chat JSON with no choice, prose, tool call, and decision plus tool call.
 - Native Claude JSON with missing content, thinking-only, malformed thinking, tool use, two text blocks, and decision plus unknown block.
-- Responses JSON with earlier prose then decision, allow then deny, deny then allow, duplicate identical decisions, two blocks, empty message then decision, function call, custom-tool call, both call-output types, additional-tools, unknown item, unknown nested block, malformed reasoning, missing output, empty output, and non-array output.
+- Responses JSON with earlier prose then decision, allow then deny, deny then allow, duplicate identical decisions, two blocks, empty message then decision, function call, custom-tool call, exact decision plus each call-output type, exact decision plus additional-tools, exact decision plus an unknown item, unknown nested block, malformed reasoning, missing output, empty output, and non-array output.
 - Unexpected Responses SSE with duplicate output index, hidden custom tool, terminal mismatch, and EOF before terminal.
 - Chat SSE with prose, two assembled text segments that form extra surrounding prose, reasoning plus decision, tool-use deltas, and decision plus tool-use deltas.
 - Gemini SSE with prose, and Gemini SSE with a function call beside a decision. Assert the current conversion exposes `tool_use` and the validator returns 502.
