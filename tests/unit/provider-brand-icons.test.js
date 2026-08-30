@@ -11,7 +11,15 @@ const iconPath = (id) => join(repoRoot, 'public', 'providers', `${id}.png`);
 // faster-whisper / Speaches, Kokoro-FastAPI / openedai-speech). llama.cpp and
 // whisper.cpp are both ggml-org, so that avatar would render Embedding and STT
 // identically — worse than the distinct SE / ST badges. They keep the badge.
-const NO_BRAND_MARK = ['selfhosted-embedding', 'selfhosted-stt', 'selfhosted-tts'];
+const NO_BRAND_MARK = [
+  'selfhosted-embedding',
+  'selfhosted-stt',
+  'selfhosted-tts',
+  // firecrawl_custom points at an operator's own Firecrawl instance; kenari has
+  // no upstream mark (upstream ships neither). Both keep the text badge fallback.
+  'firecrawl_custom',
+  'kenari',
+];
 
 const ADDED = ['fish-audio', 'alims-intl', 'alitp-intl'];
 const ALIBABA_BRAND = ['alicode-intl', 'alims-intl', 'alitp-intl'];
