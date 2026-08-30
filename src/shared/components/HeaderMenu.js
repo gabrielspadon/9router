@@ -20,7 +20,7 @@ function MenuItem({ icon, label, onClick, trailing, danger }) {
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>
-      {trailing && <span className="text-base">{trailing}</span>}
+      {trailing && <span className="text-xs text-text-muted">{trailing}</span>}
     </button>
   );
 }

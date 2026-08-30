@@ -284,18 +284,18 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           </div>
         ) : title ? (
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl">
+                <span className="material-symbols-outlined text-primary text-xl shrink-0">
                   {icon}
                 </span>
               )}
-              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate">
+              <h1 className="text-lg font-semibold tracking-tight text-text-main min-w-0">
                 {translate(title)}
               </h1>
             </div>
             {description && (
-              <p className="hidden lg:block text-sm text-text-muted truncate">
+              <p className="hidden lg:block text-xs text-text-muted min-w-0">
                 {translate(description)}
               </p>
             )}

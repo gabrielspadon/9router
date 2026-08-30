@@ -101,7 +101,9 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
           <h2 className="text-xl font-semibold">Pricing Configuration</h2>
           <button
             onClick={onClose}
-            className="text-text-muted hover:text-text-main text-2xl leading-none"
+            type="button"
+            aria-label="Close"
+            className="focus-ring text-text-muted hover:text-text-main text-2xl leading-none"
           >
             ×
           </button>
