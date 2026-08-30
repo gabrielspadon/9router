@@ -17,7 +17,7 @@ export default function ThemeToggle({ className, variant = "default" }) {
       "bg-surface/60 hover:bg-surface",
       "border border-border",
       "backdrop-blur-md shadow-soft",
-      "text-text-muted hover:text-brand-500",
+      "text-text-muted hover:text-brand",
       "transition-all group"
     ),
   };
