@@ -1,7 +1,12 @@
 import { DefaultExecutor } from "./default.js";
 import { resolveOllamaLocalHost } from "../config/providers.js";
-import { OLLAMA_LOCAL_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import {
+  FETCH_CONNECT_TIMEOUT_MS,
+  OLLAMA_LOCAL_CONNECT_TIMEOUT_MS,
+} from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
+import { resolveConnectTimeoutMs } from "../config/connectTimeout.js";
+import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 
 // ─── Formatting helpers ────────────────────────────────────────────────────
 
@@ -68,7 +73,7 @@ function summariseMessages(messages) {
  * Emit targeted hints when a large body is detected.
  * Breaks down where the size is coming from.
  */
-function warnLargeBody(body, bodyBytes, host) {
+function warnLargeBody(body, bodyBytes, host, timeoutMs) {
   const msgs = body?.messages || [];
   const totalMsgs = msgs.length;
 
@@ -89,8 +94,8 @@ function warnLargeBody(body, bodyBytes, host) {
     `  tools          : ${body?.tools?.length ?? 0} defined`,
     `  max_tokens     : ${body?.max_tokens ?? "unset"}`,
     `Hints: trim old messages, reduce tool definitions, or set a lower max_tokens.`,
-    `Ollama timeout raised to ${fmtMs(OLLAMA_LOCAL_CONNECT_TIMEOUT_MS)} — if it still fails,`,
-    `consider setting OLLAMA_LOCAL_CONNECT_TIMEOUT_MS env var higher.`,
+    `Ollama response-header timeout is ${fmtMs(timeoutMs)} — if it still fails,`,
+    `adjust the provider or global response-header timeout setting.`,
   ].join("\n    "));
 }
 
@@ -120,9 +125,14 @@ export class OllamaLocalExecutor extends DefaultExecutor {
   }
 
   // Override execute: emit rich debug diagnostics then delegate to BaseExecutor.
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     const host = resolveOllamaLocalHost(credentials);
-    const timeoutMs = this.config.timeoutMs;
+    const timeoutMs = resolveConnectTimeoutMs({
+      providerOverride: connectTimeout?.providerOverride,
+      registryTimeout: this.config?.timeoutMs,
+      globalTimeout: connectTimeout?.globalTimeout,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+    });
     const t0 = Date.now();
 
     // ── Pre-flight diagnostics ──────────────────────────────────────────
@@ -143,19 +153,18 @@ export class OllamaLocalExecutor extends DefaultExecutor {
     dbg("OLLAMA-LOCAL", `  messages: ${msgSummary}`);
 
     if (bodyBytes > 200 * 1024) {
-      warnLargeBody(body, bodyBytes, host);
+      warnLargeBody(body, bodyBytes, host, timeoutMs);
     }
 
     // ── Delegate ────────────────────────────────────────────────────────
     try {
-      const result = await super.execute({ model, body, stream, credentials, signal, log, proxyOptions });
+      const result = await super.execute({ model, body, stream, credentials, signal, log, proxyOptions, connectTimeout });
       const elapsed = Date.now() - t0;
       dbg("OLLAMA-LOCAL", `✓ connected in ${fmtMs(elapsed)} | url=${result.url}`);
       return result;
     } catch (error) {
       const elapsed = Date.now() - t0;
-      const isTimeout =
-        error.name === "AbortError" || error.message?.includes("fetch connect timeout");
+      const isTimeout = isConnectTimeoutError(error);
 
       const lines = [
         `✖ ${error.name}: ${error.message}`,
@@ -170,7 +179,7 @@ export class OllamaLocalExecutor extends DefaultExecutor {
           `  diagnosis  : Ollama did not return response headers within ${fmtMs(timeoutMs)}.`,
           `  candidates : model not loaded, Ollama not running, or body too large for available RAM.`,
           `  check      : curl -s ${host}/api/tags | jq '.models[].name'`,
-          `  env fix    : OLLAMA_LOCAL_CONNECT_TIMEOUT_MS=${timeoutMs * 2} (current × 2)`,
+          `  adjustment : adjust the provider or global response-header timeout setting.`,
         );
       }
 

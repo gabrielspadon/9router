@@ -30,6 +30,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { createExecutorResponseHeaderTimeout } from "../utils/responseHeaderTimeout.js";
 import {
   QODER_CHAT_URL_ENCODED,
   QODER_CHAT_BASE_ALT,
@@ -507,7 +508,7 @@ export class QoderExecutor extends BaseExecutor {
   //   - body encoded with QoderEncodeBody before signing
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     // PAT (pt-...) → exchange for short-lived job token + resolve userId so
     // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
     // job tokens (jt-...) skip this and are used directly.
@@ -597,21 +598,23 @@ export class QoderExecutor extends BaseExecutor {
       ...cosyHeaders,
     };
 
-    // Abort if upstream doesn't return response headers within connect timeout.
-    const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-    const connectCtrl = new AbortController();
-    const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
-    const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
-
     let response;
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
     try {
       response = await proxyAwareFetch(
         url,
-        { method: "POST", headers, body: encodedBodyBuf, signal: mergedSignal },
+        { method: "POST", headers, body: encodedBodyBuf, signal: deadline.signal },
         proxyOptions,
       );
+    } catch (error) {
+      throw deadline.classify(error);
     } finally {
-      clearTimeout(connectTimer);
+      deadline.clear();
     }
 
     if (!response.ok) {
