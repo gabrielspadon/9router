@@ -1600,7 +1600,7 @@ export default function ProviderDetailPage() {
                 disabled={providerStrategySaving || loading}
                 ariaLabel="Use Fast tier for Codex Sol models"
                 label="Sol Fast"
-                description="Sol and Sol Review only, across all Codex accounts. Uses 2.5× subscription credits."
+                description="Requests Fast for Sol and Sol Review only, across all Codex accounts. Uses 2.5× subscription credits; the backend may fall back to Standard."
               />
               {!!providerStrategyError && (
                 <p role="alert" className="mt-2 text-xs text-red-500">

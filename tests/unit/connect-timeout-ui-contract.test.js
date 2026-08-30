@@ -196,6 +196,7 @@ describe("connect timeout input contract", () => {
     expect(providerSource).toContain("Sol and Sol Review only");
     expect(providerSource).toContain("all Codex accounts");
     expect(providerSource).toContain("2.5× subscription credits");
+    expect(providerSource).toContain("backend may fall back to Standard");
     expect(providerSource).toContain("values: { fastMode: enabled ? true : null }");
     expect(providerSource).toContain("enqueueProviderStrategySave({");
     expect(providerSource).toContain("onStart:");
