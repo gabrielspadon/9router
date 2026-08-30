@@ -16,6 +16,19 @@ import {
   validateClaudeClassifierMessage,
 } from "./claudeClassifier.js";
 
+const CLASSIFIER_CHAT_DELTA_FIELDS = new Set([
+  "role",
+  "content",
+  "reasoning_content",
+  "tool_calls",
+]);
+const CLASSIFIER_GEMINI_PART_FIELDS = new Set([
+  "text",
+  "thought",
+  "thoughtSignature",
+  "thought_signature",
+]);
+
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
@@ -278,6 +291,56 @@ function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
   );
 }
 
+function assertClassifierChatSseLossless(rawSSE) {
+  for (const line of String(rawSSE || "").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      throw new ClaudeClassifierValidationError();
+    }
+    for (const choice of parsed?.choices || []) {
+      const delta = choice?.delta;
+      if (!delta || typeof delta !== "object" || Array.isArray(delta)) continue;
+      if (Object.keys(delta).some((field) => !CLASSIFIER_CHAT_DELTA_FIELDS.has(field))) {
+        throw new ClaudeClassifierValidationError();
+      }
+    }
+  }
+}
+
+function assertClassifierGeminiSseLossless(rawSSE) {
+  for (const line of String(rawSSE || "").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      throw new ClaudeClassifierValidationError();
+    }
+    const response = parsed?.response || parsed;
+    for (const candidate of response?.candidates || []) {
+      const parts = candidate?.content?.parts;
+      if (!Array.isArray(parts)) continue;
+      for (const part of parts) {
+        if (!part || typeof part !== "object" || Array.isArray(part)
+            || Object.keys(part).some((field) => !CLASSIFIER_GEMINI_PART_FIELDS.has(field))) {
+          throw new ClaudeClassifierValidationError();
+        }
+      }
+    }
+  }
+}
+
 /**
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
@@ -314,7 +377,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       let jsonResponse;
       let classifierProjection = null;
       if (isGeminiSse) {
-        const parsed = parseGeminiSSEToOpenAIResponse(await providerResponse.text(), model);
+        const rawSSE = await providerResponse.text();
+        if (classifierMode) assertClassifierGeminiSseLossless(rawSSE);
+        const parsed = parseGeminiSSEToOpenAIResponse(rawSSE, model);
         if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
         if (parsed.error) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
@@ -545,6 +610,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     }
 
     if (classifierMode) {
+      assertClassifierChatSseLossless(sseText);
       finalBody = validateClaudeClassifierMessage(body, finalBody, null);
     }
 

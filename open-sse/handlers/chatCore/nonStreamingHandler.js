@@ -391,6 +391,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   return responseBody;
 }
 
+function hasLegacyClassifierFunctionCall(responseBody) {
+  return responseBody?.choices?.some((choice) =>
+    Object.hasOwn(choice?.message || {}, "function_call"),
+  );
+}
+
 /**
  * Handle non-streaming response from provider.
  */
@@ -474,6 +480,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+
+  if (classifierMode && hasLegacyClassifierFunctionCall(responseBody)) {
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+    );
+  }
 
   let translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)

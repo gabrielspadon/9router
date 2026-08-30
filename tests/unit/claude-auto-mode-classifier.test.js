@@ -1249,6 +1249,44 @@ describe("Claude Code response classifier validation", () => {
     },
   );
 
+  it("keeps Gemini SSE thinking beside a classifier decision canonical", async () => {
+    const raw = [
+      `data: ${JSON.stringify({
+        response: {
+          responseId: "gemini_classifier_thinking",
+          modelVersion: "gemini-3.7-flash-low",
+          candidates: [{
+            content: {
+              parts: [
+                { text: "private", thought: true },
+                { text: "<block>no</block>" },
+              ],
+            },
+            finishReason: "STOP",
+          }],
+        },
+      })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [raw]),
+      targetFormat: FORMATS.GEMINI,
+      provider: "gemini",
+    });
+
+    expect(result.success).toBe(true);
+    expect(await result.response.json()).toMatchObject({
+      id: "gemini_classifier_thinking",
+      type: "message",
+      role: "assistant",
+      model: "gemini-3.7-flash-low",
+      content: [{ type: "text", text: "<block>no</block>" }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+    });
+  });
+
   it.each([
     ["no choice", { ...openAICompletion(""), choices: [] }],
     ["prose", openAICompletion("This looks safe to me.")],
@@ -1265,6 +1303,20 @@ describe("Claude Code response classifier validation", () => {
   ])("rejects invalid OpenAI Chat JSON with %s", async (_name, responseBody) => {
     const result = await handleNonStreamingResponse(nonStreamingContext({
       providerResponse: jsonProviderResponse(responseBody),
+    }));
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it("rejects a legacy OpenAI Chat JSON function_call beside a classifier decision", async () => {
+    const result = await handleNonStreamingResponse(nonStreamingContext({
+      providerResponse: jsonProviderResponse(openAICompletionMessage({
+        role: "assistant",
+        content: "<block>no</block>",
+        function_call: { name: "shell", arguments: "{\"cmd\":\"pwd\"}" },
+      })),
     }));
 
     expect(result.success).toBe(false);
@@ -1386,6 +1438,39 @@ describe("Claude Code response classifier validation", () => {
     expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
   });
 
+  it.each([
+    ["legacy function_call", {
+      function_call: { name: "shell", arguments: "{\"cmd\":\"pwd\"}" },
+    }],
+    ["images", {
+      images: [{ type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }],
+    }],
+    ["unknown delta fields", {
+      future_action: { command: "pwd" },
+    }],
+  ])("rejects hidden forced Chat SSE %s beside a classifier decision", async (_name, extraDelta) => {
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [
+        `data: ${JSON.stringify({
+          id: "chatcmpl_classifier_1700000000",
+          created: 1700000000,
+          model: "gpt-5.6-sol",
+          choices: [{
+            delta: { content: "<block>no</block>", ...extraDelta },
+            finish_reason: "stop",
+          }],
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+      targetFormat: FORMATS.OPENAI,
+      provider: "op-test-chat",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
   it("canonicalizes forced Chat SSE reasoning beside a decision", async () => {
     const result = await handleForcedSSEToJson({
       ...forcedResponsesContext(STAGE_ONE_BODY, [
@@ -1419,6 +1504,35 @@ describe("Claude Code response classifier validation", () => {
   it("rejects Gemini SSE with a function call beside a decision", async () => {
     const raw = [
       'data: {"response":{"responseId":"gemini_classifier","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"text":"<block>no</block>"},{"functionCall":{"name":"shell","args":{"cmd":"pwd"}}}]},"finishReason":"STOP"}]}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson({
+      ...forcedResponsesContext(STAGE_ONE_BODY, [raw]),
+      targetFormat: FORMATS.GEMINI,
+      provider: "gemini",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(await result.response.json()).toEqual(CLASSIFIER_ERROR);
+  });
+
+  it.each([
+    ["executableCode", { executableCode: { language: "SHELL", code: "pwd" } }],
+    ["unknown actionable content", { future_action: { command: "pwd" } }],
+  ])("rejects Gemini SSE %s beside a classifier decision", async (_name, extraPart) => {
+    const raw = [
+      `data: ${JSON.stringify({
+        response: {
+          responseId: "gemini_classifier",
+          modelVersion: "gemini-3.7-flash-low",
+          candidates: [{
+            content: { parts: [{ text: "<block>no</block>", ...extraPart }] },
+            finishReason: "STOP",
+          }],
+        },
+      })}`,
       "data: [DONE]",
       "",
     ].join("\n\n");
