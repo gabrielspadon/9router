@@ -111,7 +111,12 @@ export async function parseUpstreamError(response, executor = null) {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
         // Executor parse wins; fill resetsAtMs from generic patterns when absent
         const resetsAtMs = parsed.resetsAtMs ?? (response.status === 429 ? extractResetsAtMs(response, msg) : null);
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs };
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          resetsAtMs,
+          ...(parsed.validation ? { validation: parsed.validation } : {}),
+        };
       }
     } catch { /* fall through to default parsing */ }
   }

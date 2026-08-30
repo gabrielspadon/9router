@@ -251,10 +251,9 @@ describe("chat connect timeout propagation", () => {
     await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: expectedStatus });
   });
 
-  it("retains the original 401 for an unrelated credential-refresh retry error", async () => {
+  it("maps an unrelated credential-refresh retry error to 502", async () => {
     mocks.execute.mockResolvedValueOnce(response(401)).mockRejectedValueOnce(new Error("socket closed"));
-    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 401 });
-    expect(mocks.warn).toHaveBeenCalledWith("TOKEN", "DEEPSEEK | retry after refresh failed");
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 502 });
   });
 
   it.each([

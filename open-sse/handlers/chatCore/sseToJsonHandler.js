@@ -8,6 +8,7 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { stripJsonFence, unfenceJsonChoices, wantsJsonOutput } from "../../utils/jsonFence.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -271,11 +272,32 @@ function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
   );
 }
 
+function hasUsefulForcedSseOutput(value) {
+  const usage = value?.usage || {};
+  if (Number(usage.completion_tokens ?? usage.output_tokens ?? 0) > 0) return true;
+  if (Array.isArray(value?.output) && value.output.length > 0) return true;
+  const message = value?.choices?.[0]?.message;
+  return Boolean(
+    (typeof message?.content === "string" && message.content.trim())
+    || (typeof message?.reasoning_content === "string" && message.reasoning_content.trim())
+    || (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0),
+  );
+}
+
+async function notifyTerminalVerificationSuccess(callback, connectionId, log) {
+  if (typeof callback !== "function") return;
+  try {
+    await callback();
+  } catch {
+    log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+  }
+}
+
 /**
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, notifyTerminalVerificationSuccess: notifyTerminal, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -305,10 +327,19 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       if (isGeminiSse) {
         const parsed = parseGeminiSSEToOpenAIResponse(await providerResponse.text(), model);
         if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
-        if (parsed.error) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
+        if (parsed.error) {
+          const message = parsed.error.message || "Upstream SSE stream failed";
+          return createErrorResult(
+            HTTP_STATUS.BAD_GATEWAY,
+            provider === "antigravity" ? redactAntigravityValidationText(message) : message,
+          );
+        }
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
       } else {
         jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      }
+      if (provider === "antigravity" && hasUsefulForcedSseOutput(jsonResponse)) {
+        await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
       }
       if (onRequestSuccess) await onRequestSuccess();
 
@@ -450,7 +481,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     if (parsed.error) {
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
-        parsed.error.message || "Upstream SSE stream failed"
+        provider === "antigravity"
+          ? redactAntigravityValidationText(parsed.error.message || "Upstream SSE stream failed")
+          : parsed.error.message || "Upstream SSE stream failed"
       );
     }
 
@@ -511,6 +544,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       finalBody = openAICompletionToClaudeMessage(parsed);
     } else {
       finalBody = parsed;
+    }
+
+    if (provider === "antigravity" && hasUsefulForcedSseOutput(finalBody)) {
+      await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
     }
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };

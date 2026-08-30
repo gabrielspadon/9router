@@ -14,6 +14,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
@@ -37,6 +38,23 @@ function hasUsefulContent(translatedResponse, isClaudeMessageResponse, isRespons
     : Array.isArray(msg?.content) && msg.content.length > 0;
   const hasReasoning = typeof msg?.reasoning_content === "string" && msg.reasoning_content.trim().length > 0;
   return hasToolCalls || hasText || hasReasoning;
+}
+
+function redactAntigravitySinkValue(value) {
+  try {
+    return JSON.parse(redactAntigravityValidationText(JSON.stringify(value)));
+  } catch {
+    return redactAntigravityValidationText(String(value ?? ""));
+  }
+}
+
+async function notifyTerminalVerificationSuccess(callback, connectionId, log) {
+  if (typeof callback !== "function") return;
+  try {
+    await callback();
+  } catch {
+    log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+  }
 }
 
 function parseToolArguments(value) {
@@ -386,7 +404,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -433,7 +451,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     responseBody = responseBody.data;
   }
 
-  reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+  reqLogger.logProviderResponse(
+    providerResponse.status,
+    providerResponse.statusText,
+    providerResponse.headers,
+    provider === "antigravity" ? redactAntigravitySinkValue(responseBody) : responseBody,
+  );
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -500,7 +523,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // JSON mode: drop a ```json fence the provider added around the object
   unfenceJsonChoices(body, translatedResponse);
 
-  reqLogger.logConvertedResponse(translatedResponse);
+  reqLogger.logConvertedResponse(
+    provider === "antigravity" ? redactAntigravitySinkValue(translatedResponse) : translatedResponse,
+  );
 
   // Upstream answered 200 but produced nothing usable (null/empty content, no
   // tool_calls, no reasoning) — treat as a failure so the same fallback path as a
@@ -545,6 +570,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);
   });
+
+  if (provider === "antigravity") {
+    await notifyTerminalVerificationSuccess(
+      notifyTerminal,
+      connectionId,
+      log,
+    );
+  }
 
   return {
     success: true,

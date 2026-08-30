@@ -9,6 +9,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -148,15 +149,18 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
           const errMsg = typeof parsed.error === "string"
             ? parsed.error
             : parsed.error?.message || parsed.error_msg || parsed.detail || JSON.stringify(parsed);
+          const safeErrMsg = provider === "antigravity"
+            ? redactAntigravityValidationText(errMsg)
+            : errMsg;
           const rawStatus = parsed.error?.status || parsed.status || 502;
           const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 502;
-          if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${errMsg}`);
-          streamController?.handleError?.(new Error(errMsg));
+          if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${safeErrMsg}`);
+          streamController?.handleError?.(new Error(safeErrMsg));
           return {
             success: false,
             status,
-            error: errMsg,
-            response: new Response(JSON.stringify({ error: { message: `[${status}]: ${errMsg}` } }), {
+            error: safeErrMsg,
+            response: new Response(JSON.stringify({ error: { message: `[${status}]: ${safeErrMsg}` } }), {
               status,
               headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
             }),
@@ -251,6 +255,17 @@ function hasOutputTokens(usage) {
   return n > 0;
 }
 
+function notifyTerminalVerificationSuccess(callback, connectionId, log) {
+  if (typeof callback !== "function") return;
+  try {
+    Promise.resolve(callback()).catch(() => {
+      log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+    });
+  } catch {
+    log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+  }
+}
+
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  * @param {Function} [onEmptyStream] - called (no args) once, after the stream
@@ -261,7 +276,7 @@ function hasOutputTokens(usage) {
  *   rotation for the *next* request (see chat.js), which is what actually
  *   gets a retried request routed to a different backend.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat, notifyTerminalVerificationSuccess: notifyTerminal }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   // One-shot finalization guard shared by onStreamComplete (flush/cancel paths)
@@ -304,6 +319,14 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     if (onEmptyStream && !contentObj?.content?.trim?.() && !contentObj?.thinking?.trim?.() && !hasOutputTokens(usage)) {
       if (log?.warn) log.warn("CHATCORE", `${provider}/${model} stream completed with no content/thinking/output tokens — locking for next request`);
       try { onEmptyStream(); } catch (e) { console.error("[Stream] onEmptyStream failed:", e?.message || e); }
+    }
+
+    if (
+      provider === "antigravity"
+      && !aborted
+      && (contentObj?.content?.trim?.() || contentObj?.thinking?.trim?.() || hasOutputTokens(usage))
+    ) {
+      notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
     }
   };
 

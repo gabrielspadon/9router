@@ -8,6 +8,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { sanitizeAntigravitySystemPrompt } from "../translator/request/openai-to-gemini.js";
+import { classifyAntigravityValidation, redactAntigravityValidationText } from "../services/antigravityValidation.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -122,6 +123,29 @@ export class AntigravityExecutor extends BaseExecutor {
     const forceNonStream = isImageModel(model);
     const action = (stream && !forceNonStream) ? "streamGenerateContent?alt=sse" : "generateContent";
     return `${baseUrl}/v1internal:${action}`;
+  }
+
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    let payload = null;
+    try {
+      payload = JSON.parse(bodyText || "");
+    } catch {
+      payload = null;
+    }
+    const validation = classifyAntigravityValidation({
+      status: response.status,
+      payload,
+      source: "chat",
+    });
+    const message = typeof base.message === "string"
+      ? base.message
+      : JSON.stringify(base.message);
+    return {
+      ...base,
+      message: redactAntigravityValidationText(message),
+      ...(validation ? { validation } : {}),
+    };
   }
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before

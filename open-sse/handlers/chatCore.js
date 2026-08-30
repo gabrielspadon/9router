@@ -122,6 +122,9 @@ export async function handleChatCore({
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
+  verificationContext,
+  onValidationRequired,
+  onVerificationSuccess,
   onEmptyStream,
   onDisconnect,
   clientRawRequest,
@@ -152,6 +155,16 @@ export async function handleChatCore({
   codexFastMode,
 }) {
   const { provider, model } = modelInfo;
+  const notifyTerminalVerificationSuccess =
+    onVerificationSuccess && verificationContext?.challengeIdAtStart
+      ? async () => {
+          try {
+            await onVerificationSuccess({ challengeId: verificationContext.challengeIdAtStart });
+          } catch {
+            log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+          }
+        }
+      : null;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
   const sessionSeed = (() => {
@@ -846,19 +859,14 @@ export async function handleChatCore({
             sourceFormat,
             connectTimeout,
           });
-          if (retryResult.response.ok) {
-            providerResponse = retryResult.response;
-            providerUrl = retryResult.url;
-            providerResponseFormat = retryResult.responseFormat || targetFormat;
-          }
+          providerResponse = retryResult.response;
+          providerUrl = retryResult.url;
+          providerHeaders = retryResult.headers;
+          finalBody = retryResult.transformedBody;
+          providerResponseFormat = retryResult.responseFormat || targetFormat;
+          reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
         } catch (error) {
-          if (error.name === "AbortError" || isConnectTimeoutError(error)) {
-            return mapTransportError(error);
-          }
-          log?.warn?.(
-            "TOKEN",
-            `${provider.toUpperCase()} | retry after refresh failed`,
-          );
+          return mapTransportError(error);
         }
       } else {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
@@ -874,10 +882,21 @@ export async function handleChatCore({
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(
+    const { statusCode, message, resetsAtMs, validation } = await parseUpstreamError(
       providerResponse,
       executor,
     );
+
+    if (validation && typeof onValidationRequired === "function") {
+      try {
+        await onValidationRequired({
+          validation,
+          observationId: verificationContext?.observationId,
+        });
+      } catch {
+        log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+      }
+    }
 
     // Adaptive unsupported-parameter retry: on a 400 naming rejected fields,
     // record them per provider+model, strip, and retry once immediately.
@@ -938,6 +957,7 @@ export async function handleChatCore({
               apiKey,
               clientRawRequest,
               onRequestSuccess,
+              notifyTerminalVerificationSuccess,
               pxpipe: pxpipeSummary,
               reqTag,
               log,
@@ -1071,6 +1091,7 @@ export async function handleChatCore({
     apiKey,
     clientRawRequest,
     onRequestSuccess,
+    notifyTerminalVerificationSuccess,
     onEmptyStream,
     pxpipe: pxpipeSummary,
     reqTag,
