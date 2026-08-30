@@ -221,6 +221,63 @@ describe("Cursor live model catalog", () => {
     expect(refreshedLease.close).toHaveBeenCalledTimes(1);
   });
 
+  it("force refresh replaces a seeded strict proxy entry without opening a cache-hit lease", async () => {
+    const seededLease = lease(resolvedRoute(strictProxy));
+    const refreshedLease = lease(resolvedRoute(strictProxy));
+    const connector = vi.fn()
+      .mockResolvedValueOnce(seededLease)
+      .mockResolvedValueOnce(refreshedLease);
+    const seedPost = vi.fn().mockResolvedValue(protoResponse([{ id: "old-proxy", name: "Old proxy" }]));
+    const refreshPost = vi.fn().mockResolvedValue(protoResponse([{ id: "new-proxy", name: "New proxy" }]));
+
+    await resolveCursorModels(credentials, { proxyOptions: strictProxy, connectHttp2: connector, http2Post: seedPost });
+    await resolveCursorModels(credentials, {
+      forceRefresh: true,
+      proxyOptions: strictProxy,
+      connectHttp2: connector,
+      http2Post: refreshPost,
+    });
+    await expect(resolveCursorModels(credentials, {
+      proxyOptions: strictProxy,
+      connectHttp2: vi.fn(),
+      http2Post: vi.fn(),
+    })).resolves.toEqual({ models: [{ id: "new-proxy", name: "New proxy" }] });
+
+    expect(connector).toHaveBeenCalledTimes(2);
+    expect(seedPost).toHaveBeenCalledTimes(1);
+    expect(refreshPost).toHaveBeenCalledTimes(1);
+    expect(seededLease.close).toHaveBeenCalledTimes(1);
+    expect(refreshedLease.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("force refresh replaces a seeded direct entry through a non-strict proxy fallback", async () => {
+    const seededLease = lease(route("direct", "direct"));
+    const fallbackLease = lease(route("direct", "direct"));
+    const seedConnector = vi.fn().mockResolvedValue(seededLease);
+    const fallbackConnector = vi.fn().mockResolvedValue(fallbackLease);
+    const seedPost = vi.fn().mockResolvedValue(protoResponse([{ id: "old-direct", name: "Old direct" }]));
+    const refreshPost = vi.fn().mockResolvedValue(protoResponse([{ id: "new-direct", name: "New direct" }]));
+
+    await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: seedConnector, http2Post: seedPost });
+    await resolveCursorModels(credentials, {
+      forceRefresh: true,
+      proxyOptions: nonStrictProxy,
+      connectHttp2: fallbackConnector,
+      http2Post: refreshPost,
+    });
+    await expect(resolveCursorModels(credentials, {
+      proxyOptions: direct,
+      connectHttp2: vi.fn(),
+      http2Post: vi.fn(),
+    })).resolves.toEqual({ models: [{ id: "new-direct", name: "New direct" }] });
+
+    expect(seedPost).toHaveBeenCalledTimes(1);
+    expect(refreshPost).toHaveBeenCalledTimes(1);
+    expect(fallbackConnector).toHaveBeenCalledTimes(1);
+    expect(seededLease.close).toHaveBeenCalledTimes(1);
+    expect(fallbackLease.close).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["relay", { resolutionKind: "selected-proxy", vercelRelayUrl: "https://relay.test", strictProxy: true }],
     ["required-unavailable", { resolutionKind: "required-unavailable", reason: "pool-missing", strictProxy: true }],
@@ -234,6 +291,25 @@ describe("Cursor live model catalog", () => {
     expect(connector).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
     expect(legacyHttp2.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["relay", { resolutionKind: "selected-proxy", vercelRelayUrl: "https://relay.test", strictProxy: true }],
+    ["required-unavailable", { resolutionKind: "required-unavailable", reason: "pool-missing", strictProxy: true }],
+  ])("does not expose a seeded direct cache through %s unavailable catalog routes", async (_name, proxyOptions) => {
+    const seededLease = lease(route("direct", "direct"));
+    const seedConnector = vi.fn().mockResolvedValue(seededLease);
+    const seedPost = vi.fn().mockResolvedValue(protoResponse([{ id: "direct-model", name: "Direct" }]));
+    const connector = vi.fn();
+    const post = vi.fn();
+
+    await resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: seedConnector, http2Post: seedPost });
+    await expect(resolveCursorModels(credentials, { proxyOptions, connectHttp2: connector, http2Post: post })).resolves.toMatchObject({
+      unavailable: true,
+    });
+
+    expect(connector).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("fails open on an ordinary catalog post failure while closing its lease", async () => {
