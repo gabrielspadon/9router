@@ -83,8 +83,8 @@ export default function Modal({
                       <span className="text-[9px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">✕</span>
                     </button>
                   </Tooltip>
-                  <div aria-hidden="true" className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
-                  <div aria-hidden="true" className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
+                  <div aria-hidden="true" className="w-4 h-4 rounded-full bg-surface-3 cursor-not-allowed" />
+                  <div aria-hidden="true" className="w-4 h-4 rounded-full bg-surface-3 cursor-not-allowed" />
                 </div>
               )}
               {title && (

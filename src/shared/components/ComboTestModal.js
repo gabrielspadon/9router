@@ -225,7 +225,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                       {fallbacksCount} Fallback{fallbacksCount > 1 ? "s" : ""}
                     </span>
                   )}
-                  <span className="metric rounded bg-black/10 dark:bg-white/10 px-2 py-0.5">
+                  <span className="metric rounded bg-surface-3 px-2 py-0.5">
                     Total: {result.totalLatencyMs}ms
                   </span>
                 </div>
@@ -269,7 +269,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                               ? "bg-success-solid text-success-on"
                               : step.fallbackTriggered
                               ? "bg-warning-solid text-warning-on"
-                              : "bg-black/20 dark:bg-white/20 text-text-muted"
+                              : "bg-surface-3 text-text-muted"
                           }`}
                         >
                           {step.index}
@@ -297,7 +297,7 @@ export default function ComboTestModal({ isOpen, combo, onClose, strategy = {} }
                         )}
 
                         {step.skipped && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-black/10 dark:bg-white/10 text-text-muted font-medium px-2 py-0.5 text-[10px]">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-surface-3 text-text-muted font-medium px-2 py-0.5 text-[10px]">
                             <span className="material-symbols-outlined text-[12px]">skip_next</span>
                             SKIPPED
                           </span>
