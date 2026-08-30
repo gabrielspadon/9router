@@ -240,7 +240,7 @@ export default function StatisticsContent({ initialData }) {
               </div>
               <button
                 onClick={applyCustomRange}
-                className="focus-ring h-9 px-4 rounded-lg bg-brand-solid text-brand-on text-sm font-medium transition-colors hover:opacity-90 cursor-pointer"
+                className="focus-ring h-9 px-4 rounded-lg bg-brand-solid text-brand-on text-sm font-medium transition-colors duration-150 hover:opacity-90 cursor-pointer"
               >
                 Apply
               </button>
@@ -249,7 +249,7 @@ export default function StatisticsContent({ initialData }) {
           {hasFilter && (
             <button
               onClick={resetFilters}
-              className="focus-ring h-9 px-3 text-sm text-text-muted hover:text-text-main transition-colors cursor-pointer"
+              className="focus-ring h-9 px-3 text-sm text-text-muted hover:text-text-main transition-colors duration-150 cursor-pointer"
             >
               Reset
             </button>
@@ -280,7 +280,7 @@ export default function StatisticsContent({ initialData }) {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${viewMode === mode ? "bg-brand-solid text-brand-on shadow-soft" : "text-text-muted hover:text-text-main"}`}
+                className={`focus-ring px-3 py-1 rounded-md text-sm font-medium transition-colors duration-150 cursor-pointer ${viewMode === mode ? "bg-brand-solid text-brand-on shadow-soft" : "text-text-muted hover:text-text-main"}`}
               >
                 {mode === "tokens" ? "Tokens" : "Hit Rate"}
               </button>
@@ -355,7 +355,7 @@ export default function StatisticsContent({ initialData }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
-              <tr className="border-b border-border-subtle text-left text-xs text-text-muted">
+              <tr className="border-b border-border text-left text-xs text-text-muted">
                 {["Time", "Provider", "Account", "Model", "Input", "Output", "Cache Read", "Cache Write", "Hit Rate", "Time/TTFT", "Status"].map((h) => (
                   <th key={h} scope="col" className="px-4 py-3 font-medium">{t(h)}</th>
                 ))}
@@ -366,7 +366,7 @@ export default function StatisticsContent({ initialData }) {
                 <tr><td colSpan={11} className="px-4 py-8 text-center text-text-muted">{t("No records for this selection")}</td></tr>
               )}
               {items.map((it) => (
-                <tr key={it.id} className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2/50">
+                <tr key={it.id} className="border-b border-border last:border-b-0 hover:bg-surface-2/50">
                   <td className="px-4 py-3 text-text-muted whitespace-nowrap">{fmtTime(it.timestamp)}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{providerNameMap[it.provider] || it.provider || "-"}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{it.account || "-"}</td>
@@ -385,7 +385,7 @@ export default function StatisticsContent({ initialData }) {
             </tbody>
           </table>
         </div>
-        <div className="px-4 border-t border-border-subtle">
+        <div className="px-4 border-t border-border">
           <Pagination
             currentPage={pagination.page}
             pageSize={pagination.pageSize}

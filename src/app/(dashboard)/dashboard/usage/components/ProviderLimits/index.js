@@ -894,7 +894,7 @@ export default function ProviderLimits() {
             <button
               type="button"
               onClick={() => setProviderMenuOpen((prev) => !prev)}
-              className="focus-ring flex h-8 items-center justify-between gap-1 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors hover:bg-surface-2"
+              className="focus-ring flex h-8 items-center justify-between gap-1 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2"
               aria-haspopup="menu"
               aria-expanded={providerMenuOpen}
               title="Filter quota providers"
@@ -940,7 +940,7 @@ export default function ProviderLimits() {
                       setProviderFilter("all");
                       setProviderMenuOpen(false);
                     }}
-                    className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
+                    className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors duration-150 ${providerFilter === "all" ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[22px]">
                       apps
@@ -965,7 +965,7 @@ export default function ProviderLimits() {
                           setProviderFilter(provider);
                           setProviderMenuOpen(false);
                         }}
-                        className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
+                        className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors duration-150 ${providerFilter === provider ? "bg-brand-soft text-brand" : "text-text-main hover:bg-surface-2"}`}
                       >
                         <ProviderIcon
                           src={`/providers/${provider}.png`}
@@ -998,7 +998,7 @@ export default function ProviderLimits() {
               }
               setAccountFilter(nextValue);
             }}
-            className="focus-ring h-8 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors hover:bg-surface-2"
+            className="focus-ring h-8 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2"
             aria-label="Filter accounts by status"
           >
             {ACCOUNT_FILTER_OPTIONS.map((option) => (
@@ -1012,7 +1012,7 @@ export default function ProviderLimits() {
             <select
               value={quotaSortMode}
               onChange={(event) => setQuotaSortMode(event.target.value)}
-              className="focus-ring h-8 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors hover:bg-surface-2"
+              className="focus-ring h-8 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2"
               aria-label="Sort Codex quotas by remaining"
             >
               {QUOTA_SORT_OPTIONS.map((option) => (
@@ -1065,7 +1065,7 @@ export default function ProviderLimits() {
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
-            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-xs transition-colors hover:bg-surface-2"
+            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-xs transition-colors duration-150 hover:bg-surface-2"
             title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
           >
             <span
@@ -1092,7 +1092,7 @@ export default function ProviderLimits() {
             type="button"
             onClick={() => refreshAll(true)}
             disabled={refreshingAll}
-            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-xs text-text-main transition-colors hover:bg-surface-2 disabled:opacity-50"
+            className="focus-ring flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:opacity-50"
             title="Refresh all"
           >
             <span
@@ -1218,7 +1218,7 @@ export default function ProviderLimits() {
                               type="button"
                               onClick={() => copy(conn.providerSpecificData.profileArn, conn.id)}
                               title={conn.providerSpecificData.profileArn}
-                              className="focus-ring inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-xs text-text-muted transition-colors hover:text-brand"
+                              className="focus-ring inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:text-brand"
                             >
                               <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
                                 {copied === conn.id ? "check" : "content_copy"}
@@ -1252,7 +1252,7 @@ export default function ProviderLimits() {
                                 ? `Use one Codex reset credit. ${resetCreditCount} available.`
                                 : "No Codex reset credits available"
                             }
-                            className={`focus-ring flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-xs font-medium metric transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            className={`focus-ring flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-xs font-medium metric transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 ${
                               resetCreditCount > 0
                                 ? "border-brand-line bg-brand-soft text-brand hover:bg-brand-soft"
                                 : "border-border bg-surface-2 text-text-muted"
@@ -1270,7 +1270,7 @@ export default function ProviderLimits() {
                             onClick={() => handleViewCodexResetCredits(conn)}
                             disabled={isLoading || rowBusy}
                             aria-label="View Codex reset credit expiry"
-                            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:bg-surface-2 hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+                            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <span aria-hidden="true" className="material-symbols-outlined text-[17px]">schedule</span>
                           </button>
@@ -1283,7 +1283,7 @@ export default function ProviderLimits() {
                           type="button"
                           onClick={() => toggleAutoPing(conn.id, conn.provider, !(autoPingMaps[conn.provider]?.[conn.id] === true))}
                           aria-label="Toggle auto-ping"
-                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-brand" : "text-text-muted"}`}
+                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-150 hover:bg-surface-2 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-brand" : "text-text-muted"}`}
                         >
                           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
                         </button>
@@ -1295,7 +1295,7 @@ export default function ProviderLimits() {
                         onClick={() => refreshProvider(conn.id, conn.provider)}
                         disabled={isLoading || rowBusy}
                         aria-label="Refresh quota"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50"
+                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 transition-colors duration-150 disabled:opacity-50"
                       >
                         <span aria-hidden="true"
                           className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
@@ -1311,7 +1311,7 @@ export default function ProviderLimits() {
                           onClick={() => handleHotReloadConnection(conn)}
                           disabled={isLoading || rowBusy}
                           aria-label="Hot reload quota countdown"
-                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors disabled:opacity-50 ${isHotReloading ? "text-brand" : ""}`}
+                          className={`focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors duration-150 disabled:opacity-50 ${isHotReloading ? "text-brand" : ""}`}
                         >
                           <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${isHotReloading ? "animate-spin" : ""}`}>
                             {isHotReloading ? "progress_activity" : "rocket_launch"}
@@ -1328,7 +1328,7 @@ export default function ProviderLimits() {
                         }}
                         disabled={rowBusy}
                         aria-label="Edit connection"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors disabled:opacity-50"
+                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-2 text-text-muted hover:text-brand transition-colors duration-150 disabled:opacity-50"
                       >
                         <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                           edit
@@ -1341,7 +1341,7 @@ export default function ProviderLimits() {
                         onClick={() => handleDeleteConnection(conn.id)}
                         disabled={rowBusy}
                         aria-label="Delete connection"
-                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-danger-soft text-danger transition-colors disabled:opacity-50"
+                        className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg hover:bg-danger-soft text-danger transition-colors duration-150 disabled:opacity-50"
                       >
                         <span aria-hidden="true"
                           className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
@@ -1458,7 +1458,7 @@ export default function ProviderLimits() {
                           key={getQuotaVisibilityKey(quotaRow)}
                           type="button"
                           onClick={() => handleShowQuota(conn.provider, quotaRow)}
-                          className="focus-ring shrink-0 rounded-md border border-border px-1.5 py-0.5 transition-colors hover:bg-surface-2 hover:text-text-main"
+                          className="focus-ring shrink-0 rounded-md border border-border px-1.5 py-0.5 transition-colors duration-150 hover:bg-surface-2 hover:text-text-main"
                           title="Show this quota row"
                         >
                           {quotaRow.name}
@@ -1489,7 +1489,7 @@ export default function ProviderLimits() {
                     setCustomPageSizeInput(String(nextPageSize));
                   }
                 }}
-                className="focus-ring h-8 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors hover:bg-surface-2"
+                className="focus-ring h-8 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2"
                 aria-label="Accounts per page"
               >
                 {ACCOUNT_PAGE_SIZE_OPTIONS.map((option) => (
@@ -1529,7 +1529,7 @@ export default function ProviderLimits() {
                   setPageSize(nextPageSize);
                   setCustomPageSizeInput(String(nextPageSize));
                 }}
-                className="focus-ring h-8 w-20 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors hover:bg-surface-2"
+                className="focus-ring h-8 w-20 rounded-lg border border-border bg-surface-2 px-2 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2"
                 aria-label="Custom accounts per page"
                 placeholder="Custom"
               />
@@ -1542,7 +1542,7 @@ export default function ProviderLimits() {
                 disabled={
                   pagination.page <= 1 || connectionsLoading || refreshingAll
                 }
-                className="focus-ring flex h-8 items-center rounded-lg border border-border px-3 text-xs text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                className="focus-ring flex h-8 items-center rounded-lg border border-border px-3 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 First Page
               </button>
@@ -1554,7 +1554,7 @@ export default function ProviderLimits() {
                 disabled={
                   pagination.page <= 1 || connectionsLoading || refreshingAll
                 }
-                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Previous accounts page"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -1573,7 +1573,7 @@ export default function ProviderLimits() {
                   connectionsLoading ||
                   refreshingAll
                 }
-                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Next accounts page"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -1588,7 +1588,7 @@ export default function ProviderLimits() {
                   connectionsLoading ||
                   refreshingAll
                 }
-                className="focus-ring flex h-8 items-center rounded-lg border border-border px-3 text-xs text-text-main transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                className="focus-ring flex h-8 items-center rounded-lg border border-border px-3 text-xs text-text-main transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Last Page
               </button>
@@ -1628,7 +1628,7 @@ export default function ProviderLimits() {
               <button
                 type="button"
                 onClick={() => setResetCreditsState(null)}
-                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
+                className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-text-main"
                 aria-label="Close reset credit expiry modal"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>

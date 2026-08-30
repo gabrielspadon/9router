@@ -98,7 +98,7 @@ export default function ModelAvailabilityBadge() {
     <div className="relative" ref={ref}>
       {/* <button
         onClick={() => setExpanded(!expanded)}
-        className={`focus-ring inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+        className={`focus-ring inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-150 ${
           isHealthy
             ? "bg-success-soft border-success-line text-success hover:bg-success-soft"
             : "bg-warning-soft border-warning-line text-warning hover:bg-warning-soft"

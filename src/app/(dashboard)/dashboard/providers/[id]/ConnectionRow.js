@@ -174,14 +174,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   };
 
   return (
-    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-surface-2 sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors duration-150 hover:bg-surface-2 sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
           <button
             onClick={onMoveUp}
             disabled={isFirst}
-            className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
+            className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
             title="Raise connection priority"
             aria-label="Raise connection priority"
           >
@@ -190,7 +190,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           <button
             onClick={onMoveDown}
             disabled={isLast}
-            className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
+            className={`focus-ring p-0.5 rounded ${isLast ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}
             title="Lower connection priority"
             aria-label="Lower connection priority"
           >
@@ -308,7 +308,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors duration-150 hover:bg-surface-2 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
@@ -341,7 +341,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Tooltip text={autoPingTooltip}>
               <button
                 onClick={() => autoPing.onToggle(!autoPing.on)}
-                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-surface-2 ${autoPing.on ? "text-brand" : "text-text-muted hover:text-brand"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors duration-150 hover:bg-surface-2 ${autoPing.on ? "text-brand" : "text-text-muted hover:text-brand"}`}
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
                 <span className="text-xs leading-tight">Auto-ping</span>

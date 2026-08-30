@@ -747,13 +747,13 @@ export default function APIPageClient({ machineId }) {
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
                   title={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
                   aria-label={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
-                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150 shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Disable Tunnel"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -767,7 +767,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Disable Tunnel"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -781,7 +781,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => { setTunnelLoading(false); setTunnelProgress(""); }}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Stop"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -803,7 +803,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setTunnelChecking(false)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Stop"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -841,13 +841,13 @@ export default function APIPageClient({ machineId }) {
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
                   title={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
                   aria-label={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
-                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150 shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "ts_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Disable Tailscale"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -861,7 +861,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Disable Tailscale"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -884,7 +884,7 @@ export default function APIPageClient({ machineId }) {
                 )}
                 <button
                   onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); clearUserAuth(); }}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors shrink-0"
+                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
                   title="Stop"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
@@ -1023,7 +1023,7 @@ export default function APIPageClient({ machineId }) {
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-all"
+                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                       aria-label={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
@@ -1035,7 +1035,7 @@ export default function APIPageClient({ machineId }) {
                       onClick={() => copy(key.key, key.id)}
                       title={copied === key.id ? "Copied" : "Copy API key"}
                       aria-label={copied === key.id ? "Copied" : "Copy API key"}
-                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-all"
+                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150"
                     >
                       <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                         {copied === key.id ? "check" : "content_copy"}
@@ -1073,7 +1073,7 @@ export default function APIPageClient({ machineId }) {
                     onClick={() => handleDeleteKey(key.id)}
                     title="Delete API key"
                     aria-label="Delete API key"
-                    className="focus-ring p-2 hover:bg-danger-soft rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    className="focus-ring p-2 hover:bg-danger-soft rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-colors duration-150"
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden="true">delete</span>
                   </button>
@@ -1160,7 +1160,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => setShowEnableTunnelModal(false)}
       >
         <div className="flex flex-col gap-4">
-          <div className="bg-surface-2 border border-border-subtle rounded-lg p-4">
+          <div className="bg-surface-2 border border-border rounded-lg p-4">
             <div className="flex items-start gap-3">
               <span aria-hidden="true" className="material-symbols-outlined text-brand">cloud_upload</span>
               <div>

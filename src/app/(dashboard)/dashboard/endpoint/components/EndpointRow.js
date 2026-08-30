@@ -12,7 +12,7 @@ export default function EndpointRow({ label, url, copyId, copied, onCopy, badge,
       <Input value={url} readOnly className="flex-1 font-mono text-sm" />
       <button
         onClick={() => onCopy(url, copyId)}
-        className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors shrink-0"
+        className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150 shrink-0"
         title={copied === copyId ? "Copied" : "Copy endpoint URL"}
         aria-label={copied === copyId ? "Copied" : "Copy endpoint URL"}
       >

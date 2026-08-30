@@ -106,13 +106,13 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   };
 
   return (
-    <div className={`group flex flex-col gap-3 p-2 rounded-lg sm:flex-row sm:items-center sm:justify-between hover:bg-surface-2 transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex flex-col gap-3 p-2 rounded-lg sm:flex-row sm:items-center sm:justify-between hover:bg-surface-2 transition-colors duration-150 ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex w-full min-w-0 flex-1 items-start gap-3 sm:items-center">
         <div className="flex flex-col">
-          <button onClick={onMoveUp} disabled={isFirst} title="Raise connection priority" aria-label="Raise connection priority" className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}>
+          <button onClick={onMoveUp} disabled={isFirst} title="Raise connection priority" aria-label="Raise connection priority" className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}>
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
           </button>
-          <button onClick={onMoveDown} disabled={isLast} title="Lower connection priority" aria-label="Lower connection priority" className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}>
+          <button onClick={onMoveDown} disabled={isLast} title="Lower connection priority" aria-label="Lower connection priority" className={`focus-ring p-0.5 rounded ${isLast ? "text-text-subtle cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}`}>
             <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
           </button>
         </div>
@@ -150,7 +150,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-surface-2 transition-colors ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
+                className={`focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-surface-2 transition-colors duration-150 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{updatingProxy ? "progress_activity" : "lan"}</span>

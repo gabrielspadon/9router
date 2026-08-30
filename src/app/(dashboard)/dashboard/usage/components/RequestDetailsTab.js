@@ -59,14 +59,14 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
       <button 
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="focus-ring w-full flex items-center justify-between p-3 bg-surface-2 hover:bg-surface-2 transition-colors"
+        className="focus-ring w-full flex items-center justify-between p-3 bg-surface-2 hover:bg-surface-2 transition-colors duration-150"
       >
         <div className="flex items-center gap-2">
           {icon && <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-text-muted">{icon}</span>}
           <span className="font-semibold text-sm text-text-main">{title}</span>
         </div>
         <span aria-hidden="true" className={cn(
-          "material-symbols-outlined text-[20px] text-text-muted transition-transform duration-200",
+          "material-symbols-outlined text-[20px] text-text-muted transition-transform duration-150",
           isOpen ? "rotate-90" : ""
         )}>
           chevron_right
@@ -280,7 +280,7 @@ export default function RequestDetailsTab() {
                 details.map((detail, index) => (
                   <tr
                     key={`${detail.id}-${index}`}
-                    className="border-b border-border last:border-b-0 hover:bg-surface-2 transition-colors"
+                    className="border-b border-border last:border-b-0 hover:bg-surface-2 transition-colors duration-150"
                   >
                     <td className="whitespace-nowrap px-4 py-3 text-sm metric text-text-main">
                       {new Date(detail.timestamp).toLocaleString()}

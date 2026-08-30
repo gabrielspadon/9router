@@ -151,7 +151,7 @@ function NewModelsModal({ onClose }) {
                       <code className="text-xs font-mono text-text-muted truncate flex-1">
                         {m.modelId}
                       </code>
-                      <span className="text-xs text-text-muted/60 shrink-0">
+                      <span className="text-xs text-text-subtle shrink-0">
                         {new Date(m.firstSeenAt).toLocaleDateString()}
                       </span>
                     </div>

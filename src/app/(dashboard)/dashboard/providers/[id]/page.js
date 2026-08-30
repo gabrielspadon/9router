@@ -1162,7 +1162,7 @@ export default function ProviderDetailPage() {
           <button
             onClick={handleApplyOneToOne}
             disabled={bulkUpdatingProxy || activePools.length === 0}
-            className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
             <span className="text-sm text-text-main">One-to-one (rotate)</span>
@@ -1170,7 +1170,7 @@ export default function ProviderDetailPage() {
           <button
             onClick={() => handleApplySinglePool(null)}
             disabled={bulkUpdatingProxy}
-            className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
             <span className="text-sm text-text-main">None (unbind all)</span>
@@ -1180,7 +1180,7 @@ export default function ProviderDetailPage() {
               key={pool.id}
               onClick={() => handleApplySinglePool(pool.id)}
               disabled={bulkUpdatingProxy || pool.isActive !== true}
-              className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
               <span className="truncate text-sm text-text-main">{pool.name}</span>
@@ -1315,7 +1315,7 @@ export default function ProviderDetailPage() {
         {/* Add model button — inline, same style as model chips */}
         <button
           onClick={() => setShowAddCustomModel(true)}
-          className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2 text-xs text-brand transition-colors hover:border-brand hover:bg-brand-soft sm:w-auto"
+          className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2 text-xs text-brand transition-colors duration-150 hover:border-brand hover:bg-brand-soft sm:w-auto"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-sm">add</span>
           Add Model
@@ -1326,7 +1326,7 @@ export default function ProviderDetailPage() {
           <button
             onClick={handleImportQoderModels}
             disabled={importingQoderModels}
-            className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-info-line px-3 py-2 text-xs text-info transition-colors hover:border-info-line hover:bg-info-soft sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+            className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-info-line px-3 py-2 text-xs text-info transition-colors duration-150 hover:border-info-line hover:bg-info-soft sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
               {importingQoderModels ? "progress_activity" : "download"}
@@ -1356,7 +1356,7 @@ export default function ProviderDetailPage() {
                     onClick={async () => {
                       await handleAddCustomModel(m.id, "llm", providerStorageAlias);
                     }}
-                    className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors"
+                    className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors duration-150"
                     title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[13px]">add</span>
@@ -1377,7 +1377,7 @@ export default function ProviderDetailPage() {
                 <button
                   key={m.id}
                   onClick={() => handleEnableModel(m.id)}
-                  className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors"
+                  className="focus-ring flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors duration-150"
                   title="Restore model"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[13px]">add</span>
@@ -1429,7 +1429,7 @@ export default function ProviderDetailPage() {
       <div className="min-w-0">
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors duration-150 mb-4"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers

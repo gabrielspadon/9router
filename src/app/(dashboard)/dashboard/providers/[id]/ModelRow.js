@@ -38,13 +38,13 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               disabled={isTesting}
               title={isTesting ? "Testing model" : "Test model"}
               aria-label={isTesting ? "Testing model" : "Test model"}
-              className={`focus-ring rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-brand ${isTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}
+              className={`focus-ring rounded p-0.5 text-text-muted transition-opacity duration-150 hover:bg-sidebar hover:text-brand ${isTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}
             >
               <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
-            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-150">
               {isTesting ? "Testing..." : "Test"}
             </span>
           </div>
@@ -60,14 +60,14 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               {copied === `model-${model.id}` ? "check" : "content_copy"}
             </span>
           </button>
-          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-xs text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity duration-150">
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
         {isCustom ? (
           <button
             onClick={onDeleteAlias}
-            className="focus-ring ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-danger-soft hover:text-danger sm:opacity-0 sm:group-hover:opacity-100"
+            className="focus-ring ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity duration-150 hover:bg-danger-soft hover:text-danger sm:opacity-0 sm:group-hover:opacity-100"
             title="Remove custom model"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-sm">close</span>
@@ -75,7 +75,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         ) : onDisable ? (
           <button
             onClick={onDisable}
-            className="focus-ring ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-danger-soft hover:text-danger sm:opacity-0 sm:group-hover:opacity-100"
+            className="focus-ring ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity duration-150 hover:bg-danger-soft hover:text-danger sm:opacity-0 sm:group-hover:opacity-100"
             title="Disable this model"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-sm">close</span>

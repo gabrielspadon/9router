@@ -864,7 +864,7 @@ export default function ProfilePage() {
                   key={option}
                   type="button"
                   onClick={() => setTheme(option)}
-                  className={cn('focus-ring flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial',
+                  className={cn('focus-ring flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-colors duration-150 flex-1 sm:flex-initial',
                     theme === option
                       ? 'bg-surface text-text-main shadow-soft'
                       : 'text-text-muted hover:text-text-main'
@@ -941,7 +941,7 @@ export default function ProfilePage() {
           </div>
           <button
             onClick={() => setLangOpen(true)}
-            className="focus-ring flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-brand-line transition-colors"
+            className="focus-ring flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-brand-line transition-colors duration-150"
             data-i18n-skip="true"
           >
             <span className="text-sm text-text-muted">Display language</span>
@@ -974,7 +974,7 @@ export default function ProfilePage() {
             {settings.requireLogin === true && (
               <form
                 onSubmit={handlePasswordChange}
-                className="flex flex-col gap-4 pt-4 border-t border-border/50"
+                className="flex flex-col gap-4 pt-4 border-t border-border"
               >
                 {settings.hasPassword && (
                   <div className="flex flex-col gap-2">
@@ -1084,7 +1084,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => setSsoTypeTab('saml')}
-                    className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
+                    className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-colors duration-150 text-center',
                       ssoTypeTab === 'saml'
                         ? 'bg-surface text-text-main shadow-soft'
                         : 'text-text-muted hover:text-text-main'
@@ -1095,7 +1095,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => setSsoTypeTab('oidc')}
-                    className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-all text-center',
+                    className={cn('focus-ring flex-1 py-1.5 px-3 rounded-md font-medium text-xs sm:text-sm transition-colors duration-150 text-center',
                       ssoTypeTab === 'oidc'
                         ? 'bg-surface text-text-main shadow-soft'
                         : 'text-text-muted hover:text-text-main'
@@ -1141,7 +1141,7 @@ export default function ProfilePage() {
                         key={option.value}
                         type="button"
                         onClick={() => updateOidcForm('authMode', option.value)}
-                        className={cn('focus-ring text-left rounded-lg border p-3 transition-colors',
+                        className={cn('focus-ring text-left rounded-lg border p-3 transition-colors duration-150',
                           active
                             ? 'border-brand bg-brand-soft'
                             : 'border-border bg-bg hover:bg-surface-2'
@@ -1158,13 +1158,13 @@ export default function ProfilePage() {
 
               {ssoTypeTab === 'saml' ? (
                 /* SAML Configuration Panel */
-                <div className="flex flex-col gap-4 pt-2 border-t border-border/50">
+                <div className="flex flex-col gap-4 pt-2 border-t border-border">
                   {/* IdP Setup Guidelines Banner & Collapsible Drawer */}
                   <div className="rounded-lg border border-border bg-bg/80 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => setShowSamlGuide((prev) => !prev)}
-                      className="focus-ring w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors"
+                      className="focus-ring w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-surface/50 transition-colors duration-150"
                     >
                       <div className="flex items-center gap-2">
                         <span aria-hidden="true" className="material-symbols-outlined text-brand text-lg">
@@ -1181,7 +1181,7 @@ export default function ProfilePage() {
                         </div>
                       </div>
                       <span aria-hidden="true"
-                        className="material-symbols-outlined text-text-muted transition-transform text-lg"
+                        className="material-symbols-outlined text-text-muted transition-transform duration-150 text-lg"
                         style={{ transform: showSamlGuide ? 'rotate(180deg)' : 'none' }}
                       >
                         expand_more
@@ -1481,7 +1481,7 @@ export default function ProfilePage() {
                         Copy
                       </Button>
                     </div>
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50">
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
                       <div>
                         <p className="font-medium text-text-main">SP XML Metadata</p>
                         <code className="block break-all font-mono text-xs">{samlMetadataUrl}</code>
@@ -1499,7 +1499,7 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
+                  <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border">
                     <Button
                       type="button"
                       variant="primary"
@@ -1544,7 +1544,7 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 /* OIDC Panel */
-                <div className="flex flex-col gap-4 pt-2 border-t border-border/50">
+                <div className="flex flex-col gap-4 pt-2 border-t border-border">
                   <div className="grid grid-cols-1 gap-4">
                     <div className="flex flex-col gap-2">
                       <label className="font-medium text-sm">Issuer URL</label>
@@ -1606,7 +1606,7 @@ export default function ProfilePage() {
                     <code className="block break-all font-mono">{oidcRedirectUri}</code>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/50">
+                  <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border">
                     <Button
                       type="button"
                       variant="primary"
@@ -1725,7 +1725,7 @@ export default function ProfilePage() {
 
             {/* Sticky Round Robin Limit */}
             {settings.fallbackStrategy === 'round-robin' && (
-              <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+              <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">Sticky Limit</p>
                   <p className="text-xs sm:text-sm text-text-muted">
@@ -1745,7 +1745,7 @@ export default function ProfilePage() {
             )}
 
             {/* Combo Round Robin */}
-            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border">
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm">Combo Round Robin</p>
                 <p className="text-xs sm:text-sm text-text-muted">
@@ -1765,7 +1765,7 @@ export default function ProfilePage() {
 
             {/* Combo Sticky Round Robin Limit */}
             {settings.comboStrategy === 'round-robin' && (
-              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+              <div className="flex items-center justify-between pt-2 border-t border-border">
                 <div>
                   <p className="font-medium">Combo Sticky Limit</p>
                   <p className="text-sm text-text-muted">Calls per combo model before switching</p>
@@ -1782,7 +1782,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            <div className="pt-4 border-t border-border/50">
+            <div className="pt-4 border-t border-border">
               <ConnectTimeoutInput
                 value={settings.connectTimeoutMs}
                 disabled={loading}
@@ -1796,7 +1796,7 @@ export default function ProfilePage() {
               />
             </div>
 
-            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border">
               {settings.fallbackStrategy === 'round-robin'
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
                 : 'Currently using accounts in priority order (Fill First).'}
@@ -1836,7 +1836,7 @@ export default function ProfilePage() {
             {settings.outboundProxyEnabled === true && (
               <form
                 onSubmit={updateOutboundProxy}
-                className="flex flex-col gap-4 pt-2 border-t border-border/50"
+                className="flex flex-col gap-4 pt-2 border-t border-border"
               >
                 <div className="flex flex-col gap-2">
                   <label className="font-medium text-sm">Proxy URL</label>
@@ -1853,7 +1853,7 @@ export default function ProfilePage() {
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                <div className="flex flex-col gap-2 pt-2 border-t border-border">
                   <label className="font-medium text-sm">No Proxy</label>
                   <Input
                     placeholder="localhost,127.0.0.1"
@@ -1868,7 +1868,7 @@ export default function ProfilePage() {
                   </p>
                 </div>
 
-                <div className="pt-2 border-t border-border/50 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="pt-2 border-t border-border flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <Button
                     type="button"
                     variant="secondary"
@@ -1947,7 +1947,7 @@ export default function ProfilePage() {
                   key={item.id}
                   type="button"
                   onClick={() => toggleNavItem(item.id)}
-                  className={cn('focus-ring inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer',
+                  className={cn('focus-ring inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors duration-150 cursor-pointer',
                     hidden
                       ? 'border-border bg-bg text-text-muted line-through opacity-70'
                       : 'border-brand-line bg-brand-soft text-text-main hover:border-brand'
@@ -1961,7 +1961,7 @@ export default function ProfilePage() {
               );
             })}
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-border/50">
+          <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-border">
             <Button
               variant="outline"
               size="sm"
