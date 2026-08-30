@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { FETCH_CONNECT_TIMEOUT_MS, HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
   encodeField,
@@ -15,6 +15,10 @@ import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  createExecutorResponseHeaderTimeout,
+  isConnectTimeoutError,
+} from "../utils/responseHeaderTimeout.js";
 import zlib from "zlib";
 import crypto from "crypto";
 
@@ -307,13 +311,26 @@ export class CursorExecutor extends BaseExecutor {
     return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
   }
 
-  async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body,
-      signal
-    }, proxyOptions);
+  async makeFetchRequest(url, headers, body, signal, proxyOptions = null, connectTimeout = null) {
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
+    let response;
+    try {
+      response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body,
+        signal: deadline.signal,
+      }, proxyOptions);
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
 
     return {
       status: response.status,
@@ -322,37 +339,55 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  makeHttp2Request(url, headers, body, signal) {
+  makeHttp2Request(url, headers, body, signal, connectTimeout = null) {
     if (!http2) {
       throw new Error("http2 module not available");
+    }
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason || new DOMException("Request aborted", "AbortError"));
     }
 
     const HTTP2_TIMEOUT_MS = 60000; // 60s max — prevent hung sessions
 
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
+      const deadline = createExecutorResponseHeaderTimeout({
+        connectTimeout,
+        registryTimeout: this.config?.timeoutMs,
+        envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+        signal,
+      });
       const client = http2.connect(`https://${urlObj.host}`);
       const chunks = [];
       let responseHeaders = {};
       let settled = false;
+      let req;
+      let hangTimeout;
+
+      const onHeaderAbort = () => finish(reject)(deadline.classify(deadline.signal.reason));
+      const onCallerAbort = () => finish(reject)(signal.reason || new DOMException("Request aborted", "AbortError"));
 
       // Ensure client is always closed on settle
       const finish = (fn) => (...args) => {
         if (settled) return;
         settled = true;
+        deadline.clear();
         clearTimeout(hangTimeout);
-        client.close();
+        deadline.signal.removeEventListener("abort", onHeaderAbort);
+        signal?.removeEventListener("abort", onCallerAbort);
+        try { req?.destroy(); } catch {}
+        try { client.close(); } catch {}
         fn(...args);
       };
 
       // Hard timeout: close session if server never responds
-      const hangTimeout = setTimeout(finish(() => {
+      hangTimeout = setTimeout(finish(() => {
         reject(new Error("HTTP/2 request timed out"));
       }), HTTP2_TIMEOUT_MS);
 
       client.on("error", finish(reject));
 
-      const req = client.request({
+      req = client.request({
         ":method": "POST",
         ":path": urlObj.pathname,
         ":authority": urlObj.host,
@@ -360,7 +395,14 @@ export class CursorExecutor extends BaseExecutor {
         ...headers
       });
 
-      req.on("response", (hdrs) => { responseHeaders = hdrs; });
+      deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
+      signal?.addEventListener("abort", onCallerAbort, { once: true });
+
+      req.on("response", (hdrs) => {
+        responseHeaders = hdrs;
+        deadline.clear();
+        deadline.signal.removeEventListener("abort", onHeaderAbort);
+      });
       req.on("data", (chunk) => { chunks.push(chunk); });
       req.on("end", finish(() => {
         resolve({
@@ -371,11 +413,6 @@ export class CursorExecutor extends BaseExecutor {
       }));
       req.on("error", finish(reject));
 
-      if (signal) {
-        const onAbort = finish(() => reject(new Error("Request aborted")));
-        signal.addEventListener("abort", onAbort, { once: true });
-      }
-
       req.write(body);
       req.end();
     });
@@ -385,18 +422,31 @@ export class CursorExecutor extends BaseExecutor {
    * AgentService (agent.api5.cursor.sh) is HTTP/2-only. Node's fetch/undici speaks
    * HTTP/1.1 and fails with HTTPParserError on the h2 preface — use http2 duplex.
    */
-  openAgentHttp2Stream(url, headers, signal) {
+  openAgentHttp2Stream(url, headers, signal, connectTimeout = null) {
     if (!http2) {
       throw new Error("HTTP/2 is required for Cursor AgentService (endpoint is h2-only)");
     }
+    if (signal?.aborted) {
+      throw signal.reason || new DOMException("Request aborted", "AbortError");
+    }
 
     const urlObj = new URL(url);
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
     const client = http2.connect(`https://${urlObj.host}`);
     const chunkQueue = [];
     let waiting = null;
     let ended = false;
     let streamError = null;
     let req = null;
+    let closed = false;
+    let headersSettled = false;
+    let resolveHeaders;
+    let rejectHeaders;
 
     const wake = (result) => {
       if (!waiting) return;
@@ -405,17 +455,35 @@ export class CursorExecutor extends BaseExecutor {
       resolve(result);
     };
 
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      deadline.clear();
+      deadline.signal.removeEventListener("abort", onHeaderAbort);
+      signal?.removeEventListener("abort", onCallerAbort);
+      try { req?.destroy(); } catch {}
+      try { client.close(); } catch {}
+    };
+
     const fail = (error) => {
       if (streamError) return;
       streamError = error;
       ended = true;
+      if (!headersSettled) {
+        headersSettled = true;
+        rejectHeaders(error);
+      }
       wake(null);
+      close();
     };
 
-    const close = () => {
-      try { req?.destroy(); } catch {}
-      try { client.close(); } catch {}
-    };
+    const onHeaderAbort = () => fail(deadline.classify(deadline.signal.reason));
+    const onCallerAbort = () => fail(signal.reason || new DOMException("Request aborted", "AbortError"));
+
+    const responseHeaders = new Promise((resolve, reject) => {
+      resolveHeaders = resolve;
+      rejectHeaders = reject;
+    });
 
     client.on("error", fail);
 
@@ -428,6 +496,13 @@ export class CursorExecutor extends BaseExecutor {
     });
 
     req.on("error", fail);
+    req.on("response", (hdrs) => {
+      if (headersSettled) return;
+      headersSettled = true;
+      deadline.clear();
+      deadline.signal.removeEventListener("abort", onHeaderAbort);
+      resolveHeaders(hdrs);
+    });
     req.on("data", (chunk) => {
       if (waiting) wake({ value: chunk, done: false });
       else chunkQueue.push(chunk);
@@ -435,27 +510,11 @@ export class CursorExecutor extends BaseExecutor {
     req.on("end", () => {
       ended = true;
       wake({ value: undefined, done: true });
+      close();
     });
 
-    if (signal) {
-      const onAbort = () => {
-        fail(new Error("Request aborted"));
-        close();
-      };
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    const responseHeaders = new Promise((resolve, reject) => {
-      const onEarlyError = (error) => reject(error);
-      client.once("error", onEarlyError);
-      req.once("error", onEarlyError);
-      req.once("response", (hdrs) => {
-        client.off("error", onEarlyError);
-        req.off("error", onEarlyError);
-        resolve(hdrs);
-      });
-    });
+    deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
+    signal?.addEventListener("abort", onCallerAbort, { once: true });
 
     return {
       responseHeaders,
@@ -479,22 +538,39 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async executeAgent({ model, body, stream, credentials, signal }) {
+  async executeAgent({ model, body, stream, credentials, signal, connectTimeout = null }) {
     const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
     if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
 
     const url = `${agentEndpoint}${AGENT_RUN_PATH}`;
     const headers = this.buildHeaders(credentials);
     const requestController = new AbortController();
-    if (signal?.addEventListener) {
-      signal.addEventListener("abort", () => requestController.abort(signal.reason), { once: true });
+    const onParentAbort = () => requestController.abort(signal.reason);
+    let parentAbortAttached = false;
+    const removeParentAbort = () => {
+      if (!parentAbortAttached) return;
+      parentAbortAttached = false;
+      signal.removeEventListener("abort", onParentAbort);
+    };
+    if (signal?.aborted) {
+      requestController.abort(signal.reason);
+    } else if (signal?.addEventListener) {
+      parentAbortAttached = true;
+      signal.addEventListener("abort", onParentAbort, { once: true });
     }
 
     let session;
     try {
-      session = this.openAgentHttp2Stream(url, headers, requestController.signal);
+      session = this.openAgentHttp2Stream(url, headers, requestController.signal, connectTimeout);
+      const closeSession = session.close.bind(session);
+      session.close = () => {
+        removeParentAbort();
+        closeSession();
+      };
       session.write(buildAgentRunFrame(body.messages || [], model));
     } catch (error) {
+      removeParentAbort();
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
 
@@ -503,6 +579,7 @@ export class CursorExecutor extends BaseExecutor {
       responseHeaders = await session.responseHeaders;
     } catch (error) {
       session.close();
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
 
@@ -663,11 +740,12 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     if (isAgentTextRequest(body)) {
       try {
-        return await this.executeAgent({ model, body, stream, credentials, signal });
+        return await this.executeAgent({ model, body, stream, credentials, signal, connectTimeout });
       } catch (error) {
+        if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
         return {
           response: new Response(JSON.stringify({
             error: { message: error.message, type: "connection_error", code: "" },
@@ -686,8 +764,8 @@ export class CursorExecutor extends BaseExecutor {
     try {
       const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true || !!proxyOptions?.vercelRelayUrl;
       const response = (http2 && !shouldForceFetch)
-        ? await this.makeHttp2Request(url, headers, transformedBody, signal)
-        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
+        ? await this.makeHttp2Request(url, headers, transformedBody, signal, connectTimeout)
+        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions, connectTimeout);
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";
@@ -710,6 +788,7 @@ export class CursorExecutor extends BaseExecutor {
 
       return { response: transformedResponse, url, headers, transformedBody: body };
     } catch (error) {
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       const errorResponse = new Response(JSON.stringify({
         error: {
           message: error.message,
