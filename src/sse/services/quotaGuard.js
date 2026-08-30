@@ -18,6 +18,7 @@
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { getWindowThresholds, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 
 // How long a snapshot (memory or persisted) stays fresh before a live refresh.
@@ -55,15 +56,22 @@ function readSnapshot(connection) {
   return null;
 }
 
+function snapshotOwner(connection) {
+  const data = connection.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
+
 function buildProxyOptions(connection) {
-  // Reuse the same proxy resolution the usage API applies (strictProxy=false so
-  // quota fetch falls back to direct on proxy failure).
-  return resolveConnectionProxyConfig(connection.providerSpecificData || {}).then((proxyConfig) => {
+  // Reuse the same proxy resolution as the usage API, preserving a selected
+  // route's strictness through the quota fetch.
+  return resolveConnectionProxyConfig(connection.providerSpecificData || {}, snapshotOwner(connection)).then((proxyConfig) => {
     if (proxyConfig?.kind === "required-unavailable") return proxyConfig;
-    const options = proxyConfig?.kind === "usable"
-      ? toConnectionProxyOptions(proxyConfig)
-      : proxyConfig || {};
-    return { ...options, strictProxy: false };
+    if (proxyConfig?.kind === "usable") return toConnectionProxyOptions(proxyConfig);
+    return { ...(proxyConfig || {}), strictProxy: proxyConfig?.strictProxy === true };
   });
 }
 

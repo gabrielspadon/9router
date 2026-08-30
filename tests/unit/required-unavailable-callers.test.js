@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getProviderConnectionById: vi.fn(),
   updateProviderConnection: vi.fn(),
+  updateConnectionProxyPoolSnapshotIfBound: vi.fn(),
   getDailyConnectionUsage: vi.fn(),
   getUsageForProvider: vi.fn(),
   getCodexRateLimitResetCredits: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getProviderConnections: vi.fn(),
   getClaudeUsage: vi.fn(),
   getCodexUsage: vi.fn(),
+  getCodexSubscriptionEntitlement: vi.fn(),
   proxyAwareFetch: vi.fn(),
   testProxyUrl: vi.fn(),
   getHotReloadConfig: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock("open-sse/index.js", () => ({}));
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionById: mocks.getProviderConnectionById,
   updateProviderConnection: mocks.updateProviderConnection,
+  updateConnectionProxyPoolSnapshotIfBound: mocks.updateConnectionProxyPoolSnapshotIfBound,
   getDailyConnectionUsage: mocks.getDailyConnectionUsage,
   getSettings: mocks.getSettings,
   getProviderConnections: mocks.getProviderConnections,
@@ -31,10 +34,19 @@ vi.mock("@/lib/localDb", () => ({
 
 vi.mock("@/lib/db/index.js", () => ({
   getProviderConnectionById: mocks.getProviderConnectionById,
+  updateConnectionProxyPoolSnapshotIfBound: mocks.updateConnectionProxyPoolSnapshotIfBound,
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
+  toConnectionProxyOptions: (config) => ({
+    connectionProxyEnabled: config.connectionProxyEnabled === true,
+    connectionProxyUrl: config.connectionProxyUrl || "",
+    connectionNoProxy: config.connectionNoProxy || "",
+    vercelRelayUrl: config.vercelRelayUrl || "",
+    strictProxy: config.strictProxy === true,
+    resolutionKind: config.resolutionKind,
+  }),
 }));
 
 vi.mock("@/lib/network/proxyTest", () => ({
@@ -48,7 +60,10 @@ vi.mock("open-sse/services/usage.js", () => ({
 }));
 
 vi.mock("open-sse/services/usage/claude.js", () => ({ getClaudeUsage: mocks.getClaudeUsage }));
-vi.mock("open-sse/services/usage/codex.js", () => ({ getCodexUsage: mocks.getCodexUsage }));
+vi.mock("open-sse/services/usage/codex.js", () => ({
+  getCodexUsage: mocks.getCodexUsage,
+  getCodexSubscriptionEntitlement: mocks.getCodexSubscriptionEntitlement,
+}));
 vi.mock("open-sse/executors/index.js", () => ({ getExecutor: mocks.getExecutor }));
 vi.mock("open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: mocks.proxyAwareFetch }));
 
@@ -78,25 +93,60 @@ const connection = {
   providerSpecificData: { proxyPoolId: "missing-pool", strictProxy: true },
 };
 
+const pairlessConnection = {
+  ...connection,
+  providerSpecificData: { proxyPoolId: "missing-pool" },
+};
+
+const usableStrictProxy = {
+  kind: "usable",
+  resolutionKind: "selected-proxy",
+  connectionProxyEnabled: true,
+  connectionProxyUrl: "https://proxy.test:8443",
+  connectionNoProxy: "",
+  vercelRelayUrl: "",
+  strictProxy: true,
+};
+
+const strictProxyOptions = {
+  connectionProxyEnabled: true,
+  connectionProxyUrl: "https://proxy.test:8443",
+  connectionNoProxy: "",
+  vercelRelayUrl: "",
+  strictProxy: true,
+  resolutionKind: "selected-proxy",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveConnectionProxyConfig.mockResolvedValue(requiredUnavailable);
-  mocks.getProviderConnectionById.mockResolvedValue(connection);
+  mocks.updateConnectionProxyPoolSnapshotIfBound.mockResolvedValue(pairlessConnection);
+  mocks.updateProviderConnection.mockResolvedValue(pairlessConnection);
+  mocks.getProviderConnectionById.mockResolvedValue(pairlessConnection);
   mocks.refreshAndUpdateCredentials.mockResolvedValue({ connection });
   mocks.getHotReloadConfig.mockReturnValue({ models: ["model-required-proxy"] });
   mocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
 });
 
 describe("required proxy unavailable caller boundaries", () => {
-  it.each([null, {
-    windows: [{ key: "session", remainingPercentage: 90, unlimited: false }],
-    fetchedAt: new Date().toISOString(),
-  }])("quota guard returns its no-live typed result before usage %#", async (lastQuotaSnapshot) => {
+  async function expectBoundSnapshotOwner() {
+    const [, owner] = mocks.resolveConnectionProxyConfig.mock.calls.at(-1);
+    expect(owner).toEqual(expect.objectContaining({ persistPoolSnapshot: expect.any(Function) }));
+    const pair = { proxyPoolId: "missing-pool", strictProxy: true };
+    await owner.persistPoolSnapshot(pair);
+    expect(mocks.updateConnectionProxyPoolSnapshotIfBound)
+      .toHaveBeenCalledWith(pairlessConnection.id, "missing-pool", pair);
+  }
+
+  it("quota guard returns its no-live typed result before usage, even with a fresh snapshot", async () => {
     const { evaluateQuota } = await import("@/sse/services/quotaGuard.js");
     const result = await evaluateQuota({
-      ...connection,
+      ...pairlessConnection,
       quotaPauseThresholds: { session: 10 },
-      lastQuotaSnapshot,
+      lastQuotaSnapshot: {
+        windows: [{ key: "session", remainingPercentage: 90, unlimited: false }],
+        fetchedAt: new Date().toISOString(),
+      },
     });
 
     expect(result).toMatchObject({
@@ -105,6 +155,7 @@ describe("required proxy unavailable caller boundaries", () => {
       code: "required_proxy_unavailable",
     });
     expect(mocks.getUsageForProvider).not.toHaveBeenCalled();
+    await expectBoundSnapshotOwner();
   });
 
   it("auto ping skips unavailable selection before refresh or usage", async () => {
@@ -115,6 +166,7 @@ describe("required proxy unavailable caller boundaries", () => {
       updateProviderConnection: vi.fn(),
       resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
       refreshAndUpdateCredentials: mocks.refreshAndUpdateCredentials,
+      updateConnectionProxyPoolSnapshotIfBound: mocks.updateConnectionProxyPoolSnapshotIfBound,
       proxyAwareFetch: mocks.proxyAwareFetch,
       getExecutor: mocks.getExecutor,
     };
@@ -125,6 +177,7 @@ describe("required proxy unavailable caller boundaries", () => {
     expect(mocks.refreshAndUpdateCredentials).not.toHaveBeenCalled();
     expect(mocks.getCodexUsage).not.toHaveBeenCalled();
     expect(mocks.getExecutor).not.toHaveBeenCalled();
+    await expectBoundSnapshotOwner();
   });
 
   it("usage route returns 503 before credential refresh or usage", async () => {
@@ -140,6 +193,7 @@ describe("required proxy unavailable caller boundaries", () => {
     });
     expect(mocks.getExecutor).not.toHaveBeenCalled();
     expect(mocks.getUsageForProvider).not.toHaveBeenCalled();
+    await expectBoundSnapshotOwner();
   });
 
   it.each([
@@ -158,6 +212,7 @@ describe("required proxy unavailable caller boundaries", () => {
     });
     expect(mocks.refreshAndUpdateCredentials).not.toHaveBeenCalled();
     expect(mocks[forbidden]).not.toHaveBeenCalled();
+    await expectBoundSnapshotOwner();
   });
 
   it("hot reload returns 503 before credential refresh or poke", async () => {
@@ -174,6 +229,7 @@ describe("required proxy unavailable caller boundaries", () => {
     });
     expect(mocks.refreshAndUpdateCredentials).not.toHaveBeenCalled();
     expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    await expectBoundSnapshotOwner();
   });
 
   it("provider test returns its typed failed-test shape before proxy testing", async () => {
@@ -194,5 +250,117 @@ describe("required proxy unavailable caller boundaries", () => {
       latencyMs: 0,
     });
     expect(mocks.testProxyUrl).not.toHaveBeenCalled();
+    await expectBoundSnapshotOwner();
+  });
+
+  it("quota guard preserves a usable strict proxy selection", async () => {
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.getUsageForProvider.mockResolvedValue({
+      quotas: { session: { remainingPercentage: 90, unlimited: false } },
+    });
+    const { evaluateQuota } = await import("@/sse/services/quotaGuard.js");
+
+    await evaluateQuota({
+      ...connection,
+      quotaPauseThresholds: { session: 10 },
+    });
+
+    expect(mocks.getUsageForProvider).toHaveBeenCalledWith(
+      expect.any(Object),
+      strictProxyOptions,
+      {},
+    );
+  });
+
+  it("auto ping forwards selected strict options without permitting fallback", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.getCodexUsage.mockResolvedValue({
+      quotas: { session: { remaining: 1, total: 1, resetAt: new Date().toISOString() } },
+    });
+    const { runQuotaAutoPingTick } = await import("@/shared/services/quotaAutoPing.js");
+    const deps = {
+      getSettings: vi.fn().mockResolvedValue({ codexAutoPing: { connections: { [connection.id]: true } } }),
+      getProviderConnections: vi.fn().mockResolvedValue([connection]),
+      updateProviderConnection: vi.fn(),
+      updateConnectionProxyPoolSnapshotIfBound: mocks.updateConnectionProxyPoolSnapshotIfBound,
+      resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
+      refreshAndUpdateCredentials: mocks.refreshAndUpdateCredentials,
+      proxyAwareFetch: mocks.proxyAwareFetch,
+      getExecutor: mocks.getExecutor,
+    };
+
+    await runQuotaAutoPingTick(deps, { running: false, resetCache: {}, failureCache: {} });
+
+    expect(mocks.refreshAndUpdateCredentials)
+      .toHaveBeenCalledWith(connection, false, strictProxyOptions);
+    expect(mocks.getCodexUsage).toHaveBeenCalledWith(connection.accessToken, strictProxyOptions);
+  });
+
+  it("usage route forwards selected strict options without permitting fallback", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.getUsageForProvider.mockResolvedValue({ quotas: {} });
+    mocks.getCodexSubscriptionEntitlement.mockResolvedValue(null);
+    const { GET } = await import("@/app/api/usage/[connectionId]/route.js");
+
+    const response = await GET(new Request("http://localhost/api/usage/conn-required-proxy"), {
+      params: Promise.resolve({ connectionId: connection.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.getUsageForProvider)
+      .toHaveBeenCalledWith(connection, strictProxyOptions, { force: false });
+  });
+
+  it("Codex reset forwards selected strict options without permitting fallback", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.getCodexRateLimitResetCredits.mockResolvedValue({ credits: 1 });
+    const { GET } = await import("@/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+
+    const response = await GET(new Request("http://localhost/api/usage/conn-required-proxy/codex-reset-credits"), {
+      params: Promise.resolve({ connectionId: connection.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.getCodexRateLimitResetCredits)
+      .toHaveBeenCalledWith(connection.accessToken, strictProxyOptions, connection.providerSpecificData);
+  });
+
+  it("hot reload forwards selected strict options before its first upstream operation", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.refreshAndUpdateCredentials.mockRejectedValue(new Error("stop-before-poke"));
+    const { POST } = await import("@/app/api/providers/[id]/hotreload/route.js");
+
+    const response = await POST(new Request("http://localhost/api/providers/conn-required-proxy/hotreload", { method: "POST" }), {
+      params: Promise.resolve({ id: connection.id }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(mocks.refreshAndUpdateCredentials)
+      .toHaveBeenCalledWith(connection, false, strictProxyOptions);
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("provider test forwards selected strict options without direct fallback", async () => {
+    const apiKeyConnection = {
+      ...connection,
+      provider: "openai",
+      authType: "apikey",
+      apiKey: "api-key",
+    };
+    mocks.getProviderConnectionById.mockResolvedValue(apiKeyConnection);
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(usableStrictProxy);
+    mocks.testProxyUrl.mockResolvedValue({ ok: true });
+    mocks.proxyAwareFetch.mockResolvedValue({ ok: true, status: 200 });
+    const { testSingleConnection } = await import("@/app/api/providers/[id]/test/testUtils.js");
+
+    const result = await testSingleConnection(apiKeyConnection.id);
+
+    expect(result).toMatchObject({ valid: true, error: null });
+    expect(mocks.proxyAwareFetch)
+      .toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.any(Object), strictProxyOptions);
   });
 });

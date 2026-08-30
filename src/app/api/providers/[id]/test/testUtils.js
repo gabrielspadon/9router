@@ -1,4 +1,8 @@
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import {
+  getProviderConnectionById,
+  updateProviderConnection,
+} from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -457,23 +461,13 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
   // Vercel relay: forward via relay URL
-  if (effectiveProxy?.vercelRelayUrl) {
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-    return proxyAwareFetch(url, options, {
-      vercelRelayUrl: effectiveProxy.vercelRelayUrl,
-    });
-  }
-
-  if (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl) {
+  if (!effectiveProxy?.vercelRelayUrl
+    && (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl)) {
     return fetch(url, options);
   }
 
   const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-  return proxyAwareFetch(url, options, {
-    connectionProxyEnabled: true,
-    connectionProxyUrl: effectiveProxy.connectionProxyUrl,
-    connectionNoProxy: effectiveProxy.connectionNoProxy || "",
-  });
+  return proxyAwareFetch(url, options, effectiveProxy);
 }
 
 async function testApiKeyConnection(connection, effectiveProxy = null) {
@@ -872,7 +866,12 @@ export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
-  const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  const proxyData = connection.providerSpecificData || {};
+  const proxyConfig = await resolveConnectionProxyConfig(proxyData, {
+    persistPoolSnapshot: proxyData.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, proxyData.proxyPoolId, pair)
+      : undefined,
+  });
   if (proxyConfig?.kind === "required-unavailable") {
     return {
       valid: false,

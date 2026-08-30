@@ -2,6 +2,7 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById } from "@/lib/db/index.js";
+import * as database from "@/lib/db/index.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route";
@@ -15,6 +16,15 @@ const RETRY_BACKOFF_MS = 1200;
 const USAGE_SETTLE_MS = 2500; // quota count moves after the poke lands
 const USAGE_VERIFY_ATTEMPTS = 3; // quota updates are delayed; retry the probe before declaring failure
 const USAGE_VERIFY_INTERVAL_MS = 4000;
+
+function snapshotOwner(connection) {
+  const data = connection.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof database.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => database.updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
 
 /**
  * Poke one model. A poke's goal is that the request REACHES the upstream and
@@ -117,7 +127,7 @@ export async function POST(_request, { params }) {
   }
 
   try {
-    const proxyCfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const proxyCfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {}, snapshotOwner(connection));
     if (proxyCfg?.kind === "required-unavailable") {
       return Response.json({
         ok: false,
@@ -126,10 +136,9 @@ export async function POST(_request, { params }) {
         connectionId: connection.id,
       }, { status: 503 });
     }
-    const proxyOptions = {
-      ...(proxyCfg?.kind === "usable" ? toConnectionProxyOptions(proxyCfg) : proxyCfg || {}),
-      strictProxy: false,
-    };
+    const proxyOptions = proxyCfg?.kind === "usable"
+      ? toConnectionProxyOptions(proxyCfg)
+      : { ...(proxyCfg || {}), strictProxy: proxyCfg?.strictProxy === true };
 
     const refreshed = await refreshAndUpdateCredentials(connection, false, proxyOptions);
     const executor = getExecutor(connection.provider);

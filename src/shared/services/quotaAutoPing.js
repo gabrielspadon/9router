@@ -1,7 +1,12 @@
 // Quota auto-ping scheduler: warms 5h windows by sending tiny opt-in requests right after reset.
 import "open-sse/index.js";
 
-import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import {
+  getSettings,
+  getProviderConnections,
+  updateProviderConnection,
+} from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";
@@ -94,13 +99,22 @@ function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
 }
 
 function buildProxyOptions(cfg) {
-  if (cfg?.kind === "usable") return { ...toConnectionProxyOptions(cfg), strictProxy: false };
+  if (cfg?.kind === "usable") return toConnectionProxyOptions(cfg);
   return {
     connectionProxyEnabled: cfg.connectionProxyEnabled === true,
     connectionProxyUrl: cfg.connectionProxyUrl || "",
     connectionNoProxy: cfg.connectionNoProxy || "",
     vercelRelayUrl: cfg.vercelRelayUrl || "",
-    strictProxy: false,
+    strictProxy: cfg.strictProxy === true,
+  };
+}
+
+function snapshotOwner(conn, deps) {
+  const data = conn.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof deps.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => deps.updateConnectionProxyPoolSnapshotIfBound(conn.id, data.proxyPoolId, pair)
+      : undefined,
   };
 }
 
@@ -196,7 +210,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   // Avoid hammering provider auth/quota endpoints if a ping failed recently.
   if (shouldSkipAfterFailure(state, key)) return;
 
-  const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
+  const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData, snapshotOwner(conn, deps));
   if (proxyCfg?.kind === "required-unavailable") {
     state.failureCache[key] = Date.now();
     console.warn(`[AutoPing] ${provider}:${conn.id}: required_proxy_unavailable`);
@@ -256,6 +270,7 @@ function createDefaultDeps() {
   return {
     getSettings,
     getProviderConnections,
+    updateConnectionProxyPoolSnapshotIfBound: localDb.updateConnectionProxyPoolSnapshotIfBound,
     updateProviderConnection,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,

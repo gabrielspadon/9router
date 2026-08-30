@@ -6,6 +6,7 @@ import {
   getProviderConnectionById,
   updateProviderConnection,
 } from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
@@ -15,6 +16,16 @@ import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
+
+function snapshotOwner(connection) {
+  const data = connection.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
+
 function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
@@ -151,18 +162,17 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 
-    // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
-    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
+    // Resolve the persisted route before refresh or usage egress.
+    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData, snapshotOwner(connection));
     if (proxyConfig?.kind === "required-unavailable") {
       return Response.json({
         error: "Required proxy is unavailable",
         code: "required_proxy_unavailable",
       }, { status: 503 });
     }
-    const proxyOptions = {
-      ...(proxyConfig?.kind === "usable" ? toConnectionProxyOptions(proxyConfig) : proxyConfig || {}),
-      strictProxy: false,
-    };
+    const proxyOptions = proxyConfig?.kind === "usable"
+      ? toConnectionProxyOptions(proxyConfig)
+      : { ...(proxyConfig || {}), strictProxy: proxyConfig?.strictProxy === true };
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
     if (isOAuth) {
