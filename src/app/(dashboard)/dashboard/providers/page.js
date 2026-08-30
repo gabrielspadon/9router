@@ -560,24 +560,19 @@ export default function ProvidersPage() {
           </h2>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <ModelAvailabilityBadge />
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="play_arrow"
+              loading={testingMode === "oauth"}
               onClick={() => handleBatchTest("oauth")}
               disabled={!!testingMode}
-              className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-                testingMode === "oauth"
-                  ? "bg-brand-soft border-brand-line text-brand animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
-              }`}
+              className="w-full sm:w-auto"
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
             >
-              <span aria-hidden="true"
-                className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}
-              >
-                play_arrow
-              </span>
               {testingMode === "oauth" ? "Testing..." : "Test All"}
-            </button>
+            </Button>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
@@ -608,24 +603,19 @@ export default function ProvidersPage() {
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             Free Tier Providers
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="play_arrow"
+            loading={testingMode === "free"}
             onClick={() => handleBatchTest("free")}
             disabled={!!testingMode}
-            className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-              testingMode === "free"
-                ? "bg-brand-soft border-brand-line text-brand animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
-            }`}
+            className="w-full sm:w-auto"
             title="Test all Free connections"
             aria-label="Test all Free provider connections"
           >
-            <span aria-hidden="true"
-              className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}
-            >
-              play_arrow
-            </span>
             {testingMode === "free" ? "Testing..." : "Test All"}
-          </button>
+          </Button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {freeEntries.map(([key, info]) => {
@@ -669,24 +659,19 @@ export default function ProvidersPage() {
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             API Key Providers{" "}
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="play_arrow"
+            loading={testingMode === "apikey"}
             onClick={() => handleBatchTest("apikey")}
             disabled={!!testingMode}
-            className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-              testingMode === "apikey"
-                ? "bg-brand-soft border-brand-line text-brand animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
-            }`}
+            className="w-full sm:w-auto"
             title="Test all API Key connections"
             aria-label="Test all API Key connections"
           >
-            <span aria-hidden="true"
-              className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}
-            >
-              play_arrow
-            </span>
             {testingMode === "apikey" ? "Testing..." : "Test All"}
-          </button>
+          </Button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {visibleApikeyEntries.map(([key, info]) => (
@@ -885,21 +870,18 @@ function FreeModelSyncCard() {
             disabled={!cfg.enabled || saving}
             selectClassName="py-1.5 text-xs"
           />
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="sync"
+            loading={running}
             onClick={handleFetchNow}
             disabled={running}
-            className={`focus-ring flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-              running
-                ? "bg-brand-soft border-brand-line text-brand animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
-            }`}
+            className="w-full sm:w-auto"
             title="Run a free-model sync immediately"
           >
-            <span aria-hidden="true" className={`material-symbols-outlined text-[14px]${running ? " animate-spin" : ""}`}>
-              sync
-            </span>
             {running ? "Fetching..." : "Fetch now"}
-          </button>
+          </Button>
           <Toggle checked={cfg.enabled} onChange={(v) => patchConfig({ ...cfg, enabled: v })} />
         </div>
       </div>

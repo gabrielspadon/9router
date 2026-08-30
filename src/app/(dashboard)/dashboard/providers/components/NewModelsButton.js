@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Modal } from "@/shared/components";
+import { Button, Modal } from "@/shared/components";
 
 // Compact button that shows the "New Models" discovery modal.
 // Fetches unseen model count on mount for the badge, and the full
@@ -160,13 +160,15 @@ function NewModelsModal({ onClose }) {
               </div>
             ))}
 
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="done_all"
               onClick={handleMarkAllRead}
-              className="focus-ring mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-brand-line transition-colors"
+              className="mt-1"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">done_all</span>
               Mark all as read
-            </button>
+            </Button>
           </>
         )}
       </div>
