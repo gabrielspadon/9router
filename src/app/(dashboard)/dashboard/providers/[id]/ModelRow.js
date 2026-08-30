@@ -36,9 +36,11 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             <button
               onClick={onTest}
               disabled={isTesting}
+              title={isTesting ? "Testing model" : "Test model"}
+              aria-label={isTesting ? "Testing model" : "Test model"}
               className={`focus-ring rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-primary ${isTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}
             >
-              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+              <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
@@ -50,9 +52,11 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         <div className="relative shrink-0 group/btn">
           <button
             onClick={() => onCopy(displayModel, `model-${model.id}`)}
+            title={copied === `model-${model.id}` ? "Copied" : "Copy model id"}
+            aria-label={copied === `model-${model.id}` ? "Copied" : "Copy model id"}
             className="focus-ring rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary"
           >
-            <span className="material-symbols-outlined text-sm">
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">
               {copied === `model-${model.id}` ? "check" : "content_copy"}
             </span>
           </button>

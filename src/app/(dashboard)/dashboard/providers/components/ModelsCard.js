@@ -24,8 +24,8 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
         </div>
         {onTest && (
           <div className="relative group/btn">
-            <button onClick={onTest} disabled={isTesting} className={`focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+            <button onClick={onTest} disabled={isTesting} title={isTesting ? "Testing model" : "Test model"} aria-label={isTesting ? "Testing model" : "Test model"} className={`focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+              <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
@@ -35,8 +35,8 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
           </div>
         )}
         <div className="relative group/btn">
-          <button onClick={() => onCopy(fullModel, `model-${model.id}`)} className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-sm">{copied === `model-${model.id}` ? "check" : "content_copy"}</span>
+          <button onClick={() => onCopy(fullModel, `model-${model.id}`)} title={copied === `model-${model.id}` ? "Copied" : "Copy model id"} aria-label={copied === `model-${model.id}` ? "Copied" : "Copy model id"} className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary">
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">{copied === `model-${model.id}` ? "check" : "content_copy"}</span>
           </button>
           <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}

@@ -745,9 +745,11 @@ export default function APIPageClient({ machineId }) {
                 <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
+                  title={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
+                  aria-label={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
                   className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
-                  <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
@@ -837,9 +839,11 @@ export default function APIPageClient({ machineId }) {
                 <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
+                  title={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
+                  aria-label={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
                   className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
-                  <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "check" : "content_copy"}</span>
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "ts_url" ? "check" : "content_copy"}</span>
                 </button>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
@@ -1021,16 +1025,19 @@ export default function APIPageClient({ machineId }) {
                       onClick={() => toggleKeyVisibility(key.id)}
                       className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                      aria-label={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
-                      <span className="material-symbols-outlined text-[14px]">
+                      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                         {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
                       </span>
                     </button>
                     <button
                       onClick={() => copy(key.key, key.id)}
+                      title={copied === key.id ? "Copied" : "Copy API key"}
+                      aria-label={copied === key.id ? "Copied" : "Copy API key"}
                       className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                     >
-                      <span className="material-symbols-outlined text-[14px]">
+                      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                         {copied === key.id ? "check" : "content_copy"}
                       </span>
                     </button>
@@ -1064,9 +1071,11 @@ export default function APIPageClient({ machineId }) {
                   />
                   <button
                     onClick={() => handleDeleteKey(key.id)}
+                    title="Delete API key"
+                    aria-label="Delete API key"
                     className="focus-ring p-2 hover:bg-danger-soft rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">delete</span>
                   </button>
                 </div>
               </div>

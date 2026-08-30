@@ -672,14 +672,14 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                   >
                     <span>{model}</span>
                     <CapacityBadges caps={getCaps?.(model)} />
-                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title={`Move ${model} earlier`} aria-label={`Move ${model} earlier`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_upward</span>
                     </button>
-                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} title={`Move ${model} later`} aria-label={`Move ${model} later`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_downward</span>
                     </button>
-                    <button onClick={() => handleRemove(index)} className="focus-ring leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-danger">
-                      <span className="material-symbols-outlined text-[12px]">close</span>
+                    <button onClick={() => handleRemove(index)} title={`Remove ${model}`} aria-label={`Remove ${model}`} className="focus-ring leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-danger">
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">close</span>
                     </button>
                   </code>
                 ))

@@ -32,9 +32,11 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
           <div className="relative group/btn">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
+              title={copied === `model-${modelId}` ? "Copied" : "Copy model id"}
+              aria-label={copied === `model-${modelId}` ? "Copied" : "Copy model id"}
               className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
             >
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined text-sm" aria-hidden="true">
                 {copied === `model-${modelId}` ? "check" : "content_copy"}
               </span>
             </button>
@@ -47,9 +49,11 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
               <button
                 onClick={onTest}
                 disabled={isTesting}
+                title={isTesting ? "Testing model" : "Test model"}
+                aria-label={isTesting ? "Testing model" : "Test model"}
                 className="focus-ring p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                <span className="material-symbols-outlined text-sm" aria-hidden="true" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                   {isTesting ? "progress_activity" : "science"}
                 </span>
               </button>

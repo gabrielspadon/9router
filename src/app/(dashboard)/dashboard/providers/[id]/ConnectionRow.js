@@ -182,15 +182,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             onClick={onMoveUp}
             disabled={isFirst}
             className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            title="Raise connection priority"
+            aria-label="Raise connection priority"
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
           </button>
           <button
             onClick={onMoveDown}
             disabled={isLast}
             className={`focus-ring p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            title="Lower connection priority"
+            aria-label="Lower connection priority"
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
           </button>
         </div>
         <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
