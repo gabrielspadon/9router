@@ -14,6 +14,21 @@ const HOT_RELOAD_BADGE_VARIANTS = {
   partial: "warning",
 };
 
+export function getPersistedCodexPlan(connection) {
+  if (connection?.provider !== "codex") return null;
+
+  const candidates = [
+    connection.providerSpecificData?.codexSubscriptionPlan,
+    connection.providerSpecificData?.chatgptPlanType,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const plan = candidate.trim();
+    if (plan && plan.toLowerCase() !== "unknown") return plan;
+  }
+  return null;
+}
+
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, hotReload = null, hotReloadStatus = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
@@ -91,6 +106,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
       ? connection.displayName.trim()
       : null;
+  const codexPlan = getPersistedCodexPlan(connection);
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -188,6 +204,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {codexPlan && (
+              <Badge variant="primary" size="sm">
+                <span className="sr-only">Codex subscription plan </span>
+                {codexPlan}
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -320,6 +342,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 ConnectionRow.propTypes = {
   connection: PropTypes.shape({
     id: PropTypes.string,
+    provider: PropTypes.string,
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
@@ -329,6 +352,10 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    providerSpecificData: PropTypes.shape({
+      codexSubscriptionPlan: PropTypes.string,
+      chatgptPlanType: PropTypes.string,
+    }),
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
