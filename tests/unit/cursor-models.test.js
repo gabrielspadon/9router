@@ -320,4 +320,35 @@ describe("Cursor live model catalog", () => {
     await expect(resolveCursorModels(credentials, { proxyOptions: direct, connectHttp2: connector, http2Post: post })).resolves.toBeNull();
     expect(directLease.close).toHaveBeenCalledTimes(1);
   });
+
+  it("maps a propagated required-unavailable model error to the typed kind response", async () => {
+    vi.resetModules();
+    vi.doMock("../../src/app/api/v1/models/route.js", () => ({
+      buildModelsList: vi.fn().mockRejectedValue(Object.assign(new Error("Required proxy is unavailable"), {
+        code: "required_proxy_unavailable",
+        status: 503,
+      })),
+    }));
+    vi.doMock("../../src/lib/network/connectionProxy.js", () => ({
+      isRequiredProxyUnavailableError: (error) => error?.code === "required_proxy_unavailable",
+    }));
+
+    try {
+      const { GET } = await import("../../src/app/api/v1/models/[kind]/route.js");
+      const response = await GET(
+        new Request("http://localhost/v1/models/image"),
+        { params: Promise.resolve({ kind: "image" }) },
+      );
+
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toEqual({
+        error: "Required proxy is unavailable",
+        code: "required_proxy_unavailable",
+      });
+    } finally {
+      vi.doUnmock("../../src/app/api/v1/models/route.js");
+      vi.doUnmock("../../src/lib/network/connectionProxy.js");
+      vi.resetModules();
+    }
+  });
 });

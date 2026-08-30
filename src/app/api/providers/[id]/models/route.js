@@ -9,10 +9,15 @@ import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import {
+  isRequiredProxyUnavailableError,
+  resolveConnectionProxyConfig,
+  toConnectionProxyOptions,
+} from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { discoverDevinModels } from "open-sse/services/devinModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
+import { updateConnectionProxyPoolSnapshotIfBound } from "@/lib/localDb";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -22,6 +27,15 @@ const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fe
 // back 200 with those entries quietly missing instead of erroring.
 const CODEX_CLIENT_VERSION = "0.144.6";
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
+
+function cursorSnapshotOwner(connection) {
+  const data = connection?.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -319,10 +333,15 @@ const PROVIDER_MODELS_CONFIG = {
   },
   cursor: {
     customResolver: async (connection) => {
+      const proxyConfig = await resolveConnectionProxyConfig(
+        connection.providerSpecificData || {},
+        cursorSnapshotOwner(connection),
+      );
+      const proxyOptions = toConnectionProxyOptions(proxyConfig);
       const result = await resolveCursorModels({
         accessToken: connection.accessToken,
         providerSpecificData: connection.providerSpecificData || {},
-      }, { forceRefresh: true, log: console });
+      }, { forceRefresh: true, log: console, proxyOptions });
       if (result?.models?.length) return { models: result.models };
       return {
         models: getStaticProviderModels("cursor"),
@@ -636,6 +655,12 @@ export async function GET(request, { params }) {
       models
     });
   } catch (error) {
+    if (isRequiredProxyUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "Required proxy is unavailable", code: error.code },
+        { status: error.status },
+      );
+    }
     console.log("Error fetching provider models:", error);
     return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
   }
