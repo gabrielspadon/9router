@@ -508,13 +508,14 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                   <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
                 </button>
                 {judge && (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     onClick={() => onSetStrategy({ judgeModel: "" })}
-                    className="focus-ring p-0.5 rounded text-text-muted hover:text-danger hover:bg-danger-soft transition-colors duration-150"
+                    className="text-text-muted hover:text-danger hover:bg-danger-soft"
                     title="Reset judge to Auto"
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[13px]">close</span>
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
@@ -799,32 +800,35 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
 
       {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
-        <button
+        <Button
+          variant="bare" size="icon-sm"
           onClick={onMoveUp}
           disabled={isFirst}
-          className={`focus-ring p-0.5 rounded ${isFirst ? "text-text-subtle cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}`}
+          className={isFirst ? "text-text-subtle cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
           title="Move up"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[12px]">arrow_upward</span>
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="bare" size="icon-sm"
           onClick={onMoveDown}
           disabled={isLast}
-          className={`focus-ring p-0.5 rounded ${isLast ? "text-text-subtle cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}`}
+          className={isLast ? "text-text-subtle cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
           title="Move down"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[12px]">arrow_downward</span>
-        </button>
+        </Button>
       </div>
 
       {/* Remove */}
-      <button
+      <Button
+        variant="bare" size="icon-sm"
         onClick={onRemove}
-        className="focus-ring p-0.5 hover:bg-danger-soft rounded text-text-muted hover:text-danger transition-colors duration-150"
+        className="hover:bg-danger-soft text-text-muted hover:text-danger"
         title="Remove"
       >
         <span aria-hidden="true" className="material-symbols-outlined text-[12px]">close</span>
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Input } from "@/shared/components";
+import { Button, Input } from "@/shared/components";
 
 /** Reusable endpoint row component */
 export default function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
@@ -10,14 +10,15 @@ export default function EndpointRow({ label, url, copyId, copied, onCopy, badge,
           (badge === "CF" || badge === "TS") ? "bg-brand-soft text-brand" : "bg-surface-2 text-text-muted"
         }`}>{label}</span>
       <Input value={url} readOnly className="flex-1 font-mono text-sm" />
-      <button
+      <Button
+        variant="bare" size="icon"
         onClick={() => onCopy(url, copyId)}
-        className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150 shrink-0"
+        className="hover:bg-surface-2 text-text-muted hover:text-brand shrink-0"
         title={copied === copyId ? "Copied" : "Copy endpoint URL"}
         aria-label={copied === copyId ? "Copied" : "Copy endpoint URL"}
       >
         <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === copyId ? "check" : "content_copy"}</span>
-      </button>
+      </Button>
       {actions}
     </div>
   );

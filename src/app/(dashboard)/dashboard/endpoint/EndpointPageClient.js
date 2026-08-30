@@ -743,21 +743,23 @@ export default function APIPageClient({ machineId }) {
             {tunnelEnabled && !tunnelLoading && tunnelReachable ? (
               <>
                 <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
                   title={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
                   aria-label={copied === "tunnel_url" ? "Copied" : "Copy tunnel URL"}
-                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150 shrink-0"
+                  className="hover:bg-surface-2 text-text-muted hover:text-brand shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Disable Tunnel"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : tunnelEnabled && !tunnelLoading && !tunnelReachable ? (
               <>
@@ -765,13 +767,14 @@ export default function APIPageClient({ machineId }) {
                   <span aria-hidden="true" className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tunnelEverReachable ? "Tunnel reconnecting..." : "Tunnel checking..."}
                 </div>
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => setShowDisableTunnelModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Disable Tunnel"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : tunnelLoading ? (
               <>
@@ -779,13 +782,14 @@ export default function APIPageClient({ machineId }) {
                   <span aria-hidden="true" className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tunnelProgress || "Creating tunnel..."}
                 </div>
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => { setTunnelLoading(false); setTunnelProgress(""); }}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Stop"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : tunnelStatus?.type === "error" ? (
               <>
@@ -801,13 +805,14 @@ export default function APIPageClient({ machineId }) {
                   <span aria-hidden="true" className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   Checking...
                 </div>
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => setTunnelChecking(false)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Stop"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : (
               <Button
@@ -837,21 +842,23 @@ export default function APIPageClient({ machineId }) {
             {tsEnabled && !tsLoading && tsReachable ? (
               <>
                 <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
                   title={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
                   aria-label={copied === "ts_url" ? "Copied" : "Copy Tailscale URL"}
-                  className="focus-ring p-2 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150 shrink-0"
+                  className="hover:bg-surface-2 text-text-muted hover:text-brand shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{copied === "ts_url" ? "check" : "content_copy"}</span>
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => setShowDisableTsModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Disable Tailscale"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : tsEnabled && !tsLoading && !tsReachable ? (
               <>
@@ -859,13 +866,14 @@ export default function APIPageClient({ machineId }) {
                   <span aria-hidden="true" className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tsEverReachable ? "Tailscale reconnecting..." : "Tailscale checking..."}
                 </div>
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => setShowDisableTsModal(true)}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Disable Tailscale"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : (tsLoading || tsConnecting) ? (
               <>
@@ -882,13 +890,14 @@ export default function APIPageClient({ machineId }) {
                     {tsAuthLabel || "Open"}
                   </Button>
                 )}
-                <button
+                <Button
+                  variant="bare" size="icon"
                   onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); clearUserAuth(); }}
-                  className="focus-ring p-2 hover:bg-danger-soft rounded text-danger transition-colors duration-150 shrink-0"
+                  className="hover:bg-danger-soft text-danger shrink-0"
                   title="Stop"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">power_settings_new</span>
-                </button>
+                </Button>
               </>
             ) : tsStatus?.type === "error" ? (
               <>
@@ -1021,26 +1030,28 @@ export default function APIPageClient({ machineId }) {
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
                     </code>
-                    <button
+                    <Button
+                      variant="bare" size="icon-sm"
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150"
+                      className="hover:bg-surface-2 text-text-muted hover:text-brand"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                       aria-label={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
                       <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                         {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
                       </span>
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="bare" size="icon-sm"
                       onClick={() => copy(key.key, key.id)}
                       title={copied === key.id ? "Copied" : "Copy API key"}
                       aria-label={copied === key.id ? "Copied" : "Copy API key"}
-                      className="focus-ring p-1 hover:bg-surface-2 rounded text-text-muted hover:text-brand transition-colors duration-150"
+                      className="hover:bg-surface-2 text-text-muted hover:text-brand"
                     >
                       <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                         {copied === key.id ? "check" : "content_copy"}
                       </span>
-                    </button>
+                    </Button>
                   </div>
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
@@ -1069,14 +1080,15 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
-                  <button
+                  <Button
+                    variant="bare" size="icon"
                     onClick={() => handleDeleteKey(key.id)}
                     title="Delete API key"
                     aria-label="Delete API key"
-                    className="focus-ring p-2 hover:bg-danger-soft rounded text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-colors duration-150"
+                    className="hover:bg-danger-soft text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden="true">delete</span>
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
