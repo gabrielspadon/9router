@@ -100,3 +100,6 @@ graphify-out/*
 
 # local tool state
 .serena/
+
+# unlazy stop-hook state (local, per-checkout)
+.unlazy-hook-state.json
