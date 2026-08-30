@@ -39,37 +39,7 @@ Container operation is in [../DOCKER.md](../DOCKER.md).
 The engine's own conventions, including how to add a provider, an executor or a
 translator, are in `open-sse/AGENTS.md` beside the code.
 
-## Investigations
 
-These are dated findings against a specific state of the tree. They explain why
-something is the way it is, and they are not maintained as the code moves.
-
-- [analysis-usage-tracking.md](analysis-usage-tracking.md). Traces the usage and
-  logging data path, and establishes that usage has moved from `usage.json` and
-  `log.txt` into SQLite and now follows `DATA_DIR`. Written in Chinese.
-- [analysis-cc-switch-claude-prefix.md](analysis-cc-switch-claude-prefix.md).
-  Analysis of the external cc-switch proxy and its `claude-` prefix mechanism,
-  which motivated the native compatibility layer below. Written in Chinese, and
-  about a different project's source tree rather than this one.
-- [plan-claude-compat-layer.md](plan-claude-compat-layer.md). The design of the
-  native Claude compatibility layer that lets Claude Code point directly at
-  9Router, including the model-id filtering and `[1m]` beta-header behaviour
-  reverse-engineered from the Claude Code binary. Written in Chinese, and marked
-  as implemented.
-
-## Feature plans and specs
-
-Working documents for individual features, kept as a record of the intended
-design. Each pairs a spec with an implementation plan.
-
-- [GPT-5.6 Codex reasoning overrides](superpowers/specs/2026-08-02-gpt-5-6-codex-reasoning-overrides-design.md),
-  [plan](superpowers/plans/2026-08-02-gpt-5-6-codex-reasoning-overrides.md).
-- [Devin cloud provider](superpowers/specs/2026-08-22-devin-cloud-provider-design.md),
-  [plan](superpowers/plans/2026-08-22-devin-cloud-provider.md).
-- [Claude response classifier validation](superpowers/specs/2026-08-30-claude-response-classifier-validation-design.md),
-  [plan](superpowers/plans/2026-08-30-claude-response-classifier-validation.md).
-- [Ollama cloud web fetch transport](superpowers/specs/2026-08-30-ollama-cloud-web-fetch-design.md),
-  [plan](superpowers/plans/2026-08-30-ollama-cloud-web-fetch-transport.md).
 
 ## Conventions for this directory
 

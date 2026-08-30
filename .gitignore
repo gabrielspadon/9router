@@ -65,7 +65,21 @@ docs/*
 !docs/ARCHITECTURE.md
 !docs/MEMORY_OPTIMIZATION.md
 !docs/design/
-!docs/design/**
+!docs/design/design-system.md
+!docs/design/tokens.pairs.json
+!docs/design/verification/
+!docs/design/verification/contrast.mjs
+# Development artefacts of the design work: exploration, captured evidence and
+# campaign tooling. Local only.
+docs/design/evidence/
+docs/design/artboards/
+docs/design/verification/*
+!docs/design/verification/contrast.mjs
+docs/design/r2-*.md
+docs/design/not-changed.md
+docs/design/backend-handoff.md
+docs/design/progressive-tool-disclosure.md
+docs/design/translation-policy.md
 test/*
 open-sse/test/*
 RM.vn.md
@@ -110,3 +124,20 @@ graphify-out/*
 
 # unlazy stop-hook state (local, per-checkout)
 .unlazy-hook-state.json
+
+# Local-only: agent instructions, campaign state, development evidence and
+# translated documentation. The repository ships English production docs only;
+# the web UI's own multi-language support lives in public/i18n and src/i18n and
+# is unaffected.
+CLAUDE.md
+PLAN.md
+GATES.md
+AGENTS.md
+.claude/
+.unlazy/
+.vscode/
+docs/superpowers/
+docs/analysis-*.md
+docs/plan-*.md
+README.*.md
+i18n/

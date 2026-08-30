@@ -123,8 +123,8 @@ substring match on the model id, and strips every field except `id` and
 `display_name`. A model whose id contains neither word never appears in its
 picker regardless of what the endpoint returned.
 
-The compatibility layer that fronts non-Claude models behind a `claude-` prefix
-is described in [plan-claude-compat-layer.md](plan-claude-compat-layer.md).
+9Router fronts non-Claude models behind a `claude-` prefix so they survive that
+filter. Enable it on the Claude Compat page in the dashboard.
 
 ## OpenClaw cannot connect
 

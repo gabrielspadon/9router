@@ -156,9 +156,9 @@ Edit `~/.claude/config.json`:
 
 Claude Code filters the model list it fetches from `/v1/models` with a
 case-insensitive `claude|anthropic` substring match, so a model whose id carries
-neither word does not appear in its picker. The compatibility layer that fronts
-non-Claude models behind a `claude-` prefix is described in
-[plan-claude-compat-layer.md](plan-claude-compat-layer.md).
+neither word does not appear in its picker. 9Router fronts non-Claude models
+behind a `claude-` prefix so they survive that filter; enable it on the Claude
+Compat page in the dashboard.
 
 ### Codex CLI
 

@@ -241,26 +241,17 @@ hardcode a role, block or model string; the constants live in
 Open a [provider request issue](../../issues/new?template=provider_request.yml)
 first if you want the upstream discussed before you write the code.
 
-## Translations
+## Documentation language
 
-The canonical README is the English `README.md`. It is the only file that
-carries the full feature set, the provider list and the setup instructions.
+Documentation in this repository is English only. `README.md` and the pages
+under `docs/` are the canonical text, and translated copies are deliberately not
+kept: they drift within a release or two, and a confidently stale translation is
+worse for a reader than an accurate English page.
 
-`README.zh-CN.md` and the files under `i18n/` are short localised summaries.
-Each states what 9Router is, gets a reader started, and links back to the
-canonical [`README.md`](README.md) and to the documentation index at
-[`docs/README.md`](docs/README.md) for everything else. They are deliberately
-not full translations.
-
-The reason is maintenance honesty. The front page moves with every provider
-added, and a full translation of a moving page drifts within weeks into
-confidently wrong instructions. One accurate English page plus ten honest
-summaries that point at it beats ten stale copies.
-
-When you change the README, update the localised summaries only if the change
-touches what they actually say. Do not grow them back into full translations.
-Adding a new locale means adding a summary of that same size, not a port of the
-whole page.
+This says nothing about the product. The dashboard's own multi-language support
+is a shipped feature and stays: its catalogues live in `public/i18n/literals/`
+and its runtime in `src/i18n/`. Adding or correcting a UI translation there is
+welcome.
 
 ## Code of conduct and security
 

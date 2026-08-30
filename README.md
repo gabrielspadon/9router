@@ -113,22 +113,6 @@ The index is [docs/README.md](docs/README.md). The pages a new user needs first:
 
 Container specifics live in [DOCKER.md](DOCKER.md).
 
-## Localised summaries
-
-These are short summaries only. This English page is canonical, and what a
-translated page is expected to carry is written down in
-[docs/design/translation-policy.md](docs/design/translation-policy.md).
-
-[Português (Brasil)](./i18n/README.pt-BR.md) |
-[Tiếng Việt](./i18n/README.vi.md) |
-[中文](./README.zh-CN.md) |
-[日本語](./i18n/README.ja-JP.md) |
-[Русский](./i18n/README.ru.md) |
-[ไทย](./i18n/README.th.md) |
-[فارسی](./i18n/README.fa_IR.md) |
-[Indonesia](./i18n/README.id-ID.md) |
-[Español](./i18n/README.es.md) |
-[Français](./i18n/README.fr.md)
 
 ## Acknowledgments
 
