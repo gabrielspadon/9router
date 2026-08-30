@@ -439,11 +439,18 @@ Run from the repository root.
 ```bash
 repo_root=$(git rev-parse --show-toplevel)
 pack_destination=$(cd "$repo_root/cli/../.." && pwd -P)
+package_name=$(node -p "require('./cli/package.json').name")
+package_version=$(node -p "require('./cli/package.json').version")
+expected_archive="$pack_destination/${package_name}-${package_version}.tgz"
 pre_pack_status=$(git status --short --untracked-files=all)
 before_manifest=$(mktemp)
 after_manifest=$(mktemp)
 trap 'rm -f "$before_manifest" "$after_manifest"' EXIT
 find "$pack_destination" -maxdepth 1 -type f -name '9router-*.tgz' -printf '%f\n' | sort > "$before_manifest"
+test ! -e "$expected_archive" || {
+  printf 'Refusing to overwrite preexisting package archive: %s\n' "$expected_archive" >&2
+  exit 1
+}
 
 npm run cli:pack
 
@@ -472,12 +479,14 @@ test "$(git status --short --untracked-files=all)" = "$pre_pack_status"
 ```
 
 `cli/package.json` sends its archive to `../..`, so the command resolves that
-destination from the actual worktree instead of assuming a path. It records
-preexisting package names before packaging, then permits exactly one new
-`9router-*.tgz` file. Root and CLI ignores do not cover `.tgz` artifacts, so
-the plan validates the exact new archive with `tar -tzf`, removes only that
-resolved new path, and requires the tracked and untracked status to return to
-the pre-pack state. Any status mutation, zero archive, or multiple new archive
+destination from the actual worktree instead of assuming a path. It derives the
+expected archive from the current package name and version, records preexisting
+package names, and refuses to run `npm pack` when that exact archive already
+exists. It then permits exactly one new `9router-*.tgz` file. Root and CLI
+ignores do not cover `.tgz` artifacts, so the plan validates the exact new
+archive with `tar -tzf`, removes only that resolved new path, and requires the
+tracked and untracked status to return to the pre-pack state. Any status
+mutation, preexisting expected archive, zero archive, or multiple new archive
 names stops the task and is reported without deleting an ambiguous file.
 
 Expected result: exit zero after cleanup. This confirms the ordinary CLI
