@@ -48,6 +48,12 @@ const REASON_LABELS = {
   not_installed: "Not installed",
 };
 
+// Status vocabulary per .unlazy/TOKEN-CONTRACT.md section 1. A request that
+// simply did not qualify for compression is a neutral notice, not a warning;
+// only a missing or switched-off module is degraded, and only a crash failed.
+const FAILED_REASONS = new Set(["transform_error", "timeout"]);
+const DEGRADED_REASONS = new Set(["not_installed", "disabled"]);
+
 function SummaryCard({ label, value, sub, tone }) {
   return (
     <Card padding="sm">
@@ -246,18 +252,22 @@ export default function PxpipeClient() {
                       className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-[var(--radius-brand)] border ${
                         ev.applied
                           ? "bg-success-soft border-success-line text-success"
-                          : ev.reason === "transform_error" || ev.reason === "timeout"
+                          : FAILED_REASONS.has(ev.reason)
                             ? "bg-danger-soft border-danger-line text-danger"
-                            : "bg-warning-soft border-warning-line text-warning"
+                            : DEGRADED_REASONS.has(ev.reason)
+                              ? "bg-warning-soft border-warning-line text-warning"
+                              : "bg-info-soft border-info-line text-info"
                       }`}
                       title={ev.detail || ""}
                     >
                       <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
                         {ev.applied
                           ? "check_circle"
-                          : ev.reason === "transform_error" || ev.reason === "timeout"
+                          : FAILED_REASONS.has(ev.reason)
                             ? "error"
-                            : "remove_circle_outline"}
+                            : DEGRADED_REASONS.has(ev.reason)
+                              ? "warning"
+                              : "info"}
                       </span>
                       {ev.applied ? "Compressed" : REASON_LABELS[ev.reason] || ev.reason}
                     </span>

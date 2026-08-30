@@ -178,6 +178,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
               <button
                 type="button"
                 onClick={() => setInput("")}
+                aria-label="Clear input"
                 className="absolute right-2 top-1/2 -translate-y-1/2 focus-ring rounded-sm text-text-muted hover:text-primary transition-colors duration-150"
               >
                 <span className="material-symbols-outlined text-[14px]" aria-hidden="true">close</span>

@@ -77,7 +77,7 @@ export default function ConsoleLogClient() {
   return (
     <div>
       <Card padding="none">
-        <div className="flex items-center justify-end px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-end px-4 py-3 border-b border-border-subtle">
           <Button size="sm" variant="secondary" icon="delete" onClick={handleClear}>
             Clear
           </Button>

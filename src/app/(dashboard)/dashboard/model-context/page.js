@@ -660,17 +660,17 @@ function ModelContextPage() {
                   <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} aria-label="全选本页" className="focus-ring h-4 w-4 cursor-pointer accent-brand-500" />
                 </th>
                 <th scope="col" aria-sort={sort.key === "provider" ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className="px-4 py-3 font-medium">
-                  <button className="focus-ring rounded-sm hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("provider")}>
+                  <button className="focus-ring rounded-sm cursor-pointer hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("provider")}>
                     供应商{sortIcon("provider")}
                   </button>
                 </th>
                 <th scope="col" aria-sort={sort.key === "model" ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className="px-4 py-3 font-medium">
-                  <button className="focus-ring rounded-sm hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("model")}>
+                  <button className="focus-ring rounded-sm cursor-pointer hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("model")}>
                     模型{sortIcon("model")}
                   </button>
                 </th>
                 <th scope="col" aria-sort={sort.key === "eff" ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className="px-4 py-3 font-medium">
-                  <button className="focus-ring rounded-sm hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("eff")}>
+                  <button className="focus-ring rounded-sm cursor-pointer hover:text-text-main transition-colors duration-150" onClick={() => toggleSort("eff")}>
                     生效窗口{sortIcon("eff")}
                   </button>
                 </th>
