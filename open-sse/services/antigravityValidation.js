@@ -11,6 +11,12 @@ const ALLOWED_SOURCES = new Set(["loadCodeAssist", "onboardUser", "usage", "chat
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const GOOGLE_URL_RE = /https:\/\/accounts\.google\.com[^\s"'<>\\]*/gi;
 
+// Keep Antigravity upstream diagnostics out of every public, persisted, and
+// operator-facing sink. Verification-required is intentionally distinct so the
+// client can take the approved account-recovery path without exposing a URL.
+export const ANTIGRAVITY_SAFE_ERROR_MESSAGE = "Antigravity upstream request failed";
+export const ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE = "Antigravity account verification required";
+
 function byteLength(value) {
   return new TextEncoder().encode(value).length;
 }
@@ -73,6 +79,14 @@ function classifyRpcError(status, payload, source) {
 export function classifyAntigravityValidation({ status, payload, source } = {}) {
   if (!ALLOWED_SOURCES.has(source)) return null;
   return classifyLoadCodeAssist(status, payload, source) || classifyRpcError(status, payload, source);
+}
+
+export function isAntigravityErrorPayload(payload) {
+  return Boolean(
+    payload?.error
+    || payload?.error_code
+    || (payload?.detail && !payload?.choices && !payload?.delta),
+  );
 }
 
 function redactObject(value) {

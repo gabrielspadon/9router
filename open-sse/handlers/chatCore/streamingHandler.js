@@ -9,7 +9,18 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
-import { classifyAntigravitySseValidation, createAntigravitySseValidationGate } from "./antigravitySseValidation.js";
+import {
+  classifyAntigravityJsonValidation,
+  classifyAntigravitySseValidation,
+  createAntigravitySseValidationGate,
+  createSseTextStream,
+  readBoundedAntigravityJson,
+} from "./antigravitySseValidation.js";
+import {
+  ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+  ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE,
+  isAntigravityErrorPayload,
+} from "../../services/antigravityValidation.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -20,7 +31,6 @@ const CODEX_SOURCE_TO_TARGET = {
   [FORMATS.GEMINI]: FORMATS.ANTIGRAVITY,
   [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
-const ANTIGRAVITY_UPSTREAM_ERROR = "Antigravity upstream request failed";
 
 /**
  * Determine which SSE transform stream to use based on provider/format.
@@ -67,8 +77,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
     const upstreamMessage = sanitizedTitle
       || (bodyText.length < 200 ? bodyText.replace(/<[^>]*>/g, '').trim().slice(0, 160) : `Upstream returned non-SSE response (${upstreamContentType})`);
-    const shortMsg = provider === "antigravity" ? ANTIGRAVITY_UPSTREAM_ERROR : upstreamMessage;
-    const status = providerResponse.status || 502;
+    const shortMsg = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : upstreamMessage;
+    const status = Number.isInteger(providerResponse.status) && providerResponse.status >= 400 && providerResponse.status < 600
+      ? providerResponse.status
+      : 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
     streamController?.handleError?.(new Error(shortMsg));
@@ -88,7 +100,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // from falsely clearing account errors or committing an unusable stream to the client.
   if (!providerResponse.body) {
     const status = 502;
-    const shortMsg = "Upstream returned no response body";
+    const shortMsg = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream returned no response body";
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
     streamController?.handleError?.(new Error(shortMsg));
     return {
@@ -110,7 +122,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     if (done || !value || value.length === 0) {
       try { reader.releaseLock?.(); } catch {}
       const status = 502;
-      const shortMsg = "Upstream stream ended before a valid event (empty stream)";
+      const shortMsg = provider === "antigravity"
+        ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+        : "Upstream stream ended before a valid event (empty stream)";
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
       streamController?.handleError?.(new Error(shortMsg));
       return {
@@ -127,7 +141,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   } catch (readErr) {
     const status = 502;
     const shortMsg = provider === "antigravity"
-      ? ANTIGRAVITY_UPSTREAM_ERROR
+      ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
       : `Upstream stream read error: ${readErr?.message || readErr}`;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
     streamController?.handleError?.(provider === "antigravity" ? new Error(shortMsg) : readErr);
@@ -152,15 +166,58 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
     }
   };
+  const isAntigravityJsonRpc = provider === "antigravity" && upstreamContentType.includes("application/json");
+  let bufferedAntigravityJson = null;
+  if (isAntigravityJsonRpc) {
+    let jsonCapture;
+    try {
+      jsonCapture = await readBoundedAntigravityJson({ reader, initialChunk: firstChunk });
+    } catch {
+      try { await reader.cancel(); } catch {}
+      try { reader.releaseLock?.(); } catch {}
+      const status = 502;
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
+      streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+      return {
+        success: false,
+        status,
+        error: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+        response: new Response(JSON.stringify({ error: { message: `[${status}]: ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}` } }), {
+          status,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    }
+    if (jsonCapture.exceeded) {
+      try { await reader.cancel(); } catch {}
+      try { reader.releaseLock?.(); } catch {}
+      const status = 502;
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
+      streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
+      return {
+        success: false,
+        status,
+        error: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+        response: new Response(JSON.stringify({ error: { message: `[${status}]: ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}` } }), {
+          status,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    }
+    bufferedAntigravityJson = jsonCapture.text;
+  }
+
   const initialValidation = provider === "antigravity"
-    ? classifyAntigravitySseValidation(new TextDecoder().decode(firstChunk), { includeTrailing: false })
+    ? isAntigravityJsonRpc
+      ? classifyAntigravityJsonValidation(bufferedAntigravityJson, providerResponse.status)
+      : classifyAntigravitySseValidation(new TextDecoder().decode(firstChunk), { includeTrailing: false })
     : null;
   if (initialValidation) {
     await reportValidation(initialValidation);
     try { await reader.cancel(); } catch {}
     try { reader.releaseLock?.(); } catch {}
     const status = 403;
-    const message = "Antigravity account verification required";
+    const message = ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE;
     streamController?.handleError?.(new Error(message));
     return {
       success: false,
@@ -175,22 +232,26 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   // Check if first chunk contains a structured JSON error object returned as 200 OK
   if (firstChunk) {
-    const chunkStr = new TextDecoder().decode(firstChunk);
+    const chunkStr = bufferedAntigravityJson ?? new TextDecoder().decode(firstChunk);
     const trimmed = chunkStr.trim();
     if (trimmed.startsWith("{") && (trimmed.includes('"error"') || trimmed.includes('"error_code"') || trimmed.includes('"detail"'))) {
       try {
         const parsed = JSON.parse(trimmed);
-        if (parsed.error || parsed.error_code || (parsed.detail && !parsed.choices && !parsed.delta)) {
+        if (isAntigravityJsonRpc ? isAntigravityErrorPayload(parsed) : (parsed.error || parsed.error_code || (parsed.detail && !parsed.choices && !parsed.delta))) {
           const errMsg = typeof parsed.error === "string"
             ? parsed.error
             : parsed.error?.message || parsed.error_msg || parsed.detail || JSON.stringify(parsed);
           const safeErrMsg = provider === "antigravity"
-            ? ANTIGRAVITY_UPSTREAM_ERROR
+            ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
             : errMsg;
           const rawStatus = parsed.error?.status || parsed.status || 502;
           const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 502;
           if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${safeErrMsg}`);
           streamController?.handleError?.(new Error(safeErrMsg));
+          if (isAntigravityJsonRpc) {
+            try { await reader.cancel(); } catch {}
+            try { reader.releaseLock?.(); } catch {}
+          }
           return {
             success: false,
             status,
@@ -207,6 +268,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
   }
 
+  if (bufferedAntigravityJson != null) {
+    try { reader.releaseLock?.(); } catch {}
+    reader = null;
+    firstChunk = new TextEncoder().encode(bufferedAntigravityJson);
+  }
+
   // Non-Antigravity streams can clear account health after their first valid
   // event. Antigravity must wait for terminal completion because a later SSE
   // frame can still be a validation challenge.
@@ -220,7 +287,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   // Reconstruct the upstream stream with the buffered first chunk prepended.
   // Antigravity frames are parsed before every downstream sink, not only once.
-  let responseBodyStream = providerResponse.body;
+  let responseBodyStream = bufferedAntigravityJson == null
+    ? providerResponse.body
+    : createSseTextStream(bufferedAntigravityJson);
   if (reader && firstChunk) {
     if (provider === "antigravity") {
       responseBodyStream = createAntigravitySseValidationGate({
@@ -228,7 +297,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         initialChunk: firstChunk,
         onValidationRequired: async (validation) => {
           await reportValidation(validation);
-          streamController?.handleError?.(new Error("Antigravity account verification required"));
+          streamController?.handleError?.(new Error(ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE));
         },
       });
     } else {

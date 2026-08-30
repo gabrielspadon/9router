@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   refreshWithRetry: vi.fn(),
   parseUpstreamError: vi.fn(),
   logTargetRequest: vi.fn(),
+  logError: vi.fn(),
+  saveRequestDetail: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../../open-sse/executors/index.js", () => ({
@@ -19,7 +21,7 @@ vi.mock("../../open-sse/services/tokenRefresh.js", () => ({ refreshWithRetry: (.
 vi.mock("../../open-sse/translator/index.js", () => ({ translateRequest: vi.fn((_from, _to, model, body) => ({ ...body, model })) }));
 vi.mock("../../open-sse/utils/requestLogger.js", () => ({
   createRequestLogger: vi.fn(async () => ({
-    logClientRawRequest: vi.fn(), logRawRequest: vi.fn(), logTargetRequest: mocks.logTargetRequest, logError: vi.fn(),
+    logClientRawRequest: vi.fn(), logRawRequest: vi.fn(), logTargetRequest: mocks.logTargetRequest, logError: mocks.logError,
   })),
 }));
 vi.mock("../../open-sse/utils/clientDetector.js", () => ({ detectClientTool: vi.fn(() => null), isNativePassthrough: vi.fn(() => false) }));
@@ -45,7 +47,7 @@ vi.mock("../../open-sse/utils/error.js", () => ({
 vi.mock("../../open-sse/handlers/chatCore/nonStreamingHandler.js", () => ({ handleNonStreamingResponse: vi.fn(async ({ providerResponse }) => ({ success: true, response: providerResponse })) }));
 vi.mock("../../open-sse/handlers/chatCore/sseToJsonHandler.js", () => ({ handleForcedSSEToJson: vi.fn(async () => null) }));
 vi.mock("../../open-sse/handlers/chatCore/streamingHandler.js", () => ({ buildOnStreamComplete: vi.fn(() => ({ onStreamComplete: vi.fn(), onStreamAbandoned: vi.fn(), streamDetailId: null, streamState: {} })), handleStreamingResponse: vi.fn(() => ({ success: true, response: new Response() })) }));
-vi.mock("@/lib/usageDb.js", () => ({ trackPendingRequest: vi.fn(), appendRequestLog: vi.fn(() => Promise.resolve()), saveRequestDetail: vi.fn(() => Promise.resolve()) }));
+vi.mock("@/lib/usageDb.js", () => ({ trackPendingRequest: vi.fn(), appendRequestLog: vi.fn(() => Promise.resolve()), saveRequestDetail: mocks.saveRequestDetail }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 const { ConnectTimeoutError } = await import("../../open-sse/utils/responseHeaderTimeout.js");
@@ -60,15 +62,15 @@ function result(status, { url, headers, body, responseFormat } = {}) {
   };
 }
 
-function options() {
+function options(provider = "antigravity") {
   const body = { model: "gemini-3.7-flash", messages: [{ role: "user", content: "hello" }], stream: false };
   return {
     body,
-    modelInfo: { provider: "antigravity", model: "gemini-3.7-flash" },
+    modelInfo: { provider, model: "gemini-3.7-flash" },
     credentials: { accessToken: "expired", providerSpecificData: {} },
     clientRawRequest: { endpoint: "/v1/chat/completions", body, headers: { accept: "application/json" } },
     connectionId: "conn-retry",
-    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), errorLine: vi.fn() },
   };
 }
 
@@ -77,6 +79,7 @@ beforeEach(() => {
   mocks.refreshCredentials.mockResolvedValue({ accessToken: "fresh" });
   mocks.refreshWithRetry.mockImplementation(async (refresh) => refresh());
   mocks.parseUpstreamError.mockImplementation(async (response) => ({ statusCode: response.status, message: `retry status ${response.status}` }));
+  mocks.saveRequestDetail.mockResolvedValue(undefined);
 });
 
 describe("Antigravity refreshed response replacement", () => {
@@ -115,5 +118,37 @@ describe("Antigravity refreshed response replacement", () => {
   it("maps other retry transport failures without resurrecting the original 401", async () => {
     mocks.execute.mockResolvedValueOnce(result(401)).mockRejectedValueOnce(new Error("socket closed"));
     await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 502 });
+  });
+
+  it("uses the fixed Antigravity message for transport diagnostics in every chatCore sink", async () => {
+    const opaque = "opaque-chatcore-transport-secret";
+    const input = options();
+    mocks.execute.mockRejectedValueOnce(new Error(opaque));
+
+    const response = await handleChatCore(input);
+    const sinks = JSON.stringify([response, input.log.errorLine.mock.calls, mocks.saveRequestDetail.mock.calls, mocks.logError.mock.calls]);
+
+    expect(response).toMatchObject({ success: false, status: 502, error: "Antigravity upstream request failed" });
+    expect(sinks).not.toContain(opaque);
+  });
+
+  it("uses the fixed Antigravity message for parsed upstream diagnostics in every chatCore sink", async () => {
+    const opaque = "opaque-chatcore-parsed-secret";
+    const input = options();
+    mocks.execute.mockResolvedValueOnce(result(500));
+    mocks.parseUpstreamError.mockResolvedValueOnce({ statusCode: 500, message: opaque });
+
+    const response = await handleChatCore(input);
+    const sinks = JSON.stringify([response, input.log.errorLine.mock.calls, mocks.saveRequestDetail.mock.calls, mocks.logError.mock.calls]);
+
+    expect(response).toMatchObject({ success: false, status: 500, error: "Antigravity upstream request failed" });
+    expect(sinks).not.toContain(opaque);
+  });
+
+  it("preserves ordinary-provider transport error formatting", async () => {
+    const opaque = "ordinary-provider-diagnostic";
+    mocks.execute.mockRejectedValueOnce(new Error(opaque));
+
+    await expect(handleChatCore(options("openai"))).resolves.toMatchObject({ success: false, status: 502, error: opaque });
   });
 });

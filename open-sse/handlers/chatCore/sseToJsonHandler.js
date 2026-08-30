@@ -8,7 +8,7 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { stripJsonFence, unfenceJsonChoices, wantsJsonOutput } from "../../utils/jsonFence.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
-import { redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE } from "../../services/antigravityValidation.js";
 import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
@@ -305,7 +305,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
   let antigravitySseText = null;
   if (provider === "antigravity") {
-    antigravitySseText = await providerResponse.text();
+    try {
+      antigravitySseText = await providerResponse.text();
+    } catch {
+      console.error("[ChatCore] Antigravity SSE read failed:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+    }
     const validation = classifyAntigravitySseValidation(antigravitySseText);
     if (validation) {
       try {
@@ -313,7 +318,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       } catch {
         log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
       }
-      return createErrorResult(HTTP_STATUS.FORBIDDEN, "Antigravity account verification required");
+      return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
     }
   }
 
@@ -341,12 +346,15 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       let jsonResponse;
       if (isGeminiSse) {
         const parsed = parseGeminiSSEToOpenAIResponse(antigravitySseText ?? await providerResponse.text(), model);
-        if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
+        if (!parsed) return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid Gemini SSE response for non-streaming request",
+        );
         if (parsed.error) {
           const message = parsed.error.message || "Upstream SSE stream failed";
           return createErrorResult(
             HTTP_STATUS.BAD_GATEWAY,
-            provider === "antigravity" ? redactAntigravityValidationText(message) : message,
+            provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : message,
           );
         }
         jsonResponse = chatCompletionToResponses(parsed, customToolNames);
@@ -356,7 +364,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const hasUsefulOutput = hasUsefulForcedSseOutput(jsonResponse);
       if (provider === "antigravity" && !hasUsefulOutput) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Empty response content from ${provider}/${model}`);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
       }
       if (provider === "antigravity") {
         await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
@@ -488,8 +496,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
-      console.error("[ChatCore] Responses API SSE→JSON failed:", err);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+      console.error(
+        "[ChatCore] Responses API SSE→JSON failed:",
+        provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err,
+      );
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Failed to convert streaming response to JSON",
+      );
     }
   }
 
@@ -497,12 +511,15 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   try {
     const sseText = antigravitySseText ?? await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    if (!parsed) return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
+    );
     if (parsed.error) {
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity"
-          ? redactAntigravityValidationText(parsed.error.message || "Upstream SSE stream failed")
+          ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
           : parsed.error.message || "Upstream SSE stream failed"
       );
     }
@@ -510,7 +527,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const hasUsefulOutput = hasUsefulForcedSseOutput(parsed);
     if (provider === "antigravity" && !hasUsefulOutput) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Empty response content from ${provider}/${model}`);
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
     }
 
     if (onRequestSuccess) await onRequestSuccess();
@@ -578,7 +595,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
-    console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+    console.error(
+      "[ChatCore] Chat Completions SSE→JSON failed:",
+      provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err,
+    );
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Failed to convert streaming response to JSON",
+    );
   }
 }

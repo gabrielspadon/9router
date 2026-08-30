@@ -4,7 +4,7 @@
 
 import { CLIENT_METADATA } from "../../config/appConstants.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
-import { classifyAntigravityValidation, redactAntigravityValidationText } from "../antigravityValidation.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation } from "../antigravityValidation.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 
 // Antigravity API config (from Quotio) — urls from registry, oauth client + dynamic UA kept here
@@ -318,8 +318,8 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null, 
     if (validation) return { data: null, validation };
     if (!response.ok) return { data: null, validation: null };
     return { data, validation: null };
-  } catch (error) {
-    console.error("[Antigravity Subscription] Error:", redactAntigravityValidationText(error?.message || "unknown error"));
+  } catch {
+    console.error("[Antigravity Subscription] Error:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
     return { data: null, validation: null };
   }
 }

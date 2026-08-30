@@ -26,6 +26,7 @@ import {
   parseUpstreamError,
   formatProviderError,
 } from "../utils/error.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE } from "../services/antigravityValidation.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import {
@@ -742,6 +743,8 @@ export async function handleChatCore({
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
   const mapTransportError = (error) => {
+    const isAntigravity = provider === "antigravity";
+    const sinkError = isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : (error.message || String(error));
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
       model,
@@ -759,7 +762,7 @@ export async function handleChatCore({
         request: extractRequestConfig(body, stream),
         providerRequest: translatedBody || null,
         response: {
-          error: error.message || String(error),
+          error: sinkError,
           status: error.name === "AbortError" ? 499 : 502,
           thinking: null,
         },
@@ -769,20 +772,17 @@ export async function handleChatCore({
     ).catch(() => {});
 
     if (error.name === "AbortError") {
-      streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      streamController.handleError(isAntigravity ? new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE) : error);
+      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted");
     }
-    const errMsg = formatProviderError(
-      error,
-      provider,
-      model,
-      HTTP_STATUS.BAD_GATEWAY,
-    );
+    const errMsg = isAntigravity
+      ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+      : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (log?.errorLine) {
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`,
+        `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${!isAntigravity && error.stack ? `\n    ${error.stack}` : ""}`,
       );
     }
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
@@ -874,7 +874,7 @@ export async function handleChatCore({
     } catch (e) {
       log?.warn?.(
         "TOKEN",
-        `${provider.toUpperCase()} | refresh threw: ${e.message}`,
+        `${provider.toUpperCase()} | refresh threw: ${provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : e.message}`,
       );
     }
   }
@@ -886,6 +886,9 @@ export async function handleChatCore({
       providerResponse,
       executor,
     );
+    const safeStatusCode = Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600
+      ? statusCode
+      : HTTP_STATUS.BAD_GATEWAY;
 
     if (validation && typeof onValidationRequired === "function") {
       try {
@@ -1027,7 +1030,7 @@ export async function handleChatCore({
           if (e.name === "AbortError" || isConnectTimeoutError(e)) {
             return mapTransportError(e);
           }
-          log?.warn?.("FIELDSTRIP", `Retry threw: ${e.message}`);
+          log?.warn?.("FIELDSTRIP", `Retry threw: ${provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : e.message}`);
         }
       } else {
         log?.warn?.(
@@ -1046,8 +1049,9 @@ export async function handleChatCore({
       model,
       provider,
       connectionId,
-      status: `FAILED ${statusCode}`,
+      status: `FAILED ${safeStatusCode}`,
     }).catch(() => {});
+    const sinkMessage = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : message;
     saveRequestDetail(
       buildRequestDetail({
         provider,
@@ -1057,28 +1061,25 @@ export async function handleChatCore({
         tokens: { prompt_tokens: 0, completion_tokens: 0 },
         request: extractRequestConfig(body, stream),
         providerRequest: finalBody || translatedBody || null,
-        response: { error: message, status: statusCode, thinking: null },
+        response: { error: sinkMessage, status: safeStatusCode, thinking: null },
         pxpipe: pxpipeSummary,
         status: "error",
       }),
     ).catch(() => {});
 
-    const errMsg = formatProviderError(
-      new Error(message),
-      provider,
-      model,
-      statusCode,
-    );
+    const errMsg = provider === "antigravity"
+      ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
+      : formatProviderError(new Error(message), provider, model, safeStatusCode);
     if (log?.errorLine) {
-      const urlStr = providerUrl ? `\n    URL: ${providerUrl}` : "";
+      const urlStr = provider !== "antigravity" && providerUrl ? `\n    URL: ${providerUrl}` : "";
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`,
+        `ERROR ${safeStatusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`,
       );
     }
-    reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
+    return createErrorResult(safeStatusCode, errMsg, resetsAtMs);
   }
 
   const sharedCtx = {

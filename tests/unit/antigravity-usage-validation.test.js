@@ -241,6 +241,18 @@ describe("Antigravity usage verification", () => {
     expect(listener.onVerificationSuccess).not.toHaveBeenCalled();
   });
 
+  it("does not log an opaque subscription diagnostic", async () => {
+    const opaque = "opaque-subscription-diagnostic-secret";
+    const google = await loadGoogle([]);
+    fetchWithTimeout.mockRejectedValueOnce(new Error(opaque)).mockResolvedValueOnce(jsonResponse({ models: {} }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await google.getAntigravityUsage("token", {});
+
+    expect(JSON.stringify(error.mock.calls)).not.toContain(opaque);
+    expect(JSON.stringify(error.mock.calls)).toContain("Antigravity upstream request failed");
+  });
+
   it("does not expose a classified 2xx validation payload through the usage endpoint", async () => {
     const google = await loadGoogle([
       jsonResponse({ ineligibleTiers: [{ reasonCode: "VALIDATION_REQUIRED", validationUrl: VALIDATION_URL }] }),
@@ -380,6 +392,46 @@ describe("Antigravity usage verification", () => {
       quotas: {},
     });
     expect(serialized).not.toContain(OPAQUE_QUOTA_ERROR);
+  });
+
+  it("does not expose an opaque refresh diagnostic through the Antigravity usage route", async () => {
+    const opaque = "opaque-usage-refresh-secret";
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage", provider: "antigravity", authType: "oauth", accessToken: null, refreshToken: "refresh", providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({
+      needsRefresh: () => true,
+      refreshCredentials: vi.fn().mockRejectedValue(new Error(opaque)),
+    });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+
+    const response = await GET(new Request("http://localhost:20128/api/usage/conn-usage"), { params: Promise.resolve({ connectionId: "conn-usage" }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(JSON.stringify([payload, error.mock.calls])).not.toContain(opaque);
+    expect(payload).toEqual({ error: "Antigravity upstream request failed" });
+  });
+
+  it("does not expose an opaque probe diagnostic through the Antigravity usage route", async () => {
+    const opaque = "opaque-usage-probe-secret";
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage", provider: "antigravity", authType: "oauth", accessToken: "token", providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.getUsageForProvider.mockRejectedValueOnce(new Error(opaque));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+
+    const response = await GET(new Request("http://localhost:20128/api/usage/conn-usage"), { params: Promise.resolve({ connectionId: "conn-usage" }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(JSON.stringify([payload, warn.mock.calls])).not.toContain(opaque);
+    expect(payload).toEqual({ error: "Antigravity upstream request failed" });
   });
 
   it("fails open when the Gemini quota request throws", async () => {

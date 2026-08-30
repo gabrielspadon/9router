@@ -32,6 +32,51 @@ function exceedsFrameLimit(text) {
   return encoder.encode(text).byteLength > MAX_SSE_VALIDATION_FRAME_BYTES;
 }
 
+function concatChunks(chunks, totalBytes) {
+  const result = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
+export function classifyAntigravityJsonValidation(jsonText, status = 200) {
+  try {
+    const payload = JSON.parse(String(jsonText ?? ""));
+    const classifiedStatus = payload?.error?.code ?? payload?.error?.status ?? payload?.status ?? status;
+    return classifyAntigravityValidation({ status: classifiedStatus, payload, source: "chat" });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a bounded JSON RPC response before it crosses generic stream handling.
+ * Unlike SSE, a JSON body has no frame boundary, so all chunks are retained
+ * until EOF and then classified as one response.
+ */
+export async function readBoundedAntigravityJson({ reader, initialChunk }) {
+  const chunks = [initialChunk];
+  let totalBytes = initialChunk.byteLength;
+  if (totalBytes > MAX_SSE_VALIDATION_FRAME_BYTES) return { exceeded: true, text: null };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value?.byteLength) continue;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_SSE_VALIDATION_FRAME_BYTES) return { exceeded: true, text: null };
+    chunks.push(value);
+  }
+
+  return {
+    exceeded: false,
+    text: new TextDecoder().decode(concatChunks(chunks, totalBytes)),
+  };
+}
+
 export function classifyAntigravitySseValidation(sseText, { includeTrailing = true } = {}) {
   let buffer = String(sseText ?? "");
   while (true) {

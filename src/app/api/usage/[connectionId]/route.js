@@ -13,6 +13,7 @@ import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { getCodexSubscriptionEntitlement } from "open-sse/services/usage/codex.js";
 import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 import { runAntigravityUsageProbe } from "@/lib/antigravityVerification";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE } from "open-sse/services/antigravityValidation.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -168,9 +169,10 @@ export async function GET(request, { params }) {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
       } catch (refreshError) {
-        console.error("[Usage API] Credential refresh failed:", refreshError);
+        const safeError = connection.provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : refreshError;
+        console.error("[Usage API] Credential refresh failed:", safeError);
         return Response.json({
-          error: `Credential refresh failed: ${refreshError.message}`
+          error: connection.provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Credential refresh failed: ${refreshError.message}`
         }, { status: 401 });
       }
     }
@@ -199,7 +201,10 @@ export async function GET(request, { params }) {
           ? await runAntigravityUsageProbe(connection, proxyOptions, { force })
           : await getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
-        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+        console.warn(
+          `[Usage] ${connection.provider}: force refresh failed:`,
+          connection.provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : retryError.message,
+        );
       }
     }
 
@@ -261,7 +266,11 @@ export async function GET(request, { params }) {
     return Response.json(usage);
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
-    console.warn(`[Usage] ${provider}: ${error.message}`);
-    return Response.json({ error: error.message }, { status: 500 });
+    const isAntigravity = provider === "antigravity";
+    console.warn(`[Usage] ${provider}:`, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
+    return Response.json(
+      { error: isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message },
+      { status: isAntigravity ? 502 : 500 },
+    );
   }
 }

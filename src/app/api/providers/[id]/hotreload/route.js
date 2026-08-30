@@ -8,7 +8,7 @@ import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/rout
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { getHotReloadConfig } from "@/shared/constants/config";
-import { classifyAntigravityValidation } from "open-sse/services/antigravityValidation.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation } from "open-sse/services/antigravityValidation.js";
 import { createAntigravityVerificationHooks, runAntigravityUsageProbe } from "@/lib/antigravityVerification";
 
 const HOTRELOAD_TIMEOUT_MS = 10000;
@@ -180,7 +180,14 @@ export async function POST(_request, { params }) {
             : "Quota still 0/1000 — hot reload did not move the count."),
     });
   } catch (error) {
-    console.warn(`[HotReload] ${connection.provider}:${connection.id}: ${error.message}`);
-    return Response.json({ ok: false, error: error.message, connectionId: connection.id }, { status: 500 });
+    const isAntigravity = connection.provider === "antigravity";
+    console.warn(
+      `[HotReload] ${connection.provider}:${connection.id}:`,
+      isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message,
+    );
+    return Response.json(
+      { ok: false, error: isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message, connectionId: connection.id },
+      { status: isAntigravity ? 502 : 500 },
+    );
   }
 }

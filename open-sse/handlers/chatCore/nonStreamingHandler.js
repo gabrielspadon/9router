@@ -14,7 +14,13 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { classifyAntigravityValidation, redactAntigravityValidationText } from "../../services/antigravityValidation.js";
+import {
+  ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+  ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE,
+  classifyAntigravityValidation,
+  isAntigravityErrorPayload,
+  redactAntigravityValidationText,
+} from "../../services/antigravityValidation.js";
 import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
 
 /**
@@ -412,7 +418,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   if (contentType.includes("text/event-stream")) {
     if (provider === "antigravity") {
-      antigravitySseText = await providerResponse.text();
+      try {
+        antigravitySseText = await providerResponse.text();
+      } catch {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error("[ChatCore] Antigravity SSE read failed:", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      }
       const validation = classifyAntigravitySseValidation(antigravitySseText);
       if (validation) {
         try {
@@ -420,7 +432,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         } catch {
           log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
         }
-        return createErrorResult(HTTP_STATUS.FORBIDDEN, "Antigravity account verification required");
+        return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
       }
     }
     trackDone();
@@ -437,15 +449,18 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         responseBody = await convertResponsesStreamToJson(antigravitySseText === null ? providerResponse.body : createSseTextStream(antigravitySseText));
       } catch (err) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, err.message);
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to convert streaming response to JSON for ${provider}`);
+        console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Failed to convert streaming response to JSON for ${provider}`);
       }
     } else {
       const sseText = antigravitySseText ?? await providerResponse.text();
       const parsed = parseSSEToOpenAIResponse(sseText, model);
       if (!parsed) {
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
+        );
       }
       responseBody = parsed;
     }
@@ -455,8 +470,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       responseBody = await providerResponse.json();
     } catch (err) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err.message);
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid JSON response from ${provider}`);
     }
   }
 
@@ -472,7 +487,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       } catch {
         log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
       }
-      return createErrorResult(HTTP_STATUS.FORBIDDEN, "Antigravity account verification required");
+      return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+    }
+    if (isAntigravityErrorPayload(responseBody)) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
     }
   }
 
@@ -562,7 +581,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     if (log?.warn) {
       log.warn("CHATCORE", `${provider}/${model} returned HTTP 200 with empty content (finish_reason=${translatedResponse?.choices?.[0]?.finish_reason || "unknown"}) — treating as failure, locking for ${Math.round(EMPTY_CONTENT_COOLDOWN_MS / 1000)}s`);
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Empty response content from ${provider}/${model}`, Date.now() + EMPTY_CONTENT_COOLDOWN_MS);
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Empty response content from ${provider}/${model}`,
+      Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
+    );
   }
 
   if (onRequestSuccess) {

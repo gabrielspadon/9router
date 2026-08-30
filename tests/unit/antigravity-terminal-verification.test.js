@@ -85,6 +85,29 @@ function chunkedSseResponse(chunks) {
   };
 }
 
+function chunkedJsonResponse(chunks) {
+  const encoder = new TextEncoder();
+  const encodedChunks = chunks.map((chunk) => encoder.encode(chunk));
+  let index = 0;
+  const cancel = vi.fn(async () => {});
+  const releaseLock = vi.fn();
+  return {
+    status: 200,
+    headers: new Headers({ "content-type": "application/json" }),
+    body: {
+      getReader: () => ({
+        read: async () => (index < encodedChunks.length
+          ? { done: false, value: encodedChunks[index++] }
+          : { done: true, value: undefined }),
+        cancel,
+        releaseLock,
+      }),
+    },
+    cancel,
+    releaseLock,
+  };
+}
+
 function validationFrame() {
   return {
     error: {
@@ -188,6 +211,30 @@ describe("Antigravity terminal verification success", () => {
     expect(result).toMatchObject({ success: false, status: 502 });
     expect(ctx.onRequestSuccess).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("uses the fixed Antigravity message for a forced SSE opaque error", async () => {
+    const opaque = "opaque-forced-sse-secret";
+    const result = await handleForcedSSEToJson(
+      forcedCtx(sseResponse(`data: ${JSON.stringify({ error: { message: opaque } })}\n\n`)),
+    );
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 502, error: "Antigravity upstream request failed" });
+    expect(JSON.stringify([clientPayload, result])).not.toContain(opaque);
+  });
+
+  it("uses the fixed Antigravity message when forced SSE reading throws an opaque diagnostic", async () => {
+    const opaque = "opaque-forced-sse-read-secret";
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await handleForcedSSEToJson(forcedCtx({
+      headers: new Headers({ "content-type": "text/event-stream" }),
+      text: async () => { throw new Error(opaque); },
+    }));
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 502, error: "Antigravity upstream request failed" });
+    expect(JSON.stringify([clientPayload, result, error.mock.calls])).not.toContain(opaque);
   });
 
   it("defers Antigravity account-health success until terminal stream completion", async () => {
@@ -390,6 +437,57 @@ describe("Antigravity terminal verification success", () => {
     expect(JSON.stringify([logger, log, mocks.saveRequestDetail.mock.calls])).not.toContain("onboard-secret");
   });
 
+  it("classifies a complete Antigravity JSON RPC validation body before stream sinks", async () => {
+    const onValidationRequired = vi.fn();
+    const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() };
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse: new Response(JSON.stringify(validationFrame()), { headers: { "content-type": "application/json" } }),
+      sourceFormat: "openai", targetFormat: "openai", userAgent: "test", onRequestSuccess: vi.fn(), onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-json-complete", challengeIdAtStart: "challenge-json-complete" },
+      reqLogger: logger, toolNameMap: null, customToolNames: null, streamController, onStreamComplete: vi.fn(), streamDetailId: "stream-json-complete", streamState: {}, log,
+    });
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 403, error: "Antigravity account verification required" });
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-json-complete",
+    });
+    expect(JSON.stringify([clientPayload, logger, log, streamController.handleError.mock.calls])).not.toContain(VALIDATION_URLS[0]);
+    expect(JSON.stringify([clientPayload, logger, log, streamController.handleError.mock.calls])).not.toContain("project-secret");
+  });
+
+  it("classifies a split Antigravity JSON RPC validation body before returning a stream", async () => {
+    const onValidationRequired = vi.fn();
+    const logger = { appendProviderChunk: vi.fn(), logTargetRequest: vi.fn(), logError: vi.fn() };
+    const log = { line: vi.fn(), warn: vi.fn(), errorLine: vi.fn() };
+    const streamController = { signal: new AbortController().signal, isConnected: () => true, handleComplete: vi.fn(), handleDisconnect: vi.fn(), handleError: vi.fn() };
+    const body = JSON.stringify(validationFrame());
+    const splitAt = Math.floor(body.length / 2);
+    const providerResponse = chunkedJsonResponse([body.slice(0, splitAt), body.slice(splitAt)]);
+    const result = await handleStreamingResponse({
+      ...streamCtx(),
+      providerResponse,
+      sourceFormat: "openai", targetFormat: "openai", userAgent: "test", onRequestSuccess: vi.fn(), onValidationRequired,
+      verificationContext: { connectionId: "conn-terminal", observationId: "obs-json-split", challengeIdAtStart: "challenge-json-split" },
+      reqLogger: logger, toolNameMap: null, customToolNames: null, streamController, onStreamComplete: vi.fn(), streamDetailId: "stream-json-split", streamState: {}, log,
+    });
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 403, error: "Antigravity account verification required" });
+    expect(onValidationRequired).toHaveBeenCalledWith({
+      validation: { kind: "antigravity_validation_required", url: VALIDATION_URLS[0], source: "chat" },
+      observationId: "obs-json-split",
+    });
+    expect(JSON.stringify([clientPayload, logger, log, streamController.handleError.mock.calls])).not.toContain(VALIDATION_URLS[0]);
+    expect(JSON.stringify([clientPayload, logger, log, streamController.handleError.mock.calls])).not.toContain("onboard-secret");
+    expect(providerResponse.cancel).toHaveBeenCalledOnce();
+    expect(providerResponse.releaseLock).toHaveBeenCalledOnce();
+  });
+
   it("gates a later split Antigravity validation frame before stream sinks", async () => {
     const healthStates = [];
     const onValidationRequired = vi.fn(async () => healthStates.push("unavailable"));
@@ -516,6 +614,34 @@ describe("Antigravity terminal verification success", () => {
     expect(logger.logConvertedResponse).not.toHaveBeenCalled();
     expect(clientPayload).not.toContain(VALIDATION_URLS[0]);
     expect(clientPayload).not.toContain("project-secret");
+  });
+
+  it("uses the fixed Antigravity message for a 200 non-stream JSON diagnostic", async () => {
+    const opaque = "opaque-nonstream-json-secret";
+    const logger = { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() };
+    const result = await handleNonStreamingResponse(nonStreamingCtx(
+      new Response(JSON.stringify({ error: { message: opaque } }), { headers: { "content-type": "application/json" } }),
+      terminalSpy(),
+      logger,
+    ));
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 502, error: "Antigravity upstream request failed" });
+    expect(JSON.stringify([clientPayload, logger, result])).not.toContain(opaque);
+  });
+
+  it("uses the fixed Antigravity message when non-stream SSE reading throws an opaque diagnostic", async () => {
+    const opaque = "opaque-nonstream-sse-read-secret";
+    const logger = { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await handleNonStreamingResponse(nonStreamingCtx({
+      headers: new Headers({ "content-type": "text/event-stream" }),
+      text: async () => { throw new Error(opaque); },
+    }, terminalSpy(), logger));
+    const clientPayload = await result.response.text();
+
+    expect(result).toMatchObject({ success: false, status: 502, error: "Antigravity upstream request failed" });
+    expect(JSON.stringify([clientPayload, logger, result, error.mock.calls])).not.toContain(opaque);
   });
 
   it("does not clear Antigravity account health before rejecting empty 200 JSON", async () => {

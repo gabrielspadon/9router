@@ -105,14 +105,14 @@ describe("Antigravity verification privacy boundaries", () => {
     expect(contents).not.toContain("accounts.google.com");
   });
 
-  it("classifies and redacts raw project and chat diagnostics before public sinks", () => {
+  it("classifies and bounds raw project and chat diagnostics before public sinks", () => {
     const project = source("open-sse/services/projectId.js");
     const chat = source("open-sse/handlers/chatCore.js");
     const executor = source("open-sse/executors/antigravity.js");
     expect(project).toContain("classifyAntigravityValidation({ status: response.status, payload: data, source: \"loadCodeAssist\" })");
     expect(project).toContain("redactAntigravityValidationText");
     expect(chat).toContain("onValidationRequired");
-    expect(executor).toContain("redactAntigravityValidationText");
+    expect(executor).toContain("ANTIGRAVITY_SAFE_ERROR_MESSAGE");
     expect(`${project}\n${chat}\n${executor}`).not.toContain(REALISTIC_VALIDATION_URLS[0]);
     expect(`${project}\n${chat}\n${executor}`).not.toContain(REALISTIC_VALIDATION_URLS[1]);
   });
