@@ -272,7 +272,6 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const result = {
       plan: subscriptionInfo?.currentTier?.name || "Unknown",
       quotas,
-      subscriptionInfo,
     };
     usableAntigravityUsageResults.add(result);
     await notifyAntigravityVerification(hooks, "onVerificationSuccess", {

@@ -26,6 +26,8 @@ vi.mock("@/lib/network/connectionProxy", () => ({ resolveConnectionProxyConfig: 
 vi.mock("open-sse/services/usage/codex.js", () => ({ getCodexSubscriptionEntitlement: routeMocks.getCodexSubscriptionEntitlement }));
 
 const VALIDATION_URL = "https://accounts.google.com/AccountChooser?token=usage-secret";
+const MIXED_ACTION_URL = "https://accounts.google.com/v3/signin/challenge/pwd?opaque=mixed-action-secret";
+const MIXED_OPAQUE_VALUE = "mixed-subscription-opaque-secret";
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -243,6 +245,7 @@ describe("Antigravity usage verification", () => {
     });
     routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
     routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.updateProviderConnection.mockResolvedValue(undefined);
     routeMocks.getUsageForProvider.mockResolvedValue(usage);
 
     const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
@@ -254,5 +257,54 @@ describe("Antigravity usage verification", () => {
 
     expect(serialized).not.toContain(VALIDATION_URL);
     expect(serialized).not.toContain("usage-secret");
+  });
+
+  it("exposes only plan and quotas for a successful mixed subscription payload", async () => {
+    const google = await loadGoogle([
+      jsonResponse({
+        currentTier: { name: "Premium" },
+        cloudaicompanionProject: MIXED_OPAQUE_VALUE,
+        actionUrl: MIXED_ACTION_URL,
+        opaque: MIXED_OPAQUE_VALUE,
+        ineligibleTiers: [{ reasonCode: "OTHER", validationUrl: MIXED_ACTION_URL }],
+      }),
+      jsonResponse({
+        models: {
+          "gemini-3.7-flash-high": {
+            displayName: "Gemini 3.7 Flash High",
+            quotaInfo: { remainingFraction: 0.5 },
+          },
+        },
+      }),
+    ]);
+    const usage = await google.getAntigravityUsage("token", {});
+    routeMocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-usage",
+      provider: "antigravity",
+      authType: "oauth",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    routeMocks.getExecutor.mockReturnValue({ needsRefresh: () => false });
+    routeMocks.resolveConnectionProxyConfig.mockResolvedValue({});
+    routeMocks.updateProviderConnection.mockResolvedValue(undefined);
+    routeMocks.getUsageForProvider.mockResolvedValue(usage);
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(
+      new Request("http://localhost:20128/api/usage/conn-usage"),
+      { params: Promise.resolve({ connectionId: "conn-usage" }) },
+    );
+    const payload = await response.json();
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toMatchObject({
+      plan: "Premium",
+      quotas: { "gemini-3.7-flash-high": { displayName: "Gemini 3.7 Flash High" } },
+    });
+    expect(payload).not.toHaveProperty("subscriptionInfo");
+    expect(serialized).not.toContain(MIXED_ACTION_URL);
+    expect(serialized).not.toContain("mixed-action-secret");
+    expect(serialized).not.toContain(MIXED_OPAQUE_VALUE);
   });
 });
