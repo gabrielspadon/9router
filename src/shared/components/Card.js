@@ -10,24 +10,30 @@ export default function Card({
   action,
   padding = "md",
   hover = false,
-  elev = false,
   className,
   ...props
 }) {
+  // Densities from docs/design/design-system.md section 3. They do not vary by
+  // route: a route that needs a different density is a finding, not a prop.
   const paddings = {
     none: "",
     xs: "p-3",
     sm: "p-4",
-    md: "p-6",
+    md: "p-5.5",
     lg: "p-8",
   };
 
   return (
     <div
       className={cn(
-        "bg-surface border border-border-subtle",
-        elev ? "rounded-[14px] shadow-[var(--shadow-elev)]" : "rounded-[14px] shadow-[var(--shadow-soft)]",
-        hover && "hover:shadow-[var(--shadow-warm)] hover:border-brand-500/30 transition-all cursor-pointer",
+        // design-system.md section 4: "Elevation is expressed by ground, line and
+        // inset, not by shadow. One shadow token remains, a single hairline for
+        // a genuinely floating layer such as a modal or a popover. Ambient drop
+        // shadows on static regions are removed." A Card is a static region, so
+        // it carries ground and line and no shadow; `shadow-elev` stays for the
+        // overlays (Modal, Drawer, HeaderMenu) that actually float.
+        "bg-surface border border-border rounded-[var(--radius-brand-lg)]",
+        hover && "hover:border-brand-line transition-colors duration-150 cursor-pointer",
         paddings[padding],
         className
       )}
@@ -37,16 +43,16 @@ export default function Card({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             {icon && (
-              <div className="p-2 rounded-[10px] bg-bg text-text-muted">
-                <span className="material-symbols-outlined text-[20px]">{icon}</span>
+              <div className="p-2 rounded-[var(--radius-brand)] bg-bg text-text-muted">
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">{icon}</span>
               </div>
             )}
-            <div>
+            <div className="min-w-0">
               {title && (
-                <h3 className="text-text-main font-semibold">{title}</h3>
+                <h2 className="text-sm font-semibold text-text-main">{title}</h2>
               )}
               {subtitle && (
-                <p className="text-sm text-text-muted">{subtitle}</p>
+                <p className="text-xs text-text-muted">{subtitle}</p>
               )}
             </div>
           </div>
@@ -62,8 +68,8 @@ Card.Section = function CardSection({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-4 rounded-[10px]",
-        "bg-bg border border-border-subtle",
+        "p-4 rounded-[var(--radius-brand)]",
+        "bg-bg border border-border",
         className
       )}
       {...props}
@@ -78,7 +84,7 @@ Card.Row = function CardRow({ children, className, ...props }) {
     <div
       className={cn(
         "p-3 -mx-3 px-3 transition-colors",
-        "border-b border-border-subtle last:border-b-0",
+        "border-b border-border last:border-b-0",
         "hover:bg-surface-2/50",
         className
       )}
@@ -99,7 +105,7 @@ Card.ListItem = function CardListItem({
     <div
       className={cn(
         "group flex items-center justify-between p-3 -mx-3 px-3",
-        "border-b border-border-subtle last:border-b-0",
+        "border-b border-border last:border-b-0",
         "hover:bg-surface-2/50 transition-colors",
         className
       )}

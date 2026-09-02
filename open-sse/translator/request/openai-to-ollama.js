@@ -1,7 +1,8 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { parseDataUri } from "../concerns/image.js";
+import { parseDataUri, extractAiSdkImageUrl } from "../concerns/image.js";
 import { safeParseJSON } from "../concerns/json.js";
+import { extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK } from "../schema/index.js";
 
 /**
@@ -113,11 +114,16 @@ function normalizeMessages(messages) {
         }
       }));
 
-      result.push({
+      const toolTurn = {
         role: ROLE.ASSISTANT,
         content: content,
         tool_calls: ollamaToolCalls
-      });
+      };
+      // Same field the response translator reads back (#2400).
+      const toolReasoning = extractReasoningText(msg);
+      if (toolReasoning) toolTurn.thinking = toolReasoning;
+
+      result.push(toolTurn);
       continue;
     }
 
@@ -126,13 +132,19 @@ function normalizeMessages(messages) {
     const content = normalizeContent(msg.content);
     const images = extractImagesFromContent(msg.content);
 
+    const reasoning = role === ROLE.ASSISTANT ? extractReasoningText(msg) : "";
+
     // Skip empty messages (except assistant)
-    if (!content && role !== ROLE.ASSISTANT) continue;
+    if (!content && !reasoning && role !== ROLE.ASSISTANT) continue;
 
     const out = {
       role: role,
       content: content
     };
+
+    // Ollama's native field for assistant reasoning history is `thinking`, the
+    // same field open-sse/translator/response/ollama-to-openai.js reads back.
+    if (reasoning) out.thinking = reasoning;
 
     if (images.length > 0) {
       out.images = images;
@@ -177,9 +189,15 @@ function extractImagesFromContent(content) {
   const images = [];
 
   for (const block of content) {
-    if (!block || block.type !== OPENAI_BLOCK.IMAGE_URL) continue;
+    if (!block) continue;
 
-    const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+    let url;
+    if (block.type === OPENAI_BLOCK.IMAGE_URL) {
+      url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+    } else {
+      // AI SDK format: { type: "image", image: "data:..." } (#1330)
+      url = extractAiSdkImageUrl(block);
+    }
     if (typeof url !== "string" || !url) continue;
 
     const parsed = parseDataUri(url);

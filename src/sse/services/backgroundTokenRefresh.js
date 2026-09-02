@@ -2,7 +2,7 @@
 // Fail-open everywhere: tick errors and per-connection failures never kill the interval.
 
 import * as log from "../utils/logger.js";
-import { getRefreshLeadMs } from "open-sse/services/tokenRefresh.js";
+import { getEffectiveRefreshLeadMs } from "open-sse/services/tokenRefresh.js";
 import { getCredentialExpiryMs } from "open-sse/services/oauthCredentialManager.js";
 
 /** Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger). */
@@ -58,7 +58,7 @@ export function selectConnectionsNeedingRefresh(connections, nowMs = Date.now())
     const expiresAtMs = getCredentialExpiryMs(conn);
     if (expiresAtMs === null) continue;
 
-    const providerLead = getRefreshLeadMs(conn.provider);
+    const providerLead = getEffectiveRefreshLeadMs(conn.provider, conn, nowMs);
     const leadMs = Math.max(
       Number.isFinite(providerLead) ? providerLead : 0,
       BACKGROUND_REFRESH_LEAD_MS
@@ -108,7 +108,7 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
 
     log.info("BG_TOKEN_REFRESH", "Refreshing due OAuth connections", {
       due: due.length,
-      ids: due.map((c) => c.id).filter(Boolean),
+      providers: [...new Set(due.map((c) => c.provider).filter(Boolean))],
     });
 
     await Promise.allSettled(
@@ -116,12 +116,10 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
         try {
           await refresh(conn);
           log.info("BG_TOKEN_REFRESH", "Connection refresh finished", {
-            id: conn.id,
             provider: conn.provider,
           });
         } catch (err) {
           log.warn("BG_TOKEN_REFRESH", "Connection refresh failed (swallowed)", {
-            id: conn?.id,
             provider: conn?.provider,
             error: err?.message ?? String(err),
           });

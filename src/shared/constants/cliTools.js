@@ -115,10 +115,10 @@ export const CLI_TOOLS = {
     modelAliases: ["default", "sonnet", "opus", "fable", "haiku", "opusplan"],
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
-      { id: "fable", name: "Claude Fable", alias: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "cc/claude-fable-5" },
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-5" },
-      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-5" },
-      { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
+      { id: "fable", name: "Claude Fable", alias: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "claude-fable-5" },
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "claude-opus-5" },
+      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "claude-sonnet-5" },
+      { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "claude-haiku-4-5-20251001" },
     ],
   },
   openclaw: {
@@ -144,6 +144,100 @@ export const CLI_TOOLS = {
     color: "#E87040",
     description: "OpenCode AI Terminal Assistant",
     configType: "custom",
+  },
+  openclaude: {
+    id: "openclaude",
+    name: "OpenClaude",
+    image: "/providers/openclaude.png",
+    color: "#000000",
+    description: "OpenClaude Coding Agent CLI",
+    configType: "guide",
+    notes: [
+      { type: "warning", text: "OpenClaude needs --provider openai. Without it the env vars are ignored and it stops at \"Not logged in\"." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install", desc: "npm install -g @gitlawb/openclaude" },
+      { step: 2, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 3, title: "API Key", type: "apiKeySelector" },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Run", desc: "Export the variables below, then start OpenClaude with --provider openai" },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `export OPENAI_BASE_URL="{{baseUrl}}"
+export OPENAI_API_KEY="{{apiKey}}"
+export OPENAI_MODEL="{{model}}"
+openclaude --provider openai
+# Windows PowerShell:
+# $env:OPENAI_BASE_URL="{{baseUrl}}"; $env:OPENAI_API_KEY="{{apiKey}}"; $env:OPENAI_MODEL="{{model}}"
+# openclaude --provider openai`,
+    },
+  },
+  omp: {
+    id: "omp",
+    name: "Oh My Pi",
+    icon: "terminal",
+    color: "#4F46E5",
+    description: "Oh My Pi coding agent with TokenProxy model discovery",
+    configType: "guide",
+    notes: [
+      {
+        type: "info",
+        text: "This guide does not detect Oh My Pi or write local configuration. Copy the template into your own models.yml file.",
+      },
+    ],
+    guideSteps: [
+      {
+        step: 1,
+        title: "Install Oh My Pi",
+        value: "curl -fsSL https://omp.sh/install | sh",
+        copyable: true,
+      },
+      {
+        step: 2,
+        title: "Choose a TokenProxy API key",
+        type: "apiKeySelector",
+      },
+      {
+        step: 3,
+        title: "Create models.yml",
+        desc: "Create ~/.omp/agent/models.yml, then copy the template below.",
+        value: "~/.omp/agent/models.yml",
+        copyable: true,
+      },
+      {
+        step: 4,
+        title: "Discover models in Oh My Pi",
+        desc: "Start Oh My Pi and use its model selection workflow. The provider fetches its model list from TokenProxy.",
+      },
+    ],
+    codeBlock: {
+      language: "yaml",
+      code: `providers:
+  tokenproxy:
+    baseUrl: {{baseUrl}}
+    api: openai-completions
+    apiKey: {{apiKey}}
+    authHeader: true
+    discovery:
+      type: openai-models-list`,
+    },
+  },
+  windsurf: {
+    id: "windsurf",
+    name: "Windsurf",
+    icon: "wind_power",
+    color: "#00BCD4",
+    description: "Windsurf AI Code Editor",
+    configType: "guide",
+    guideSteps: [
+      { step: 1, title: "Open Settings", desc: "Go to Settings (Cmd+, / Ctrl+,) → AI or Models section" },
+      { step: 2, title: "Add Custom Provider", desc: "Find \"Custom Model Provider\" or \"External API\" and click Add" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "API Key", type: "apiKeySelector" },
+      { step: 5, title: "Select Model", type: "modelSelector" },
+      { step: 6, title: "Save & Select", desc: "Save settings, then choose your custom model from Windsurf's model selector" },
+    ],
   },
   cowork: {
     id: "cowork",
@@ -250,46 +344,28 @@ export const CLI_TOOLS = {
     name: "Amp CLI",
     image: "/providers/amp.png",
     color: "#F97316",
-    description: "Sourcegraph Amp coding assistant CLI",
-    docsUrl: "/docs?section=cli-tools&tool=amp",
+    description: "Amp coding agent — custom API endpoints unsupported",
+    docsUrl: "https://ampcode.com/manual",
     configType: "guide",
-    defaultCommand: "amp",
-    modelAliases: ["g25p", "g25f", "cs45", "g54"],
+    unsupported: true,
     notes: [
-      { type: "info", text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates." },
-      { type: "warning", text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
+      { type: "error", text: "Amp does not support custom OpenAI-compatible base URLs. AMP_URL configures the Amp service, not the model inference endpoint, so Amp cannot connect directly to TokenProxy." },
     ],
-    guideSteps: [
-      { step: 1, title: "Install Amp", desc: "Install the Amp CLI using the package manager supported by your environment." },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
-      { step: 4, title: "Select Model", type: "modelSelector" },
-      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config." },
-    ],
-    codeBlock: {
-      language: "bash",
-      code: `export OPENAI_API_KEY="{{apiKey}}"
-export OPENAI_BASE_URL="{{baseUrl}}"
-amp --model "{{model}}"
-# Example shorthand aliases you can map locally:
-# g25p -> gemini/gemini-2.5-pro
-# cs45 -> cc/claude-sonnet-4-5-20250929`,
-    },
   },
   qwen: {
     id: "qwen",
     name: "Qwen Code",
     image: "/providers/qwen.png",
     color: "#10B981",
-    description: "Alibaba Qwen Code CLI — supports OpenAI, Anthropic & Gemini providers via 9Router",
+    description: "Alibaba Qwen Code CLI — supports OpenAI, Anthropic & Gemini providers via TokenProxy",
     docsUrl: "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/model-providers/",
     configType: "guide",
     defaultCommand: "qwen",
     notes: [
-      { type: "info", text: "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. 9Router works as an OpenAI-compatible endpoint." },
-      { type: "info", text: "Any model available in 9Router can be used — not just Qwen models. Select from Qwen, Claude, Gemini, GPT, and more." },
+      { type: "info", text: "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. TokenProxy works as an OpenAI-compatible endpoint." },
+      { type: "info", text: "Any model available in TokenProxy can be used — not just Qwen models. Select from Qwen, Claude, Gemini, GPT, and more." },
       { type: "warning", text: "Config path: Linux/macOS ~/.qwen/settings.json • Windows %USERPROFILE%\\.qwen\\settings.json" },
-      { type: "error", text: "Qwen OAuth free tier was discontinued on 2026-04-15. Use 9Router with alicode/openrouter/anthropic/gemini providers instead." },
+      { type: "error", text: "Qwen OAuth free tier was discontinued on 2026-04-15. Use TokenProxy with alicode/openrouter/anthropic/gemini providers instead." },
     ],
     modelAliases: ["coder-model", "qwen3-coder-plus", "qwen3-coder-flash", "vision-model", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gemini-3-flash", "gemini-3.1-pro-high"],
     defaultModels: [
@@ -341,7 +417,7 @@ amp --model "{{model}}"
       { id: "deepseek-chat", name: "DeepSeek V3 Chat", alias: "deepseek-chat" },
     ],
     notes: [
-      { type: "info", text: "DeepSeek TUI uses ~/.deepseek/config.toml for configuration. 9Router will update the provider to 'openai' mode with your base_url, api_key, and model." },
+      { type: "info", text: "DeepSeek TUI uses ~/.deepseek/config.toml for configuration. TokenProxy will update the provider to 'openai' mode with your base_url, api_key, and model." },
       { type: "warning", text: "Config path: Linux/macOS ~/.deepseek/config.toml • Windows %USERPROFILE%\\.deepseek\\config.toml" },
     ],
   },
@@ -360,7 +436,7 @@ amp --model "{{model}}"
       },
       {
         type: "info",
-        text: "Configure 9router as an OpenAI-compatible provider to route all jcode requests through 9router's optimization layer."
+        text: "Configure tokenproxy as an OpenAI-compatible provider to route all jcode requests through tokenproxy's optimization layer."
       },
       {
         type: "warning",
@@ -386,11 +462,11 @@ amp --model "{{model}}"
     notes: [
       {
         type: "info",
-        text: "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.",
+        text: "Grok Build uses ~/.grok/config.toml. TokenProxy writes a [model.tokenproxy] custom model and sets it as the default.",
       },
       {
         type: "info",
-        text: "After Apply, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
+        text: "After Apply, run grok (or /model tokenproxy) to use the routed model. Switch back anytime with /model grok-build.",
       },
       {
         type: "warning",
@@ -424,6 +500,14 @@ devin auth login
 devin --version`,
     },
   },
+  pi: {
+    id: "pi",
+    name: "Pi",
+    icon: "genetics",
+    color: "#7C5CFF",
+    description: "Pi coding agent (pi.dev)",
+    configType: "custom",
+  },
   opendesign: {
     id: "opendesign",
     name: "OpenDesign",
@@ -433,12 +517,12 @@ devin --version`,
     docsUrl: "https://github.com/manalkaff/opendesign",
     configType: "guide",
     notes: [
-      { type: "info", text: "OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at 9Router, /opendesign design sessions route through 9Router automatically — no extra env vars needed." },
+      { type: "info", text: "OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at TokenProxy, /opendesign design sessions route through TokenProxy automatically — no extra env vars needed." },
       { type: "info", text: "Invoke with /opendesign <brief>. Covers decks, wireframes, interactive prototypes, design-system extraction, and brand systems, with a verifier subagent that checks output against the brief." },
     ],
     guideSteps: [
       { step: 1, title: "Install the plugin", desc: "Pick your host below and run the matching install command from the matrix." },
-      { step: 2, title: "No config needed", desc: "OpenDesign runs inside your host agent and uses its model config. If the host already routes through 9Router, /opendesign traffic does too." },
+      { step: 2, title: "No config needed", desc: "OpenDesign runs inside your host agent and uses its model config. If the host already routes through TokenProxy, /opendesign traffic does too." },
       { step: 3, title: "Start designing", desc: "Invoke OpenDesign from your agent:", value: "/opendesign make a pitch deck for a seed-stage AI company, 10 slides", copyable: true },
     ],
     codeBlock: {

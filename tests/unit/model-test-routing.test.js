@@ -165,6 +165,20 @@ describe("model test route kind routing", () => {
     );
   });
 
+  it("refuses an external model-test target before attaching the CLI token", async () => {
+    mocks.getApiKeys.mockResolvedValue([]);
+    const { pingModelByKind } = await import("../../src/app/api/models/test/ping.js");
+
+    await expect(pingModelByKind(
+      "openai/gpt-4.1-mini",
+      "llm",
+      "https://router.example",
+    )).rejects.toThrow("loopback");
+
+    expect(mocks.getConsistentMachineId).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("returns formatted HTTP errors for non-2xx embedding responses", async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: { message: "bad upstream" },

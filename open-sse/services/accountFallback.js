@@ -1,8 +1,42 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
+// Envoy "request buffer limit exceeded" (HTTP 507): upstream could not buffer the
+// body for a retry — the request must be replayed on the same account, not locked.
+const REQUEST_REPLAY_BUFFER_ERROR = "exceeded request buffer limit while retrying upstream";
+
+export function isRequestReplayBufferError(status, errorText) {
+  if (Number(status) !== 507) return false;
+  const message = typeof errorText === "string" ? errorText : JSON.stringify(errorText || "");
+  return message.toLowerCase().includes(REQUEST_REPLAY_BUFFER_ERROR);
+}
+
+// Failures whose cause is shared by every credential in the pool: the provider's
+// own model capacity, or this host's network path to it. Rotating once is still
+// worth a try, but writing a persistent per-key model lock for one of these is
+// how an 8-key pool ends up reporting 0/8 available for a condition no key could
+// have fixed (#2951). Matched on structured codes and on our own thrown text
+// only -- a bare "capacity" or "timeout" is generic enough to swallow a real
+// per-account failure, and errorConfig.js already routes those to backoff.
+const SHARED_PATH_FAILURE_MARKERS = [
+  "model_capacity_exhausted",                 // NVIDIA NIM: provider/model-wide
+  "[proxyfetch] proxy required but failed",   // our own strictProxy refusal
+  "econnrefused",
+  "enotfound",
+  "eai_again",
+  "etimedout",
+  "und_err_connect_timeout",
+];
+
+/** True when the failure belongs to the provider or the network path, not the key. */
+export function isSharedPathFailure(errorText) {
+  if (!errorText) return false;
+  const message = (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase();
+  return SHARED_PATH_FAILURE_MARKERS.some((marker) => message.includes(marker));
+}
+
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
- * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min
+ * Level 1: 2s, Level 2: 4s, Level 3: 8s... capped at 5 minutes
  * @param {number} backoffLevel - Current backoff level
  * @returns {number} Cooldown in milliseconds
  */
@@ -21,13 +55,39 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
+  if (isRequestReplayBufferError(status, errorText)) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
+  // Rotate (and let a combo advance), but leave no lock and no backoff level
+  // behind: the next key would hit the same provider capacity or the same dead
+  // proxy, and the pool would drain one key per attempt.
+  if (isSharedPathFailure(errorText)) {
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  // A rate limit is a fact about the status, and no wording in the body changes
+  // it. The text rules below run first and match by substring, several of them
+  // marked pass, so a 429 whose message happened to carry a phrase like
+  // "invalid_request_error" was reclassified as a client error: the account was
+  // not rotated and, worse, a combo STOPPED on that member instead of trying
+  // the rest (#2556). The combo layer already carries a partial workaround for
+  // the same collision on model_not_found, which is the tell that this ordering
+  // bites in practice. Decided before the loop so no body text can reach it.
+  if (status === 429) {
+    const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+    return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+  }
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
+      // pass: true = client-side error, do not lock the account
+      if (rule.pass) return { shouldFallback: false, cooldownMs: 0 };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
@@ -37,6 +97,8 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 
     // Status-based rule: match HTTP status code
     if (rule.status && rule.status === status) {
+      // pass: true = client-side error, do not lock the account
+      if (rule.pass) return { shouldFallback: false, cooldownMs: 0 };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
@@ -105,6 +167,9 @@ export function formatRetryAfter(rateLimitedUntil) {
 /** Prefix for model lock flat fields on connection record */
 export const MODEL_LOCK_PREFIX = "modelLock_";
 
+/** Prefix for model-specific failure metadata on connection records */
+export const MODEL_FAILURE_PREFIX = "modelFailure_";
+
 /** Special key used when no model is known (account-level lock) */
 export const MODEL_LOCK_ALL = `${MODEL_LOCK_PREFIX}__all`;
 
@@ -113,23 +178,126 @@ export function getModelLockKey(model) {
   return model ? `${MODEL_LOCK_PREFIX}${model}` : MODEL_LOCK_ALL;
 }
 
+/** Build the flat field key for failure metadata paired with a model lock. */
+export function getModelFailureKey(model) {
+  return model ? `${MODEL_FAILURE_PREFIX}${model}` : `${MODEL_FAILURE_PREFIX}__all`;
+}
+
+function isActiveLockUntil(until, now = Date.now()) {
+  const expiry = new Date(until).getTime();
+  return Number.isFinite(expiry) && expiry > now;
+}
+
 /**
- * Check if a model lock on a connection is still active.
+ * Antigravity is the one provider whose quota buckets are keyed by MODEL instead
+ * of by time window, so a quota read already names the exact account/model pair
+ * that is out. `open-sse/services/usage/google.js` writes `quotas[modelKey]`
+ * straight from the upstream `fetchAvailableModels` payload, and those keys are
+ * the registry model ids (`open-sse/providers/registry/antigravity.js`
+ * `models[].id`) -- the same string routing already carries as `model`.
+ * `deriveQuotaSnapshot` copies each key verbatim onto
+ * `lastQuotaSnapshot.windows[].key`, so the exhausted pair is readable off the
+ * connection with no live call and no key left to guess.
+ */
+const MODEL_KEYED_QUOTA_PROVIDERS = new Set(["antigravity"]);
+
+/**
+ * The provider's own statement that this exact model is out until a stated time.
+ * Deliberately narrow: exactly zero remaining, not unlimited, and a reset still
+ * ahead. A model whose upstream entry carries no `quotaInfo` lands as 0% with a
+ * null resetAt (google.js reads `remainingFraction || 0`, and parseResetTime
+ * returns null for a missing resetTime), and that shape is NOT read as
+ * exhausted: skipping there would strand a healthy account, which costs more
+ * than the one upstream round trip this saves. Reads persisted state only, so a
+ * missing, malformed or stale snapshot fails open.
+ * @returns {{key: string, until: string}|null}
+ */
+export function getExhaustedQuotaWindow(connection, model, now = Date.now()) {
+  if (!connection || !model) return null;
+  if (!MODEL_KEYED_QUOTA_PROVIDERS.has(connection.provider)) return null;
+  const windows = connection.lastQuotaSnapshot?.windows;
+  if (!Array.isArray(windows)) return null;
+  const quotaWindow = windows.find((entry) => entry?.key === model);
+  if (!quotaWindow || quotaWindow.unlimited === true) return null;
+  if (Number(quotaWindow.remainingPercentage) !== 0) return null;
+  const resetAt = new Date(quotaWindow.resetAt).getTime();
+  if (!Number.isFinite(resetAt) || resetAt <= now) return null;
+  return { key: quotaWindow.key, until: new Date(resetAt).toISOString() };
+}
+
+/**
+ * Check whether a connection is unavailable for this model right now, either
+ * under a timed lock or because the provider itself already reported that
+ * model's quota exhausted (see `getExhaustedQuotaWindow`).
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  // Each key is judged on its own expiry. `a || b` picked the per-model key on the
+  // truthiness of the string, so a stale one hid a still-active account-wide lock:
+  // the connection then read as free for exactly the model that had just failed,
+  // while still reading as locked for every other model. Nothing clears the stale
+  // key either -- the lazy cleanup runs only after a successful request, and an
+  // account under an `__all` lock never gets one. Same rule the sibling
+  // `getEarliestModelLockUntil` already applies when it skips expired entries.
+  return isActiveLockUntil(connection[getModelLockKey(model)])
+    || isActiveLockUntil(connection[MODEL_LOCK_ALL])
+    || getExhaustedQuotaWindow(connection, model) !== null;
+}
+
+/**
+ * Return the active lock and only its matching metadata. Account-wide state
+ * has precedence. Legacy locks are intentionally non-diagnostic. With no lock
+ * standing, an exhausted model quota answers with the upstream's own reset time,
+ * so all-exhausted selection still reports retry timing rather than a bare
+ * "no accounts available".
+ */
+export function getActiveModelFailure(connection, model) {
+  if (!connection) return null;
+  const models = model ? [null, model] : [null];
+  for (const candidate of models) {
+    const lockKey = getModelLockKey(candidate);
+    const until = connection[lockKey];
+    if (!isActiveLockUntil(until)) continue;
+    const failureKey = getModelFailureKey(candidate);
+    const metadata = connection[failureKey];
+    const matchingMetadata = metadata && typeof metadata === "object" && metadata.until === until
+      ? metadata
+      : null;
+    return {
+      lockKey,
+      failureKey,
+      until,
+      status: matchingMetadata?.status ?? null,
+      message: matchingMetadata?.message ?? null,
+      resetsAt: matchingMetadata?.resetsAt ?? null,
+      clientErrorStatus: matchingMetadata?.clientErrorStatus ?? null,
+      unknownModelVerified: matchingMetadata?.unknownModelVerified === true,
+    };
+  }
+
+  const exhausted = getExhaustedQuotaWindow(connection, model);
+  if (exhausted) {
+    return {
+      lockKey: getModelLockKey(model),
+      failureKey: getModelFailureKey(model),
+      until: exhausted.until,
+      status: 429,
+      message: `Quota exhausted for ${exhausted.key}`,
+      resetsAt: exhausted.until,
+      clientErrorStatus: null,
+      unknownModelVerified: false,
+    };
+  }
+  return null;
 }
 
 /**
  * Get earliest active model lock expiry across all modelLock_* fields.
  * Used for UI cooldown display.
  */
-export function getEarliestModelLockUntil(connection) {
+export function getEarliestModelLockUntil(connection, model) {
   if (!connection) return null;
+  if (arguments.length > 1) return getActiveModelFailure(connection, model)?.until || null;
   let earliest = null;
   const now = Date.now();
   for (const [key, val] of Object.entries(connection)) {
@@ -145,8 +313,41 @@ export function getEarliestModelLockUntil(connection) {
  * Build update object to set a model lock on a connection.
  */
 export function buildModelLockUpdate(model, cooldownMs) {
-  const key = getModelLockKey(model);
-  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+  return buildModelLockUpdateAt(model, new Date(Date.now() + cooldownMs).toISOString());
+}
+
+/** Build update object to set a model lock to an already selected expiry. */
+export function buildModelLockUpdateAt(model, until) {
+  return { [getModelLockKey(model)]: until };
+}
+
+/** Build update object for metadata paired atomically with one model lock. */
+export function buildModelFailureUpdate(model, {
+  status = null,
+  message = null,
+  until,
+  resetsAt = null,
+  clientErrorStatus = null,
+  unknownModelVerified = false,
+} = {}) {
+  return {
+    [getModelFailureKey(model)]: {
+      status,
+      message,
+      until,
+      resetsAt,
+      clientErrorStatus,
+      unknownModelVerified: unknownModelVerified === true,
+    },
+  };
+}
+
+/** Build update object that clears one exact lock and metadata pair. */
+export function buildClearModelFailurePairUpdate(model) {
+  return {
+    [getModelLockKey(model)]: null,
+    [getModelFailureKey(model)]: null,
+  };
 }
 
 /**
@@ -156,6 +357,7 @@ export function buildClearModelLocksUpdate(connection) {
   const cleared = {};
   for (const key of Object.keys(connection)) {
     if (key.startsWith(MODEL_LOCK_PREFIX)) cleared[key] = null;
+    if (key.startsWith(MODEL_FAILURE_PREFIX)) cleared[key] = null;
   }
   return cleared;
 }

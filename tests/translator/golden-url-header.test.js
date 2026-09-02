@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
+import { createRequire } from "node:module";
 
 // Credentials mẫu cố định (deterministic) — KHÔNG dùng Date.now/random.
 const API_KEY_CRED = { apiKey: "sk-test-APIKEY", providerSpecificData: {} };
@@ -11,7 +12,11 @@ const OAUTH_CRED = { accessToken: "tok-test-ACCESS", providerSpecificData: {} };
 const SPECIAL_CRED = {
   apiKey: "sk-test-APIKEY",
   accessToken: "tok-test-ACCESS",
-  providerSpecificData: { accountId: "ACC123", region: "sgp", baseUrl: "https://custom.example.com/v1", orgId: "ORG9" },
+  // No baseUrl here on purpose. This suite locks the URL each provider builds
+  // from its own registry entry; a per-connection override would point every
+  // one of them at the same host and lock nothing. The override has its own
+  // test in unit/connection-endpoint-override-3253.
+  providerSpecificData: { accountId: "ACC123", region: "sgp", orgId: "ORG9" },
 };
 
 // Provider cần executor riêng (buildUrl/buildHeaders không nằm ở DefaultExecutor) → bỏ qua ở golden này.
@@ -23,14 +28,37 @@ const SPECIALIZED = new Set([
   "xiaomi-tokenplan", "mimo-free",
 ]);
 
-// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
+// Giá trị phụ thuộc MÁY CHẠY TEST — không phải hành vi của provider.
+// Cline/Kimi gắn chúng vào header, nên nếu để nguyên thì snapshot chỉ khớp trên
+// đúng máy đã sinh ra nó, và hostname của người đó bị commit vào repo.
+const APP_VERSION = createRequire(import.meta.url)("../../package.json").version;
+// Bounded on both sides: a pinned third-party version can START with the app's
+// own (kimchi/0.1.01 against an app on 0.1.0), and an unbounded replacement
+// would rewrite that provider's contract into "kimchi/<VERSION>1".
+const APP_VERSION_RE = new RegExp(
+  `(?<![\\d.])${APP_VERSION.replace(/\./g, "\\.")}(?![\\d.])`,
+  "g",
+);
+const VOLATILE_BY_KEY = {
+  "X-PLATFORM": "<PLATFORM>",
+  "X-PLATFORM-VERSION": "<NODE>",
+  "X-Msh-Device-Name": "<HOST>",
+  "X-Msh-Device-Model": "<DEVICE-MODEL>",
+};
+
+// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) + field
+// phụ thuộc máy/phiên bản để snapshot ổn định.
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
+    if (k in VOLATILE_BY_KEY) { out[k] = VOLATILE_BY_KEY[k]; continue; }
     out[k] = typeof v === "string"
       ? v.replace(/Bearer .+/, "Bearer <TOK>")
           .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
           .replace(/kimi-\d{10,}/g, "kimi-<TS>")
+          // User-Agent, X-CLIENT-VERSION, X-CORE-VERSION, X-Msh-Version: mọi header
+          // mang số phiên bản app đều đổi sau mỗi lần release.
+          .replace(APP_VERSION_RE, "<VERSION>")
       : v;
   }
   return out;

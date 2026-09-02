@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import {
+  assertPublicUrl,
+  fetchPublicUrl,
+  SSRF_BLOCKED_ERROR_CODE,
+} from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
-
-// Fetch with timeout wrapper
-const fetchWithTimeout = (url, options, timeout = 10000) => {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Request timeout")), timeout)
-    )
-  ]);
-};
+import { canonicalEndpoint, openAIEndpoints } from "../endpointUrls.js";
+import { fetchWithTimeout } from "@/lib/network/fetchWithTimeout.js";
 
 // Validate URL format
 const isValidUrl = (url) => {
@@ -23,13 +19,36 @@ const isValidUrl = (url) => {
 };
 
 // Parse error details for user-friendly messages
-const getErrorMessage = (error) => {
-  if (error.cause?.code === "ECONNREFUSED") return "Connection refused - provider node offline or unreachable";
-  if (error.cause?.code === "ENOTFOUND") return "DNS lookup failed - invalid domain or network issue";
-  if (error.cause?.code === "ETIMEDOUT") return "Connection timeout - provider node too slow";
-  if (error.message.includes("timeout")) return "Request timeout (>10s) - provider node not responding";
-  if (error.cause?.code === "CERT_HAS_EXPIRED") return "SSL certificate expired";
-  if (error.cause?.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") return "SSL certificate verification failed";
+const isDockerLocalhostUrl = (baseUrl) => {
+  try {
+    const hostname = new URL(baseUrl).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+};
+
+const getErrorMessage = (error, baseUrl) => {
+  if (error.cause?.code === "ECONNREFUSED") {
+    if (isDockerLocalhostUrl(baseUrl)) {
+      return "Connection refused. If TokenProxy runs in Docker, localhost refers to the container. Use host.docker.internal or your host IP instead.";
+    }
+    return "Connection refused - provider node offline or unreachable";
+  }
+  if (error.cause?.code === "ENOTFOUND")
+    return "DNS lookup failed - invalid domain or network issue";
+  if (error.cause?.code === "ETIMEDOUT") {
+    if (isDockerLocalhostUrl(baseUrl)) {
+      return "Connection timed out. If TokenProxy runs in Docker, localhost refers to the container. Use host.docker.internal or your host IP instead.";
+    }
+    return "Connection timeout - provider node too slow";
+  }
+  if (error.message.includes("timeout"))
+    return "Request timeout (>10s) - provider node not responding";
+  if (error.cause?.code === "CERT_HAS_EXPIRED")
+    return "SSL certificate expired";
+  if (error.cause?.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE")
+    return "SSL certificate verification failed";
   if (error.cause?.code) return `Network error: ${error.cause.code}`;
   return "Network connection failed - check URL and network connectivity";
 };
@@ -37,14 +56,23 @@ const getErrorMessage = (error) => {
 // Get status-specific error message for /models endpoint
 const getModelsErrorMessage = (status) => {
   if (status === 401 || status === 403) return "API key unauthorized";
-  if (status === 404) return "/models endpoint not found - try chat validation with model ID";
+  if (status === 404)
+    return "/models endpoint not found - try chat validation with model ID";
   if (status >= 500) return "Server error - try again later";
   return `Unexpected response (${status})`;
 };
 
+// A 404 from /chat/completions has two very different causes, and saying
+// "endpoint not found" for both sent people checking their base URL when the
+// model name was the problem (#2032). The body tells them apart.
+const MODEL_NOT_FOUND = /model[_ ]not[_ ]found|unknown model|no such model|model .{0,80}(does not exist|not found)/i;
+
 // Get status-specific error message for /chat/completions endpoint
-const getChatErrorMessage = (status) => {
+const getChatErrorMessage = (status, body = "") => {
   if (status === 401 || status === 403) return "API key unauthorized";
+  if ((status === 404 || status === 400) && MODEL_NOT_FOUND.test(body)) {
+    return "Model not found - the key works, but this provider does not serve that model ID";
+  }
   if (status === 400) return "Invalid model or bad request";
   if (status === 404) return "Chat endpoint not found";
   if (status >= 500) return "Server error - try again later";
@@ -53,21 +81,133 @@ const getChatErrorMessage = (status) => {
 
 // POST /api/provider-nodes/validate - Validate API key against base URL
 export async function POST(request) {
+  let baseUrl;
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { apiKey, type, modelId, openaiUrl, anthropicUrl } = body;
+    baseUrl = body.baseUrl;
+
+    if (type === "multi-compatible") {
+      const openai = openAIEndpoints(openaiUrl);
+      const chatEndpoint = openai.chatUrl;
+      const messagesEndpoint = canonicalEndpoint(anthropicUrl, "/messages");
+      const responsesEndpoint = openai.responsesUrl;
+      const endpoints = [
+        chatEndpoint,
+        messagesEndpoint,
+        responsesEndpoint,
+      ].filter(Boolean);
+      if (!apiKey || !modelId?.trim() || !chatEndpoint || !messagesEndpoint) {
+        return NextResponse.json(
+          { error: "Endpoint URLs, API key, and model ID required" },
+          { status: 400 },
+        );
+      }
+      if (endpoints.some((url) => !isValidUrl(url))) {
+        return NextResponse.json(
+          { error: "Invalid URL format" },
+          { status: 400 },
+        );
+      }
+      if (!isLocalRequest(request)) {
+        try {
+          endpoints.forEach(assertPublicUrl);
+        } catch {
+          return NextResponse.json(
+            { error: "URL not allowed" },
+            { status: 400 },
+          );
+        }
+      }
+
+      const localRequest = isLocalRequest(request);
+      const outboundFetch = localRequest ? fetch : fetchPublicUrl;
+      const model = modelId.trim();
+      const probes = [
+        [
+          "openai",
+          chatEndpoint,
+          {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          {
+            model,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          },
+        ],
+        [
+          "claude",
+          messagesEndpoint,
+          {
+            Authorization: `Bearer ${apiKey}`,
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+          },
+          {
+            model,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          },
+        ],
+        ...(responsesEndpoint
+          ? [
+              [
+                "openai-responses",
+                responsesEndpoint,
+                {
+                  Authorization: `Bearer ${apiKey}`,
+                  "Content-Type": "application/json",
+                },
+                { model, input: "ping", max_output_tokens: 1 },
+              ],
+            ]
+          : []),
+      ];
+      const results = await Promise.all(
+        probes.map(async ([format, url, headers, probeBody]) => {
+          try {
+            const response = await fetchWithTimeout(outboundFetch, url.replace(/\/+$/, ""), {
+              method: "POST",
+              headers,
+              body: JSON.stringify(probeBody),
+            });
+            return [format, response.ok];
+          } catch {
+            return [format, false];
+          }
+        }),
+      );
+      const endpointResults = Object.fromEntries(results);
+      return NextResponse.json({
+        valid: endpointResults.openai && endpointResults.claude,
+        supportsResponses: endpointResults["openai-responses"],
+        endpoints: endpointResults,
+      });
+    }
 
     if (!baseUrl || !apiKey) {
-      return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Base URL and API key required" },
+        { status: 400 },
+      );
     }
 
     // Validate URL format
     if (!isValidUrl(baseUrl)) {
-      return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid URL format" },
+        { status: 400 },
+      );
     }
 
-    // SSRF guard for remote callers; local host keeps self-hosted nodes (e.g. ollama-local)
-    if (!isLocalRequest(request)) {
+    // Trusted local callers keep self-hosted nodes (e.g. ollama-local). Remote callers
+    // use a DNS-aware dispatcher that also validates redirect destinations.
+    const localRequest = isLocalRequest(request);
+    const outboundFetch = localRequest ? fetch : fetchPublicUrl;
+    if (!localRequest) {
       try {
         assertPublicUrl(baseUrl);
       } catch {
@@ -79,29 +219,41 @@ export async function POST(request) {
     if (type === "custom-embedding") {
       const normalizedBase = baseUrl.trim().replace(/\/$/, "");
       if (!modelId?.trim()) {
-        return NextResponse.json({ valid: false, error: "Model ID required for embedding validation" });
+        return NextResponse.json({
+          valid: false,
+          error: "Model ID required for embedding validation",
+        });
       }
-      const embedRes = await fetchWithTimeout(`${normalizedBase}/embeddings`, {
+      const embedRes = await fetchWithTimeout(outboundFetch, `${normalizedBase}/embeddings`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ model: modelId.trim(), input: "ping" })
+        body: JSON.stringify({ model: modelId.trim(), input: "ping" }),
       });
       if (embedRes.ok) {
         const data = await embedRes.json().catch(() => null);
-        const dims = Array.isArray(data?.data?.[0]?.embedding) ? data.data[0].embedding.length : null;
-        return NextResponse.json({ valid: true, method: "embeddings", dimensions: dims });
+        const dims = Array.isArray(data?.data?.[0]?.embedding)
+          ? data.data[0].embedding.length
+          : null;
+        return NextResponse.json({
+          valid: true,
+          method: "embeddings",
+          dimensions: dims,
+        });
       }
       if (embedRes.status === 401 || embedRes.status === 403) {
-        return NextResponse.json({ valid: false, error: "API key unauthorized" });
+        return NextResponse.json({
+          valid: false,
+          error: "API key unauthorized",
+        });
       }
       const errBody = await embedRes.text().catch(() => "");
       return NextResponse.json({
         valid: false,
         error: `Embeddings request failed (${embedRes.status})${errBody ? `: ${errBody.slice(0, 200)}` : ""}`,
-        method: "embeddings"
+        method: "embeddings",
       });
     }
 
@@ -113,55 +265,65 @@ export async function POST(request) {
       }
 
       const modelsUrl = `${normalizedBase}/models`;
-      const res = await fetchWithTimeout(modelsUrl, {
+      const res = await fetchWithTimeout(outboundFetch, modelsUrl, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${apiKey}`
-        }
+          Authorization: `Bearer ${apiKey}`,
+        },
       });
 
       if (res.ok) return NextResponse.json({ valid: true });
 
       // Auth errors - no point trying chat fallback
       if (res.status === 401 || res.status === 403) {
-        return NextResponse.json({ valid: false, error: "API key unauthorized" });
+        return NextResponse.json({
+          valid: false,
+          error: "API key unauthorized",
+        });
       }
 
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
-        const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01"
+        const chatRes = await fetchWithTimeout(
+          outboundFetch,
+          `${normalizedBase}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: modelId,
+              messages: [{ role: "user", content: "ping" }],
+              max_tokens: 1,
+            }),
           },
-          body: JSON.stringify({
-            model: modelId,
-            messages: [{ role: "user", content: "ping" }],
-            max_tokens: 1
-          })
-        });
+        );
         if (chatRes.ok) {
           return NextResponse.json({ valid: true, method: "chat" });
         }
         return NextResponse.json({
           valid: false,
-          error: getChatErrorMessage(chatRes.status),
-          method: "chat"
+          error: getChatErrorMessage(chatRes.status, await chatRes.text().catch(() => "")),
+          method: "chat",
         });
       }
 
-      return NextResponse.json({ valid: false, error: getModelsErrorMessage(res.status) });
+      return NextResponse.json({
+        valid: false,
+        error: getModelsErrorMessage(res.status),
+      });
     }
 
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
-    const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+    const res = await fetchWithTimeout(outboundFetch, modelsUrl, {
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     if (res.ok) return NextResponse.json({ valid: true });
@@ -173,40 +335,53 @@ export async function POST(request) {
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
+      const chatRes = await fetchWithTimeout(
+        outboundFetch,
+        `${baseUrl.replace(/\/$/, "")}/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          }),
         },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1
-        })
-      });
+      );
       if (chatRes.ok) {
         return NextResponse.json({ valid: true, method: "chat" });
       }
       return NextResponse.json({
         valid: false,
-        error: getChatErrorMessage(chatRes.status),
-        method: "chat"
+        error: getChatErrorMessage(chatRes.status, await chatRes.text().catch(() => "")),
+        method: "chat",
       });
     }
 
-    return NextResponse.json({ valid: false, error: getModelsErrorMessage(res.status) });
+    return NextResponse.json({
+      valid: false,
+      error: getModelsErrorMessage(res.status),
+    });
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
+    if (error?.code === SSRF_BLOCKED_ERROR_CODE || error?.cause?.code === SSRF_BLOCKED_ERROR_CODE) {
+      return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+    }
+    const errorMessage = getErrorMessage(error, baseUrl);
     console.error("Error validating provider node:", {
       message: error.message,
       cause: error.cause,
       code: error.cause?.code,
-      userMessage: errorMessage
+      userMessage: errorMessage,
     });
-    return NextResponse.json({ 
-      valid: false,
-      error: errorMessage 
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        valid: false,
+        error: errorMessage,
+      },
+      { status: 500 },
+    );
   }
 }

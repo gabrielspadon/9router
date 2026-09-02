@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { cn } from "@/shared/utils/cn";
+import Button from "@/shared/components/Button";
 
 export default function Drawer({
   isOpen,
@@ -47,33 +48,39 @@ export default function Drawer({
         aria-hidden="true"
       />
 
-      {/* Drawer panel */}
+      {/* Drawer panel. Pinned to the inline end, so it sits on the right in a
+          left-to-right locale and on the left in a right-to-left one, and its
+          border falls on the edge facing the page. The entry animation follows:
+          globals.css swaps `.slide-in-right` to a keyframe that enters from the
+          other side under `[dir="rtl"]`, because a percentage translate cannot
+          read the writing direction on its own. */}
       <div className={cn(
-        "absolute right-0 top-0 h-full bg-surface flex flex-col",
+        "absolute end-0 top-0 h-full bg-surface flex flex-col",
         "shadow-[var(--shadow-elev)]",
         "slide-in-right",
-        "border-l border-border-subtle",
+        "border-s border-border-subtle",
         widths[width] || widths.md,
         className
       )}>
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border-subtle flex-shrink-0">
+        <div className="flex items-center justify-between p-5.5 border-b border-border-subtle flex-shrink-0">
           <div className="flex items-center gap-3">
             {title && (
               <h2 className="text-lg font-semibold text-text-main">{title}</h2>
             )}
           </div>
-          <button
+          <Button
+            variant="ghost" size="icon"
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+            aria-label="Close"
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
+          </Button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5.5 custom-scrollbar">
           {children}
         </div>
       </div>

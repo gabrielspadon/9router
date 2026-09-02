@@ -86,6 +86,16 @@ export function kiroToClaudeResponse(chunk, state) {
     if (typeof cacheCreation === "number") state.usage.cache_creation_input_tokens = cacheCreation;
   }
 
+  // The message is closed once message_stop has gone out, so nothing below may
+  // open or extend a content block after that. KiroExecutor repeats
+  // finish_reason on its trailing usage frame, and without this the buffered
+  // tool arguments were replayed as `content_block_delta` after the terminal —
+  // a delta with no current message, which is what the Anthropic client
+  // rejects with "Received content_block_delta without a current message"
+  // (#1733). Usage above is still absorbed, since that is what the trailing
+  // frame is actually for.
+  if (state.claudeTerminalEmitted) return null;
+
   // First chunk → emit message_start.
   if (!state.messageStartSent) {
     state.messageStartSent = true;
@@ -189,6 +199,7 @@ export function kiroToClaudeResponse(chunk, state) {
 
   // Finish.
   if (choice.finish_reason) {
+    state.claudeTerminalEmitted = true;
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
@@ -204,6 +215,7 @@ export function kiroToClaudeResponse(chunk, state) {
         }
         results.push({ type: "content_block_stop", index: toolInfo.blockIndex });
       }
+      state.toolArgBuffers?.clear();
     }
 
     state.finishReason = choice.finish_reason;

@@ -27,13 +27,16 @@ export default function ManualConfigModal({ isOpen, onClose, title = "Manual Con
                 size="sm"
                 onClick={() => copyConfig(config.content, index)}
               >
-                <span className="material-symbols-outlined text-[14px] mr-1">
+                {/* The block below renders LTR, but this is the gap between an
+                    icon and the word "Copy" in the button's own label, which
+                    follows the UI locale. */}
+                <span aria-hidden="true" className="material-symbols-outlined text-[14px] me-1">
                   {copiedIndex === index ? "check" : "content_copy"}
                 </span>
                 {copiedIndex === index ? "Copied!" : "Copy"}
               </Button>
             </div>
-            <pre className="px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto border border-border">
+            <pre className="px-3 py-2 bg-surface-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto border border-border">
               {config.content}
             </pre>
           </div>

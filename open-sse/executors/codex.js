@@ -6,6 +6,7 @@ import {
   shouldRefreshCredentials,
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
+import { ROLE, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
@@ -16,6 +17,11 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
+const CODEX_SSE_CONTEXT_OVERFLOW_PATTERNS = [
+  "exceeds the context window",
+  "maximum context length",
+  "context_length_exceeded",
+];
 const CODEX_SSE_USER_OUTPUT_PATTERNS = [
   "event: response.output_text.delta",
   "event: response.function_call_arguments.delta",
@@ -42,7 +48,12 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
   "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
-  "text"
+  "text",
+  // Tool-calling control the official Codex CLI sends on every request to this
+  // same endpoint; handlers/imageProviders/codex.js posts it here too. Stripping
+  // it silently swapped the client's declared batching policy for the upstream
+  // default on a path that is otherwise a passthrough (#2512).
+  "parallel_tool_calls"
 ]);
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
@@ -52,6 +63,31 @@ function convertSystemToDeveloperRole(body) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const isSystemMsg = item.role === "system" && (!item.type || item.type === "message");
     if (isSystemMsg) item.role = "developer";
+  }
+}
+
+// Native Responses message items require an explicit type and typed text parts.
+// Keep this narrow: it only repairs role-bearing message-shaped items, leaving
+// tool calls, reasoning items, and already-valid typed content untouched.
+function normalizeCodexMessageItems(body) {
+  if (!Array.isArray(body.input)) return;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || !item.role) continue;
+    if (!item.type) item.type = RESPONSES_ITEM.MESSAGE;
+    if (item.type !== RESPONSES_ITEM.MESSAGE) continue;
+    if (typeof item.content === "string") {
+      item.content = [{
+        type: item.role === ROLE.ASSISTANT ? RESPONSES_ITEM.OUTPUT_TEXT : RESPONSES_ITEM.INPUT_TEXT,
+        text: item.content,
+      }];
+      continue;
+    }
+    if (item.role !== ROLE.ASSISTANT || !Array.isArray(item.content)) continue;
+    for (const part of item.content) {
+      if (part && typeof part === "object" && !Array.isArray(part) && part.type === RESPONSES_ITEM.INPUT_TEXT) {
+        part.type = RESPONSES_ITEM.OUTPUT_TEXT;
+      }
+    }
   }
 }
 
@@ -66,6 +102,96 @@ function stripStoredItemReferences(body) {
     }
     return true;
   });
+}
+
+// Codex uses store=false, so every tool output must be paired with a call in
+// the submitted input. Compacted clients can leave outputs behind after their
+// calls disappear, and duplicate results are invalid for the same call.
+function stripOrphanedToolOutputs(body) {
+  if (!Array.isArray(body.input)) return;
+
+  const functionCallIds = new Set();
+  const customCallIds = new Set();
+  let outputCount = 0;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (
+      item.type === "function_call"
+      && typeof item.call_id === "string"
+      && item.call_id.trim()
+    ) {
+      functionCallIds.add(item.call_id);
+    }
+    if (
+      item.type === "custom_tool_call"
+      && typeof item.call_id === "string"
+      && item.call_id.trim()
+    ) {
+      customCallIds.add(item.call_id);
+    }
+    if (Array.isArray(item.tool_calls)) {
+      for (const toolCall of item.tool_calls) {
+        if (typeof toolCall?.id === "string" && toolCall.id.trim()) {
+          functionCallIds.add(toolCall.id);
+        }
+      }
+    }
+    if (
+      item.type === "function_call_output"
+      || item.type === "custom_tool_call_output"
+    ) {
+      outputCount++;
+    }
+  }
+  if (outputCount === 0) return;
+
+  const seenOutputs = new Set();
+  body.input = body.input.filter((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+    const isFunctionOutput = item.type === "function_call_output";
+    const isCustomOutput = item.type === "custom_tool_call_output";
+    if (!isFunctionOutput && !isCustomOutput) return true;
+    if (typeof item.call_id !== "string" || !item.call_id.trim()) return false;
+
+    const validIds = isFunctionOutput ? functionCallIds : customCallIds;
+    const outputKey = `${item.type}\0${item.call_id}`;
+    if (!validIds.has(item.call_id) || seenOutputs.has(outputKey)) return false;
+    seenOutputs.add(outputKey);
+    return true;
+  });
+
+  const removed = outputCount - seenOutputs.size;
+  if (removed > 0) {
+    dbg("CODEX", `stripOrphanedToolOutputs | removed=${removed} kept=${seenOutputs.size}`);
+  }
+}
+
+// A reasoning blob the backend can no longer decrypt — minted by another
+// account, or simply expired — comes back as a 400, and errorConfig's
+// `{ status: 400, pass: true }` rule keeps the account loop from rotating past
+// it, so the turn hard-failed (#2667). The blob is continuity-only, so dropping
+// it and resending recovers the same turn on the same account.
+const CODEX_STALE_CIPHERTEXT_PATTERNS = ["encrypted_content", "encrypted content", "decrypt"];
+
+function isStaleCiphertextError(bodyText) {
+  if (!bodyText) return false;
+  const lower = bodyText.toLowerCase();
+  return CODEX_STALE_CIPHERTEXT_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
+// Drop every continuity blob, plus any reasoning item left with nothing to say.
+// Returns the count so the caller only retries when the body actually changed.
+function stripEncryptedReasoning(body) {
+  if (!Array.isArray(body?.input)) return 0;
+  let stripped = 0;
+  body.input = body.input.filter((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+    if (typeof item.encrypted_content !== "string") return true;
+    delete item.encrypted_content;
+    stripped++;
+    return item.type !== RESPONSES_ITEM.REASONING || !!item.summary?.length;
+  });
+  return stripped;
 }
 
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
@@ -97,11 +223,19 @@ function normalizeCodexTools(body) {
     const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    // The rebuild below wipes every key, so read strict off both shapes first.
+    // Only an explicit false is carried over: relaxing schema validation can
+    // never make the upstream reject a body it accepted before, while
+    // forwarding true could newly fail a schema that is not Structured-Outputs
+    // compliant. The Codex CLI sends strict:false on its shell/apply_patch
+    // tools precisely because their optional parameters are not all required.
+    const strict = tool.strict === false || fn?.strict === false ? false : undefined;
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    if (strict === false) tool.strict = false;
     validNames.add(name);
     return true;
   });
@@ -172,12 +306,55 @@ function extractSseErrorMessage(text, fallback) {
   return fallback || CODEX_MODEL_CAPACITY_MESSAGE;
 }
 
-function codexSseErrorResponse(status, message) {
+function findSseContextOverflow(text) {
+  const failureTypes = new Set(["error", "response.failed", "failed"]);
+  let eventType = null;
+  let dataLines = [];
+
+  const inspectBlock = () => {
+    if (dataLines.length === 0) return null;
+    let payload;
+    try {
+      payload = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return null;
+    }
+
+    const payloadType = String(payload?.type || payload?.response?.status || "").toLowerCase();
+    if (!failureTypes.has(eventType) && !failureTypes.has(payloadType)) return null;
+
+    const error = payload?.response?.error || payload?.error;
+    const message = typeof error?.message === "string" ? error.message.trim() : "";
+    const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
+    const matched = code
+      ? (code === "context_length_exceeded" ? code : null)
+      : CODEX_SSE_CONTEXT_OVERFLOW_PATTERNS.find(pattern => message.toLowerCase().includes(pattern));
+    return matched ? { matched, message: message || matched } : null;
+  };
+
+  for (const rawLine of String(text || "").split("\n")) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      const match = inspectBlock();
+      if (match) return match;
+      eventType = null;
+      dataLines = [];
+    } else if (line.startsWith("event:")) {
+      eventType = line.slice(6).trim().toLowerCase();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+
+  return inspectBlock();
+}
+
+function codexSseErrorResponse(status, message, code = null) {
   return new Response(JSON.stringify({
     error: {
       message,
       type: status >= 500 ? "server_error" : "invalid_request_error",
-      code: status === HTTP_STATUS.SERVICE_UNAVAILABLE ? "service_unavailable" : "upstream_error",
+      code: code || (status === HTTP_STATUS.SERVICE_UNAVAILABLE ? "service_unavailable" : "upstream_error"),
     }
   }), {
     status,
@@ -192,16 +369,16 @@ function codexSseErrorResponse(status, message) {
 export class CodexExecutor extends BaseExecutor {
   constructor() {
     super("codex", PROVIDERS.codex);
-    this._currentSessionId = null;
   }
 
   /**
    * Override headers to add codex-specific identity headers.
-   * transformRequest runs BEFORE buildHeaders, sets this._currentSessionId.
+   * The session id is read off the per-request credentials object, stashed by
+   * execute(); see the comment there for why it cannot be an instance field.
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
-    headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
+    headers["session_id"] = credentials?._cxSession || credentials?.connectionId || "default";
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
     // Account/workspace binding header — required when multiple Codex accounts
@@ -221,7 +398,7 @@ export class CodexExecutor extends BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const base = super.buildUrl(model, stream, urlIndex, credentials);
-    return this._isCompact ? `${base}/compact` : base;
+    return credentials?._cxCompact ? `${base}/compact` : base;
   }
 
   async refreshCredentials(credentials, log) {
@@ -256,9 +433,28 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   async execute(args) {
+    // BaseExecutor builds the URL and the headers around transformRequest, so
+    // both the session id and the compact flag have to exist before it runs.
+    // They used to live on the executor instance, and executors/index.js holds
+    // ONE CodexExecutor for the whole process: two concurrent requests
+    // overwrote each other between transformRequest and buildHeaders, so a
+    // title-generation turn could be sent under the main turn's session_id and
+    // the reply came back on the wrong turn (#3164). opencode.js already
+    // documents this exact failure and stashes on the per-request credentials
+    // object; do the same here.
+    //
+    // The compact flag additionally had an ordering bug: buildUrl runs BEFORE
+    // transformRequest, so it read whatever the PREVIOUS request left behind.
+    // The first /v1/responses/compact call went to the plain endpoint and a
+    // later ordinary call could be routed to /compact. Resolving both here,
+    // ahead of the URL loop, fixes the ordering as well as the sharing.
+    if (args.credentials) {
+      args.credentials._cxCompact = !!args.body?._compact;
+      args.credentials._cxSession = resolveCacheSessionId(args.body, args.credentials);
+    }
     const imgCount = Array.isArray(args.body?.input) ? args.body.input.reduce((n, it) => n + (Array.isArray(it.content) ? it.content.filter(c => c.type === "image_url").length : 0), 0) : 0;
     const inputLen = Array.isArray(args.body?.input) ? args.body.input.length : 0;
-    dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`);
+    dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${args.credentials?._cxSession || "pending"}`);
     if (imgCount > 0) {
       const t0 = Date.now();
       await this.prefetchImages(args.body);
@@ -272,8 +468,41 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let tierLogged = false;
+    let ciphertextRetried = false;
     while (true) {
       const result = await super.execute(args);
+      if (!tierLogged) {
+        const effectiveTier = result.transformedBody?.service_tier || "default";
+        args.log?.info?.("TIER", `CODEX | ${args.model} | TIER:${effectiveTier}`);
+        tierLogged = true;
+      }
+      // One-shot, and deliberately outside the SSE `attempt` budget: this is a
+      // body repair, not a transient upstream, so a second identical 400 means
+      // the ciphertext was never the cause and the error belongs to the client.
+      // clone() is guarded the way base.js guards it — unit tests script
+      // minimal response doubles that do not implement it.
+      if (
+        !ciphertextRetried
+        && result.response?.status === HTTP_STATUS.BAD_REQUEST
+        && typeof result.response.clone === "function"
+      ) {
+        let errorText = "";
+        try {
+          errorText = await result.response.clone().text();
+        } catch {
+          errorText = "";
+        }
+        if (isStaleCiphertextError(errorText)) {
+          const stripped = stripEncryptedReasoning(args.body);
+          if (stripped > 0) {
+            ciphertextRetried = true;
+            args.log?.warn?.("RETRY", `CODEX | stale reasoning ciphertext 400 — dropped ${stripped}, retrying`);
+            dbg("CODEX", `stale ciphertext 400 → stripped ${stripped} encrypted_content, retrying once`);
+            continue;
+          }
+        }
+      }
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
@@ -284,6 +513,11 @@ export class CodexExecutor extends BaseExecutor {
             headers: result.response.headers,
           });
         }
+        return result;
+      }
+      if (peek.contextOverflow) {
+        args.log?.warn?.("CODEX", `SSE context overflow "${peek.message}"`);
+        result.response = codexSseErrorResponse(HTTP_STATUS.PAYLOAD_TOO_LARGE, peek.message || peek.matched, "context_length_exceeded");
         return result;
       }
       if (peek.accountFallback) {
@@ -304,16 +538,19 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   // Peek first N bytes of SSE body to detect upstream transient errors.
-  // Returns { matched: string|null, message: string|null, accountFallback: boolean, replacementBody: ReadableStream|null }.
+  // Returns { matched: string|null, message: string|null, accountFallback: boolean,
+  // contextOverflow: boolean, replacementBody: ReadableStream|null }.
   // Caller must use replacementBody when no error matched (original body has been read).
   async _peekSseTransientError(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, replacementBody: null };
+    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, contextOverflow: false, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
     let text = "";
     let matched = null;
+    let matchedMessage = null;
     let accountFallback = false;
+    let contextOverflow = false;
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
         const { done, value } = await reader.read();
@@ -321,11 +558,18 @@ export class CodexExecutor extends BaseExecutor {
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
         const lowerText = text.toLowerCase();
-        const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(p => lowerText.includes(p));
+        const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(pattern => lowerText.includes(pattern));
         if (accountHit) { matched = accountHit; accountFallback = true; break; }
-        const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
+        const contextHit = findSseContextOverflow(text);
+        if (contextHit) {
+          matched = contextHit.matched;
+          matchedMessage = contextHit.message;
+          contextOverflow = true;
+          break;
+        }
+        const retryHit = CODEX_SSE_RETRY_PATTERNS.find(pattern => lowerText.includes(pattern));
         if (retryHit) { matched = retryHit; break; }
-        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
+        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(pattern => lowerText.includes(pattern))) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
@@ -334,7 +578,13 @@ export class CodexExecutor extends BaseExecutor {
     if (matched) {
       try { await reader.cancel(); } catch { /* noop */ }
       try { reader.releaseLock(); } catch { /* noop */ }
-      return { matched, message: extractSseErrorMessage(text, matched), accountFallback, replacementBody: null };
+      return {
+        matched,
+        message: matchedMessage || extractSseErrorMessage(text, matched),
+        accountFallback,
+        contextOverflow,
+        replacementBody: null,
+      };
     }
 
     reader.releaseLock();
@@ -358,7 +608,7 @@ export class CodexExecutor extends BaseExecutor {
         try { upstreamReader?.cancel(reason); } catch { /* noop */ }
       },
     });
-    return { matched: null, message: null, accountFallback: false, replacementBody };
+    return { matched: null, message: null, accountFallback: false, contextOverflow: false, replacementBody };
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise
@@ -391,23 +641,30 @@ export class CodexExecutor extends BaseExecutor {
    * Image fetching is handled separately in prefetchImages() so this stays sync.
    */
   transformRequest(model, body, stream, credentials) {
-    this._isCompact = !!body._compact;
     delete body._compact;
-    // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
-    this._currentSessionId = resolveCacheSessionId(body, credentials);
+    // execute() already resolved this onto the per-request credentials. Recompute
+    // only when transformRequest is called on its own (tests, direct callers),
+    // never overwriting what execute() stashed for the request in flight.
+    if (credentials && credentials._cxSession === undefined) {
+      credentials._cxSession = resolveCacheSessionId(body, credentials);
+    }
+    const sessionId = credentials?._cxSession ?? resolveCacheSessionId(body, credentials);
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
 
-    // Ensure input is present and non-empty (Codex API rejects empty input)
+    // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
+    convertSystemToDeveloperRole(body);
+    // Repair legacy role/content shapes before the strict Codex Responses request is sent.
+    normalizeCodexMessageItems(body);
+    // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
+    stripStoredItemReferences(body);
+    stripOrphanedToolOutputs(body);
+    // Cleanup can remove every input item. Codex rejects an empty input array,
+    // so restore the same typed placeholder used for an initially empty body.
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
       body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
     }
-
-    // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
-    convertSystemToDeveloperRole(body);
-    // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
-    stripStoredItemReferences(body);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
@@ -423,8 +680,8 @@ export class CodexExecutor extends BaseExecutor {
     body.store = false;
 
     // Inject prompt_cache_key for stable Codex prompt caching
-    if (!body.prompt_cache_key && this._currentSessionId) {
-      body.prompt_cache_key = this._currentSessionId;
+    if (!body.prompt_cache_key && sessionId) {
+      body.prompt_cache_key = sessionId;
     }
 
     // Map virtual Codex review models to the upstream Codex model before suffix parsing.

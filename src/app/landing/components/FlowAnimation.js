@@ -10,30 +10,10 @@ const CLI_TOOLS = [
 ];
 
 const PROVIDERS = [
-  {
-    id: "openai",
-    name: "OpenAI",
-    color: "bg-emerald-500",
-    textColor: "text-white",
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    color: "bg-orange-400",
-    textColor: "text-white",
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    color: "bg-blue-500",
-    textColor: "text-white",
-  },
-  {
-    id: "github",
-    name: "GitHub Copilot",
-    color: "bg-gray-700",
-    textColor: "text-white",
-  },
+  { id: "openai", name: "OpenAI" },
+  { id: "anthropic", name: "Anthropic" },
+  { id: "gemini", name: "Gemini" },
+  { id: "github", name: "GitHub Copilot" },
 ];
 
 export default function FlowAnimation() {
@@ -47,26 +27,27 @@ export default function FlowAnimation() {
   }, []);
 
   return (
-    <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center animate-[float_6s_ease-in-out_infinite]">
-      {/* 9Router Hub - Center */}
-      <div className="relative z-20 w-32 h-32 rounded-full bg-[#23180f] border-2 border-[#f97815] shadow-[0_0_40px_rgba(249,120,21,0.3)] flex flex-col items-center justify-center gap-1 group cursor-pointer hover:scale-105 transition-transform duration-500">
-        <span className="material-symbols-outlined text-4xl text-[#f97815]">
+    <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center">
+      {/* TokenProxy Hub - Center */}
+      <div className="relative z-20 w-32 h-32 rounded-full bg-surface border-2 border-brand-500 flex flex-col items-center justify-center gap-1 group">
+        <span className="material-symbols-outlined text-4xl text-brand" aria-hidden="true">
           hub
         </span>
-        <span className="text-xs font-bold text-white tracking-widest uppercase">
-          9Router
+        <span className="font-display text-xs font-bold text-text-main tracking-widest">
+          TokenProxy
         </span>
-        <div className="absolute inset-0 rounded-full border border-[#f97815]/30 animate-ping opacity-20"></div>
       </div>
 
-      {/* CLI Tools - Left side */}
-      <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col gap-7">
+      {/* CLI Tools - Left side. left-0/right-0 stay physical here: both columns
+          anchor to hardcoded SVG path coordinates below, and the SVG is not
+          mirrored in RTL. */}
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col gap-8">
         {CLI_TOOLS.map((tool) => (
           <div
             key={tool.id}
             className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group"
           >
-            <div className="w-16 h-16 rounded-2xl bg-[#23180f] border border-[#3a2f27] flex items-center justify-center overflow-hidden p-2 hover:border-[#f97815]/50 transition-all hover:scale-105">
+            <div className="w-16 h-16 rounded-2xl bg-surface border border-border flex items-center justify-center overflow-hidden p-2 hover:border-brand-500/50 transition-colors duration-150">
               <ProviderIcon
                 src={tool.image}
                 alt={tool.name}
@@ -79,9 +60,9 @@ export default function FlowAnimation() {
         ))}
       </div>
 
-      {/* SVG Lines from CLI to 9Router */}
+      {/* SVG Lines from CLI to TokenProxy */}
       <svg
-        className="absolute inset-0 w-full h-full z-10 pointer-events-none stroke-yellow-700"
+        className="absolute inset-0 w-full h-full z-10 pointer-events-none stroke-text-subtle"
         xmlns="http://www.w3.org/2000/svg"
       >
         <path
@@ -114,7 +95,7 @@ export default function FlowAnimation() {
         ></path>
       </svg>
 
-      {/* SVG Lines from 9Router to Providers */}
+      {/* SVG Lines from TokenProxy to Providers */}
       <svg
         className="absolute inset-0 w-full h-full z-10 pointer-events-none"
         xmlns="http://www.w3.org/2000/svg"
@@ -122,51 +103,60 @@ export default function FlowAnimation() {
         <path
           d="M 440 180 C 550 180, 550 50, 740 50"
           fill="none"
-          stroke={activeFlow === 0 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 0 ? "var(--color-brand-500)" : "var(--color-text-subtle)"}
           strokeWidth={activeFlow === 0 ? "3" : "2"}
           className={activeFlow === 0 ? "animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 130, 740 130"
           fill="none"
-          stroke={activeFlow === 1 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 1 ? "var(--color-brand-500)" : "var(--color-text-subtle)"}
           strokeWidth={activeFlow === 1 ? "3" : "2"}
           className={activeFlow === 1 ? "animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 230, 740 230"
           fill="none"
-          stroke={activeFlow === 2 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 2 ? "var(--color-brand-500)" : "var(--color-text-subtle)"}
           strokeWidth={activeFlow === 2 ? "3" : "2"}
           className={activeFlow === 2 ? "animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 310, 740 310"
           fill="none"
-          stroke={activeFlow === 3 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 3 ? "var(--color-brand-500)" : "var(--color-text-subtle)"}
           strokeWidth={activeFlow === 3 ? "3" : "2"}
           className={activeFlow === 3 ? "animate-pulse" : ""}
         ></path>
       </svg>
 
       {/* AI Providers - Right side */}
-      <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-between py-6">
+      <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-between py-5.5">
         {PROVIDERS.map((provider, idx) => (
           <div
             key={provider.id}
-            className={`px-4 py-2 rounded-lg ${provider.color} ${provider.textColor} flex items-center justify-center font-bold text-xs shadow-lg hover:scale-110 transition-all cursor-help min-w-[140px] ${
-              activeFlow === idx ? "ring-4 ring-[#f97815]/50 scale-110" : ""
+            className={`px-4 py-2 rounded-lg bg-surface border flex items-center gap-1.5 justify-center font-bold text-xs transition-colors duration-150 min-w-[140px] ${
+              activeFlow === idx
+                ? "border-brand-500 text-brand"
+                : "border-border text-text-main"
             }`}
-            title={provider.name}
           >
+            <span
+              className={`material-symbols-outlined text-[14px] ${
+                activeFlow === idx ? "opacity-100" : "opacity-0"
+              }`}
+              aria-hidden="true"
+            >
+              bolt
+            </span>
             {provider.name}
           </div>
         ))}
       </div>
 
       {/* Mobile fallback */}
-      <div className="md:hidden mt-8 w-full p-4 rounded-lg bg-[#23180f] border border-[#3a2f27]">
-        <p className="text-sm text-center text-gray-400">
+      <div className="md:hidden mt-8 w-full p-4 rounded-lg bg-surface border border-border">
+        <p className="text-sm text-center text-text-muted">
           Interactive diagram visible on desktop
         </p>
       </div>

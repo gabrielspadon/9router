@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
-import { killAppProcesses, spawnUpdaterAndExit } from "@/lib/appUpdater";
+import { isUpdateDisabled, killAppProcesses, spawnUpdaterAndExit } from "@/lib/appUpdater";
 
 export async function POST() {
+  // Refuse rather than rely on the banner being hidden: this is the call that
+  // replaces the installed version, so the opt-out is enforced here too (#1563).
+  if (isUpdateDisabled()) {
+    return NextResponse.json(
+      { success: false, message: "Updates are disabled on this install (TOKENPROXY_NO_UPDATE)" },
+      { status: 403 }
+    );
+  }
+
   if (process.env.NODE_ENV !== "production") {
     return NextResponse.json(
-      { success: false, message: "Update is only available in production build (9router CLI)" },
+      { success: false, message: "Update is only available in production build (tokenproxy CLI)" },
       { status: 403 }
     );
   }

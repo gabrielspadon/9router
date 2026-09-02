@@ -1,7 +1,8 @@
 import {
-  extractApiKey, isValidApiKey,
+  isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
+import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
@@ -10,6 +11,8 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import { recordApiKeyDevice } from "@/sse/services/apiKeyDevices.js";
+import { refuseDisallowedModel } from "@/sse/services/modelAccess.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
 const CREDENTIALED_PROVIDERS = new Set(
@@ -31,17 +34,39 @@ export async function handleTts(request) {
   const responseFormat = url.searchParams.get("response_format") || "mp3"; // mp3 (default) | json
   const language = body.language || ""; // Optional language hint (currently used by Gemini)
   const style = body.style || ""; // Optional style/voice instructions (e.g. Xiaomi MiMo)
+  // Everything else the caller sent. Normalizing to one shape made the common
+  // case easy and threw away every provider-specific control, so a vendor that
+  // offers a reading speed or a delivery style had no way to reach it (#2036).
+  // Collected here and merged by the adapter, which decides what its own API
+  // accepts; the fields the router owns are applied after and cannot be
+  // overridden from a request.
+  const providerOptions = { ...body };
+  for (const key of ["model", "input", "voice", "response_format", "language", "style", "stream"]) {
+    delete providerOptions[key];
+  }
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
+  const resolvedApiKey = await resolveClientApiKey(request, isValidApiKey);
+  const presentedApiKey = resolvedApiKey.apiKey;
+  const apiKey = resolvedApiKey.valid ? presentedApiKey : null;
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    if (!presentedApiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    // Count the distinct clients on this key, so a leaked or shared key is
+    // visible as more than a bigger bill (#930). Only a VALIDATED key is
+    // recorded: counting unchecked strings would let anyone grow the map.
+    recordApiKeyDevice(apiKey, request);
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+
+  // The key's model allowlist (#1154) was only ever enforced in rerank, so
+  // every other modality could reach a barred model with the same key
+  // (#448, #2833).
+  const barred = await refuseDisallowedModel(apiKey, modelStr, log);
+  if (barred) return barred;
+
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
@@ -54,7 +79,7 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style, providerOptions),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -62,10 +87,10 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, providerOptions);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, providerOptions = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -74,7 +99,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style, providerOptions });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
@@ -89,8 +114,8 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const msg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const msg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         return unavailableResponse(status, `[${provider}/${model}] ${msg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
@@ -99,7 +124,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, providerOptions });
 
     if (result.success) return result.response;
 

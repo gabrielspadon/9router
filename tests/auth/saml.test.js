@@ -1,4 +1,9 @@
-import test from "node:test";
+// Runner note: these assertions use node:assert, which throws on failure and so
+// works unchanged inside vitest. Only the harness import moves. Taken from the
+// built-in test module they were collected but never counted: vitest reported
+// "No test suite found" and the file sat in the known-fail baseline asserting
+// nothing, while the project and CI run vitest only.
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import {
   formatX509Certificate,
@@ -25,11 +30,11 @@ test("isSamlConfigured checks required fields", () => {
 test("generateSamlMetadata produces valid SP XML", () => {
   const settings = {
     samlEntryPoint: "https://idp.example.com/sso",
-    samlIssuer: "urn:9router:sp",
+    samlIssuer: "urn:tokenproxy:sp",
     samlCert: "MIIC123456789012345678901234567890123456789012345678901234567890",
   };
   const xml = generateSamlMetadata("https://localhost:20127", settings);
-  assert.match(xml, /entityID="urn:9router:sp"/);
+  assert.match(xml, /entityID="urn:tokenproxy:sp"/);
   assert.match(xml, /Location="https:\/\/localhost:20127\/api\/auth\/saml\/acs"/);
 });
 

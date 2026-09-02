@@ -134,6 +134,31 @@ function isValidBinary(filePath) {
   }
 }
 
+// Containers routinely cannot reach github.com, or mount DATA_DIR read-only, so
+// downloading the binary on first enable is the wrong default there. Let an
+// operator point at a cloudflared already on the image, and find one on PATH
+// before reaching out to the network at all (#1352).
+const EXTRA_BIN_DIRS = ["/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/sbin"];
+
+function resolveProvidedCloudflared() {
+  const configured = (process.env.CLOUDFLARED_BIN || "").trim();
+  if (configured) {
+    if (isValidBinary(configured)) return configured;
+    throw new Error(`CLOUDFLARED_BIN is set to "${configured}", which is not a usable cloudflared binary for ${os.platform()}/${os.arch()}.`);
+  }
+  return null;
+}
+
+function findCloudflaredOnPath() {
+  const dirs = [...(process.env.PATH || "").split(path.delimiter).filter(Boolean), ...EXTRA_BIN_DIRS];
+  for (const dir of dirs) {
+    const candidate = path.join(dir, BIN_NAME);
+    try { fs.accessSync(candidate, fs.constants.X_OK); } catch { continue; }
+    if (isValidBinary(candidate)) return candidate;
+  }
+  return null;
+}
+
 let downloadPromise = null;
 
 export async function ensureCloudflared() {
@@ -143,8 +168,18 @@ export async function ensureCloudflared() {
 }
 
 async function _ensureCloudflared() {
+  // Explicit override wins outright, before anything touches the filesystem.
+  const provided = resolveProvidedCloudflared();
+  if (provided) return provided;
+
   if (!fs.existsSync(BIN_DIR)) {
-    fs.mkdirSync(BIN_DIR, { recursive: true });
+    try {
+      fs.mkdirSync(BIN_DIR, { recursive: true });
+    } catch (e) {
+      const onPath = findCloudflaredOnPath();
+      if (onPath) return onPath;
+      throw new Error(`Cannot create ${BIN_DIR} to hold cloudflared (${e.code || e.message}). In a container, mount a writable DATA_DIR, or set CLOUDFLARED_BIN to a cloudflared already present in the image.`);
+    }
   }
 
   // Clean up incomplete downloads from previous runs
@@ -163,17 +198,37 @@ async function _ensureCloudflared() {
     }
   }
 
+  // Nothing usable stored yet. Anything already installed beats a download,
+  // which is the step that fails in a container.
+  const onPath = findCloudflaredOnPath();
+  if (onPath) {
+    console.log(`[cloudflared] using ${onPath} from PATH`);
+    return onPath;
+  }
+
   const url = getDownloadUrl();
   const isArchive = url.endsWith(".tgz");
   const downloadDest = isArchive ? path.join(BIN_DIR, "cloudflared.tgz.tmp") : tmpPath;
 
-  await downloadFile(url, downloadDest);
+  try {
+    await downloadFile(url, downloadDest);
+  } catch (e) {
+    throw new Error(`Could not download cloudflared from ${url} (${e.code || e.message}). Without outbound access to github.com, set CLOUDFLARED_BIN to a cloudflared already on this machine, put one on PATH, or place it at ${BIN_PATH}.`);
+  }
 
   if (isArchive) {
     execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: "pipe", windowsHide: true });
     fs.unlinkSync(downloadDest);
   } else {
     fs.renameSync(downloadDest, BIN_PATH);
+  }
+
+  // Validate what actually arrived. A proxy or captive portal answering 200 with
+  // an HTML page used to be chmod'ed and spawned, surfacing as an opaque ENOEXEC
+  // from the tunnel spawn rather than as a download problem.
+  if (!isValidBinary(BIN_PATH)) {
+    try { fs.unlinkSync(BIN_PATH); } catch { /* ignore */ }
+    throw new Error(`What was downloaded from ${url} is not a valid ${os.platform()}/${os.arch()} cloudflared binary — a proxy or captive portal most likely answered instead. Set CLOUDFLARED_BIN to a cloudflared already on this machine.`);
   }
 
   if (!IS_WINDOWS) {

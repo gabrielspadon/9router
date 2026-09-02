@@ -13,14 +13,36 @@ import {
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
+import { translate } from "@/i18n/runtime";
 
 // Force-stop FE animation if a provider stays active longer than this
 const FE_ACTIVE_TIMEOUT_MS = 60000;
 const FE_ACTIVE_TICK_MS = 1000;
 
+// A default object literal in the parameter list is a new identity on every
+// render, which would defeat the layout memo below. Frozen module constant.
+const NO_METRICS = Object.freeze({});
+
+// The node label has room for a short number, not a nine-digit one, so a busy
+// upstream reads as "1.2M" rather than overflowing the pill.
+const formatCount = (n) =>
+  new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n || 0);
+
+// `stats.byProvider` is keyed by the provider string the request was logged
+// under, and the topology matches providers case-insensitively everywhere else
+// (see activeSet below). Matching exactly here would silently show 0 requests
+// for any upstream logged with different casing.
+function metricFor(byProvider, provider) {
+  if (!byProvider || !provider) return null;
+  if (byProvider[provider]) return byProvider[provider];
+  const wanted = String(provider).toLowerCase();
+  for (const [key, value] of Object.entries(byProvider)) {
+    if (key.toLowerCase() === wanted) return value;
+  }
+  return null;
+}
+
 // Kame + electric particles along active edges
-const KAME_PARTICLE_COUNT = 6;
-const SPARK_COUNT = 5;
 
 function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
@@ -32,11 +54,11 @@ function getProviderImageUrl(providerId) {
 
 // Custom provider node - rectangle with image + name
 function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active } = data;
+  const { label, color, imageUrl, textIcon, active, requests, share } = data;
   const [imgError, setImgError] = useState(false);
   return (
     <div
-      className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
+      className="flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-colors duration-150 bg-bg"
       style={{
         borderColor: active ? color : "var(--color-border)",
         boxShadow: active ? `0 0 16px ${color}40` : "none",
@@ -71,19 +93,31 @@ function ProviderNode({ data }) {
         )}
       </div>
 
-      {/* Provider name */}
-      <span
-        className="text-base font-medium truncate"
-        style={{ color: active ? color : "var(--color-text)" }}
-      >
-        {label}
+      {/* Provider name and its share of the window. A topology with no quantity
+          on it says which upstreams exist, which the providers list already
+          says; the request count is what makes the diagram answer "where is
+          the traffic going". `stats.byProvider` was already fetched and
+          discarded here. */}
+      <span className="flex min-w-0 flex-col">
+        <span
+          className="min-w-0 truncate text-sm font-medium"
+          style={{ color: active ? color : "var(--color-text-main)" }}
+        >
+          {label}
+        </span>
+        {requests > 0 ? (
+          <span className="font-mono text-[10.5px] tabular-nums text-text-muted">
+            {formatCount(requests)} {translate(requests === 1 ? "request" : "requests")}
+            {share >= 0.01 ? ` · ${Math.round(share * 100)}%` : ""}
+          </span>
+        ) : null}
       </span>
 
       {/* Active indicator */}
       {active && (
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+        <span className="flex shrink-0 items-center">
+          <span className="inline-flex h-2 w-2 rounded-full bg-success" aria-hidden="true" />
+          <span className="sr-only">Active</span>
         </span>
       )}
     </div>
@@ -94,15 +128,17 @@ ProviderNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Center 9Router node — pulse/glow on card only (no expanding rings)
+// Center TokenProxy node. Carrying traffic reads as a brand-filled core; idle
+// reads as an outline. No animation: docs/design/design-system.md section 5 keeps the
+// topology-* keyframes on the landing page.
 function RouterNode({ data }) {
   const powering = (data.activeCount || 0) > 0;
   return (
     <div
-      className={`relative z-[1] flex items-center justify-center px-5 py-3 rounded-xl border-2 min-w-[130px] ${
+      className={`relative z-[1] flex items-center justify-center px-5.5 py-3 rounded-xl border-2 min-w-[130px] ${
         powering
-          ? "topology-router-core border-yellow-300 bg-gradient-to-br from-primary/30 via-yellow-400/20 to-cyan-400/25"
-          : "border-primary bg-primary/5 shadow-md"
+          ? "border-brand bg-brand-soft"
+          : "border-border bg-surface"
       }`}
     >
       <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
@@ -110,19 +146,23 @@ function RouterNode({ data }) {
       <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
+      {/* me-2 is logical even though the canvas is not mirrored: this gap is
+          between a mark and its own label inside one node, so it follows the
+          label's reading direction, not the edge routing around it. */}
       <img
         src="/favicon.svg"
-        alt="9Router"
-        className={`w-6 h-6 mr-2 ${powering ? "topology-router-icon" : ""}`}
+        alt="TokenProxy"
+        className="w-6 h-6 me-2"
         loading="lazy"
         decoding="async"
       />
-      <span className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-primary"}`}>
-        9Router
+      <span className={`text-sm font-semibold ${powering ? "text-brand" : "text-text-main"}`}>
+        TokenProxy
       </span>
       {data.activeCount > 0 && (
-        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-yellow-400 text-black text-xs font-bold topology-router-badge">
+        <span className="metric ms-2 px-1.5 py-1 rounded-full bg-brand-solid text-brand-on text-xs font-semibold">
           {data.activeCount}
+          <span className="sr-only"> active connections</span>
         </span>
       )}
     </div>
@@ -133,7 +173,7 @@ RouterNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Active: electric kame beam (multi-layer stroke + sparks). Idle/last/error: solid BaseEdge.
+// One bezier per connection. Tone and width come from edgeStyle().
 function TopologyEdge({
   id,
   sourceX,
@@ -153,95 +193,12 @@ function TopologyEdge({
     targetY,
     targetPosition,
   });
-  const active = !!data?.active;
   const stroke = style.stroke || "var(--color-border)";
-  const filterId = `topo-electric-${id}`;
 
-  if (!active) {
-    return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke }} />;
-  }
-
-  return (
-    <g className="topology-edge-electric">
-      <defs>
-        <filter id={filterId} x="-40%" y="-40%" width="180%" height="180%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2" result="noise">
-            <animate attributeName="baseFrequency" values="0.8;1.4;0.8" dur="0.25s" repeatCount="indefinite" />
-          </feTurbulence>
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </defs>
-      {/* Outer electric halo */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke="#22d3ee"
-        strokeWidth={10}
-        strokeOpacity={0.35}
-        strokeLinecap="round"
-        filter={`url(#${filterId})`}
-        className="topology-edge-halo"
-      />
-      {/* Mid plasma */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke="#4ade80"
-        strokeWidth={5}
-        strokeOpacity={0.85}
-        strokeLinecap="round"
-        filter={`url(#${filterId})`}
-        className="topology-edge-plasma"
-      />
-      {/* Hot white core */}
-      <BaseEdge
-        id={id}
-        path={edgePath}
-        style={{ stroke: "#f8fafc", strokeWidth: 2.2, opacity: 1 }}
-        className="topology-edge-kame"
-      />
-      {/* Energy orbs */}
-      {Array.from({ length: KAME_PARTICLE_COUNT }, (_, i) => (
-        <circle
-          key={`${id}-p-${i}`}
-          r={i % 2 === 0 ? 4 : 2.5}
-          fill={i % 3 === 0 ? "#fde047" : i % 3 === 1 ? "#67e8f9" : "#fff"}
-          opacity={0.95}
-          style={{ filter: "drop-shadow(0 0 4px #22d3ee)" }}
-        >
-          <animateMotion
-            dur={`${0.4 + i * 0.08}s`}
-            repeatCount="indefinite"
-            path={edgePath}
-            begin={`${i * 0.09}s`}
-          />
-        </circle>
-      ))}
-      {/* Electric sparks (short-lived blink along path) */}
-      {Array.from({ length: SPARK_COUNT }, (_, i) => (
-        <circle
-          key={`${id}-s-${i}`}
-          r={1.8}
-          fill="#e0f2fe"
-          opacity={0}
-        >
-          <animate
-            attributeName="opacity"
-            values="0;1;0;0;1;0"
-            dur={`${0.35 + (i % 3) * 0.1}s`}
-            begin={`${i * 0.07}s`}
-            repeatCount="indefinite"
-          />
-          <animateMotion
-            dur={`${0.28 + i * 0.05}s`}
-            repeatCount="indefinite"
-            path={edgePath}
-            begin={`${i * 0.11}s`}
-          />
-        </circle>
-      ))}
-    </g>
-  );
+  // One edge, one stroke. The active/last/error distinction is carried by the
+  // stroke token and width from edgeStyle(); the animated beam it replaces was
+  // decoration, which docs/design/design-system.md section 5 keeps off the dashboard.
+  return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke }} />;
 }
 
 TopologyEdge.propTypes = {
@@ -260,7 +217,7 @@ const nodeTypes = { provider: ProviderNode, router: RouterNode };
 const edgeTypes = { topology: TopologyEdge };
 
 // Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
+function buildLayout(providers, activeSet, lastSet, errorSet, byProvider) {
   const nodeW = 180;
   const nodeH = 30;
   const routerW = 120;
@@ -291,12 +248,20 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     draggable: false,
   });
 
+  // Edge state rides the status tokens so it flips with the theme, and each
+  // state keeps its own stroke width so the diagram still separates them
+  // without relying on hue. See docs/design/design-system.md section 1.
   const edgeStyle = (active, last, error) => {
-    if (error) return { stroke: "#ef4444", strokeWidth: 2.5, opacity: 0.9 };
-    if (active) return { stroke: "#22d3ee", strokeWidth: 3.5, opacity: 1 };
-    if (last) return { stroke: "#f59e0b", strokeWidth: 2, opacity: 0.7 };
+    if (error) return { stroke: "var(--color-danger)", strokeWidth: 2.5, opacity: 0.9 };
+    if (active) return { stroke: "var(--color-success)", strokeWidth: 3.5, opacity: 1 };
+    if (last) return { stroke: "var(--color-info)", strokeWidth: 2, opacity: 0.7 };
     return { stroke: "var(--color-border)", strokeWidth: 1, opacity: 0.3 };
   };
+
+  const totalRequests = Object.values(byProvider || {}).reduce(
+    (sum, m) => sum + Number(m?.requests || 0),
+    0,
+  );
 
   providers.forEach((p, i) => {
     const config = getProviderConfig(p.provider);
@@ -304,12 +269,15 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const last = !active && lastSet.has(p.provider?.toLowerCase());
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
+    const requests = Number(metricFor(byProvider, p.provider)?.requests || 0);
     const data = {
       label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
       active,
+      requests,
+      share: totalRequests > 0 ? requests / totalRequests : 0,
     };
 
     // Distribute evenly starting from top (−π/2), clockwise
@@ -354,7 +322,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   return { nodes, edges };
 }
 
-export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
+export default function ProviderTopology({ providers = [], byProvider = NO_METRICS, activeRequests = [], lastProvider = "", errorProvider = "" }) {
   // Serialize to stable string keys so useMemo only re-runs when values actually change
   const activeKey = useMemo(
     () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
@@ -399,8 +367,8 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [rawActiveSet, tick]);
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
+    () => buildLayout(providers, activeSet, lastSet, errorSet, byProvider),
+    [providers, activeSet, lastSet, errorSet, byProvider]
   );
 
   // Stable key — only remount when provider list changes
@@ -437,10 +405,10 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [nodes.length]);
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
+    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-surface-2/30 sm:h-[480px]">
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
-          No providers connected
+          {translate("No providers connected")}
         </div>
       ) : (
         <ReactFlow
@@ -462,6 +430,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           preventScrolling={false}
           nodesDraggable={false}
           nodesConnectable={false}
+          edgesFocusable={false}
           elementsSelectable={false}
         >
           <Controls showInteractive={false} className="react-flow-controls-custom" />
@@ -472,6 +441,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 }
 
 ProviderTopology.propTypes = {
+  byProvider: PropTypes.object,
   providers: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     provider: PropTypes.string,

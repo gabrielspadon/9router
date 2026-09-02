@@ -27,19 +27,19 @@ export default {
   buildHeaders: () => ({}),
   buildBody: () => ({}),
 
-  async executeViaExecutor(model, body, credentials, log) {
+  async executeViaExecutor(model, body, credentials, log, connectTimeout = null, signal) {
     const executor = getExecutor("antigravity");
     if (!executor) throw new Error("Antigravity executor not found");
 
-    // Ensure we use an image model for image generation
+    // The image handler is reachable with a chat model, which would return text.
     const isImageModel = (m) => /image|imagen|image-generation/i.test(m || "");
     let targetModel = isImageModel(model) ? model : "gemini-3.1-flash-image";
 
-    // If body.size is provided, resolve aspect ratio and append to model
+    // The executor reads the aspect ratio off a -WxH model suffix (parseImageConfig),
+    // so body.size only reaches the upstream by being encoded into the model name.
     if (body.size && typeof body.size === "string") {
-      const ratio = sizeToAspectRatio(body.size);
-      const suffix = ratio.replace(":", "x");
-      if (!targetModel.includes(suffix)) {
+      const suffix = sizeToAspectRatio(body.size).replace(":", "x");
+      if (!targetModel.endsWith(`-${suffix}`)) {
         targetModel = `${targetModel}-${suffix}`;
       }
     }
@@ -62,6 +62,8 @@ export default {
       stream: false,
       credentials,
       log,
+      connectTimeout,
+      signal,
     });
 
     if (!result.response.ok) {

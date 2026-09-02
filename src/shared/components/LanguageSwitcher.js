@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { LOCALES, LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
+import { LOCALES, LOCALE_COOKIE, LOCALE_NAMES, normalizeLocale } from "@/i18n/config";
 import { reloadTranslations } from "@/i18n/runtime";
+import Button from "@/shared/components/Button";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -13,48 +14,6 @@ function getLocaleFromCookie() {
   const value = cookie ? decodeURIComponent(cookie.split("=")[1]) : "en";
   return normalizeLocale(value);
 }
-
-// Locale display names and flags - will be translated by runtime i18n
-const getLocaleInfo = (locale) => {
-  const locales = {
-    "en": { name: "English", flag: "🇺🇸" },
-    "vi": { name: "Tiếng Việt", flag: "🇻🇳" },
-    "zh-CN": { name: "简体中文", flag: "🇨🇳" },
-    "zh-TW": { name: "繁體中文", flag: "🇹🇼" },
-    "ja": { name: "日本語", flag: "🇯🇵" },
-    "pt-BR": { name: "Português (Brasil)", flag: "🇧🇷" },
-    "pt-PT": { name: "Português (Portugal)", flag: "🇵🇹" },
-    "ko": { name: "한국어", flag: "🇰🇷" },
-    "es": { name: "Español", flag: "🇪🇸" },
-    "de": { name: "Deutsch", flag: "🇩🇪" },
-    "fr": { name: "Français", flag: "🇫🇷" },
-    "he": { name: "עברית", flag: "🇮🇱" },
-    "ar": { name: "العربية", flag: "🇸🇦" },
-    "ru": { name: "Русский", flag: "🇷🇺" },
-    "pl": { name: "Polski", flag: "🇵🇱" },
-    "cs": { name: "Čeština", flag: "🇨🇿" },
-    "nl": { name: "Nederlands", flag: "🇳🇱" },
-    "tr": { name: "Türkçe", flag: "🇹🇷" },
-    "uk": { name: "Українська", flag: "🇺🇦" },
-    "tl": { name: "Tagalog", flag: "🇵🇭" },
-    "id": { name: "Indonesia", flag: "🇮🇩" },
-    "th": { name: "ไทย", flag: "🇹🇭" },
-    "km": { name: "ខ្មែរ", flag: "🇰🇭" },
-    "hi": { name: "हिन्दी", flag: "🇮🇳" },
-    "bn": { name: "বাংলা", flag: "🇧🇩" },
-    "ur": { name: "اردو", flag: "🇵🇰" },
-    "ro": { name: "Română", flag: "🇷🇴" },
-    "sv": { name: "Svenska", flag: "🇸🇪" },
-    "it": { name: "Italiano", flag: "🇮🇹" },
-    "el": { name: "Ελληνικά", flag: "🇬🇷" },
-    "hu": { name: "Magyar", flag: "🇭🇺" },
-    "fi": { name: "Suomi", flag: "🇫🇮" },
-    "da": { name: "Dansk", flag: "🇩🇰" },
-    "no": { name: "Norsk", flag: "🇳🇴" },
-    "fa": { name: "فارسی", flag: "🇮🇷" }
-  };
-  return locales[locale] || { name: locale, flag: "🌐" };
-};
 
 export default function LanguageSwitcher({ className = "", isOpen: controlledOpen, onClose, hideTrigger = false }) {
   const [locale, setLocale] = useState("en");
@@ -118,13 +77,13 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
         <button
           onClick={() => setIsOpen(!isOpen)}
           disabled={isPending}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-text-muted hover:text-text-main hover:bg-surface/60 transition-colors"
-          title="Language"
+          className="flex min-h-11 items-center gap-2 px-3 py-2 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors"
+          aria-label={`Language: ${LOCALE_NAMES[locale] || locale}`}
+          aria-haspopup="dialog"
           data-i18n-skip="true"
         >
-          <span className="material-symbols-outlined text-[20px]">language</span>
-          <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
-          <span className="text-lg">{getLocaleInfo(locale).flag}</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">language</span>
+          <span className="text-sm font-medium">{LOCALE_NAMES[locale] || locale}</span>
         </button>
       )}
 
@@ -140,43 +99,49 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
           {/* Modal content */}
           <div
             ref={modalRef}
-            className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-2xl flex flex-col max-h-[80vh]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="language-switcher-title"
+            className="relative w-full bg-surface border border-border rounded-[var(--radius-brand-lg)] shadow-elev fade-in max-w-2xl flex flex-col max-h-[80vh]"
           >
             {/* Modal header */}
-            <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
-              <h2 className="text-lg font-semibold text-text-main">Select Language</h2>
-              <button
+            <div className="flex items-center justify-between p-3 border-b border-border-subtle">
+              <h2 id="language-switcher-title" className="text-lg font-semibold text-text-main">
+                Select Language
+              </h2>
+              <Button
+                variant="ghost" size="icon"
+                className="min-h-11 min-w-11"
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 aria-label="Close"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
+              </Button>
             </div>
 
             {/* Modal body - fixed grid columns, equal sizing */}
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-5.5 overflow-y-auto flex-1">
               <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
                 {LOCALES.map((item) => {
                   const active = locale === item;
-                  const info = getLocaleInfo(item);
+                  const name = LOCALE_NAMES[item] || item;
                   return (
                     <button
                       key={item}
                       onClick={() => handleSetLocale(item)}
                       disabled={isPending}
-                      className={`flex flex-col items-center justify-start gap-1 px-2 py-3 rounded-lg text-xs font-medium transition-colors w-full ${
+                      aria-current={active ? "true" : undefined}
+                      className={`flex min-h-11 flex-col items-center justify-center gap-1 px-2 py-3 rounded-lg text-xs font-medium transition-colors w-full ${
                         active
-                          ? "bg-primary/15 text-primary ring-2 ring-primary"
-                          : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+                          ? "bg-brand-soft text-brand ring-2 ring-brand-solid"
+                          : "text-text-main hover:bg-surface-2"
                       } ${isPending ? "opacity-70 cursor-wait" : ""}`}
-                      title={info.name}
+                      lang={item}
                     >
-                      <span className="text-2xl">{info.flag}</span>
                       {/* Fixed 2-line height so all cards are uniform */}
-                      <span className="text-center leading-tight line-clamp-2 h-8 flex items-center">{info.name}</span>
+                      <span className="text-center leading-tight line-clamp-2 h-8 flex items-center">{name}</span>
                       {active && (
-                        <span className="material-symbols-outlined text-sm">check</span>
+                        <span aria-hidden="true" className="material-symbols-outlined text-sm">check</span>
                       )}
                     </button>
                   );

@@ -59,7 +59,9 @@ async function showSettingsMenu(breadcrumb = []) {
         settings: settingsRes.success ? (settingsRes.data || {}) : {}
       };
     },
-    items: [
+    // A function so the auto-ping entries can be generated from what the
+    // server reports rather than from a list that goes stale here.
+    items: (d0) => [
       {
         label: "Tunnel ON",
         action: async () => { await enableTunnel(); return true; }
@@ -82,6 +84,19 @@ async function showSettingsMenu(breadcrumb = []) {
         },
         action: async (d) => { await toggleHeadroom(d?.settings?.headroomEnabled === true); return true; }
       },
+      // One entry per configured auto-ping provider, generated from the table
+      // rather than listed here. Naming them meant a newly configured provider
+      // had no way to be turned on from this menu at all (#2564).
+      ...(d0?.settings?.quotaAutoPingProviders || []).map(({ id, settingsKey }) => {
+        const name = id.charAt(0).toUpperCase() + id.slice(1);
+        return {
+          label: (d) => `Auto-ping (${name}): ${d?.settings?.[settingsKey] === true ? "ON" : "OFF"} → toggle`,
+          action: async (d) => {
+            await toggleAutoPing(settingsKey, name, d?.settings?.[settingsKey] === true);
+            return true;
+          },
+        };
+      }),
       {
         label: "🔑 Reset Password to Default",
         action: async () => { await resetPassword(); return true; }
@@ -99,7 +114,7 @@ async function showSettingsMenu(breadcrumb = []) {
 
 /**
  * Reset authMode to "password" via API. Used when OIDC is misconfigured
- * and user is locked out of dashboard. CLI bypasses auth via x-9r-cli-token.
+ * and user is locked out of dashboard. CLI bypasses auth via x-tp-cli-token.
  */
 async function resetAuthMode() {
   const ok = await confirm("Reset auth mode to PASSWORD (disable OIDC)?");
@@ -126,11 +141,13 @@ async function enableTunnel() {
   const result = await api.enableTunnel();
 
   if (result.success) {
-    const { publicUrl, shortId, alreadyRunning } = result.data || {};
+    const { publicUrl, tunnelUrl, shortId, alreadyRunning } = result.data || {};
+    // publicUrl is empty when the relay would not serve the short link (#1365).
+    const url = publicUrl || tunnelUrl;
     if (alreadyRunning) {
-      showStatus(`Tunnel already running: ${publicUrl}`, "success");
+      showStatus(`Tunnel already running: ${url}`, "success");
     } else {
-      showStatus(`Tunnel enabled: ${publicUrl} (${shortId})`, "success");
+      showStatus(`Tunnel enabled: ${url} (${shortId})`, "success");
     }
   } else {
     showStatus(`Failed: ${result.error}`, "error");
@@ -174,6 +191,21 @@ async function toggleHeadroom(currentlyOn) {
   const result = await api.updateSettings({ headroomEnabled: next });
   if (result.success) {
     showStatus(`Headroom ${next ? "enabled" : "disabled"}`, "success");
+  } else {
+    showStatus(`Failed: ${result.error}`, "error");
+  }
+  await pause();
+}
+
+// Quota auto-ping was reachable only from the dashboard, so a headless install
+// could not turn it on or off at all (#2349). Same shape as the two toggles
+// above: the settings API already owns both keys and reconfigures the scheduler
+// on write, so this needs no new endpoint and no CLI-side state.
+async function toggleAutoPing(key, label, currentlyOn) {
+  const next = !currentlyOn;
+  const result = await api.updateSettings({ [key]: next });
+  if (result.success) {
+    showStatus(`Auto-ping (${label}) ${next ? "enabled" : "disabled"}`, "success");
   } else {
     showStatus(`Failed: ${result.error}`, "error");
   }

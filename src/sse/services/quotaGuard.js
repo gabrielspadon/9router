@@ -1,0 +1,158 @@
+/**
+ * Quota guard — pause an account when its remaining quota drops to/below a
+ * per-account threshold so it keeps a safety buffer instead of hitting 0%.
+ *
+ * Design (see plan):
+ *  - Per-account thresholds are `connection.quotaPauseThresholds` (a map of
+ *    windowKey -> %, e.g. { "session (5h)": 15, "weekly (7d)": 30 }). 0/undefined = off.
+ *  - The "remaining %" is known from a quota snapshot. Primary source is a
+ *    snapshot persisted onto the connection (`lastQuotaSnapshot`) whenever the
+ *    dashboard Quota Tracker / auto-ping fetches usage. On a cache miss we do a
+ *    live fetch (timeout-wrapped) to refresh.
+ *  - Paused state is derived, never persisted: once remaining% climbs back above
+ *    the threshold (e.g. after resetAt) the account auto-recovers for routing.
+ *  - Fail-open: if quota can't be determined (no data, ineligible provider, fetch
+ *    error/timeout) the account is NEVER paused.
+ */
+
+import { getUsageForProvider } from "open-sse/services/usage.js";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
+import { updateProviderConnection } from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
+import { getWindowThresholds, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
+import { runAntigravityUsageProbe } from "@/lib/antigravityVerification";
+
+// How long a snapshot (memory or persisted) stays fresh before a live refresh.
+const CACHE_TTL_MS = 2 * 60 * 1000;
+// Bound latency of an on-demand live fetch inside the routing path.
+const LIVE_FETCH_TIMEOUT_MS = 3000;
+
+// Module-level in-memory cache to avoid a live provider fetch on every request.
+// key: connectionId -> { snapshot, fetchedAt }
+const memoryCache = new Map();
+
+function hasWindowThresholds(connection) {
+  return Object.values(getWindowThresholds(connection)).some((v) => Number(v) > 0 && Number(v) <= 100);
+}
+
+function freshSnapshot(snapshot, fetchedAt) {
+  if (!snapshot || !fetchedAt) return null;
+  const ts = typeof fetchedAt === "number" ? fetchedAt : new Date(fetchedAt).getTime();
+  if (!Number.isFinite(ts)) return null;
+  if (Date.now() - ts >= CACHE_TTL_MS) return null;
+  return snapshot;
+}
+
+function readSnapshot(connection) {
+  const cached = memoryCache.get(connection.id);
+  if (cached) {
+    const s = freshSnapshot(cached.snapshot, cached.fetchedAt);
+    if (s) return s;
+  }
+  const persisted = connection.lastQuotaSnapshot;
+  if (persisted) {
+    const s = freshSnapshot(persisted, persisted.fetchedAt);
+    if (s) return s;
+  }
+  return null;
+}
+
+function snapshotOwner(connection) {
+  const data = connection.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
+
+function buildProxyOptions(connection) {
+  // Reuse the same proxy resolution as the usage API, preserving a selected
+  // route's strictness through the quota fetch.
+  return resolveConnectionProxyConfig(connection.providerSpecificData || {}, snapshotOwner(connection)).then((proxyConfig) => {
+    if (proxyConfig?.kind === "required-unavailable") return proxyConfig;
+    if (proxyConfig?.kind === "usable") return toConnectionProxyOptions(proxyConfig);
+    return { ...(proxyConfig || {}), strictProxy: proxyConfig?.strictProxy === true };
+  });
+}
+
+async function fetchLiveSnapshot(connection, providedProxyOptions = null) {
+  const proxyOptions = providedProxyOptions || await buildProxyOptions(connection);
+  if (proxyOptions?.kind === "required-unavailable") return proxyOptions;
+  const usagePromise = connection.provider === "antigravity"
+    ? runAntigravityUsageProbe(connection, proxyOptions)
+    : getUsageForProvider(connection, proxyOptions, {});
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("quota fetch timeout")), LIVE_FETCH_TIMEOUT_MS)
+  );
+  const usage = await Promise.race([usagePromise, timeout]);
+  // getUsageForProvider nests remaining % inside `usage.quotas`; derive the
+  // single gating snapshot (most-depleted window) from it. null → fail-open.
+  const snapshot = deriveQuotaSnapshot(connection.provider, usage);
+  if (!snapshot) return null;
+  return snapshot;
+}
+
+function storeSnapshot(connectionId, snapshot) {
+  memoryCache.set(connectionId, { snapshot, fetchedAt: Date.now() });
+  // Best-effort persistence so the dashboard and subsequent routing reads stay warm.
+  updateProviderConnection(connectionId, { lastQuotaSnapshot: snapshot }).catch(() => {});
+}
+
+/**
+ * Decide whether an account should be skipped for routing due to low quota.
+ * @param {Object} connection
+ * @returns {Promise<{paused:boolean, reason:string, snapshot:Object|null}>}
+ */
+export async function evaluateQuota(connection) {
+  if (!hasWindowThresholds(connection)) return { paused: false, reason: "disabled", snapshot: null };
+  if (!isQuotaEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null };
+
+  const proxyOptions = await buildProxyOptions(connection);
+  if (proxyOptions?.kind === "required-unavailable") {
+    return {
+      paused: false,
+      reason: "required-proxy-unavailable",
+      code: "required_proxy_unavailable",
+      snapshot: null,
+    };
+  }
+
+  let snapshot = readSnapshot(connection);
+  if (!snapshot) {
+    try {
+      snapshot = await fetchLiveSnapshot(connection, proxyOptions);
+      if (snapshot?.kind === "required-unavailable") {
+        return {
+          paused: false,
+          reason: "required-proxy-unavailable",
+          code: "required_proxy_unavailable",
+          snapshot: null,
+        };
+      }
+    } catch {
+      snapshot = null;
+    }
+    if (snapshot) storeSnapshot(connection.id, snapshot);
+  }
+
+  const paused = isQuotaPaused({ ...connection, lastQuotaSnapshot: snapshot });
+  return {
+    paused,
+    reason: paused ? "below-threshold" : snapshot ? "ok" : "no-data",
+    snapshot,
+  };
+}
+
+/**
+ * Synchronous info for the dashboard UI (badge + threshold control).
+ * Re-exported from the shared pure helper so callers only import one place.
+ * Reads the persisted snapshot as-is (the Quota Tracker keeps it fresh).
+ */
+export { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
+
+// Exposed for tests / cache invalidation.
+export function _clearQuotaCache(connectionId) {
+  if (connectionId) memoryCache.delete(connectionId);
+  else memoryCache.clear();
+}

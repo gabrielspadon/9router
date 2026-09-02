@@ -17,17 +17,28 @@ function makeController() {
   };
 }
 
+// Reads to the end whether the stream closes or errors, and reports which.
+// A stream that errors is not a test failure here: with no onAbortTerminal to
+// synthesize, an upstream socket reset is surfaced to the client rather than
+// closed over (#1513), so the bytes have to be collected either way.
 async function readAll(stream) {
+  const { text } = await readOutcome(stream);
+  return text;
+}
+
+async function readOutcome(stream) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let text = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value, { stream: true });
+  for (;;) {
+    try {
+      const { value, done } = await reader.read();
+      if (done) return { ended: "closed", text: text + decoder.decode() };
+      text += decoder.decode(value, { stream: true });
+    } catch {
+      return { ended: "errored", text: text + decoder.decode() };
+    }
   }
-  text += decoder.decode();
-  return text;
 }
 
 describe("Responses abort terminal synthesis", () => {
@@ -65,8 +76,11 @@ describe("Responses abort terminal synthesis", () => {
       null
     );
 
-    const text = await readAll(out);
+    const { ended, text } = await readOutcome(out);
     expect(text).not.toContain("response.failed");
     expect(text).not.toContain("[DONE]");
+    // Nothing was synthesized, so the reset is reported as one instead of
+    // reaching the client as a complete answer (#1513).
+    expect(ended).toBe("errored");
   });
 });

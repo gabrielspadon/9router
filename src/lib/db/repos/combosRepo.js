@@ -2,13 +2,18 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+function parseComboModels(value) {
+  const models = parseJson(value, []);
+  return Array.isArray(models) ? models : [];
+}
+
 function rowToCombo(row) {
   if (!row) return null;
   return {
     id: row.id,
     name: row.name,
     kind: row.kind,
-    models: parseJson(row.models, []),
+    models: parseComboModels(row.models),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

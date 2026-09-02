@@ -54,6 +54,21 @@ export function onLocaleChange(callback) {
   };
 }
 
+// Attributes that carry user-visible text. `aria-label` and `title` are the
+// load bearing ones: a screen reader in a non-English locale read every
+// icon-only control out in English, because this walker only ever visited text
+// nodes (#2745). `alt` and `placeholder` are the same defect in visible form.
+const TRANSLATED_ATTRIBUTES = ["placeholder", "title", "aria-label", "alt"];
+
+function isSkipped(element) {
+  let el = element;
+  while (el) {
+    if (el.hasAttribute && el.hasAttribute("data-i18n-skip")) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
 // Process text node
 function processTextNode(node) {
   if (!node.nodeValue || !node.nodeValue.trim()) return;
@@ -62,14 +77,7 @@ function processTextNode(node) {
   const parent = node.parentElement;
   if (!parent) return;
   
-  // Skip if parent or any ancestor has data-i18n-skip attribute
-  let element = parent;
-  while (element) {
-    if (element.hasAttribute && element.hasAttribute('data-i18n-skip')) {
-      return;
-    }
-    element = element.parentElement;
-  }
+  if (isSkipped(parent)) return;
   
   const tagName = parent.tagName?.toLowerCase();
   
@@ -87,13 +95,36 @@ function processTextNode(node) {
     node._originalText = node.nodeValue;
   }
   
-  // Use original text for translation
+  // Use original text for translation. translate() looks the string up trimmed,
+  // so writing its result back raw dropped whatever whitespace separated this
+  // node from its inline siblings — "Total  requests" became "Toplamrequests"
+  // (#2745). Keep the original padding around the translated core.
   const original = node._originalText;
-  const translated = translate(original);
+  const [, lead, core, trail] = original.match(/^(\s*)([\s\S]*?)(\s*)$/);
+  const translated = lead + translate(core) + trail;
   
   // Only update if different to avoid unnecessary DOM mutations
   if (translated !== node.nodeValue) {
     node.nodeValue = translated;
+  }
+}
+
+// Process the translatable attributes of one element
+function processAttributes(element) {
+  if (!element || !element.hasAttribute) return;
+  if (isSkipped(element)) return;
+  
+  for (const attr of TRANSLATED_ATTRIBUTES) {
+    const current = element.getAttribute(attr);
+    if (!current || !current.trim()) continue;
+    
+    // Store the original once, so switching locale twice does not translate a
+    // translation, exactly as the text-node path does.
+    const key = `_i18nOriginal_${attr}`;
+    if (!element[key]) element[key] = current;
+    
+    const translated = translate(element[key]);
+    if (translated !== current) element.setAttribute(attr, translated);
   }
 }
 
@@ -118,6 +149,12 @@ function processElement(element) {
   
   // Process collected nodes
   nodesToProcess.forEach(processTextNode);
+  
+  // Then the attributes, including the root's own: a walker rooted at an
+  // element never visits that element.
+  processAttributes(element);
+  const elements = element.querySelectorAll?.("*");
+  if (elements) elements.forEach(processAttributes);
 }
 
 // Initialize runtime i18n

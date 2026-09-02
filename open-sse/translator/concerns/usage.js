@@ -1,11 +1,25 @@
+import { clampReasoningTokens } from "../../utils/usageTracking.js";
+
 // Build OpenAI usage object. Caller computes prompt/completion/total (provider math).
 // Optional details added only when > 0 (matches existing claude/gemini/codex behavior).
-export function buildUsage({ promptTokens, completionTokens, totalTokens, cachedTokens = 0, cacheCreationTokens = 0, reasoningTokens = 0 }) {
-  const usage = { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens };
+export function buildUsage({
+  promptTokens,
+  completionTokens,
+  totalTokens,
+  cachedTokens = 0,
+  cacheCreationTokens = 0,
+  reasoningTokens = 0,
+}) {
+  const usage = {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: totalTokens,
+  };
   if (cachedTokens > 0 || cacheCreationTokens > 0) {
     usage.prompt_tokens_details = {};
     if (cachedTokens > 0) usage.prompt_tokens_details.cached_tokens = cachedTokens;
-    if (cacheCreationTokens > 0) usage.prompt_tokens_details.cache_creation_tokens = cacheCreationTokens;
+    if (cacheCreationTokens > 0)
+      usage.prompt_tokens_details.cache_creation_tokens = cacheCreationTokens;
   }
   if (reasoningTokens > 0) {
     usage.completion_tokens_details = { reasoning_tokens: reasoningTokens };
@@ -13,16 +27,26 @@ export function buildUsage({ promptTokens, completionTokens, totalTokens, cached
   return usage;
 }
 
-const n = (v) => (typeof v === "number" ? v : 0);
+const n = (v) => (typeof v === 'number' ? v : 0);
 
 // Per-provider raw token field-map + math. Returns buildUsage() args (NOT the usage object).
 // Keeps each provider's exact semantics: claude/gemini fold cache+reasoning, others don't.
 const USAGE_EXTRACTORS = {
   claude(raw) {
-    const input = n(raw.input_tokens), output = n(raw.output_tokens);
-    const cacheRead = n(raw.cache_read_input_tokens), cacheCreate = n(raw.cache_creation_input_tokens);
+    const input = n(raw.input_tokens),
+      output = n(raw.output_tokens);
+    const cacheRead = n(raw.cache_read_input_tokens),
+      cacheCreate = n(raw.cache_creation_input_tokens);
     const prompt = input + cacheRead + cacheCreate;
-    return { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate };
+    const thinking = clampReasoningTokens(raw.output_tokens_details?.thinking_tokens, output);
+    return {
+      promptTokens: prompt,
+      completionTokens: output,
+      totalTokens: prompt + output,
+      cachedTokens: cacheRead,
+      cacheCreationTokens: cacheCreate,
+      reasoningTokens: thinking,
+    };
   },
   gemini(raw) {
     const cached = n(raw.cachedContentTokenCount);
@@ -35,10 +59,17 @@ const USAGE_EXTRACTORS = {
       candidates = total - prompt - thoughts;
       if (candidates < 0) candidates = 0;
     }
-    return { promptTokens: prompt, completionTokens: candidates + thoughts, totalTokens: total, cachedTokens: cached, reasoningTokens: thoughts };
+    return {
+      promptTokens: prompt,
+      completionTokens: candidates + thoughts,
+      totalTokens: total,
+      cachedTokens: cached,
+      reasoningTokens: thoughts,
+    };
   },
   kiro(raw) {
-    const input = n(raw.inputTokens), output = n(raw.outputTokens);
+    const input = n(raw.inputTokens),
+      output = n(raw.outputTokens);
     // ponytail: Amazon Q (Kiro upstream) does not expose cache fields today,
     // but pass through any cache_read/cache_creation/cached_tokens if the
     // event shape grows them later so cost tracking keeps working without
@@ -51,19 +82,58 @@ const USAGE_EXTRACTORS = {
     return out;
   },
   ollama(raw) {
-    const input = n(raw.prompt_eval_count), output = n(raw.eval_count);
+    const input = n(raw.prompt_eval_count),
+      output = n(raw.eval_count);
     return { promptTokens: input, completionTokens: output, totalTokens: input + output };
   },
   commandcode(raw) {
-    const input = n(raw.inputTokens), output = n(raw.outputTokens);
-    const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
-    return { promptTokens: input, completionTokens: output, totalTokens: total };
+    const input = n(raw.inputTokens),
+      output = n(raw.outputTokens);
+    const total = typeof raw.totalTokens === 'number' ? raw.totalTokens : input + output;
+    const cached = n(raw.cachedInputTokens);
+    const out = { promptTokens: input, completionTokens: output, totalTokens: total };
+    if (cached > 0) out.cachedTokens = cached;
+    return out;
   },
 };
 
 // Convert provider-native usage object → OpenAI usage. Returns null if no extractor/raw.
 export function toOpenAIUsage(raw, kind) {
   const extract = USAGE_EXTRACTORS[kind];
-  if (!extract || !raw || typeof raw !== "object") return null;
+  if (!extract || !raw || typeof raw !== 'object') return null;
   return buildUsage(extract(raw));
+}
+
+// Convert Chat Completions usage to the Responses API field names expected by
+// clients such as Codex and OpenCode.
+export function toResponsesUsage(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const inputTokens = n(raw.input_tokens) || n(raw.prompt_tokens);
+  const outputTokens = n(raw.output_tokens) || n(raw.completion_tokens);
+  if (!inputTokens && !outputTokens) return null;
+
+  const usage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: n(raw.total_tokens) || inputTokens + outputTokens,
+  };
+
+  const cachedTokens =
+    n(raw.input_tokens_details?.cached_tokens) ||
+    n(raw.prompt_tokens_details?.cached_tokens) ||
+    n(raw.cached_tokens);
+  if (cachedTokens > 0) {
+    usage.input_tokens_details = { cached_tokens: cachedTokens };
+  }
+
+  const reasoningTokens =
+    n(raw.output_tokens_details?.reasoning_tokens) ||
+    n(raw.completion_tokens_details?.reasoning_tokens) ||
+    n(raw.reasoning_tokens);
+  if (reasoningTokens > 0) {
+    usage.output_tokens_details = { reasoning_tokens: reasoningTokens };
+  }
+
+  return usage;
 }

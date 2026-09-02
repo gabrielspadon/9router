@@ -1,35 +1,29 @@
 "use client";
 
 import { cn } from "@/shared/utils/cn";
+import StatusToken from "@/shared/components/StatusToken";
+import { fmtPercent } from "@/shared/utils/measure.js";
 import { formatResetTime } from "./utils";
 
-// Calculate color based on remaining percentage
+// Bands this dashboard applies locally to the remaining share the provider
+// reported — above 70%, 30 to 70, below 30 — not a health verdict any upstream
+// issued, so no band carries a word of its own and the token states the share.
+// null is a total that was never reported, which belongs in no band.
 const getColorClasses = (remainingPercentage) => {
+  if (remainingPercentage === null || remainingPercentage === undefined) {
+    return { tone: "idle", text: "text-text-muted", bg: "bg-border", bgLight: "bg-surface-2", icon: "help" };
+  }
+
   if (remainingPercentage > 70) {
-    return {
-      text: "text-green-500",
-      bg: "bg-green-500",
-      bgLight: "bg-green-500/10",
-      emoji: "🟢"
-    };
+    return { tone: "ok", text: "text-success", bg: "bg-success-solid", bgLight: "bg-success-soft", icon: "check_circle" };
   }
-  
+
   if (remainingPercentage >= 30) {
-    return {
-      text: "text-yellow-500",
-      bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10",
-      emoji: "🟡"
-    };
+    return { tone: "degraded", text: "text-warning", bg: "bg-warning-solid", bgLight: "bg-warning-soft", icon: "warning" };
   }
-  
-  // 0-29% including 0% (out of quota) - show red
-  return {
-    text: "text-red-500",
-    bg: "bg-red-500",
-    bgLight: "bg-red-500/10",
-    emoji: "🔴"
-  };
+
+  // 0-29% including a measured 0% (out of quota)
+  return { tone: "failing", text: "text-danger", bg: "bg-danger-solid", bgLight: "bg-danger-soft", icon: "error" };
 };
 
 // Format reset time display
@@ -64,7 +58,7 @@ const formatResetTimeDisplay = (resetTime) => {
 };
 
 export default function QuotaProgressBar({
-  percentage = 0,
+  percentage = null,
   label = "",
   used = 0,
   total = 0,
@@ -86,45 +80,53 @@ export default function QuotaProgressBar({
   return (
     <div className="space-y-2">
       {/* Label and percentage */}
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-text-primary">
+      <div className="flex items-start justify-between gap-4 text-sm">
+        <span className="min-w-0 font-semibold text-text-main">
           {label}
         </span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs">{colors.emoji}</span>
-          <span className={cn("font-medium", colors.text)}>
-            {remaining}%
-          </span>
-        </div>
+        <StatusToken tone={colors.tone} className="shrink-0">
+          {fmtPercent(remaining)} left
+        </StatusToken>
       </div>
 
-      {/* Progress bar */}
-      {!unlimited && (
-        <div className={cn("h-2 rounded-full overflow-hidden", colors.bgLight)}>
+      {/* Progress bar. An unknown share has no width to draw. */}
+      {!unlimited && remaining !== null && (
+        <div
+          /* A single rule with a filled portion, not a rounded pill: the pill
+             read as an ornament sitting on the page, and the filled portion has
+             to read as material. The track is the inset ground for the same
+             reason. */
+          className={cn("h-1.5 overflow-hidden bg-surface-3", colors.bgLight)}
+          role="progressbar"
+          aria-valuenow={Math.min(remaining, 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={label || "Quota remaining"}
+        >
           <div
-            className={cn("h-full transition-all duration-300", colors.bg)}
+            className={cn("h-full transition-[width] duration-150", colors.bg)}
             style={{ width: `${Math.min(remaining, 100)}%` }}
           />
         </div>
       )}
 
       {/* Usage details and countdown */}
-      <div className="flex items-center justify-between text-xs text-text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-text-muted">
         <span>
-          {used.toLocaleString()} / {total.toLocaleString()} requests
+          <span className="metric">{used.toLocaleString()} / {total.toLocaleString()}</span> requests
         </span>
         {countdown !== "-" && (
           <div className="flex items-center gap-1">
-            <span>•</span>
-            <span className="font-medium">{resetWord} in {countdown}</span>
+            <span aria-hidden="true">•</span>
+            <span className="font-medium">{resetWord} in <span className="metric">{countdown}</span></span>
           </div>
         )}
       </div>
 
       {/* Reset time display */}
       {resetDisplay && (
-        <div className="text-xs text-text-muted/70">
-          {resetWord} at {resetDisplay}
+        <div className="text-xs text-text-subtle">
+          {resetWord} at <span className="metric">{resetDisplay}</span>
         </div>
       )}
     </div>

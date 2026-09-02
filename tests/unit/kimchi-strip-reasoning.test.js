@@ -1,7 +1,7 @@
 /**
  * Kimchi executor: strip reasoning_content echoed by clients.
  *
- * Background: when 9Router streams a thinking model (deepseek-r1,
+ * Background: when TokenProxy streams a thinking model (deepseek-r1,
  * minimax-m3) to a client, the response carries `reasoning_content`.
  * Most OpenAI-compatible SDKs echo the whole history on the next turn,
  * so Kimchi's upstream counts the scratch block as input tokens.
@@ -15,7 +15,12 @@
  * re-trigger upstream complaints about missing reasoning on the next
  * turn.
  */
-import { describe, it } from "node:test";
+// Runner note: these assertions use node:assert, which throws on failure and so
+// works unchanged inside vitest. Only the harness import moves. Taken from the
+// built-in test module they were collected but never counted: vitest reported
+// "No test suite found" and the file sat in the known-fail baseline asserting
+// nothing, while the project and CI run vitest only.
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 
 import KimchiExecutor, { stripReasoningContent } from "../../open-sse/executors/kimchi.js";

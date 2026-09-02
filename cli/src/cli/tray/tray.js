@@ -58,7 +58,7 @@ function initTray(options) {
  */
 function buildMenuItems(port, autostartEnabled) {
   return [
-    { title: `9Router (Port ${port})`, tooltip: "Server is running", enabled: false },
+    { title: `TokenProxy (Port ${port})`, tooltip: "Server is running", enabled: false },
     { title: "Open Dashboard", tooltip: "Open in browser", enabled: true },
     {
       title: autostartEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
@@ -121,7 +121,7 @@ function initWindowsTray(options) {
 
     trayInstance = initWinTray({
       iconPath,
-      tooltip: `9Router - Port ${port}`,
+      tooltip: `TokenProxy - Port ${port}`,
       items,
       onClick: (index) => {
         handleClick(index, options, (newEnabled) => {
@@ -168,6 +168,79 @@ function resolveSystray() {
   return null;
 }
 
+
+// ── Orphan tray reaping ────────────────────────────────────────
+// The Go tray binary is a child of the Node process, and killTray() below only
+// runs on a graceful exit. A SIGKILL, a crash or a machine that never got to
+// run the handler leaves it in the panel forever, and the next start adds
+// another icon beside it (#1571). The binary itself cannot be changed from
+// here — it ships prebuilt inside systray2 — so the pid is recorded and any
+// survivor is reaped before a new one spawns.
+const TRAY_BIN_NAME =
+  process.platform === "darwin" ? "tray_darwin_release" : "tray_linux_release";
+
+// Same convention as cli.js getAppDataDir and app/src/lib/dataDir.js. Inlined
+// rather than imported: it lives in cli.js, which is the launcher entry point
+// and requiring it from here would be a cycle.
+function trayPidFile() {
+  try {
+    const os = require("os");
+    const dir = process.platform === "win32"
+      ? path.join(process.env.APPDATA || "", "tokenproxy")
+      : path.join(os.homedir(), ".tokenproxy");
+    return path.join(dir, "tray.pid");
+  } catch (e) {
+    return null;
+  }
+}
+
+// A pid file outlives the process it names and the number gets reused, so the
+// pid alone is not enough to justify a kill. Confirm the process still IS the
+// tray binary first; anything else is left alone.
+function isTrayProcess(pid) {
+  try {
+    if (process.platform === "linux") {
+      return fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").includes(TRAY_BIN_NAME);
+    }
+    if (process.platform === "darwin") {
+      const { execFileSync } = require("child_process");
+      const out = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+        encoding: "utf8",
+        timeout: 1000,
+      });
+      return out.includes(TRAY_BIN_NAME);
+    }
+  } catch (e) { /* gone, or not readable: treat as not ours */ }
+  return false;
+}
+
+function reapOrphanTray() {
+  const file = trayPidFile();
+  if (!file) return;
+  try {
+    if (!fs.existsSync(file)) return;
+    const pid = parseInt(String(fs.readFileSync(file, "utf8")).trim(), 10);
+    // SIGTERM, not SIGKILL: the Go binary releases the tray item on a clean
+    // quit, and a killed one can leave a ghost icon behind on macOS.
+    if (pid > 0 && pid !== process.pid && isTrayProcess(pid)) {
+      try { process.kill(pid, "SIGTERM"); } catch (e) {}
+    }
+  } catch (e) { /* unreadable pid file is not worth failing a tray start over */ }
+  try { fs.unlinkSync(file); } catch (e) {}
+}
+
+function recordTrayPid(instance) {
+  const file = trayPidFile();
+  if (!file) return;
+  try {
+    const proc = instance?._process || (typeof instance?.process === "function" ? instance.process() : null);
+    if (proc?.pid) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, String(proc.pid));
+    }
+  } catch (e) {}
+}
+
 function chmodTrayBin(pkgName) {
   // systray2's npm tarball occasionally lands without +x on the bundled Go
   // binary (observed on macOS). spawn() then fails with EACCES. Best-effort
@@ -193,6 +266,7 @@ function initUnixTray(options) {
     const { mod: SysTray, isV2 } = resolved;
 
     chmodTrayBin(isV2 ? "systray2" : "systray");
+    reapOrphanTray();
 
     const autostartEnabled = getAutostartEnabled();
     const items = buildMenuItems(port, autostartEnabled);
@@ -204,12 +278,13 @@ function initUnixTray(options) {
       // because template mode only uses the alpha channel.
       isTemplateIcon: false,
       title: "",
-      tooltip: `9Router - Port ${port}`,
+      tooltip: `TokenProxy - Port ${port}`,
       items
     };
 
     trayInstance = new SysTray({ menu, debug: false, copyDir: true });
     isWinTray = false;
+    recordTrayPid(trayInstance);
 
     trayInstance.onClick((action) => {
       handleClick(action.seq_id, options, (newEnabled) => {
@@ -230,7 +305,7 @@ function initUnixTray(options) {
       // failures (binary crash, EACCES, etc.) so users can see why the icon
       // didn't appear instead of getting a misleading "running in tray" log.
       trayInstance.ready().catch((err) => {
-        process.stderr.write(`[9router] tray failed to start: ${err && err.message ? err.message : err}\n`);
+        process.stderr.write(`[tokenproxy] tray failed to start: ${err && err.message ? err.message : err}\n`);
       });
     } else {
       trayInstance.onReady(() => {});
@@ -239,7 +314,7 @@ function initUnixTray(options) {
 
     return trayInstance;
   } catch (err) {
-    process.stderr.write(`[9router] tray init error: ${err.message}\n`);
+    process.stderr.write(`[tokenproxy] tray init error: ${err.message}\n`);
     return null;
   }
 }
@@ -280,7 +355,14 @@ function killTray() {
 
   return new Promise((resolve) => {
     let done = false;
-    const finish = () => { if (done) return; done = true; closeIpc(); resolve(); };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      closeIpc();
+      const file = trayPidFile();
+      if (file) { try { fs.unlinkSync(file); } catch (e) {} }
+      resolve();
+    };
 
     proc.once("exit", finish);
     gracefulQuit();

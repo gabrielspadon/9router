@@ -6,6 +6,7 @@ export {
   isTunnelManuallyDisabled,
   isTunnelReconnecting,
   getTunnelService,
+  isTunnelReachable,
   setTunnelUnexpectedExitCallback,
 } from "./cloudflare/manager.js";
 export {
@@ -48,6 +49,7 @@ export {
   RESTART_COOLDOWN_MS,
   NETWORK_SETTLE_MS,
   WATCHDOG_INTERVAL_MS,
+  UNREACHABLE_CHECKS_BEFORE_RESTART,
   NETWORK_CHECK_INTERVAL_MS,
   VIRTUAL_IFACE_REGEX,
 } from "./shared/watchdogConfig.js";

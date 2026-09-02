@@ -13,8 +13,11 @@
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { GITHUB_COPILOT } from "../config/appConstants.js";
 import { refreshCopilotToken } from "./tokenRefresh.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 const MODELS_URL = "https://api.githubcopilot.com/models";
+// Registry id for the Copilot connection, the key the capability table is under.
+const GITHUB_PROVIDER_ID = "github";
 const FETCH_TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes per credential
 
@@ -73,9 +76,30 @@ function expandCatalog(raw) {
     const id = m.id;
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    models.push({ id, name: m.name || id });
+    models.push({ id, name: m.name || id, capabilities: capabilitiesFor(id, m.capabilities) });
   }
   return models;
+}
+
+// Copilot states each model's real ceilings in the same response, and dropping
+// them left /v1/models with no per-model data for github — so it fell back to
+// the static table, which for a Copilot-hosted Anthropic model carries DIRECT
+// Claude limits. A client sizing its context from a window Copilot will not
+// serve never reaches its own compaction threshold and hard-fails upstream
+// (#2756). Layered over the static entry rather than replacing it: Copilot
+// publishes limits and vision but says nothing about reasoning or search, and
+// the static table is still the only source for those.
+function capabilitiesFor(id, upstream) {
+  const caps = { ...getCapabilitiesForModel(GITHUB_PROVIDER_ID, id) };
+  const limits = upstream?.limits;
+  if (limits && typeof limits === "object") {
+    const contextWindow = Number(limits.max_context_window_tokens || limits.max_prompt_tokens);
+    const maxOutput = Number(limits.max_output_tokens);
+    if (Number.isFinite(contextWindow) && contextWindow > 0) caps.contextWindow = contextWindow;
+    if (Number.isFinite(maxOutput) && maxOutput > 0) caps.maxOutput = maxOutput;
+  }
+  if (typeof upstream?.supports?.vision === "boolean") caps.vision = upstream.supports.vision;
+  return caps;
 }
 
 /**

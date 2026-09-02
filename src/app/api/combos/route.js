@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { validateComboAcyclic } from "open-sse/services/combo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,17 @@ export async function POST(request) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const comboModels = models || [];
+    const validation = validateComboAcyclic({
+      name,
+      models: comboModels,
+      combosData: await getCombos(),
+    });
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
+    const combo = await createCombo({ name, models: comboModels, kind: kind || null });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {

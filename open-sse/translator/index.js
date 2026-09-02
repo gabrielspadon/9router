@@ -1,8 +1,10 @@
 import { FORMATS } from "./formats.js";
-import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
+import { ensureToolCallIds, fixMissingToolResponses, repairOrphanToolResults } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
-import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
+import { cloakClaudeTools } from "../utils/claudeCloaking.js";
+import { decloakClaudePassthroughToolUse } from "../utils/streamHelpers.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
+import { hoistAdditionalTools, normalizePassthroughToolSchemas, typeResponsesInputItems } from "./formats/responsesApi.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
@@ -31,6 +33,16 @@ export function register(from, to, requestFn, responseFn) {
 // No-op: translators self-register via the static imports at the bottom of this file.
 function ensureInitialized() {}
 
+// Remove malformed null blocks before any normalization walks `part.type`.
+// This is deliberately independent of the optional provider media stripping.
+function dropNullContentParts(body) {
+  if (!Array.isArray(body?.messages)) return;
+  for (const msg of body.messages) {
+    if (!Array.isArray(msg?.content)) continue;
+    msg.content = msg.content.filter(part => part != null);
+  }
+}
+
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
 function stripContentTypes(body, stripList = []) {
   if (!stripList.length || !body.messages || !Array.isArray(body.messages)) return;
@@ -53,6 +65,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   ensureInitialized();
   let result = body;
 
+  // Null blocks are malformed, but must not abort routes with no media strip configured.
+  // Do this before generic normalization walks content blocks for tool IDs.
+  dropNullContentParts(result);
+
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
 
@@ -67,6 +83,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Claude→Kiro translator cannot consume and which cannot repair partial
   // parallel tool results.
   if (targetFormat !== FORMATS.KIRO) {
+    // Both halves of the pairing invariant, in order: a result whose call is
+    // gone is salvaged to text first (#2236), then a call with no result gets
+    // an empty one. Reversed, the repair would answer a call that the orphan
+    // sweep was about to remove the answer for.
+    repairOrphanToolResults(result);
     fixMissingToolResponses(result);
   }
 
@@ -78,6 +99,17 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   const clientSessionId = captureSessionId(result, credentials, connectionId, targetFormat);
   // Expose to downstream translators (gemini-cli/antigravity envelopes) that run after envelope is stripped
   if (credentials) credentials._clientSessionId = clientSessionId;
+
+  // A same-format Responses passthrough skips every translator, so the Codex-only
+  // `additional_tools` input item would reach a standard Responses upstream verbatim
+  // and fail the whole request. Normalize it here, where the passthrough is decided.
+  // The tool schemas that item carries (and any already declared at top level) also
+  // need the same unsupported-keyword strip a cross-format translation gets, since
+  // no translator runs on this path to apply it otherwise (#1758).
+  if (sourceFormat === targetFormat && targetFormat === FORMATS.OPENAI_RESPONSES) {
+    hoistAdditionalTools(result);
+    normalizePassthroughToolSchemas(result);
+  }
 
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
@@ -108,6 +140,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
+  // Whatever built this body, every item it hands a Responses upstream needs its
+  // `type`: the item union is matched on that field, and an untyped
+  // { role, content } is rejected as "Unknown parameter: 'input[0].content'"
+  // (#3390). Placed after translation so it covers the same-format passthrough
+  // and the chat-shaped caller that already carries input[] alike.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) typeResponsesInputItems(result);
+
   // Normalize thinking to the target provider-native format (config-driven, capability-aware).
   // Kiro's GenerateAssistantResponse request does not accept the generic top-level
   // `thinking` field; its translators map thinking intent to KAS-compatible
@@ -133,7 +172,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     result = prepareClaudeRequest(result, provider, apiKey, connectionId, credentials?.rawHeaders, clientSessionId);
   }
 
-  // Claude cloaking: rename client tools with CLAUDE_TOOL_SUFFIX (anti-ban)
+  // Claude cloaking: rename client tools with _cc suffix (anti-ban)
   // quirk: only providers flagged cloakToolsOnOAuth, and only with an OAuth token
   if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
@@ -163,10 +202,12 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
   // If same format, return as-is — except the tool name may still be cloaked:
   // translateRequest() suffixes client tools for OAuth-cloaked Claude providers
-  // even when no format conversion is needed, so streamed tool_use blocks must
+  // even when no format conversion is needed, so a streamed tool_use block must
   // be decloaked here or the client sees an unknown ("_ide"-suffixed) tool.
   if (sourceFormat === targetFormat) {
-    return [decloakStreamChunk(chunk, state?.toolNameMap)];
+    if (chunk == null) return [];
+    decloakClaudePassthroughToolUse(chunk, sourceFormat, state?.toolNameMap);
+    return [chunk];
   }
 
   let results = [chunk];
@@ -200,6 +241,15 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
     const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
     if (fromOpenAI) {
       const finalResults = [];
+      // On flush (chunk === null) a pivot step that produced nothing must still hand the
+      // null to step 2, so terminal-event translators (e.g. openai -> openai-responses)
+      // get to emit their response.completed.
+      if (chunk === null && results.length === 0) {
+        const converted = fromOpenAI(null, state);
+        if (converted) {
+          finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
+        }
+      }
       for (const r of results) {
         const converted = fromOpenAI(r, state);
         if (converted) {
@@ -265,6 +315,7 @@ export function initState(sourceFormat) {
       funcArgsDone: {},
       funcItemDone: {},
       customToolNames: new Set(),
+      completionPending: false,
       completedSent: false
     };
   }
@@ -294,6 +345,7 @@ import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
 import "./response/gemini-to-openai.js";
 import "./response/openai-to-antigravity.js";
+import "./response/openai-to-gemini.js";
 import "./response/openai-responses.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";

@@ -103,6 +103,47 @@ describe("stripUnsupportedModalities", () => {
   it("handles missing/empty body safely", () => {
     expect(stripUnsupportedModalities(null, FORMATS.OPENAI, NO_VISION)).toBe(false);
     expect(stripUnsupportedModalities({}, FORMATS.OPENAI, null)).toBe(false);
-    expect(stripUnsupportedModalities({ messages: [] }, FORMATS.OPENAI, NO_VISION)).toBe(true);
+    expect(stripUnsupportedModalities({ messages: [] }, FORMATS.OPENAI, NO_VISION)).toBe(false);
+  });
+
+  // The return value is the caller's only signal that media was dropped: chatCore
+  // logs "stripped unsupported media" on it. Reporting "a modality is off" rather
+  // than "a block was removed" made every text-only turn to a text-only model log
+  // a strip that never happened (#2068).
+  it("reports false when nothing was actually removed", () => {
+    const textOnly = { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] };
+    expect(stripUnsupportedModalities(textOnly, FORMATS.OPENAI, NO_VISION)).toBe(false);
+
+    const audioKept = { messages: [{ role: "user", content: [{ type: "input_audio", input_audio: { format: "wav" } }] }] };
+    expect(stripUnsupportedModalities(audioKept, FORMATS.OPENAI, NO_VISION)).toBe(false);
+
+    const gemini = { contents: [{ parts: [{ text: "hi" }] }] };
+    expect(stripUnsupportedModalities(gemini, FORMATS.GEMINI, NO_VISION)).toBe(false);
+
+    const responses = { input: [{ content: [{ type: "input_text", text: "hi" }] }] };
+    expect(stripUnsupportedModalities(responses, FORMATS.OPENAI_RESPONSES, NO_VISION)).toBe(false);
+
+    const claude = { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] };
+    expect(stripUnsupportedModalities(claude, FORMATS.CLAUDE, NO_VISION)).toBe(false);
+  });
+
+  it("reports true when a block was removed, per source format", () => {
+    const openai = { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }] };
+    expect(stripUnsupportedModalities(openai, FORMATS.OPENAI, NO_VISION)).toBe(true);
+
+    const loose = { messages: [{ role: "user", content: "hi", image_url: { url: "x" } }] };
+    expect(stripUnsupportedModalities(loose, FORMATS.OPENAI, NO_VISION)).toBe(true);
+
+    const claude = { messages: [{ role: "user", content: [{ type: "image", source: { media_type: "image/png" } }] }] };
+    expect(stripUnsupportedModalities(claude, FORMATS.CLAUDE, NO_VISION)).toBe(true);
+
+    const gemini = { contents: [{ parts: [{ inlineData: { mimeType: "image/png", data: "x" } }] }] };
+    expect(stripUnsupportedModalities(gemini, FORMATS.GEMINI, NO_VISION)).toBe(true);
+
+    const antigravity = { request: { contents: [{ parts: [{ inlineData: { mimeType: "image/png", data: "x" } }] }] } };
+    expect(stripUnsupportedModalities(antigravity, FORMATS.ANTIGRAVITY, NO_VISION)).toBe(true);
+
+    const responses = { input: [{ content: [{ type: "input_image", image_url: "x" }] }] };
+    expect(stripUnsupportedModalities(responses, FORMATS.OPENAI_RESPONSES, NO_VISION)).toBe(true);
   });
 });

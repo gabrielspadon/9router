@@ -48,7 +48,7 @@ function requiresSudoPassword(pwd) {
 function checkIsAdmin() {
   if (isWin) {
     try {
-      require("child_process").execSync("net session >nul 2>&1", { windowsHide: true });
+      require("child_process").execSync("fltmc", { windowsHide: true, stdio: "ignore" });
       return true;
     } catch {
       return false;
@@ -59,7 +59,7 @@ function checkIsAdmin() {
 
 function checkPrivilege(pwd) {
   if (checkIsAdmin()) return true;
-  if (isWin) return false;
+  if (isWin) return true;
   if (!isSudoPasswordRequired()) return true;
   return !!pwd;
 }
@@ -105,7 +105,7 @@ export async function POST(request) {
 
     if (!checkPrivilege(pwd)) {
       return NextResponse.json(
-        { error: isWin ? "Administrator required — restart 9Router as Administrator" : "Root or sudo password required to start MITM" },
+        { error: isWin ? "Administrator required — restart TokenProxy as Administrator" : "Root or sudo password required to start MITM" },
         { status: 403 }
       );
     }
@@ -173,7 +173,7 @@ export async function PATCH(request) {
     }
     if (!checkPrivilege(pwd)) {
       return NextResponse.json(
-        { error: isWin ? "Administrator required — restart 9Router as Administrator" : "Root or sudo password required to modify DNS" },
+        { error: isWin ? "Administrator required — restart TokenProxy as Administrator" : "Root or sudo password required to modify DNS" },
         { status: 403 }
       );
     }

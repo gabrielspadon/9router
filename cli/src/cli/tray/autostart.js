@@ -3,8 +3,8 @@ const path = require("path");
 const os = require("os");
 const { execSync } = require("child_process");
 
-const APP_NAME = "9router";
-const APP_LABEL = "com.9router.autostart";
+const APP_NAME = "tokenproxy";
+const APP_LABEL = "com.tokenproxy.autostart";
 
 /**
  * Resolve the absolute path to this package's cli.js.
@@ -12,7 +12,7 @@ const APP_LABEL = "com.9router.autostart";
  * Order of preference:
  *   1. Explicit `cliPath` argument — cleanest, used when called from running
  *      cli.js with `__filename`.
- *   2. `process.argv[1]` if it's our cli.js — true when 9router is currently
+ *   2. `process.argv[1]` if it's our cli.js — true when tokenproxy is currently
  *      running and the tray menu fires this code path.
  *   3. Compute relative to this file's own location. autostart.js lives at
  *      `<pkg>/src/cli/tray/autostart.js`, so cli.js is three levels up.
@@ -44,16 +44,116 @@ function getCliJsPath(cliPath) {
  * @param {string} cliPath - Optional path to cli.js (defaults to auto-detect)
  * @returns {boolean} success
  */
+/**
+ * Where an explicit "I do not want autostart" decision is recorded.
+ *
+ * isAutoStartEnabled() cannot answer this: false means "not registered", which
+ * is the same whether the user never enabled it or turned it off on purpose.
+ * Hide-to-Tray called enableAutoStart unconditionally, so every hide silently
+ * undid that decision and the setting reappeared enabled (#3628).
+ */
+function getDataDir() {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
+  }
+  return path.join(os.homedir(), `.${APP_NAME}`);
+}
+
+function optOutFile() {
+  return path.join(getDataDir(), "autostart-opt-out");
+}
+
+function autoStartDecisionFile() {
+  return path.join(getDataDir(), "autostart-decided");
+}
+
+function isAutoStartOptedOut() {
+  try {
+    return fs.existsSync(optOutFile());
+  } catch {
+    return false; // unreadable state must not silently opt the user out either
+  }
+}
+
+function setAutoStartOptOut(optedOut) {
+  try {
+    const file = optOutFile();
+    if (optedOut) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, new Date().toISOString());
+    } else if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasAutoStartDecision() {
+  try {
+    return isAutoStartOptedOut() || fs.existsSync(autoStartDecisionFile());
+  } catch {
+    return false;
+  }
+}
+
+function rememberAutoStartDecision() {
+  try {
+    const file = autoStartDecisionFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, new Date().toISOString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Backward-compatible automatic autostart entry point.
+ *
+ * Callers using this helper are automatic paths, so they must also respect a
+ * prior automatic setup or explicit preference.
+ */
+function enableAutoStartUnlessOptedOut(cliPath) {
+  return ensureAutoStart(cliPath);
+}
+
 function enableAutoStart(cliPath) {
+  // An explicit enable is the user changing their mind.
+  setAutoStartOptOut(false);
+  rememberAutoStartDecision();
+  return registerAutoStart(cliPath);
+}
+
+/**
+ * Enable autostart only before the user has made any autostart decision.
+ *
+ * Used by Hide-to-Tray.  A successful automatic setup records a decision so
+ * manually removing the OS entry is not silently undone on the next hide.
+ */
+function ensureAutoStart(cliPath) {
+  if (hasAutoStartDecision()) return false;
+  const enabled = registerAutoStart(cliPath);
+  if (enabled) rememberAutoStartDecision();
+  return enabled;
+}
+
+function registerAutoStart(cliPath) {
   const platform = process.platform;
 
   if (!["darwin", "win32", "linux"].includes(platform)) return false;
-  if (platform === "linux" && !process.env.DISPLAY) return false;
 
   try {
     if (platform === "darwin") return enableMacOS(cliPath);
     if (platform === "win32") return enableWindows(cliPath);
-    if (platform === "linux") return enableLinux(cliPath);
+    // XDG autostart (~/.config/autostart) only ever runs from a graphical
+    // session manager, so it is silently inert on a headless server with no
+    // DISPLAY at all -- #1431 is exactly that: Hide to Tray "succeeds" but
+    // nothing runs after a reboot because nothing ever evaluates that
+    // directory. Route headless Linux through a systemd --user unit instead.
+    if (platform === "linux") return process.env.DISPLAY ? enableLinux(cliPath) : enableLinuxHeadless(cliPath);
   } catch (err) {
     // Silent fail — autostart is optional
   }
@@ -66,10 +166,19 @@ function enableAutoStart(cliPath) {
  */
 function disableAutoStart() {
   const platform = process.platform;
+  // Remember the decision so an automatic path cannot quietly undo it.
+  setAutoStartOptOut(true);
+  rememberAutoStartDecision();
   try {
     if (platform === "darwin") return disableMacOS();
     if (platform === "win32") return disableWindows();
-    if (platform === "linux") return disableLinux();
+    // Undo whichever Linux mechanism is active -- desktop-session autostart,
+    // headless systemd unit, or (rarely) both if DISPLAY was toggled between
+    // an enable and a later disable.
+    if (platform === "linux") {
+      disableLinux();
+      return disableLinuxHeadless();
+    }
   } catch (err) {}
   return false;
 }
@@ -102,7 +211,19 @@ function isAutoStartEnabled() {
       return fs.existsSync(startupPath);
     } else if (platform === "linux") {
       const desktopPath = path.join(os.homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
-      return fs.existsSync(desktopPath);
+      if (fs.existsSync(desktopPath)) return true;
+      // Same reasoning as the darwin branch above: a leftover unit file
+      // is not proof the systemd --user manager actually has it linked.
+      if (!fs.existsSync(systemdUnitPath())) return false;
+      try {
+        execSync(`systemctl --user is-enabled ${APP_NAME}.service`, {
+          stdio: ["ignore", "ignore", "ignore"],
+          timeout: 3000
+        });
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
   } catch (e) {}
   return false;
@@ -115,7 +236,7 @@ function isAutoStartEnabled() {
  * launchd is managing under our agent label.
  *
  * `launchctl unload <plist>` (and `load`) for an Aqua user-domain agent sends
- * SIGTERM to the running process. When the running 9router cli.js was itself
+ * SIGTERM to the running process. When the running tokenproxy cli.js was itself
  * spawned by the autostart launchd agent (i.e. user enabled autostart at
  * some point, then rebooted, then clicked the tray icon's "Disable
  * Auto-start" menu item), an unload would kill the very process executing
@@ -182,9 +303,9 @@ function enableMacOS(cliPath) {
     <key>KeepAlive</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/tmp/9router.log</string>
+    <string>/tmp/tokenproxy.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/9router.error.log</string>
+    <string>/tmp/tokenproxy.error.log</string>
 </dict>
 </plist>`;
 
@@ -247,7 +368,7 @@ function enableWindows(cliPath) {
   if (!routerScript) return false;
 
   // Run node + cli.js directly, hidden window. Avoids the fragile
-  // `9router.cmd` lookup that depended on the npm prefix path.
+  // `tokenproxy.cmd` lookup that depended on the npm prefix path.
   const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
 WshShell.Run """${nodePath}"" ""${routerScript}"" --tray --skip-update", 0, False
 `;
@@ -280,8 +401,8 @@ function enableLinux(cliPath) {
 
   const desktopContent = `[Desktop Entry]
 Type=Application
-Name=9Router
-Comment=9Router API Proxy
+Name=TokenProxy
+Comment=TokenProxy API Proxy
 Exec=${nodePath} ${routerScript} --tray --skip-update
 Hidden=false
 NoDisplay=false
@@ -299,8 +420,98 @@ function disableLinux() {
   return true;
 }
 
+function systemdUnitDir() {
+  return path.join(os.homedir(), ".config", "systemd", "user");
+}
+
+function systemdUnitPath() {
+  return path.join(systemdUnitDir(), `${APP_NAME}.service`);
+}
+
+/**
+ * Headless Linux autostart via a systemd --user unit (#1431).
+ *
+ * ~/.config/autostart/*.desktop is only ever evaluated by a graphical
+ * session manager (GNOME, KDE, ...) starting up, so on a headless Ubuntu
+ * server -- no desktop environment, no DISPLAY, ever -- that directory is
+ * never read at all. Hide to Tray reported success there while nothing ran
+ * after a reboot, because the file it wrote could not do anything. The
+ * server itself does not need DISPLAY (only the tray icon does, and that
+ * already degrades gracefully without one), so a systemd user unit gives
+ * the same "starts on boot" outcome on a headless install.
+ */
+function enableLinuxHeadless(cliPath) {
+  const unitDir = systemdUnitDir();
+  try {
+    fs.mkdirSync(unitDir, { recursive: true });
+  } catch (e) {
+    return false;
+  }
+
+  const nodePath = process.execPath;
+  const routerScript = getCliJsPath(cliPath);
+  if (!routerScript) return false;
+
+  const unitContent = `[Unit]
+Description=TokenProxy API Proxy
+
+[Service]
+ExecStart=${nodePath} ${routerScript} --tray --skip-update
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+`;
+  fs.writeFileSync(systemdUnitPath(), unitContent);
+
+  try {
+    execSync("systemctl --user daemon-reload", { stdio: "ignore", timeout: 5000 });
+  } catch (e) {
+    // Best-effort -- a stale manager cache does not stop enable below.
+  }
+
+  try {
+    execSync(`systemctl --user enable ${APP_NAME}.service`, { stdio: "ignore", timeout: 5000 });
+  } catch (e) {
+    // The running --user manager could not link the unit (no systemd user
+    // session at all, or its search path does not see what was just
+    // written). A unit file present but never linked into default.target
+    // is exactly the original #1431 bug in a different disguise -- it sits
+    // there but nothing runs it -- so this reports failure and does not
+    // leave that orphaned file behind.
+    try { fs.unlinkSync(systemdUnitPath()); } catch (e2) {}
+    return false;
+  }
+
+  // Best-effort: without lingering, the user's systemd instance only exists
+  // while they are logged in, so the unit would still not run after an
+  // unattended reboot. Enabling lingering for your own account can require
+  // polkit approval this process does not have, so its failure must not
+  // fail the enable -- the unit is correctly registered and will still run
+  // on the next login even without it.
+  try {
+    execSync(`loginctl enable-linger ${os.userInfo().username}`, { stdio: "ignore", timeout: 5000 });
+  } catch (e) {}
+
+  return true;
+}
+
+function disableLinuxHeadless() {
+  try {
+    execSync(`systemctl --user disable ${APP_NAME}.service`, { stdio: "ignore", timeout: 5000 });
+  } catch (e) {}
+  const unitPath = systemdUnitPath();
+  if (fs.existsSync(unitPath)) {
+    fs.unlinkSync(unitPath);
+  }
+  return true;
+}
+
 module.exports = {
   enableAutoStart,
+  enableAutoStartUnlessOptedOut,
+  ensureAutoStart,
+  isAutoStartOptedOut,
   disableAutoStart,
   isAutoStartEnabled
 };

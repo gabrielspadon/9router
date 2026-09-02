@@ -12,9 +12,9 @@ export function Spinner({ size = "md", className }) {
   };
 
   return (
-    <span
+    <span aria-hidden="true"
       className={cn(
-        "material-symbols-outlined animate-spin text-brand-500",
+        "material-symbols-outlined animate-spin text-brand",
         sizes[size],
         className
       )}
@@ -39,7 +39,9 @@ export function Skeleton({ className, ...props }) {
   return (
     <div
       className={cn(
-        "animate-pulse rounded-[10px] bg-surface-2",
+        // motion-safe so a reduced-motion preference stops the pulse rather
+        // than animating regardless, and the system's near-rectilinear radius.
+        "motion-safe:animate-pulse rounded-[2px] bg-surface-2",
         className
       )}
       {...props}
@@ -50,10 +52,10 @@ export function Skeleton({ className, ...props }) {
 // Card skeleton
 export function CardSkeleton() {
   return (
-    <div className="p-6 rounded-[14px] border border-border-subtle bg-surface shadow-[var(--shadow-soft)]">
+    <div className="p-5.5 rounded-[var(--radius-brand-lg)] border border-border-subtle bg-surface">
       <div className="flex items-center justify-between mb-4">
         <Skeleton className="h-4 w-24" />
-        <Skeleton className="size-10 rounded-[10px]" />
+        <Skeleton className="size-10 rounded-[var(--radius-brand)]" />
       </div>
       <Skeleton className="h-8 w-16 mb-2" />
       <Skeleton className="h-3 w-20" />

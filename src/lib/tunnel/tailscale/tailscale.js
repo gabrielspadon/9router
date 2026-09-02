@@ -36,6 +36,17 @@ const UNIX_TAILSCALE_CANDIDATES = [
   "/snap/bin/tailscale",   // Snap package
 ];
 
+// tailscaled daemon candidates, parallel to the CLI. Covers Apple Silicon
+// (/opt/homebrew) and Intel (/usr/local) Homebrew plus Linux package paths —
+// the previous code hardcoded only the Intel path, so on Apple Silicon the
+// userspace daemon spawn failed (ENOENT) and `tailscale up` timed out.
+const UNIX_TAILSCALED_CANDIDATES = [
+  "/opt/homebrew/bin/tailscaled",
+  "/usr/local/bin/tailscaled",
+  "/usr/sbin/tailscaled",
+  "/usr/bin/tailscaled",
+];
+
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
 const PROBE_TTL_MS = 10000;
 const PROBE_TIMEOUT_MS = 1500;
@@ -87,9 +98,37 @@ export function isTailscaleInstalled() {
   return getTailscaleBin() !== null;
 }
 
+/**
+ * Resolve the tailscaled daemon binary. Prefer the daemon sitting next to the
+ * resolved `tailscale` CLI (so Homebrew Apple Silicon/Intel both work), then
+ * known candidate paths, then bare "tailscaled" from PATH as a last resort.
+ */
+export function getTailscaledBin() {
+  const cli = getTailscaleBin();
+  if (cli && !IS_WINDOWS) {
+    const sibling = cli.replace(/tailscale$/, "tailscaled");
+    if (sibling !== cli && fs.existsSync(sibling)) return sibling;
+  }
+  const found = UNIX_TAILSCALED_CANDIDATES.find((p) => fs.existsSync(p));
+  return found || "tailscaled";
+}
+
 /** Build tailscale CLI args with custom socket (no root needed) */
 function tsArgs(...args) {
   return [...SOCKET_FLAG, ...args];
+}
+
+export function getTailscaleAuthKey(env = process.env) {
+  const authKey = env.TAILSCALE_AUTHKEY;
+  return typeof authKey === "string" ? authKey.trim() : "";
+}
+
+export function buildTailscaleUpArgs(hostname, env = process.env) {
+  const args = tsArgs("up", "--accept-routes");
+  if (hostname) args.push(`--hostname=${hostname}`);
+  const authKey = getTailscaleAuthKey(env);
+  if (authKey) args.push(`--auth-key=${authKey}`);
+  return args;
 }
 
 // Async strict probe: authoritative, awaitable (never blocks event loop). Updates cache.
@@ -202,7 +241,7 @@ export async function isTailscaleRunningStrict() {
   }
 }
 
-// Check if a system-level tailscaled is running (uses system socket, not 9Router's custom one).
+// Check if a system-level tailscaled is running (uses system socket, not TokenProxy's custom one).
 export function isSystemDaemonRunning() {
   if (IS_WINDOWS || !SYSTEM_TAILSCALE_SOCKET || !fs.existsSync(SYSTEM_TAILSCALE_SOCKET)) return false;
   const bin = getTailscaleBin();
@@ -528,7 +567,7 @@ export function isDaemonAlive() {
  * Start tailscaled.
  * - With sudoPassword: TUN mode (root) → Funnel TLS works
  * - Without: userspace-networking fallback (no sudo, but Funnel TLS unstable)
- * State always lives in ~/.9router/tailscale/ via --statedir.
+ * State always lives in ~/.tokenproxy/tailscale/ via --statedir.
  */
 export async function startDaemonWithPassword(sudoPassword) {
   if (IS_WINDOWS) {
@@ -583,7 +622,7 @@ export async function startDaemonWithPassword(sudoPassword) {
   // Reclaim folder ownership (previous root daemon may have locked it)
   await ensureUserOwnedDir(TAILSCALE_DIR);
 
-  const tailscaledBin = IS_MAC ? "/usr/local/bin/tailscaled" : "tailscaled";
+  const tailscaledBin = IS_WINDOWS ? "tailscaled" : getTailscaledBin();
   const daemonArgs = [
     `--socket=${TAILSCALE_SOCKET}`,
     `--statedir=${TAILSCALE_DIR}`,
@@ -615,6 +654,38 @@ export async function startDaemonWithPassword(sudoPassword) {
   await new Promise((r) => setTimeout(r, 3000));
 }
 
+/**
+ * Say why `tailscale up` produced no auth URL.
+ *
+ * The child's stdout and stderr were collected into `output` and then dropped,
+ * so a daemon that was not reachable, a socket that could not be opened and a
+ * rejected auth key all arrived at the user as the same sentence (#896).
+ */
+export function describeLoginFailure(output = "") {
+  const tail = String(output).trim();
+  const excerpt = tail ? ` tailscale said: ${tail.slice(-500)}` : "";
+  if (/failed to connect to local (tailscaled|backend)|is tailscaled running|no such file or directory/i.test(tail)) {
+    return `The tailscaled daemon is not reachable on TokenProxy's socket, so no login could be started.${excerpt}`;
+  }
+  if (/permission denied|operation not permitted/i.test(tail)) {
+    return `tailscale could not open its socket or network interface (permission denied). Start it with a sudo password, or install Tailscale system-wide.${excerpt}`;
+  }
+  if (/invalid.*key|auth ?key|expired/i.test(tail)) {
+    return `The TAILSCALE_AUTHKEY was rejected.${excerpt}`;
+  }
+  if (!tail) {
+    return "tailscale up produced no auth URL and printed nothing within 15s. The daemon may still be starting — try again, or check `tailscale status` for the state it is in.";
+  }
+  return `tailscale up produced no auth URL within 15s.${excerpt}`;
+}
+
+// The `tailscale up` started for a login runs detached so it can outlive this
+// request and finish the handshake once the user returns from the browser. It is
+// tracked so a NEW login attempt can retire it first: a second `up` against the
+// same daemon is refused by the CLI, which is what turned "stuck waiting for
+// login" into an error on the retry (#896).
+let loginChild = null;
+
 /** Best-effort: ensure daemon running (used for login flow) */
 function ensureDaemon() {
   startDaemonWithPassword("").catch(() => {});
@@ -639,30 +710,37 @@ function getAuthUrlFromStatus() {
  * Resolves with { authUrl } or { alreadyLoggedIn: true }.
  * On Windows, AuthURL comes from `status --json` (not stdout) — must poll status.
  */
-export function startLogin(hostname) {
+export async function startLogin(hostname) {
   const bin = getTailscaleBin();
   if (!bin) return Promise.reject(new Error("Tailscale not installed"));
 
+  // Ensure daemon is running (best-effort, no sudo).
+  ensureDaemon();
+
+  // The custom socket is the daemon that `tailscale up` below configures.
+  // A system daemon may be logged in to a different tailnet, so it cannot
+  // prove this login flow completed.
+  if (await isTailscaleLoggedInStrict()) return { alreadyLoggedIn: true };
+
+  // Retire a superseded login attempt before starting another one.
+  if (loginChild && !loginChild.killed) {
+    console.log("[Tailscale] retiring the previous, unfinished `tailscale up`");
+    try { loginChild.kill(); } catch { /* already gone */ }
+  }
+  loginChild = null;
+
   return new Promise((resolve, reject) => {
-    // Ensure daemon is running (best-effort, no sudo)
-    ensureDaemon();
-
-    // Check if already logged in
-    if (isTailscaleLoggedIn()) {
-      resolve({ alreadyLoggedIn: true });
-      return;
-    }
-
-    const args = tsArgs("up", "--accept-routes");
-    if (hostname) args.push(`--hostname=${hostname}`);
+    const args = buildTailscaleUpArgs(hostname);
     const child = spawn(bin, args, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       windowsHide: true
     });
+    loginChild = child;
 
     let resolved = false;
     let output = "";
+    let loginStatusProbe = null;
 
     const parseAuthUrl = (text) => {
       const match = text.match(/https:\/\/login\.tailscale\.com\/a\/[a-zA-Z0-9]+/);
@@ -679,21 +757,52 @@ export function startLogin(hostname) {
       resolve({ authUrl: url });
     };
 
+    const finishAlreadyLoggedIn = (source) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      clearInterval(statusPoll);
+      console.log(`[Tailscale] login completed (${source})`);
+      child.unref();
+      resolve({ alreadyLoggedIn: true });
+    };
+
+    const customSocketLoggedIn = () => {
+      if (!loginStatusProbe) {
+        loginStatusProbe = isTailscaleLoggedInStrict()
+          .finally(() => { loginStatusProbe = null; });
+      }
+      return loginStatusProbe;
+    };
+
+    const finishIfCustomSocketLoggedIn = async (source) => {
+      if (resolved || !(await customSocketLoggedIn())) return false;
+      finishAlreadyLoggedIn(source);
+      return true;
+    };
+
     // Poll status --json every 500ms — Windows exposes AuthURL only there
     const statusPoll = setInterval(() => {
       if (resolved) return;
+      void finishIfCustomSocketLoggedIn("status");
       const url = getAuthUrlFromStatus();
       if (url) finishWithUrl(url, "status");
     }, 500);
 
     const timeout = setTimeout(() => {
       if (resolved) return;
-      resolved = true;
-      clearInterval(statusPoll);
-      child.unref();
       const url = parseAuthUrl(output) || getAuthUrlFromStatus();
-      if (url) resolve({ authUrl: url });
-      else reject(new Error("tailscale up timed out without auth URL"));
+      if (url) {
+        finishWithUrl(url, "timeout");
+        return;
+      }
+      void finishIfCustomSocketLoggedIn("timeout").then((completed) => {
+        if (completed || resolved) return;
+        resolved = true;
+        clearInterval(statusPoll);
+        child.unref();
+        reject(new Error(describeLoginFailure(output)));
+      });
     }, 15000);
 
     const handleData = (data) => {
@@ -715,6 +824,7 @@ export function startLogin(hostname) {
     });
 
     child.on("exit", (code) => {
+      if (loginChild === child) loginChild = null;
       if (resolved) return;
       console.log(`[Tailscale] login exit code=${code}`);
       // Don't trust exit code alone — Win `tailscale up` exits 0 even when not logged in.
@@ -724,14 +834,8 @@ export function startLogin(hostname) {
         finishWithUrl(url, "exit");
         return;
       }
-      // Only resolve alreadyLoggedIn if status confirms BackendState=Running
-      if (isTailscaleLoggedIn()) {
-        resolved = true;
-        clearTimeout(timeout);
-        clearInterval(statusPoll);
-        resolve({ alreadyLoggedIn: true });
-        return;
-      }
+      // Only the custom socket can prove this login flow completed.
+      void finishIfCustomSocketLoggedIn("exit");
       // Otherwise keep polling — daemon may publish AuthURL shortly after exit
     });
   });

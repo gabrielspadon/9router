@@ -37,10 +37,15 @@ export default {
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
   // Kilo Code proxies the OpenRouter catalog (334 models at time of writing),
-  // so the hardcoded list above is only a fallback. Surfacing the full catalog
-  // requires a fetcher + passthroughModels, matching how openrouter.js is set up.
-  // Without these, only the 8 hardcoded models appear in the combo model picker,
-  // hiding dynamic models like cohere/north-mini-code:free and poolside/laguna-m.1:free.
+  // so the hardcoded list above is only a fallback. modelsFetcher + passthroughModels
+  // (issue #1995) match the fields openrouter.js declares, and
+  // src/shared/services/freeModelSync.js now widens its target selection to
+  // also accept an "oauth" provider whose modelsFetcher.type is a "*-free"
+  // filter contract, which is true here ("openrouter-free"). That closes the
+  // sync gap: the fetched catalog reaches customModels, and ModelSelectModal.js
+  // reads customModels for a passthroughModels provider, so the combo picker
+  // now sees it. The category itself stays "oauth" — chat calls still need the
+  // real device-code token, only catalog *listing* was public.
   modelsFetcher: { url: "https://api.kilo.ai/api/gateway/models", type: "openrouter-free" },
   passthroughModels: true,
   oauth: {

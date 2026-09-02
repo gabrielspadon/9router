@@ -8,12 +8,12 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import HeaderLanguage from "@/shared/components/HeaderLanguage";
 import ThemeToggle from "@/shared/components/ThemeToggle";
-import DonateModal from "@/shared/components/DonateModal";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
 import { translate } from "@/i18n/runtime";
+import Button from "@/shared/components/Button";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
@@ -99,6 +99,55 @@ const getPageInfo = (pathname) => {
       icon: "vpn_key",
       breadcrumbs: [],
     };
+  if (pathname.includes("/statistics"))
+    return {
+      title: "Statistics",
+      description: "Request, token and latency history",
+      icon: "insights",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/memory"))
+    return {
+      title: "Memory & Context",
+      description: "Conversation memory and context windows",
+      icon: "psychology",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/claude-compat"))
+    return {
+      title: "Claude Compat",
+      description: "Claude-format compatibility settings",
+      icon: "smart_toy",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/model-context"))
+    return {
+      title: "Model Context",
+      description: "Per-model context window overrides",
+      icon: "memory",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/basic-chat"))
+    return {
+      title: "Basic Chat",
+      description: "Send a request through the gateway",
+      icon: "chat",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/gallery"))
+    return {
+      title: "Component Gallery",
+      description: "Every primitive in every state it is allowed to be in",
+      icon: "palette",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/pxpipe"))
+    return {
+      title: "PXPIPE",
+      description: "Image pipeline",
+      icon: "image",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/quota"))
     return {
       title: "Quota Tracker",
@@ -109,7 +158,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/mitm"))
     return {
       title: "MITM Proxy",
-      description: "Intercept CLI tool traffic and route through 9Router",
+      description: "Intercept CLI tool traffic and route through TokenProxy",
       icon: "security",
       breadcrumbs: [],
     };
@@ -137,7 +186,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/skills"))
     return {
       title: "Agent Skills",
-      description: "Copy a link and paste to your AI to use 9Router — no install needed",
+      description: "Copy a link and paste to your AI to use TokenProxy — no install needed",
       icon: "extension",
       breadcrumbs: [],
     };
@@ -146,6 +195,13 @@ const getPageInfo = (pathname) => {
       title: "Endpoint",
       description: "API endpoint configuration",
       icon: "api",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/settings/pricing"))
+    return {
+      title: "Pricing",
+      description: "Rates used to cost requests, in dollars per million tokens",
+      icon: "payments",
       breadcrumbs: [],
     };
   if (pathname.includes("/profile"))
@@ -171,9 +227,9 @@ const getPageInfo = (pathname) => {
     };
   if (pathname === "/dashboard")
     return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
-      icon: "api",
+      title: "Overview",
+      description: "Router state and the client endpoint",
+      icon: "monitoring",
       breadcrumbs: [],
     };
   return { title: "", description: "", breadcrumbs: [] };
@@ -183,7 +239,6 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
-  const [donateOpen, setDonateOpen] = useState(false);
 
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
@@ -227,42 +282,48 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   };
 
   return (
-    <header className="shrink-0 flex items-center justify-between gap-3 px-4 lg:px-8 pt-3 pb-2 border-b border-border-subtle bg-surface/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
+    <header className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 lg:gap-3 lg:flex-nowrap lg:px-8 pt-3 pb-2 border-b border-border-subtle bg-surface/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
-          <button
+          <Button
+            variant="bare" size="icon"
+            type="button"
             onClick={onMenuClick}
-            className="text-text-main hover:text-primary transition-colors"
+            aria-label={translate("Menu")}
+            className="min-h-11 min-w-11 text-text-main hover:text-brand"
           >
-            <span className="material-symbols-outlined">menu</span>
-          </button>
+            <span aria-hidden="true" className="material-symbols-outlined">menu</span>
+          </Button>
         )}
       </div>
 
       {/* Page title with breadcrumbs */}
       <div className="flex flex-col min-w-0 flex-1">
         {breadcrumbs.length > 0 ? (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             {breadcrumbs.map((crumb, index) => (
               <div
                 key={`${crumb.label}-${crumb.href || "current"}`}
-                className="flex items-center gap-2"
+                className="flex min-w-0 items-center gap-2"
               >
                 {index > 0 && (
-                  <span className="material-symbols-outlined text-text-muted text-base">
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined dir-icon text-text-muted text-base"
+                  >
                     chevron_right
                   </span>
                 )}
                 {crumb.href ? (
                   <Link
                     href={crumb.href}
-                    className="text-text-muted hover:text-primary transition-colors"
+                    className="hit-44 text-text-muted hover:text-brand transition-colors"
                   >
                     {crumb.label}
                   </Link>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     {crumb.image && (
                       <ProviderIcon
                         src={crumb.image}
@@ -282,23 +343,32 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           </div>
         ) : title ? (
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl">
-                  {icon}
+                <span className="hidden sm:inline shrink-0">
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-brand text-xl"
+                  >
+                    {icon}
+                  </span>
                 </span>
               )}
-              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate">
+              <h1 className="text-base lg:text-lg font-semibold tracking-tight text-text-main min-w-0 truncate">
                 {translate(title)}
               </h1>
             </div>
             {description && (
-              <p className="hidden lg:block text-sm text-text-muted truncate">
+              <p className="hidden lg:block text-xs text-text-muted min-w-0">
                 {translate(description)}
               </p>
             )}
           </div>
         ) : null}
+      </div>
+
+      <div className="order-last basis-full lg:order-none lg:basis-auto">
+        <HeaderSearch />
       </div>
 
       {/* Right actions */}
@@ -308,27 +378,17 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
             className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate"
             title={displayName}
           >
-            <span className="material-symbols-outlined text-[14px] mr-1.5 text-primary">person</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px] me-1.5 text-brand">person</span>
             <span className="truncate">{displayName}</span>
-            <span className="ml-2 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            <span className="ms-2 shrink-0 rounded-full bg-brand-soft px-2 py-1 font-mono text-[10.5px] font-semibold text-brand">
               {loginMethod}
             </span>
           </div>
         )}
-        <HeaderSearch />
-        <button
-          onClick={() => setDonateOpen(true)}
-          className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
-          aria-label="Donate"
-        >
-          <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
-          <span className="hidden sm:inline">Donate</span>
-        </button>
         <ThemeToggle />
         <HeaderLanguage />
         <HeaderMenu onLogout={handleLogout} />
       </div>
-      <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
     </header>
   );
 }
@@ -342,8 +402,11 @@ function HeaderSearch() {
   if (!visible) return null;
 
   return (
-    <div className="relative w-[160px] sm:w-[220px]">
-      <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
+    <div className="relative w-full lg:w-[220px]">
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined absolute start-2 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none"
+      >
         search
       </span>
       <input
@@ -351,17 +414,19 @@ function HeaderSearch() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+        aria-label={placeholder || translate("Search")}
+        className="focus-ring w-full h-11 ps-8 pe-12 rounded-lg border border-border bg-surface/60 text-sm focus:border-brand-solid transition-colors"
       />
       {query && (
-        <button
+        <Button
+          variant="bare" size="icon-sm"
           type="button"
           onClick={() => setQuery("")}
-          className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
+          className="absolute end-0 top-1/2 min-h-11 min-w-11 -translate-y-1/2 text-text-muted hover:text-text-main"
           aria-label="Clear search"
         >
-          <span className="material-symbols-outlined text-[16px]">close</span>
-        </button>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">close</span>
+        </Button>
       )}
     </div>
   );

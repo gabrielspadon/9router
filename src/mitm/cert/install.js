@@ -27,7 +27,7 @@ function getLinuxCertConfig() {
   // Fallback to Debian default if none exist
   return LINUX_CERT_PATHS[0];
 }
-const ROOT_CA_CN = "9Router MITM Root CA";
+const ROOT_CA_CN = "TokenProxy MITM Root CA";
 
 // Get SHA1 fingerprint from cert file using Node.js crypto
 function getCertFingerprint(certPath) {
@@ -105,14 +105,21 @@ async function installCert(sudoPassword, certPath) {
 
 async function installCertMac(sudoPassword, certPath) {
   // Remove all old certs with same name first to avoid duplicate/stale cert conflict
-  const deleteOld = `security delete-certificate -c "9Router MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
+  const deleteOld = `security delete-certificate -c "TokenProxy MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
   const install = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
   try {
     await execWithPassword(`${deleteOld} && ${install}`, sudoPassword);
     log("🔐 Cert: ✅ installed to system keychain");
   } catch (error) {
-    const msg = error.message?.includes("canceled") ? "User canceled authorization" : "Certificate install failed";
-    throw new Error(msg);
+    // Keep what `security` actually said. Replacing every failure with a fixed
+    // string left a wrong password, a locked keychain and an SIP refusal all
+    // reporting the same thing, with nothing for the user to act on (#558).
+    //
+    // Safe to surface: the rejection carries the child's STDERR, and the sudo
+    // password is written to stdin, which `sudo -S` never echoes.
+    if (error.message?.includes("canceled")) throw new Error("User canceled authorization");
+    const detail = String(error.message || "").trim().slice(0, 300);
+    throw new Error(detail ? `Certificate install failed: ${detail}` : "Certificate install failed");
   }
 }
 
@@ -175,12 +182,12 @@ async function uninstallCertWindows() {
 
 function checkCertInstalledLinux() {
   const config = getLinuxCertConfig();
-  const certFile = `${config.dir}/9router-root-ca.crt`;
+  const certFile = `${config.dir}/tokenproxy-root-ca.crt`;
   return Promise.resolve(fs.existsSync(certFile));
 }
 
 async function updateNssDatabases(certPath, action = 'add') {
-  const certName = "9Router MITM Root CA";
+  const certName = "TokenProxy MITM Root CA";
   
   const script = `
     if ! command -v certutil &> /dev/null; then
@@ -232,7 +239,7 @@ async function installCertLinux(sudoPassword, certPath) {
   }
   
   const config = getLinuxCertConfig();
-  const destFile = `${config.dir}/9router-root-ca.crt`;
+  const destFile = `${config.dir}/tokenproxy-root-ca.crt`;
   
   // Copy to the discovered directory and execute the specific update command
   const cmd = `cp "${certPath}" "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
@@ -255,7 +262,7 @@ async function uninstallCertLinux(sudoPassword) {
   }
   
   const config = getLinuxCertConfig();
-  const destFile = `${config.dir}/9router-root-ca.crt`;
+  const destFile = `${config.dir}/tokenproxy-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
   
   try {

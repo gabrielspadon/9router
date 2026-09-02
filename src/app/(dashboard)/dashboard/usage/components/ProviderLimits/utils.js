@@ -3,10 +3,15 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 // ─── Constants ───────────────────────────────────────────────────────────────
 export const QUOTA_CACHE_KEY = "quotaCacheData";
 export const REFRESH_INTERVAL_MS = 60000;
+// The countdown counts the same window down in seconds; derived so the two
+// cannot drift apart.
+export const COUNTDOWN_SECONDS = REFRESH_INTERVAL_MS / 1000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
 export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
 export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
+export const ACCOUNT_FILTER_STORAGE_KEY = "quotaAccountFilter";
+export const PROVIDER_FILTER_STORAGE_KEY = "quotaProviderFilter";
 export const CONNECTIONS_PAGE_SIZE = 20;
 export const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 export const ACCOUNT_PAGE_SIZE_MAX = 500;
@@ -281,13 +286,15 @@ export function getStatusEmoji(percentage) {
 }
 
 /**
- * Calculate remaining percentage
+ * Calculate remaining percentage.
+ * A missing or zero total is an unknown denominator, not a depleted quota:
+ * returning 0 for it printed "0%" and a red band beside "used / ∞".
  * @param {number} used - Used amount
  * @param {number} total - Total amount
- * @returns {number} Remaining percentage (0-100)
+ * @returns {number|null} Remaining percentage (0-100), or null if uncomputable
  */
 export function calculatePercentage(used, total) {
-  if (!total || total === 0) return 0;
+  if (!total || total <= 0) return null;
   if (!used || used < 0) return 100;
   if (used >= total) return 0;
 
@@ -297,7 +304,7 @@ export function calculatePercentage(used, total) {
 /**
  * Get remaining percentage from a normalized quota row
  * @param {Object} quota - Normalized quota object
- * @returns {number} Remaining percentage (0-100)
+ * @returns {number|null} Remaining percentage (0-100), or null if uncomputable
  */
 export function getRemainingPercentage(quota) {
   if (quota?.remaining !== undefined) {
@@ -309,6 +316,21 @@ export function getRemainingPercentage(quota) {
   }
 
   return calculatePercentage(quota?.used, quota?.total);
+}
+
+export function isQuotaCollectionDepleted(
+  quotas = [],
+  threshold = DEPLETED_QUOTA_THRESHOLD,
+) {
+  if (!Array.isArray(quotas)) return false;
+
+  const usableQuotas = quotas.filter((quota) => quota?.total && quota.total > 0);
+  if (usableQuotas.length === 0) return false;
+
+  const remainingValues = usableQuotas.map((quota) => getRemainingPercentage(quota));
+  if (remainingValues.some((remaining) => !Number.isFinite(remaining))) return false;
+
+  return remainingValues.every((remaining) => remaining <= threshold);
 }
 
 export function getQuotaVisibilityKey(quota) {
@@ -333,6 +355,17 @@ export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) 
   const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
   if (hidden.size === 0) return [];
   return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
+}
+
+function getCodexQuotaLabel(quotaType) {
+  const windowType = quotaType.replace(/_(primary|secondary)$/, "");
+  if (windowType === "session") return "5h";
+  if (windowType === "weekly") return "Weekly";
+  if (windowType === "review_session") return "Review 5h";
+  if (windowType === "review_weekly") return "Review Weekly";
+  if (windowType === "spark_session") return "Spark 5h";
+  if (windowType === "spark_weekly") return "Spark Weekly";
+  return quotaType;
 }
 
 /**
@@ -379,17 +412,9 @@ export function parseQuotaData(provider, data) {
       case "codex":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
-            let displayName = quotaType;
-            if (quotaType === "spark_session") displayName = "Spark (5h)";
-            else if (quotaType === "spark_weekly") displayName = "Spark (Weekly)";
-            else if (quotaType === "session") displayName = "5h";
-            else if (quotaType === "weekly") displayName = "Weekly";
-            else if (quotaType === "review_session") displayName = "Review (5h)";
-            else if (quotaType === "review_weekly") displayName = "Review (Weekly)";
-
             normalizedQuotas.push({
-              name: displayName,
-              quotaType,
+              name: getCodexQuotaLabel(quotaType),
+              modelKey: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               remaining: quota.remaining,
@@ -527,6 +552,20 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "cursor":
+        // Percent-of-limit quotas (Total/Auto/API usage) — same shape as claude.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       case "deepseek":
         // Credit balance — remainingPercentage only (no absolute remaining).
         if (data.quotas) {
@@ -558,17 +597,27 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
-      case "zed":
-        // Edit predictions + optional hosted model_requests; unlimited uses remainingPercentage.
+      case "tokenrouter":
+        // TokenRouter Management API — account wallet + one quota row per API key.
+        // Keys may be unlimited (no bar) or limited (remain_quota). Forward
+        // `status`/`expiresAt` so QuotaTable can show enable state & expiry.
+        // `remaining` is forwarded only when it's a finite number: for unlimited
+        // keys it's null, and getRemainingPercentage would round(null) to 0% —
+        // fall back to remainingPercentage (100) instead. The account-balance
+        // row carries unit:"USD" so QuotaTable renders a currency value, not a %.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
               name,
               used: quota.used || 0,
               total: quota.total || 0,
-              resetAt: quota.resetAt || null,
+              remaining: Number.isFinite(quota.remaining) ? quota.remaining : undefined,
               remainingPercentage: quota.remainingPercentage,
-              unlimited: quota.unlimited,
+              unlimited: quota.unlimited !== false,
+              resetAt: quota.expiresAt || quota.resetAt || null,
+              status: quota.status,
+              unit: quota.unit,
+              plan: quota.plan,
             });
           });
         }
@@ -608,4 +657,30 @@ export function parseQuotaData(provider, data) {
   }
 
   return normalizedQuotas;
+}
+
+export function formatSubscriptionActiveUntil(value) {
+  if (value == null || value === "") return null;
+  let d;
+  if (value instanceof Date) d = value;
+  else if (typeof value === "number") d = new Date(value < 1e12 ? value * 1000 : value);
+  else if (typeof value === "string") {
+    const t = value.trim();
+    if (!t) return null;
+    if (/^\d+$/.test(t)) {
+      const n = Number(t);
+      if (!Number.isFinite(n)) return null;
+      d = new Date(n < 1e12 ? n * 1000 : n);
+    } else d = new Date(t);
+  } else return null;
+  if (!d || !Number.isFinite(d.getTime())) return null;
+  const dateTime = d.toISOString();
+  const display = d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return { dateTime, display };
+}
+
+export function shouldShowSubscriptionExpiry({ subscriptionPlan, subscriptionActiveUntil } = {}) {
+  const normalizedPlan = typeof subscriptionPlan === "string" ? subscriptionPlan.trim().toLowerCase() : "";
+  if (normalizedPlan === "free") return false;
+  return formatSubscriptionActiveUntil(subscriptionActiveUntil) != null;
 }

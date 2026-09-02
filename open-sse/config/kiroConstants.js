@@ -3,7 +3,7 @@
  *
  * Mirrors the behaviour of `internal/translator/kiro/common/constants.go` and
  * `internal/translator/kiro/claude/kiro_claude_request.go` from the
- * CLIProxyAPIPlus reference implementation, scoped down to what 9router needs:
+ * CLIProxyAPIPlus reference implementation, scoped down to what tokenproxy needs:
  *
  *   - `-agentic` model suffix detection + chunked-write system prompt
  *   - reasoning / thinking trigger detection (Anthropic-Beta header,
@@ -11,7 +11,7 @@
  *   - schema-specific native effort fields for supported GPT and Claude models
  *   - legacy `<thinking_mode>` system-prompt injection for other models
  *
- * Kiro upstream does not advertise `-agentic` model IDs; they are a 9router
+ * Kiro upstream does not advertise `-agentic` model IDs; they are a tokenproxy
  * fiction. The suffix is stripped before the request leaves this process.
  */
 
@@ -46,9 +46,27 @@ export function resolveDefaultProfileArn(authMethod) {
 
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
 
+// Generic thinking/reasoning members the Kiro request translators deliberately
+// never emit: generateAssistantResponse has no place for any of them and answers
+// a request carrying one with 400 {"reason":"REQUEST_BODY_INVALID"} (#3641,
+// #2716). Thinking intent reaches Kiro two other ways — the <thinking_mode>
+// system prefix on the session-start message, and additionalModelRequestFields
+// (nested, so untouched by this list). Mirrors the key set thinkingUnified's
+// stripAll() clears, which is what the generic normalizer writes.
+export const KIRO_UNSUPPORTED_THINKING_FIELDS = Object.freeze([
+  "thinking",
+  "reasoning",
+  "reasoning_effort",
+  "thinkingConfig",
+  "enable_thinking",
+  "thinking_budget",
+  "output_config",
+  "think",
+]);
+
 /**
  * Resolve a Kiro model after consuming the generic model(level) suffix.
- * The suffix is a 9router request override, not part of Kiro's upstream model id.
+ * The suffix is a tokenproxy request override, not part of Kiro's upstream model id.
  */
 export function resolveKiroModelIntent(model) {
   const { cleanModel, override } = parseSuffix(model);
@@ -79,7 +97,7 @@ export function applyKiroThinkingOverride(body, override) {
   return next;
 }
 
-export const KIRO_AGENTIC_SYSTEM_PROMPT = `
+const KIRO_AGENTIC_SYSTEM_PROMPT_DEFAULT = `
 # CRITICAL: CHUNKED WRITE PROTOCOL (MANDATORY)
 
 You MUST follow these rules for ALL file operations. Violation causes server timeouts and task failure.
@@ -129,6 +147,23 @@ WRONG: Generating massive code blocks without chunking -> TIMEOUT
 
 REMEMBER: When in doubt, write LESS per operation. Multiple small operations > one large operation.
 `.trim();
+
+// The prompt above is attached ONLY to the synthetic `-agentic` model variants,
+// so the off switch is asking for the same model without that suffix. What an
+// operator could NOT do is keep the variant and change the rule, which is what
+// #2469 is really about: the line limit is tuned for one upstream's timeout and
+// is wrong for another. KIRO_AGENTIC_PROMPT replaces the text; set it empty to
+// attach nothing at all. Read at use rather than at import so a change takes
+// effect without a restart, and so a test can set it.
+export function getKiroAgenticSystemPrompt() {
+  const override = process.env.KIRO_AGENTIC_PROMPT;
+  if (override === undefined) return KIRO_AGENTIC_SYSTEM_PROMPT_DEFAULT;
+  return String(override).trim();
+}
+
+// Kept as a named export because it is the documented default, and reading it
+// must not depend on the environment.
+export const KIRO_AGENTIC_SYSTEM_PROMPT = KIRO_AGENTIC_SYSTEM_PROMPT_DEFAULT;
 
 /**
  * Resolve the Kiro thinking budget requested by a client.
@@ -265,7 +300,7 @@ export function isThinkingEnabled(body, headers, model) {
 }
 
 /**
- * Detect whether a model id refers to a 9router synthetic agentic variant.
+ * Detect whether a model id refers to a tokenproxy synthetic agentic variant.
  * Agentic variants share the same upstream model as the base; the only
  * difference is the chunked-write system prompt this module injects.
  *
@@ -288,7 +323,7 @@ export function stripAgenticSuffix(model) {
 }
 
 /**
- * Detect whether a model id is a 9router synthetic thinking variant
+ * Detect whether a model id is a tokenproxy synthetic thinking variant
  * (e.g. `claude-sonnet-4.5-thinking`). Same upstream model as the base; the
  * only difference is `<thinking_mode>enabled</thinking_mode>` injection.
  *
@@ -315,7 +350,7 @@ export function stripThinkingSuffix(model) {
 }
 
 /**
- * Resolve a 9router model id to the real upstream Kiro model id, plus flags
+ * Resolve a tokenproxy model id to the real upstream Kiro model id, plus flags
  * describing which behaviours the suffixes implied.
  *
  *   resolveKiroModel("claude-sonnet-4.5-thinking-agentic")
@@ -342,6 +377,9 @@ export function resolveKiroModel(model) {
     thinking = true;
     upstream = stripThinkingSuffix(upstream);
   }
+  // Kiro uses a dash before the Claude generation digit. Preserve real dotted
+  // model IDs such as claude-sonnet-4.5 and non-Claude provider IDs.
+  upstream = upstream.replace(/^(claude-[a-z0-9-]*[a-z])\.(\d+)$/i, "$1-$2");
   return { upstream, agentic, thinking };
 }
 

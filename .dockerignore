@@ -6,9 +6,13 @@
 .vscode
 **/.vscode
 
-# Dependencies and build output
+# Dependencies and build output. The ** forms are load-bearing: a bare pattern
+# matches only the root copy, and cli/app/node_modules alone is hundreds of
+# gigabytes, all of which was being sent to the daemon as build context.
 node_modules
+**/node_modules
 .next
+**/.next
 out
 build
 dist

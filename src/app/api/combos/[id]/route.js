@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
-import { resetComboRotation } from "open-sse/services/combo.js";
+import { getCombos, getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { resetComboRotation, validateComboAcyclic } from "open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -28,21 +28,42 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     const body = await request.json();
     
+    const prev = await getComboById(id);
+    if (!prev) {
+      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
+    }
+
     // Validate name format if provided
     if (body.name) {
       if (!VALID_NAME_REGEX.test(body.name)) {
         return NextResponse.json({ error: "Name can only contain letters, numbers, -, _ and ." }, { status: 400 });
       }
-      
-      // Check if name already exists (exclude current combo)
-      const existing = await getComboByName(body.name);
-      if (existing && existing.id !== id) {
-        return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+
+      // A save that does not rename cannot collide with anything, so it never
+      // runs the lookup. It used to, and `combos(name)` carries no unique
+      // constraint, so once two rows shared a name the lookup returned one of
+      // them arbitrarily and the OTHER one could never be saved again: every
+      // edit, including just adding a model, came back "Combo name already
+      // exists" (#2763).
+      if (String(body.name) !== String(prev.name)) {
+        const existing = await getComboByName(body.name);
+        if (existing && String(existing.id) !== String(id)) {
+          return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+        }
       }
     }
-    
+
+    const validation = validateComboAcyclic({
+      name: Object.hasOwn(body, "name") ? body.name : prev.name,
+      models: Object.hasOwn(body, "models") ? body.models : prev.models,
+      combosData: await getCombos(),
+      currentId: id,
+    });
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
     // Capture previous name to invalidate rotation state on rename
-    const prev = await getComboById(id);
     const combo = await updateCombo(id, body);
     
     if (!combo) {

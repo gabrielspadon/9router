@@ -12,16 +12,21 @@ import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
 import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn.js";
 import { getGrokCliUsage } from "./usage/grok-cli.js";
+import { getTokenRouterUsage } from "./usage/tokenrouter.js";
 import { getKimiUsage } from "./usage/kimi.js";
+import { getCursorUsage } from "./usage/cursor.js";
+import { getCloudflareUsage } from "./usage/cloudflare.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
 import { getZedUsage } from "./usage/zed.js";
+import { getOpenRouterUsage } from "./usage/openrouter.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
-import { getGlmUsage } from "./usage/glm.js";
 import {
   getIflowUsage,
   getOllamaUsage,
+  getGlmUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
+  getOpencodeGoUsage,
 } from "./usage/misc.js";
 
 /**
@@ -33,7 +38,11 @@ import {
 const USAGE_HANDLERS = {
   github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
-  antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions, {
+    verificationContext: c.verificationContext,
+    onValidationRequired: c.onValidationRequired,
+    onVerificationSuccess: c.onVerificationSuccess,
+  }),
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions, { force: c.force }),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
@@ -54,12 +63,18 @@ const USAGE_HANDLERS = {
   "codebuddy-intl": (c) => getCodeBuddyIntlUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
   "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
+  cursor: (c) => getCursorUsage(c.accessToken, c.proxyOptions),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  "opencode-go": (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
+  ocg: (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
+  "cloudflare-ai": (c) => getCloudflareUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
+  tokenrouter: (c) => getTokenRouterUsage(c.providerSpecificData, c.proxyOptions),
+  openrouter: (c) => getOpenRouterUsage(c.apiKey, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const { provider, id: connectionId, accessToken, apiKey, providerSpecificData, projectId } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -69,11 +84,15 @@ export async function getUsageForProvider(connection, proxyOptions = null, optio
   if (!handler) return { message: `Usage API not implemented for ${provider}` };
   return await handler({
     provider,
+    connectionId,
     accessToken,
     apiKey,
     providerSpecificData,
     providerDataWithProjectId,
     proxyOptions,
     force: options.force === true,
+    verificationContext: options.verificationContext,
+    onValidationRequired: options.onValidationRequired,
+    onVerificationSuccess: options.onVerificationSuccess,
   });
 }

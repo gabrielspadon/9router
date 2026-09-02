@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { saveRequestStats } from "./requestStatsRepo.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -10,32 +11,52 @@ const CONFIG_CACHE_TTL_MS = 5000;
 let cachedConfig = null;
 let cachedConfigTs = 0;
 
+/**
+ * Read an env flag that is only a signal when the operator actually set it.
+ * An unset or empty value returns null so the next source in the precedence
+ * chain decides, instead of being read as `false`.
+ */
+function explicitEnvFlag(env, name) {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return null;
+  return raw.trim().toLowerCase() === "true";
+}
+
+/**
+ * Resolve whether request details are recorded, in precedence order:
+ *
+ *   1. OBSERVABILITY_ENABLED — the variable named after this feature, and the one
+ *      `.env.example` ships as `true`. It used to be unreachable: `getSettings()`
+ *      merges defaults, so `settings.enableObservability` is ALWAYS a boolean and
+ *      the `typeof … === "boolean"` guard below it never yielded to the env value.
+ *   2. ENABLE_REQUEST_LOGS — the older override, kept so existing deployments that
+ *      force it on keep working. It only decides when the variable above is unset;
+ *      it is documented for the `logs/` files, and `.env.example` ships it as
+ *      `false`, so letting it hard-disable the dashboard toggle meant a stock
+ *      `.env` silently defeated both documented ways of turning details on.
+ *   3. The dashboard toggle (`enableObservability`), which stays the default-off
+ *      answer when neither variable is set.
+ *
+ * @param {object} settings  merged settings row
+ * @param {object} env       process.env, injectable for tests
+ */
+export function resolveObservabilityEnabled(settings, env = process.env) {
+  const fromFeatureFlag = explicitEnvFlag(env, "OBSERVABILITY_ENABLED");
+  if (fromFeatureFlag !== null) return fromFeatureFlag;
+
+  const fromRequestLogs = explicitEnvFlag(env, "ENABLE_REQUEST_LOGS");
+  if (fromRequestLogs !== null) return fromRequestLogs;
+
+  return settings?.enableObservability === true;
+}
+
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
-    if (envRequestLogs !== undefined) {
-      const enabled = envRequestLogs.toLowerCase() === "true";
-      cachedConfig = {
-        enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-      };
-      cachedConfigTs = Date.now();
-      return cachedConfig;
-    }
-    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
-    const uiFlag = typeof settings.enableObservability === "boolean";
-    const enabled = uiFlag
-      ? settings.enableObservability
-      : envFallback;
-
     cachedConfig = {
-      enabled,
+      enabled: resolveObservabilityEnabled(settings),
       maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
@@ -54,9 +75,50 @@ async function getObservabilityConfig() {
   return cachedConfig;
 }
 
+/**
+ * Whether request details are being recorded right now.
+ *
+ * v0.5.50 made observability opt-in, so an install that used to fill the Usage
+ * "Details" tab now records nothing — and `getRequestDetails` answers an empty
+ * page either way, which reads as a broken tab rather than a disabled feature
+ * (#3106). Callers expose this beside the (empty) results so the difference is
+ * visible.
+ */
+export async function isObservabilityEnabled() {
+  return (await getObservabilityConfig()).enabled;
+}
+
 let writeBuffer = [];
 let flushTimer = null;
 let isFlushing = false;
+
+/**
+ * Ceiling on the in-memory buffer, in multiples of one flush batch.
+ *
+ * Every buffered entry holds whole request and response bodies, capped at
+ * `maxJsonSize` EACH but with no cap on how many are held at once. In normal
+ * operation `flushToDatabase` drains the buffer completely, so it stays near
+ * `batchSize`. It does not stay there when the write side stalls: the flush
+ * returns immediately while another flush is running (line 123), and a locked
+ * or slow SQLite file leaves that flush in `await` while every further request
+ * keeps pushing. Nothing bounded the result (#1245).
+ */
+const BUFFER_BATCHES = 10;
+
+/**
+ * Drop the OLDEST entries past the ceiling.
+ *
+ * Nothing is lost that the write would have kept. Usage and cost accounting is
+ * already persisted by `saveRequestStats`, which runs before the push and is
+ * independent of this buffer; and the flush itself deletes all but the newest
+ * `maxRecords` rows, so an entry evicted here is one the retention sweep was
+ * going to delete anyway. Oldest-first matches that sweep's own `ORDER BY
+ * timestamp ASC`.
+ */
+function capWriteBuffer(config) {
+  const limit = Math.max(config.maxRecords, config.batchSize * BUFFER_BATCHES);
+  if (writeBuffer.length > limit) writeBuffer.splice(0, writeBuffer.length - limit);
+}
 
 function sanitizeHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
@@ -68,7 +130,7 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
-export const __test__ = { sanitizeHeaders };
+export const __test__ = { sanitizeHeaders, bufferSize: () => writeBuffer.length };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -141,10 +203,18 @@ async function flushToDatabase() {
 }
 
 export async function saveRequestDetail(detail) {
+  // Shared id feeds both the observability row (upsert across stream
+  // start/complete) and the stats row (one per request). Generate it here so
+  // the stats write — which runs unconditionally, independent of the
+  // observability toggle — sees a stable key.
+  if (!detail.id) detail.id = generateDetailId(detail.model);
+  saveRequestStats(detail).catch((e) => console.error("[requestStats] save failed:", e.message));
+
   const config = await getObservabilityConfig();
   if (!config.enabled) {return;}
 
   writeBuffer.push(detail);
+  capWriteBuffer(config);
 
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.

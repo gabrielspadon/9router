@@ -11,7 +11,14 @@ import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
-const systemPromptOf = (result) => result.systemPrompt || "";
+// The Kiro payload carries no top-level systemPrompt: generateAssistantResponse
+// has no such field and 400s on it. The system text is prefixed onto the
+// session-start user message instead, so that is where these assertions read.
+const systemPromptOf = (result) => {
+  const cs = result?.conversationState || {};
+  const start = (cs.history || []).find((t) => t?.userInputMessage);
+  return (start || cs.currentMessage)?.userInputMessage?.content || "";
+};
 
 describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
@@ -568,23 +575,32 @@ describe("openaiToKiroRequest", () => {
       expect(systemPromptOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
     });
 
-    it("keeps top-level systemPrompt stable across turns", () => {
+    it("keeps the frozen session start stable across turns and keeps the clock off it", () => {
+      const credentials = {
+        connectionId: "kiro-account-openai-stability",
+        rawHeaders: { "x-session-id": "hermes-session-openai-stability" },
+      };
       const first = openaiToKiroRequest(
         "claude-sonnet-4.6-thinking",
         { messages: [{ role: "user", content: "first" }] },
         true,
-        {}
+        credentials
       );
       const second = openaiToKiroRequest(
         "claude-sonnet-4.6-thinking",
         { messages: [{ role: "user", content: "second" }] },
         true,
-        {}
+        credentials
       );
 
-      expect(first.systemPrompt).toBe(second.systemPrompt);
-      expect(first.systemPrompt).not.toContain("Current time");
-      expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+      // The thinking preamble is replayed byte-identically as the session
+      // start, which is what keeps the upstream session cache hitting. It is
+      // never a top-level systemPrompt: that field 400s the request (#2989).
+      const start = second.conversationState.history[0].userInputMessage.content;
+      expect(start).toBe(first.conversationState.currentMessage.userInputMessage.content);
+      expect(start).toContain("<thinking_mode>");
+      expect(first).not.toHaveProperty("systemPrompt");
+      expect(second.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
     });
 
     it("replays frozen msg0 for explicit Kiro sessions while keeping current time fresh", () => {

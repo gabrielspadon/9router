@@ -2,25 +2,31 @@
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
+import dynamic from "next/dynamic";
 import { useTheme } from "@/shared/hooks/useTheme";
-import ChangelogModal from "./ChangelogModal";
 import { ConfirmModal } from "./Modal";
+import Button from "@/shared/components/Button";
+
+const ChangelogModal = dynamic(() => import("./ChangelogModal"), { ssr: false });
 
 function MenuItem({ icon, label, onClick, trailing, danger }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors ${
+      className={`flex min-h-11 items-center gap-3 w-full px-4 py-3 text-sm transition-colors ${
         danger
-          ? "text-red-500 hover:bg-red-500/10"
-          : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          ? "text-danger hover:bg-danger-soft"
+          : "text-text-main hover:bg-surface-2"
       }`}
     >
-      <span className={`material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}>
+      <span
+        aria-hidden="true"
+        className={`material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}
+      >
         {icon}
       </span>
-      <span className="flex-1 text-left">{label}</span>
-      {trailing && <span className="text-base">{trailing}</span>}
+      <span className="flex-1 text-start">{label}</span>
+      {trailing && <span className="text-xs text-text-muted">{trailing}</span>}
     </button>
   );
 }
@@ -69,16 +75,23 @@ export default function HeaderMenu({ onLogout }) {
   return (
     <>
       <div className="relative" ref={menuRef}>
-        <button
+        <Button
+          variant="ghost" size="icon"
+          className="min-h-11 min-w-11"
           onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
-          title="Menu"
+          aria-label="Menu"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
         >
-          <span className="material-symbols-outlined">grid_view</span>
-        </button>
+          <span aria-hidden="true" className="material-symbols-outlined">grid_view</span>
+        </Button>
 
         {isOpen && (
-          <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden py-1">
+          <div
+            role="menu"
+            aria-label="Menu"
+            className="absolute end-0 top-full mt-2 w-60 bg-surface border border-border rounded-[var(--radius-brand-lg)] shadow-elev z-50 fade-in overflow-hidden py-1"
+          >
             <MenuItem
               icon="history"
               label="Change Log"
@@ -105,7 +118,9 @@ export default function HeaderMenu({ onLogout }) {
         )}
       </div>
 
-      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
+      {changelogOpen && (
+        <ChangelogModal isOpen onClose={() => setChangelogOpen(false)} />
+      )}
       <ConfirmModal
         isOpen={shutdownOpen}
         onClose={() => setShutdownOpen(false)}

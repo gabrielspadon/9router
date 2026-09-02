@@ -51,7 +51,20 @@ export default {
     { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: "gemini-3.6-flash-tiered(high)" },
     { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
     { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered(low)" },
-    { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High)" },
+    // The GA name Google publishes for this model, which is what clients ask for
+    // (#2757). Antigravity itself has no bare key for it: the IDE sends
+    // gemini-3.6-flash-tiered plus a thinkingLevel, so the bare id routes onto
+    // the tiered key rather than going upstream verbatim, at the level
+    // src/mitm/config.js already treats as this model's default.
+    { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
+    // Friendly synonym, not an Antigravity model key: every other enumeration of
+    // this catalog in the tree (src/mitm/config.js MODEL_SYNONYMS,
+    // src/shared/constants/cliTools.js modelAliases, the quota display-name and
+    // important-model lists in open-sse/services/usage/google.js, and
+    // tests/translator/real/antigravity-models.real.test.js) carries
+    // gemini-3-flash-agent and omits this id, so it is routed onto that key
+    // rather than sent upstream verbatim.
+    { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High)", upstreamModelId: "gemini-3-flash-agent" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
@@ -82,6 +95,9 @@ export default {
     loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
     refreshLeadMs: 300000,
   },
+  // Google Search grounding over the Antigravity OAuth pool. chatSearch.js
+  // derives both the model and the endpoint from here, so this block is the
+  // single source for the /v1/search route.
   searchViaChat: {
     defaultModel: "gemini-2.5-flash",
     endpoint: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:generateContent`,

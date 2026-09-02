@@ -1,7 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import { describe, it, expect, vi } from "vitest";
+import { canonicalizeUsage, extractUsage, filterUsageForFormat, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
-import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
+
+const { saveRequestUsage } = vi.hoisted(() => ({ saveRequestUsage: vi.fn().mockResolvedValue() }));
+
+vi.mock("@/lib/usageDb.js", () => ({
+  saveRequestUsage,
+  appendRequestLog: vi.fn(),
+  saveRequestDetail: vi.fn(),
+}));
+
+const { extractUsageFromResponse, saveUsageStats } = await import("../../open-sse/handlers/chatCore/requestDetail.js");
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -11,6 +22,39 @@ import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/us
 // Discriminator: Claude reports cache separately (prompt EXCLUDES cache);
 // OpenAI/Gemini report prompt INCLUDING cached_tokens.
 describe("canonicalizeUsage", () => {
+  it("extracts and persists cached Responses input tokens for internal accounting", async () => {
+    saveRequestUsage.mockClear();
+    const usage = extractUsageFromResponse({
+      usage: {
+        input_tokens: 330,
+        output_tokens: 50,
+        input_tokens_details: { cached_tokens: 200 },
+      },
+    });
+
+    expect(usage).toMatchObject({
+      prompt_tokens: 330,
+      completion_tokens: 50,
+      cached_tokens: 200,
+    });
+    expect(canonicalizeUsage(usage)).toMatchObject({
+      prompt_tokens: 330,
+      completion_tokens: 50,
+      cached_tokens: 200,
+    });
+
+    saveUsageStats({ provider: "test", model: "test-model", tokens: usage, silent: true });
+    await vi.waitFor(() => {
+      expect(saveRequestUsage).toHaveBeenCalledWith(expect.objectContaining({
+        tokens: expect.objectContaining({
+          prompt_tokens: 330,
+          completion_tokens: 50,
+          cached_tokens: 200,
+        }),
+      }));
+    });
+  });
+
   it("folds Claude exclusive cache into an inclusive prompt count", () => {
     // Claude: input_tokens excludes cache; cache_read + cache_creation are separate
     const out = canonicalizeUsage({
@@ -49,16 +93,21 @@ describe("canonicalizeUsage", () => {
     expect(out.reasoning_tokens).toBe(40);
   });
 
-  it("reads cached_tokens from the nested buildUsage() shape", () => {
-    // buildUsage() only emits cache reads under prompt_tokens_details. The
-    // Responses translator overwrites state.usage with that shape on
-    // response.completed, so a top-level-only read silently drops the cache
-    // count for every Responses provider (codex, grok-cli, ...).
-    const out = canonicalizeUsage(
-      buildUsage({ promptTokens: 330, completionTokens: 50, totalTokens: 380, cachedTokens: 200 })
-    );
+  it("reads Responses-API nested detail shapes (input_tokens_details / output_tokens_details)", () => {
+    const out = canonicalizeUsage({
+      input_tokens: 330,
+      output_tokens: 50,
+      input_tokens_details: { cached_tokens: 200 },
+      output_tokens_details: { reasoning_tokens: 40 },
+    });
     expect(out.prompt_tokens).toBe(330);
+    expect(out.completion_tokens).toBe(50);
     expect(out.cached_tokens).toBe(200);
+    expect(out.reasoning_tokens).toBe(40);
+    // Idempotent: the canonical output feeds straight back in unchanged.
+    const twice = canonicalizeUsage(out);
+    expect(twice.cached_tokens).toBe(200);
+    expect(twice.reasoning_tokens).toBe(40);
   });
 
   it("handles no-cache usage", () => {
@@ -100,6 +149,19 @@ describe("canonicalizeUsage", () => {
     expect(out.cached_tokens).toBe(0);
     expect(out.cache_creation_input_tokens).toBe(500);
   });
+
+  it("keeps finite nonnegative provider totals and drops invalid ones", () => {
+    const out = canonicalizeUsage({
+      prompt_tokens: 1,
+      cost_usd: 0,
+      cost_in_usd: -0.5,
+      cost_in_usd_ticks: Infinity,
+    });
+
+    expect(out.cost_usd).toBe(0);
+    expect(out).not.toHaveProperty("cost_in_usd");
+    expect(out).not.toHaveProperty("cost_in_usd_ticks");
+  });
 });
 
 describe("calculateCostFromTokens (canonical inclusive convention)", () => {
@@ -130,9 +192,61 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
   });
+
+  it("prefers a valid provider exact total over local token pricing", () => {
+    expect(calculateCostFromTokens({ cost_usd: 0.2, cost_in_usd: 0.1 }, pricing)).toBe(0.2);
+    expect(calculateCostFromTokens({ cost_in_usd_ticks: 1_230_000_000 }, null)).toBe(0.123);
+  });
+
+  it("rejects invalid provider totals before falling back to local pricing", () => {
+    const expected = (100 * 3 + 50 * 15) / 1_000_000;
+    expect(calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50, cost_usd: -0.1 }, pricing))
+      .toBeCloseTo(expected, 12);
+    expect(calculateCostFromTokens({ cost_usd: "" }, null)).toBe(0);
+  });
+  it("does not double-bill reasoning_tokens that are a subset of output", () => {
+    // OpenAI reports reasoning inside output_tokens; charging the full
+    // reasoning rate on top of output overbilled codex traffic by ~41%.
+    const p = { input: 1.75, output: 14, cached: 0.175, reasoning: 14 };
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 10000, cached_tokens: 9000, completion_tokens: 500, reasoning_tokens: 300 },
+      p
+    );
+    expect(cost).toBeCloseTo((1000 * 1.75 + 9000 * 0.175 + 500 * 14) / 1_000_000, 12);
+  });
+
+  it("applies only the reasoning-rate delta when reasoning is priced above output", () => {
+    const p = { input: 1, output: 10, cached: 0.5, reasoning: 12 };
+    const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 20 }, p);
+    expect(cost).toBeCloseTo((100 * 1 + 50 * 10 + 20 * (12 - 10)) / 1_000_000, 12);
+  });
 });
 
+
 describe("Anthropic streaming usage (message_start carries cache, message_delta output-only)", () => {
+  it("keeps provider exact totals through both usage extraction paths", () => {
+    const nonStreaming = canonicalizeUsage(extractUsageFromResponse({
+      usage: { prompt_tokens: 1, completion_tokens: 2, cost_in_usd: 0.25 },
+    }));
+    const streaming = canonicalizeUsage(extractUsage({
+      type: "response.completed",
+      response: { usage: { input_tokens: 1, output_tokens: 2, cost_in_usd_ticks: 2_500_000_000 } },
+    }));
+
+    expect(nonStreaming.cost_in_usd).toBe(0.25);
+    expect(streaming.cost_in_usd_ticks).toBe(2_500_000_000);
+  });
+
+  it("does not forward provider cost metadata in public OpenAI usage", () => {
+    const filtered = filterUsageForFormat({
+      prompt_tokens: 1,
+      completion_tokens: 2,
+      cost_usd: 0.25,
+    }, FORMATS.OPENAI);
+
+    expect(filtered).not.toHaveProperty("cost_usd");
+  });
+
   it("extractUsage reads input + cache from message_start", () => {
     const u = extractUsage({
       type: "message_start",

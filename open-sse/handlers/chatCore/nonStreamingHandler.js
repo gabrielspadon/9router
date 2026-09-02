@@ -1,15 +1,108 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { rememberThoughtSignature } from "../../translator/concerns/thoughtSignature.js";
+import { canonicalEchoModel } from "../../services/model.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { addBufferToUsage, claudeUsageToOpenAI, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { createCallerAbortResult, createErrorResult, isCallerAbortError } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
-import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import {
+  consumeResponseBodyWithDeadline,
+  isBodyReadTimeoutError,
+  readResponseJsonWithDeadline,
+  readResponseTextWithDeadline,
+} from "../../utils/bodyTimeout.js";
+import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
+import { detectUpstreamErrorContent } from "../../services/upstreamErrorContent.js";
+import { extractPanelText } from "../../services/combo.js";
+import { messageReasoningText, parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { unfenceJsonChoices } from "../../utils/jsonFence.js";
+import { restoreResponseJson } from "../../utils/privacyFilter.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
+import { openaiToAntigravityResponse } from "../../translator/response/openai-to-antigravity.js";
+import { resolveResponsesToolCall } from "../../translator/response/openai-responses.js";
+import {
+  ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+  ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE,
+  classifyAntigravityValidation,
+  isAntigravityErrorPayload,
+  redactAntigravityValidationText,
+} from "../../services/antigravityValidation.js";
+import { classifyAntigravitySseValidation, createSseTextStream } from "./antigravitySseValidation.js";
+import {
+  CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+  ClaudeClassifierValidationError,
+  isClaudeClassifierRequest,
+  projectResponsesClassifierOutput,
+  projectResponsesClassifierStream,
+  validateClaudeClassifierMessage,
+} from "./claudeClassifier.js";
+
+/**
+ * Whether a translated response actually contains something the client can use:
+ * non-empty text, a tool call, or reasoning output. Providers occasionally answer
+ * HTTP 200 with a fully empty body (upstream hiccup that isn't a real error status) —
+ * treat that the same as an upstream failure so the account/combo fallback loop
+ * moves on instead of handing the client nothing.
+ */
+// Exported for the regression test: this guard is the only thing standing
+// between an upstream that answered with nothing and a client that gets HTTP
+// 200 with `choices: null` and no way to retry (#2727). Its failure mode is
+// silent, so it is pinned directly rather than through the handler.
+export function hasUsefulContent(translatedResponse, isClaudeMessageResponse, isResponsesResponse) {
+  if (isClaudeMessageResponse) {
+    const blocks = Array.isArray(translatedResponse?.content) ? translatedResponse.content : [];
+    return blocks.some((b) => (b?.type === "text" && typeof b.text === "string" && b.text.trim().length > 0) || b?.type === "tool_use" || b?.type === "thinking");
+  }
+  if (isResponsesResponse) {
+    return Array.isArray(translatedResponse?.output) && translatedResponse.output.length > 0;
+  }
+  // Gemini-family envelope (`{response:{candidates}}` or a bare `{candidates}`).
+  // Reached both by the projection below and by a Gemini client on a Gemini
+  // provider, where no translation runs at all (#2347).
+  const parts = (translatedResponse?.response || translatedResponse)?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    return parts.some((p) => p?.functionCall
+      || p?.inlineData || p?.inline_data
+      || (typeof p?.text === "string" && p.text.trim().length > 0));
+  }
+  // Ollama envelope.
+  const ollamaMsg = translatedResponse?.message;
+  if (ollamaMsg && typeof ollamaMsg === "object" && !Array.isArray(translatedResponse?.choices)) {
+    return (Array.isArray(ollamaMsg.tool_calls) && ollamaMsg.tool_calls.length > 0)
+      || (typeof ollamaMsg.content === "string" && ollamaMsg.content.trim().length > 0)
+      || (typeof ollamaMsg.thinking === "string" && ollamaMsg.thinking.trim().length > 0);
+  }
+  const msg = translatedResponse?.choices?.[0]?.message;
+  const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+  const hasText = typeof msg?.content === "string"
+    ? msg.content.trim().length > 0
+    : Array.isArray(msg?.content) && msg.content.length > 0;
+  const hasReasoning = messageReasoningText(msg).trim().length > 0;
+  return hasToolCalls || hasText || hasReasoning;
+}
+
+function redactAntigravitySinkValue(value) {
+  try {
+    return JSON.parse(redactAntigravityValidationText(JSON.stringify(value)));
+  } catch {
+    return redactAntigravityValidationText(String(value ?? ""));
+  }
+}
+
+async function notifyTerminalVerificationSuccess(callback, connectionId, log) {
+  if (typeof callback !== "function") return;
+  try {
+    await callback();
+  } catch {
+    log?.warn?.("VERIFICATION", `success callback failed for ${String(connectionId).slice(0, 8)}`);
+  }
+}
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -27,7 +120,7 @@ function openAICompletionToClaudeMessage(responseBody) {
   const message = choice.message || {};
   const content = [];
 
-  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
+  const reasoning = messageReasoningText(message);
   if (reasoning) {
     content.push({ type: "thinking", thinking: reasoning });
   }
@@ -77,15 +170,21 @@ function extractCustomToolInput(argumentsValue) {
   return argumentsText;
 }
 
-function openAICompletionToResponses(responseBody, customToolNames = null) {
+function openAICompletionToResponses(responseBody, customToolNames = null, responsesToolNameMap = null) {
   const choice = responseBody?.choices?.[0];
   if (!choice) return responseBody;
 
   const message = choice.message || {};
   const output = [];
 
+  // The request translator exports the collected custom tool names as an array
+  // (translator/request/openai-responses.js) and chatCore.js forwards that value
+  // verbatim, while direct callers pass a Set. Accept either, without mutating
+  // the caller's collection.
+  const customToolNameSet = customToolNames instanceof Set ? customToolNames : new Set(customToolNames || []);
+
   // Reasoning → a reasoning item (summary text), mirroring the streaming path.
-  const reasoning = message.reasoning_content || message.reasoning;
+  const reasoning = messageReasoningText(message);
   if (typeof reasoning === "string" && reasoning.length > 0) {
     output.push({
       type: RESPONSES_ITEM.REASONING,
@@ -106,12 +205,14 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   // tool_calls → function_call/custom_tool_call items (Responses-native tool shape).
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const resolved = resolveResponsesToolCall(fn.name, responsesToolNameMap);
+    const custom = customToolNameSet.has(fn.name) || resolved.custom;
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
       call_id: tc.id || "",
-      name: fn.name || "",
+      name: resolved.name,
+      ...(resolved.namespace ? { namespace: resolved.namespace } : {}),
       ...(custom
         ? { input: extractCustomToolInput(fn.arguments) }
         : { arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}) }),
@@ -119,6 +220,9 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   }
 
   const usage = responseBody.usage || {};
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens
+    ?? usage.output_tokens_details?.reasoning_tokens
+    ?? usage.reasoning_tokens;
   const status = choice.finish_reason === "tool_calls" ? "completed" : (choice.finish_reason === "stop" ? "completed" : (choice.finish_reason || "completed"));
 
   return {
@@ -134,6 +238,169 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
       output_tokens: usage.completion_tokens || usage.output_tokens || 0,
       total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+      ...(typeof reasoningTokens === "number" && reasoningTokens > 0
+        ? { output_tokens_details: { reasoning_tokens: reasoningTokens } }
+        : {}),
+    },
+  };
+}
+
+/**
+ * Convert an OpenAI Chat Completions non-streaming body into the Gemini-family
+ * `{ response: { candidates: [...] } }` envelope.
+ *
+ * Delegates to the streaming projector (translator/response/openai-to-antigravity.js,
+ * which openai-to-gemini.js registers for gemini / gemini-cli / vertex alike) by
+ * handing it ONE synthetic chunk carrying the whole message plus its
+ * finish_reason, so the streaming and non-streaming paths cannot drift apart.
+ * The inverse is the Gemini branch of translateNonStreamingResponse below,
+ * which reads `responseBody.response || responseBody`.
+ */
+function openAICompletionToGemini(responseBody) {
+  const choice = responseBody?.choices?.[0];
+  if (!choice) return responseBody;
+
+  const message = choice.message || {};
+  const delta = {};
+  const reasoning = messageReasoningText(message);
+  if (typeof reasoning === "string" && reasoning.length > 0) delta.reasoning_content = reasoning;
+  if (typeof message.content === "string" && message.content.length > 0) delta.content = message.content;
+  // A non-streaming message.tool_calls[] carries no `index`, but the projector
+  // keys its accumulator on one — without this every call collapses into a
+  // single functionCall part.
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+    delta.tool_calls = message.tool_calls.map((tc, i) => ({ ...tc, index: tc.index ?? i }));
+  }
+
+  return openaiToAntigravityResponse({
+    id: responseBody.id,
+    model: responseBody.model,
+    usage: responseBody.usage,
+    choices: [{ index: 0, delta, finish_reason: choice.finish_reason || OPENAI_FINISH.STOP }],
+  }, {});
+}
+
+/**
+ * Convert an OpenAI Chat Completions non-streaming body into Ollama's /api/chat
+ * non-streaming shape — the inverse of ollamaBodyToOpenAI
+ * (translator/response/ollama-to-openai.js). Two asymmetries matter: Ollama
+ * carries tool arguments as an OBJECT where OpenAI uses a JSON string, and it
+ * reports tokens as prompt_eval_count / eval_count.
+ */
+function openAICompletionToOllama(responseBody) {
+  const choice = responseBody?.choices?.[0];
+  if (!choice) return responseBody;
+
+  const src = choice.message || {};
+  const message = { role: ROLE.ASSISTANT, content: typeof src.content === "string" ? src.content : "" };
+  const reasoning = messageReasoningText(src);
+  if (typeof reasoning === "string" && reasoning.length > 0) message.thinking = reasoning;
+  if (Array.isArray(src.tool_calls) && src.tool_calls.length > 0) {
+    message.tool_calls = src.tool_calls.map((tc) => ({
+      function: {
+        name: tc.function?.name || tc.name || "",
+        arguments: parseToolArguments(tc.function?.arguments ?? tc.arguments),
+      },
+    }));
+  }
+
+  const usage = responseBody.usage || {};
+  return {
+    model: responseBody.model || "ollama",
+    created_at: new Date((responseBody.created || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+    message,
+    done: true,
+    // Ollama has no "tool_calls" done_reason on the wire: the tool_calls array
+    // is the signal, and ollamaBodyToOpenAI re-derives finish_reason from it.
+    done_reason: choice.finish_reason === OPENAI_FINISH.LENGTH ? OPENAI_FINISH.LENGTH : OPENAI_FINISH.STOP,
+    prompt_eval_count: usage.prompt_tokens || usage.input_tokens || 0,
+    eval_count: usage.completion_tokens || usage.output_tokens || 0,
+  };
+}
+
+const GEMINI_FAMILY_FORMATS = new Set([FORMATS.GEMINI, FORMATS.GEMINI_CLI, FORMATS.VERTEX, FORMATS.ANTIGRAVITY]);
+
+/**
+ * Project an OpenAI chat.completion body into whatever envelope the CLIENT
+ * speaks. Every client format is covered here; anything left returning the raw
+ * body hands a non-OpenAI client `choices[]`, whose tool_calls it never reads
+ * (#2347).
+ */
+function fromOpenAICompletion(responseBody, sourceFormat, customToolNames = null, responsesToolNameMap = null) {
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    return openAICompletionToResponses(responseBody, customToolNames, responsesToolNameMap);
+  }
+  if (sourceFormat === FORMATS.CLAUDE) {
+    return openAICompletionToClaudeMessage(responseBody);
+  }
+  if (GEMINI_FAMILY_FORMATS.has(sourceFormat)) {
+    return openAICompletionToGemini(responseBody);
+  }
+  if (sourceFormat === FORMATS.OLLAMA) {
+    return openAICompletionToOllama(responseBody);
+  }
+  return responseBody;
+}
+
+/**
+ * Convert a non-streaming OpenAI Responses API body (`output: [...]`) into an
+ * OpenAI Chat Completions shape (`choices: [{ message, finish_reason }]`).
+ * Mirrors the item types the streaming translator already understands
+ * (openaiResponsesToOpenAIResponse in translator/response/openai-responses.js)
+ * so both paths agree on what counts as text/reasoning/tool-call content.
+ */
+function openAIResponsesBodyToChatCompletion(responseBody) {
+  const output = Array.isArray(responseBody?.output) ? responseBody.output : [];
+  let textContent = "", reasoningContent = "";
+  const toolCalls = [];
+
+  for (const item of output) {
+    if (item?.type === RESPONSES_ITEM.MESSAGE) {
+      for (const block of item.content || []) {
+        if (block?.type === RESPONSES_ITEM.OUTPUT_TEXT && typeof block.text === "string") {
+          textContent += block.text;
+        }
+      }
+    } else if (item?.type === RESPONSES_ITEM.REASONING) {
+      for (const summary of item.summary || []) {
+        if (summary?.type === RESPONSES_ITEM.SUMMARY_TEXT && typeof summary.text === "string") {
+          reasoningContent += summary.text;
+        }
+      }
+    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+      const isCustom = item.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL;
+      toolCalls.push({
+        id: item.call_id || item.id || `call_${toolCalls.length}`,
+        type: "function",
+        function: {
+          name: item.name || "",
+          arguments: isCustom
+            ? JSON.stringify({ input: item.input || "" })
+            : (typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})),
+        },
+      });
+    }
+  }
+
+  const message = { role: "assistant" };
+  if (textContent) message.content = textContent;
+  if (reasoningContent) message.reasoning_content = reasoningContent;
+  if (toolCalls.length > 0) message.tool_calls = toolCalls;
+  if (!message.content && !message.tool_calls) message.content = "";
+
+  const usage = responseBody?.usage || {};
+  const cachedTokens = usage.input_tokens_details?.cached_tokens;
+  return {
+    id: String(responseBody?.id || `chatcmpl-${Date.now()}`).replace(/^resp_/, "chatcmpl-"),
+    object: "chat.completion",
+    created: responseBody?.created_at || Math.floor(Date.now() / 1000),
+    model: responseBody?.model || "unknown",
+    choices: [{ index: 0, message, finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop" }],
+    usage: {
+      prompt_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      completion_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      total_tokens: usage.total_tokens || (usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0),
+      ...(cachedTokens !== undefined ? { prompt_tokens_details: { cached_tokens: cachedTokens } } : {}),
     },
   };
 }
@@ -141,17 +408,26 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, responsesToolNameMap = null) {
   if (targetFormat === sourceFormat) return responseBody;
+
+  // Provider responded in the Responses API shape (`output: []`) — every
+  // client format below expects chat.completion-shaped input (`choices: []`),
+  // so normalize once here instead of teaching each branch to parse `output[]`.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat !== FORMATS.OPENAI_RESPONSES) {
+    return fromOpenAICompletion(
+      openAIResponsesBodyToChatCompletion(responseBody),
+      sourceFormat,
+      customToolNames,
+      responsesToolNameMap,
+    );
+  }
+
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
+  if (targetFormat === FORMATS.OPENAI) {
+    return fromOpenAICompletion(responseBody, sourceFormat, customToolNames, responsesToolNameMap);
   }
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
-  }
-  if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
@@ -169,8 +445,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         if (part.thought === true && part.text) reasoningContent += part.text;
         else if (part.text !== undefined) textContent += part.text;
         if (part.functionCall) {
+          const toolCallId = `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`;
+          // Same hand-off as the streaming translator, or a non-streaming turn
+          // replays this call under the placeholder signature alone (#3646).
+          rememberThoughtSignature(toolCallId, part.thoughtSignature || part.thought_signature);
           toolCalls.push({
-            id: `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`,
+            id: toolCallId,
             type: "function",
             function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
           });
@@ -211,7 +491,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
-    return result;
+    return fromOpenAICompletion(result, sourceFormat, customToolNames, responsesToolNameMap);
   }
 
   // Claude
@@ -261,51 +541,216 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (responseBody.usage) {
-      result.usage = {
-        prompt_tokens: responseBody.usage.input_tokens || 0,
-        completion_tokens: responseBody.usage.output_tokens || 0,
-        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
-      };
+      result.usage = claudeUsageToOpenAI(responseBody.usage);
     }
-    return result;
+    // Same tail as the Gemini branch above. Without it a Responses-API client
+    // behind a Claude provider received `choices[]`, and a client that maps
+    // over `output` threw on undefined rather than reporting a bad response
+    // (#2885).
+    return fromOpenAICompletion(result, sourceFormat, customToolNames, responsesToolNameMap);
   }
 
   // Ollama
   if (targetFormat === FORMATS.OLLAMA) {
-    return ollamaBodyToOpenAI(responseBody);
+    const result = ollamaBodyToOpenAI(responseBody);
+    return fromOpenAICompletion(result, sourceFormat, customToolNames, responsesToolNameMap);
+  }
+
+  if (Array.isArray(responseBody?.choices)) {
+    return fromOpenAICompletion(responseBody, sourceFormat, customToolNames, responsesToolNameMap);
   }
 
   return responseBody;
 }
 
+function hasLegacyClassifierFunctionCall(responseBody) {
+  return responseBody?.choices?.some((choice) =>
+    Object.hasOwn(choice?.message || {}, "function_call"),
+  );
+}
+
+function hasMultipleClassifierAlternatives(responseBody) {
+  if (Array.isArray(responseBody?.choices) && responseBody.choices.length > 1) {
+    return true;
+  }
+  const geminiResponse = responseBody?.response || responseBody;
+  return Array.isArray(geminiResponse?.candidates)
+    && geminiResponse.candidates.length > 1;
+}
+
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
-  trackDone();
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal }) {
   const contentType = providerResponse.headers.get("content-type") || "";
+  const classifierMode = sourceFormat === FORMATS.CLAUDE
+    && isClaudeClassifierRequest(body);
   let responseBody;
+  // The format responseBody is actually in by the time it reaches the
+  // translation step. Starts as targetFormat and is corrected wherever a branch
+  // below rewrites the body into another format.
+  let effectiveTargetFormat = targetFormat;
+  let antigravitySseText = null;
+  let classifierProjection = null;
+  let pendingCleared = false;
+  const trackDoneOnce = () => {
+    if (pendingCleared) return;
+    pendingCleared = true;
+    trackDone();
+  };
+  const bodyReadFailure = (error, context) => {
+    trackDoneOnce();
+    if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+    if (isBodyReadTimeoutError(error)) {
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
+    }
+    console.error(`[ChatCore] Failed to ${context} from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`);
+  };
 
   if (contentType.includes("text/event-stream")) {
-    const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    if (provider === "antigravity") {
+      try {
+        antigravitySseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
+      } catch (err) {
+        const result = bodyReadFailure(err, "read Antigravity SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
+      }
+      const validation = classifyAntigravitySseValidation(antigravitySseText);
+      if (validation) {
+        try {
+          await onValidationRequired?.({ validation, observationId: verificationContext?.observationId });
+        } catch {
+          log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+        }
+        return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+      }
     }
-    responseBody = parsed;
+    // A provider not statically flagged forceStream (e.g. a dynamically-added
+    // openai-compatible connection) can still force SSE at the HTTP level —
+    // providerRequiresStreaming only catches known providers, so this branch
+    // is reachable even for a "true non-streaming" request. When the upstream
+    // speaks Responses API, its SSE uses response.output_text.delta-style
+    // events, not choices[].delta — parseSSEToOpenAIResponse only understands
+    // the latter and would silently yield empty content. Use the Responses-
+    // aware converter (same one handleForcedSSEToJson uses) in that case.
+    if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+      try {
+        if (antigravitySseText !== null) {
+          responseBody = await convertResponsesStreamToJson(createSseTextStream(antigravitySseText));
+        } else if (classifierMode && typeof providerResponse.body?.tee === "function") {
+          const [conversionStream, projectionStream] = providerResponse.body.tee();
+          [responseBody, classifierProjection] = await Promise.all([
+            consumeResponseBodyWithDeadline({
+              body: conversionStream,
+              callerSignal,
+              consume: (reader) => convertResponsesStreamToJson(conversionStream, { reader }),
+            }),
+            consumeResponseBodyWithDeadline({
+              body: projectionStream,
+              callerSignal,
+              consume: (reader) => projectResponsesClassifierStream(
+                body,
+                projectionStream,
+                { reader },
+              ),
+            }),
+          ]);
+        } else {
+          responseBody = await consumeResponseBodyWithDeadline({
+            body: providerResponse.body,
+            callerSignal,
+            consume: (reader) => convertResponsesStreamToJson(providerResponse.body, { reader }),
+          });
+        }
+      } catch (err) {
+        const result = bodyReadFailure(err, "convert Responses SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
+      }
+    } else {
+      let sseText;
+      if (antigravitySseText !== null) {
+        sseText = antigravitySseText;
+      } else try {
+        sseText = await readResponseTextWithDeadline({ body: providerResponse.body, callerSignal });
+      } catch (err) {
+        const result = bodyReadFailure(err, "read SSE");
+        appendLog({ status: `FAILED ${result.status}` });
+        return result;
+      }
+      const parsed = parseSSEToOpenAIResponse(sseText, model);
+      if (!parsed) {
+        trackDoneOnce();
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
+        );
+      }
+      responseBody = parsed;
+      // parseSSEToOpenAIResponse just rewrote the body into an OpenAI chat
+      // completion, so it is no longer in targetFormat. Translating it as though
+      // it still were hands the target->source translator a body it cannot read:
+      // a Claude-format client asking a kiro model for stream:false got the raw
+      // OpenAI completion back instead of an Anthropic Message. Record the real
+      // format so the translation step below uses it.
+      effectiveTargetFormat = FORMATS.OPENAI;
+    }
   } else {
     try {
-      responseBody = await providerResponse.json();
+      responseBody = await readResponseJsonWithDeadline({ body: providerResponse.body, callerSignal });
     } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      const result = bodyReadFailure(err, "parse JSON");
+      appendLog({ status: `FAILED ${result.status}` });
+      return result;
     }
   }
 
-  reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-  if (onRequestSuccess) {
+  if (provider === "antigravity") {
+    const validation = classifyAntigravityValidation({
+      status: responseBody?.error?.code ?? responseBody?.error?.status ?? responseBody?.status ?? providerResponse.status,
+      payload: responseBody,
+      source: "chat",
+    });
+    if (validation) {
+      try {
+        await onValidationRequired?.({ validation, observationId: verificationContext?.observationId });
+      } catch {
+        log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
+      }
+      return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+    }
+    if (isAntigravityErrorPayload(responseBody)) {
+      trackDoneOnce();
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+    }
+  }
+
+  if (classifierMode
+      && targetFormat === FORMATS.OPENAI_RESPONSES
+      && classifierProjection === null) {
+    classifierProjection = projectResponsesClassifierOutput(body, responseBody);
+  }
+
+  trackDoneOnce();
+
+  // Some OpenAI-compatible gateways (e.g. api.cline.bot) wrap the whole completion
+  // in { data: {…}, success: true }. Unwrap so the client sees a top-level `choices`.
+  if (responseBody && !Array.isArray(responseBody.choices) && Array.isArray(responseBody?.data?.choices)) {
+    responseBody = responseBody.data;
+  }
+
+  reqLogger.logProviderResponse(
+    providerResponse.status,
+    providerResponse.statusText,
+    providerResponse.headers,
+    provider === "antigravity" ? redactAntigravitySinkValue(responseBody) : responseBody,
+  );
+
+  if (onRequestSuccess && provider !== "antigravity") {
     Promise.resolve()
       .then(onRequestSuccess)
       .catch(err => {
@@ -318,16 +763,48 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+  if (classifierMode && (
+    hasLegacyClassifierFunctionCall(responseBody)
+    || hasMultipleClassifierAlternatives(responseBody)
+  )) {
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+    );
+  }
+
+  let translatedResponse = needsTranslation(effectiveTargetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, effectiveTargetFormat, sourceFormat, customToolNames, responsesToolNameMap)
     : responseBody;
+  if (classifierMode) {
+    try {
+      translatedResponse = validateClaudeClassifierMessage(
+        body,
+        translatedResponse,
+        classifierProjection,
+      );
+    } catch (err) {
+      if (err instanceof ClaudeClassifierValidationError) {
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+        );
+      }
+      throw err;
+    }
+  }
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.
   const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
+  // Everything gated on this is Chat-Completions-specific post-processing.
+  // A Claude, Responses, Gemini-family or Ollama envelope has no `choices`, and
+  // stamping `object: "chat.completion"` onto one would re-open the leak the
+  // projections above exist to close (#2347).
+  const isChatCompletionShaped = Array.isArray(translatedResponse?.choices);
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
   if (translatedResponse?.choices?.[0]) {
@@ -340,17 +817,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   // Ensure OpenAI-required fields
-  if (!isClaudeMessageResponse && !isResponsesResponse) {
+  if (isChatCompletionShaped) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
   }
 
   // Strip Azure-specific fields
-  if (!isClaudeMessageResponse && !isResponsesResponse) {
+  if (isChatCompletionShaped) {
     delete translatedResponse.prompt_filter_results;
-    if (translatedResponse?.choices) {
-      for (const choice of translatedResponse.choices) delete choice.content_filter_results;
-    }
+    for (const choice of translatedResponse.choices) delete choice.content_filter_results;
   }
 
   if (translatedResponse?.usage) {
@@ -360,15 +835,78 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // Strip reasoning_content only when content is non-empty.
   // When content is empty (e.g. thinking models that used all tokens for reasoning),
   // reasoning_content is the only useful output and must be preserved.
-  if (!isClaudeMessageResponse && !isResponsesResponse && translatedResponse?.choices) {
+  // A choice carrying tool_calls is also exempt: the thinking block belongs to
+  // the decision to call the tool, and clients that replay reasoning alongside
+  // the call lose it otherwise (#1412).
+  if (isChatCompletionShaped) {
     for (const choice of translatedResponse.choices) {
-      if (choice?.message?.reasoning_content && choice.message.content) {
+      if (choice?.message?.reasoning_content && choice.message.content && !choice.message.tool_calls?.length) {
         delete choice.message.reasoning_content;
       }
     }
   }
 
-  reqLogger.logConvertedResponse(translatedResponse);
+  // JSON mode: drop a ```json fence the provider added around the object
+  unfenceJsonChoices(body, translatedResponse);
+
+  reqLogger.logConvertedResponse(
+    provider === "antigravity" ? redactAntigravitySinkValue(translatedResponse) : translatedResponse,
+  );
+
+  // Upstream answered 200 but produced nothing usable (null/empty content, no
+  // tool_calls, no reasoning) — treat as a failure so the same fallback path as a
+  // real error status kicks in: lock this account+model for EMPTY_CONTENT_COOLDOWN_MS
+  // (skips it on the next request/combo attempt) and let the caller fall through to
+  // the next account/combo member. The lock auto-expires, so it comes back into
+  // rotation on its own once the upstream presumably recovers.
+  // Upstream answered 200 and put its own error INTO the content, so the check
+  // below sees a non-empty body and passes it through as the model's answer.
+  // Route it to the same failure path: without this the error is written into
+  // the conversation history and no fallback fires. See detectUpstreamErrorContent.
+  const upstreamError = detectUpstreamErrorContent(extractPanelText(translatedResponse));
+  if (upstreamError) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (upstream error in content)` });
+    log?.warn?.("CHATCORE", `${provider}/${model} returned HTTP 200 carrying an upstream error — treating as failure. ${upstreamError.reason}`);
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : upstreamError.reason,
+      // A non-retryable upstream error still fails over: another account will not
+      // fix a malformed request, but locking briefly costs one attempt while NOT
+      // locking loops the same account. The lock auto-expires either way.
+      Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
+    );
+  }
+
+  if (!hasUsefulContent(translatedResponse, isClaudeMessageResponse, isResponsesResponse)) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
+    if (log?.warn) {
+      log.warn("CHATCORE", `${provider}/${model} returned HTTP 200 with empty content (finish_reason=${translatedResponse?.choices?.[0]?.finish_reason || "unknown"}) — treating as failure, locking for ${Math.round(EMPTY_CONTENT_COOLDOWN_MS / 1000)}s`);
+    }
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Empty response content from ${provider}/${model}`,
+      Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
+    );
+  }
+
+  if (onRequestSuccess && provider === "antigravity") {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err?.message || err);
+      });
+  }
+
+  // Echo a stable, listing-valid model name instead of the upstream id.
+  // Passthrough providers (opencode free tier) return the bare resolved model
+  // with the provider prefix stripped; clients that trust the echo re-send the
+  // bare name, which then mis-routes on the next hop. Prefixed requests keep
+  // their exact form; bare requests resolved to a connection-less catalog
+  // provider get the listing form re-injected (OpenRouter-style proxy echo).
+  const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+  if (echoModel && translatedResponse && typeof translatedResponse === "object" && !Array.isArray(translatedResponse)) {
+    translatedResponse.model = echoModel;
+  }
 
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
@@ -389,9 +927,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     console.error("[RequestDetail] Failed to save:", err.message);
   });
 
+  if (provider === "antigravity") {
+    await notifyTerminalVerificationSuccess(
+      notifyTerminal,
+      connectionId,
+      log,
+    );
+  }
+
+  // Privacy filter (#2728): put the caller's own values back, over the
+  // serialised body so text inside a tool call's `arguments` is covered too.
+  // No filter (the default) returns the same string untouched.
   return {
     success: true,
-    response: new Response(JSON.stringify(translatedResponse), {
+    response: new Response(restoreResponseJson(privacyFilter, JSON.stringify(translatedResponse)), {
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     })
   };

@@ -1,0 +1,28 @@
+# Development override for docker-compose.yml. Source is bind-mounted, so an
+# edit on the host is picked up by `next dev` without rebuilding the image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# The dev server listens on the same 20128 as production, so the base file's
+# port mapping is reused unchanged and only the inspector port is added.
+services:
+  tokenproxy:
+    build:
+      context: .
+      target: dev
+    # Overrides the published tag from the base file, so a local dev build is
+    # never mistaken for (or pushed as) tokenproxy:latest.
+    image: tokenproxy-dev
+    environment:
+      NODE_ENV: development
+      NODE_OPTIONS: "--inspect=0.0.0.0:9229"
+    ports:
+      - "127.0.0.1:9229:9229"
+    volumes:
+      # Source from the host. The two anonymous volumes below shadow it so the
+      # container keeps its own node_modules and .next, which are built for
+      # Alpine and would otherwise be overwritten by (or written into) the
+      # host checkout as root.
+      - .:/app
+      - /app/node_modules
+      - /app/.next

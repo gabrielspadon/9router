@@ -2,9 +2,9 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
@@ -13,6 +13,8 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { recordApiKeyDevice } from "@/sse/services/apiKeyDevices.js";
+import { refuseDisallowedModel } from "@/sse/services/modelAccess.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -37,7 +39,9 @@ export async function handleSearch(request) {
   log.request("POST", `${url.pathname} | ${providerInput}`);
 
   // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  const resolvedApiKey = await resolveClientApiKey(request, isValidApiKey);
+  const presentedApiKey = resolvedApiKey.apiKey;
+  const apiKey = resolvedApiKey.valid ? presentedApiKey : null;
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {
@@ -47,21 +51,31 @@ export async function handleSearch(request) {
   // Enforce API key if enabled in settings
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    if (!apiKey) {
+    if (!presentedApiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKey) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+    // Count the distinct clients on this key, so a leaked or shared key is
+    // visible as more than a bigger bill (#930). Only a VALIDATED key is
+    // recorded: counting unchecked strings would let anyone grow the map.
+    recordApiKeyDevice(apiKey, request);
   }
 
   if (!providerInput || typeof providerInput !== "string") {
     log.warn("SEARCH", "Missing provider/model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
+
+  // The key's model allowlist (#1154) was only ever enforced in rerank, so
+  // every other modality could reach a barred target with the same key
+  // (#448, #2833). Here the provider IS the model, so the allowlist is
+  // checked against that same string.
+  const barred = await refuseDisallowedModel(apiKey, providerInput, log);
+  if (barred) return barred;
 
   if (!query || typeof query !== "string" || !query.trim()) {
     log.warn("SEARCH", "Missing query");
@@ -149,9 +163,9 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   let lastStatus = null;
 
   // Credential fallback: some search providers reuse the API key of a related
-  // chat provider (e.g. ollama-search reuses the `ollama` chat key, zai-search
-  // reuses the `glm` chat key). When the search provider has no own connection,
-  // fall back to the linked provider's credentials.
+  // chat provider (e.g. ollama-search reuses the `ollama` chat key). When the
+  // search provider has no connection of its own, fall back to the linked
+  // provider's credentials.
   const fallbackProviderId = resolvedProvider.credentialFallback;
 
   // Lock scope for this handler. Without it markAccountUnavailable would write
@@ -178,8 +192,8 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         log.warn("SEARCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -203,9 +217,14 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
+          ...newCreds,
+          // Without the existing map, the merge at tokenRefresh.js:178 has
+          // nothing to merge onto and the refreshed data REPLACES what was
+          // stored, dropping the connection proxy fields auth.js inflates
+          // onto credentials (connectionProxyPoolId and friends). A refresh
+          // then silently unpins the account from its proxy pool (#884).
+          // chat.js already passed this; these three did not.
+          existingProviderSpecificData: credentials.providerSpecificData,
           testStatus: "active"
         });
       },

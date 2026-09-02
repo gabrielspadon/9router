@@ -142,14 +142,61 @@ export function getTargetFormat(provider, credentials = null) {
   return config.format || "openai";
 }
 
+// The credential kind a transport can be scoped to. Stored authType values are
+// "oauth", "apikey"/"api_key", "access_token" (an OAuth token pasted by hand) and
+// "cookie"; an unrecognised one is passed through so it can only match a transport
+// that names it. With no authType at all — standalone open-sse callers — the shape
+// of the credential decides.
+export function credentialAuthMode(credentials) {
+  const declared = String(credentials?.authType || "").toLowerCase().replace(/_/g, "");
+  if (declared === "accesstoken") return "oauth";
+  if (declared) return declared;
+  return credentials?.apiKey && !credentials?.accessToken ? "apikey" : "oauth";
+}
+
+// A client format the provider declares no transport for — a Responses-API client
+// against Kimi, say — fell through to the provider's DEFAULT transport, and for a
+// credential-scoped provider that default is the endpoint belonging to the OTHER
+// credential kind. So a platform API key landed back on the subscription host that
+// answers "please check your API key" with a 401 (#943) — the same failure #2881
+// fixed, for the formats it did not declare. Keep the endpoint scoped to the
+// credential and let the translator reach it: the resulting target format is the one
+// getTargetFormat() already returned on this path, so only the host and the auth
+// scheme move. Opt-in exactly as below — a provider whose transports name no
+// authModes is untouched, and a credential kind no transport claims still resolves
+// to null so the provider default stays in charge.
+function authScopedFallback(transports, config, credentials) {
+  if (!transports.some(t => Array.isArray(t.authModes))) return null;
+  const mode = credentialAuthMode(credentials);
+  const scoped = transports.filter(t => t.authModes?.includes(mode));
+  if (!scoped.length) return null;
+  return scoped.find(t => t.format === config?.format) || scoped[0];
+}
+
 // Resolve which transport to use for a provider given the client sourceFormat.
 // Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
 // to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+//
+// A transport may also declare `authModes` to opt into credential-scoped selection,
+// for the providers that serve an API key and a subscription token from different
+// hosts — Kimi's platform API against its Coding endpoint (#2881). Format alone
+// cannot separate those two, since both carry the same client format. The opt-in is
+// what keeps this narrow: when no entry matching the format declares authModes,
+// selection stays the plain first-match it has always been, so a provider that
+// declares none behaves exactly as before.
+export function resolveTransport(provider, sourceFormat, credentials = null) {
   const config = PROVIDERS[provider];
-  const transports = config?.transports;
+  const transports = config?.transports || credentials?.providerSpecificData?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  const matches = transports.filter(t => t.format === sourceFormat);
+  if (!matches.length) return authScopedFallback(transports, config, credentials);
+  if (!matches.some(t => Array.isArray(t.authModes))) return matches[0];
+  const mode = credentialAuthMode(credentials);
+  return (
+    matches.find(t => t.authModes?.includes(mode)) ||
+    matches.find(t => !t.authModes) ||
+    matches[0]
+  );
 }
 
 // Check if last message is from user

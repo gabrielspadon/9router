@@ -11,9 +11,21 @@ export default {
     website: "https://ollama.com",
   },
   category: "apikey",
+  // The connection's own endpoint, stored as providerSpecificData.baseUrl.
+  baseUrlField: {
+    label: "Ollama Host URL",
+    placeholder: "http://localhost:11434",
+  },
   transport: {
     baseUrl: "http://localhost:11434/api/chat",
     format: "ollama",
+    thinkingFormat: "ollama",
   },
-  serviceKinds: ["llm"],
+  models: [
+    { id: "embeddinggemma", name: "EmbeddingGemma", kind: "embedding" },
+    { id: "nomic-embed-text", name: "Nomic Embed Text", kind: "embedding" },
+    { id: "bge-m3", name: "BGE M3", kind: "embedding" },
+  ],
+  serviceKinds: ["llm", "embedding"],
+  embeddingConfig: { baseUrl: "http://localhost:11434/v1/embeddings", authType: "none" },
 };

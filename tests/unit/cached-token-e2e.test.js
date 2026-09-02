@@ -12,7 +12,7 @@ let tempDir;
 let db;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-cached-e2e-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenproxy-cached-e2e-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   db = await import("@/lib/db/index.js");
@@ -80,5 +80,45 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     const hist = await db.getUsageHistory({ provider: "openai" });
     expect(hist[0].tokens.prompt_tokens).toBe(1000);
     expect(hist[0].tokens.cached_tokens).toBe(600);
+  });
+
+  it("persists a provider exact total when the model has no local price", async () => {
+    const canonical = canonicalizeUsage({
+      prompt_tokens: 12,
+      completion_tokens: 3,
+      cost_in_usd: 0.123,
+    });
+
+    await db.saveRequestUsage({
+      provider: "unpriced-provider",
+      model: "upstream-priced-model",
+      connectionId: "c-exact",
+      tokens: canonical,
+      endpoint: "/v1/chat/completions",
+      status: "ok",
+    });
+
+    const history = await db.getUsageHistory({ provider: "unpriced-provider" });
+    expect(history).toHaveLength(1);
+    expect(history[0].cost).toBeCloseTo(0.123, 12);
+    expect(history[0].tokens.cost_in_usd).toBe(0.123);
+  });
+
+  it("Today stats count input/output-shaped usage", async () => {
+    const before = await db.getUsageStats("today");
+
+    await db.saveRequestUsage({
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      connectionId: "c-input-output",
+      tokens: { input_tokens: 77, output_tokens: 23 },
+      endpoint: "/v1/messages",
+      status: "ok",
+    });
+
+    const after = await db.getUsageStats("today");
+    expect(after.totalRequests - before.totalRequests).toBe(1);
+    expect(after.totalPromptTokens - before.totalPromptTokens).toBe(77);
+    expect(after.totalCompletionTokens - before.totalCompletionTokens).toBe(23);
   });
 });

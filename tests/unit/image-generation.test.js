@@ -2,7 +2,8 @@
  * Unit tests for image generation handler
  *
  * Covers:
- *  - OpenAI-compatible format (openai, minimax, openrouter)
+ *  - OpenAI-compatible format (openai, openrouter)
+ *  - MiniMax's own image API
  *  - Gemini format (generateContent API)
  *  - Provider-specific formats (nanobanana, sdwebui)
  *  - Response normalization to OpenAI format
@@ -145,8 +146,11 @@ describe("handleImageGenerationCore", () => {
     });
 
     expect(result.success).toBe(true);
+    // MiniMax is no longer served by the OpenAI-compatible adapter: its image
+    // API has its own path on a different host and takes an aspect ratio rather
+    // than a WxH size, which is why the OpenAI path returned a 404 page (#2482).
     expect(global.fetch).toHaveBeenCalledWith(
-      "https://api.minimaxi.com/v1/images/generations",
+      "https://api.minimax.io/v1/image_generation",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -154,6 +158,13 @@ describe("handleImageGenerationCore", () => {
         }),
       })
     );
+    const sent = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(sent).toEqual({
+      model: "minimax-image-01",
+      prompt: "A mountain",
+      n: 1,
+      aspect_ratio: "1:1",
+    });
   });
 
   it("generates image with NanoBanana format", async () => {

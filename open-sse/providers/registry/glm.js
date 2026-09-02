@@ -54,7 +54,9 @@ export default {
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
   serviceKinds: ["llm", "webSearch"],
-  // Coding plan bundles web search on the same API key as chat.
+  // Coding plan bundles web search on the same API key as chat. Preferred over
+  // searchViaChat below: search/index.js routes to searchConfig first and only
+  // falls back to the chat endpoint when this one fails retriably.
   searchConfig: {
     baseUrl: "https://api.z.ai/api/mcp/web_search_prime/mcp",
     method: "POST",
@@ -66,6 +68,13 @@ export default {
     maxMaxResults: 50,
     timeoutMs: 10000,
     cacheTTLMs: 300000,
+  },
+  // Web search rides the general open-platform chat endpoint, not the coding
+  // one above: the web_search tool is not served under /api/coding.
+  searchViaChat: {
+    defaultModel: "glm-4.7",
+    endpoint: "https://api.z.ai/api/paas/v4/chat/completions",
+    pricingUrl: "https://docs.z.ai/guides/overview/pricing",
   },
   features: {
     usage: true,

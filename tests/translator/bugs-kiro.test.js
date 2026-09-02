@@ -3,8 +3,13 @@ import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { resolveKiroModel } from "../../open-sse/config/kiroConstants.js";
 
 const O2K = (body) => translateRequest(FORMATS.OPENAI, FORMATS.KIRO, "m", body, true, null, "kiro");
+const O2KModel = (model, body) =>
+  translateRequest(FORMATS.OPENAI, FORMATS.KIRO, model, body, true, null, "kiro");
+const C2K = (model, body) =>
+  translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, model, body, true, null, "kiro");
 const R2K = (model, body) => translateRequest(
   FORMATS.OPENAI_RESPONSES,
   FORMATS.KIRO,
@@ -29,8 +34,8 @@ describe("OpenAI → Kiro", () => {
     expect(out.additionalModelRequestFields).toEqual({
       reasoning: { effort },
     });
-    expect(out.systemPrompt || "").not.toContain("<thinking_mode>");
-    expect(out.systemPrompt || "").not.toContain("<max_thinking_length>");
+    expect((out?.conversationState?.currentMessage?.userInputMessage?.content || "")).not.toContain("<thinking_mode>");
+    expect((out?.conversationState?.currentMessage?.userInputMessage?.content || "")).not.toContain("<max_thinking_length>");
   });
 
   // openai-to-kiro.js — safeJSONParse guards bad tool-call JSON (fixed in PR #1582)
@@ -66,5 +71,32 @@ describe("OpenAI → Kiro", () => {
     });
     const content = out.conversationState?.currentMessage?.userInputMessage?.content || "";
     expect(content, "remote image flattened to text").not.toContain("[Image:");
+  });
+});
+
+describe("Kiro upstream model IDs", () => {
+  it.each([
+    ["OpenAI", O2KModel, { messages: [{ role: "user", content: "hi" }] }],
+    ["Claude", C2K, { messages: [{ role: "user", content: "hi" }] }],
+  ])("normalizes Claude letter-dot-digit IDs from %s input", (_source, translate, body) => {
+    const out = translate("claude-sonnet.5", body);
+    expect(out.conversationState.currentMessage.userInputMessage.modelId).toBe("claude-sonnet-5");
+    expect(out._kiroUpstreamModel).toBe("claude-sonnet-5");
+  });
+
+  it.each([
+    "claude-sonnet-4.5",
+    "kimi-k2.5",
+  ])("does not rewrite an already valid or non-Claude dotted ID", (model) => {
+    const out = O2KModel(model, { messages: [{ role: "user", content: "hi" }] });
+    expect(out.conversationState.currentMessage.userInputMessage.modelId).toBe(model);
+  });
+
+  it("strips synthetic suffixes before normalizing a dotted Claude ID", () => {
+    expect(resolveKiroModel("claude-sonnet.5-thinking-agentic")).toEqual({
+      upstream: "claude-sonnet-5",
+      thinking: true,
+      agentic: true,
+    });
   });
 });

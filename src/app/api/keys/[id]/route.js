@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { pickLimits } from "@/lib/db/repos/apiKeysRepo.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -30,6 +31,10 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    // Each ceiling is set independently, and passing null clears it back to no
+    // ceiling (#3371); allowedModels behaves the same way and null clears it
+    // back to every model (#1154). A field the caller omits is left as it was.
+    Object.assign(updateData, pickLimits(body));
 
     const updated = await updateApiKey(id, updateData);
 

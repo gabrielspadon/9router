@@ -1,5 +1,6 @@
-import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
+import { getProviderConnections, getSettings, updateProviderConnection } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/index.js";
+import { isConnectTimeoutError } from "open-sse/utils/responseHeaderTimeout.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
   const updateData = {};
@@ -61,8 +62,21 @@ export async function POST(request) {
 
     const executor = getExecutor(provider);
     const stream = body.stream !== false;
+    const settings = await getSettings();
+    const connectTimeout = {
+      providerOverride: settings.providerStrategies?.[provider]?.connectTimeoutMs,
+      globalTimeout: settings.connectTimeoutMs,
+    };
+    const executeOptions = {
+      model,
+      body,
+      stream,
+      credentials,
+      connectTimeout,
+      signal: request.signal,
+    };
 
-    let { response } = await executor.execute({ model, body, stream, credentials });
+    let { response } = await executor.execute(executeOptions);
 
     // Auto-refresh token on 401/403 and retry (same as chatCore.js)
     if (response.status === 401 || response.status === 403) {
@@ -70,7 +84,7 @@ export async function POST(request) {
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         Object.assign(credentials, newCredentials);
         await persistRefreshedCredentials(connection, newCredentials);
-        ({ response } = await executor.execute({ model, body, stream, credentials }));
+        ({ response } = await executor.execute({ ...executeOptions, credentials }));
       }
     }
 
@@ -89,6 +103,11 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("[Translator] Send error:", error);
-    return Response.json({ success: false, error: error.message }, { status: 500 });
+    const status = error?.name === "AbortError"
+      ? 499
+      : isConnectTimeoutError(error)
+        ? 502
+        : 500;
+    return Response.json({ success: false, error: error.message }, { status });
   }
 }

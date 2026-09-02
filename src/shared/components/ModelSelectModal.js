@@ -7,7 +7,7 @@ import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, NO_AUTH_PROVIDER_IDS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -18,7 +18,7 @@ const PROVIDER_ORDER = [
 ];
 
 // Providers that need no auth — always show in model selector
-const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
+
 
 export default function ModelSelectModal({
   isOpen,
@@ -28,7 +28,7 @@ export default function ModelSelectModal({
   selectedModel,
   activeProviders = [],
   title = "Select Model",
-  modelAliases = {},
+  modelAliases: modelAliasesProp = null,
   kindFilter = null,
   capFilter = null,
   addedModelValues = [],
@@ -50,6 +50,8 @@ export default function ModelSelectModal({
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
   const [cursorModels, setCursorModels] = useState([]);
+  const [fetchedAliases, setFetchedAliases] = useState({});
+  const modelAliases = modelAliasesProp || fetchedAliases;
 
   // Cursor exposes the usable catalog per account. Keep the static catalog only
   // as a fallback, since it quickly becomes stale and different accounts can
@@ -140,6 +142,27 @@ export default function ModelSelectModal({
     if (isOpen) fetchCustomModels();
   }, [isOpen]);
 
+  // Every other source this selector needs is fetched here; aliases alone had to
+  // be injected by the caller, and a caller that forgot got a silently short
+  // list rather than an error. The judge picker in the combos page is one of
+  // four such call sites, which is why a custom model could be added to a combo
+  // but not chosen as its fusion judge (#1855).
+  const fetchModelAliases = async () => {
+    try {
+      const res = await fetch("/api/models/alias");
+      if (!res.ok) throw new Error(`Failed to fetch model aliases: ${res.status}`);
+      const data = await res.json();
+      setFetchedAliases(data.aliases || {});
+    } catch (error) {
+      console.error("Error fetching model aliases:", error);
+      setFetchedAliases({});
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && !modelAliasesProp) fetchModelAliases();
+  }, [isOpen, modelAliasesProp]);
+
   const fetchDisabledModels = async () => {
     try {
       const res = await fetch("/api/models/disabled");
@@ -218,7 +241,7 @@ export default function ModelSelectModal({
 
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
+          .filter(([, fullModel]) => typeof fullModel === "string" && fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
@@ -285,7 +308,7 @@ export default function ModelSelectModal({
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
         // so we must filter by providerId, not by the display prefix.
         const nodeModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
+          .filter(([, fullModel]) => typeof fullModel === "string" && fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
@@ -333,6 +356,7 @@ export default function ModelSelectModal({
         const hasHardcoded = hardcodedModels.length > 0;
         const customAliasModels = Object.entries(modelAliases)
           .filter(([aliasName, fullModel]) =>
+            typeof fullModel === "string" &&
             fullModel.startsWith(`${alias}/`) &&
             (hasHardcoded ? aliasName === fullModel.replace(`${alias}/`, "") : true) &&
             !hardcodedIds.has(fullModel.replace(`${alias}/`, ""))
@@ -470,15 +494,15 @@ export default function ModelSelectModal({
       footer={null}
     >
       {/* Info bar */}
-      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
-        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
+      <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-brand-soft border border-brand-line rounded-lg text-xs text-text-muted">
+        <span aria-hidden="true" className="material-symbols-outlined text-brand shrink-0" style={{ fontSize: "14px" }}>info</span>
         <span>Click to add, click again to remove. Changes are saved automatically.</span>
       </div>
 
       {/* Search - compact */}
       <div className="mb-3">
         <div className="relative">
-          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">
+          <span aria-hidden="true" className="material-symbols-outlined absolute start-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">
             search
           </span>
           <input
@@ -486,7 +510,7 @@ export default function ModelSelectModal({
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="focus-ring w-full ps-8 pe-3 py-1.5 bg-surface border border-border rounded text-xs"
           />
         </div>
       </div>
@@ -496,10 +520,10 @@ export default function ModelSelectModal({
         {/* Combos section - always first */}
         {filteredCombos.length > 0 && (
           <div>
-            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-              <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
-              <span className="text-xs font-medium text-primary">Combos</span>
-              <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-1">
+              <span aria-hidden="true" className="material-symbols-outlined text-brand text-[14px]">layers</span>
+              <span className="text-xs font-medium text-brand">Combos</span>
+              <span className="text-xs text-text-muted">({filteredCombos.length})</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {filteredCombos.map((combo) => {
@@ -511,15 +535,15 @@ export default function ModelSelectModal({
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
                       ${isSelected
-                        ? "bg-primary text-white border-primary"
+                        ? "bg-brand-solid text-brand-on border-brand-solid hover:bg-brand-solid-hover"
                         : addedModelValues.includes(combo.name)
-                          ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                          ? "bg-brand-solid border-brand-solid text-brand-on hover:bg-brand-solid-hover"
+                          : "bg-surface border-border text-text-main hover:border-brand-solid hover:bg-brand-soft"
                       }
                     `}
                   >
                     {addedModelValues.includes(combo.name) && (
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                      <span aria-hidden="true" className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                     )}
                     {combo.name}
                   </button>
@@ -533,7 +557,7 @@ export default function ModelSelectModal({
         {Object.entries(filteredGroups).map(([providerId, group]) => (
           <div key={providerId}>
             {/* Provider header */}
-            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-1">
               <ProviderIcon
                 src={`/providers/${providerId}.png`}
                 alt={group.name}
@@ -541,10 +565,10 @@ export default function ModelSelectModal({
                 fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}
                 fallbackColor={group.color}
               />
-              <span className="text-xs font-medium text-primary">
+              <span className="text-xs font-medium text-brand">
                 {group.name}
               </span>
-              <span className="text-[10px] text-text-muted">
+              <span className="text-xs text-text-muted">
                 ({group.models.length})
               </span>
             </div>
@@ -561,28 +585,28 @@ export default function ModelSelectModal({
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
                       ${isPlaceholder
-                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
+                        ? "border-dashed border-border text-text-muted hover:border-brand-solid hover:text-brand bg-surface italic"
                         : isSelected
-                          ? "bg-primary text-white border-primary"
+                          ? "bg-brand-solid text-brand-on border-brand-solid hover:bg-brand-solid-hover"
                           : addedModelValues.includes(model.value)
-                            ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                            : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                            ? "bg-brand-solid border-brand-solid text-brand-on hover:bg-brand-solid-hover"
+                            : "bg-surface border-border text-text-main hover:border-brand-solid hover:bg-brand-soft"
                       }
                     `}
                   >
                     <span className="flex items-center gap-1">
                       {addedModelValues.includes(model.value) && !isPlaceholder && (
-                        <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                        <span aria-hidden="true" className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                       )}
                       {isPlaceholder ? (
                         <>
-                          <span className="material-symbols-outlined text-[11px]">edit</span>
+                          <span aria-hidden="true" className="material-symbols-outlined text-[11px]">edit</span>
                           {model.name}
                         </>
                       ) : model.isCustom ? (
                         <>
                           {model.name}
-                          <span className="text-[9px] opacity-60 font-normal">custom</span>
+                          <span className="font-mono text-[10.5px] opacity-60 font-normal">custom</span>
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       ) : (
@@ -601,7 +625,7 @@ export default function ModelSelectModal({
 
         {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
           <div className="text-center py-4 text-text-muted">
-            <span className="material-symbols-outlined text-2xl mb-1 block">
+            <span aria-hidden="true" className="material-symbols-outlined text-2xl mb-1 block">
               search_off
             </span>
             <p className="text-xs">No models found</p>
@@ -624,7 +648,7 @@ ModelSelectModal.propTypes = {
     })
   ),
   title: PropTypes.string,
-  modelAliases: PropTypes.object,
+  modelAliases: PropTypes.object, // omit to let the selector fetch them itself
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,

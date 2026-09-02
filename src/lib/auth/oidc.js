@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
+import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
 export const OIDC_COOKIE_NAMES = {
   state: "oidc_state",
@@ -15,8 +16,17 @@ function trimTrailingSlashes(value) {
   return (value || "").trim().replace(/\/+$/, "");
 }
 
-function normalizeScopes(value) {
-  return (value || DEFAULT_SCOPES).trim() || DEFAULT_SCOPES;
+// OIDC Core 1.0 section 3.1.2.1 makes "openid" the value that marks an
+// authorization request as an OIDC one. Drop it and a compliant provider runs a
+// plain OAuth2 flow and issues no id_token, which the callback then rejects with
+// "OIDC provider did not return an id_token" (#3642) after the user has already
+// round-tripped through the IdP. The scope box in settings accepts any string,
+// so an admin who trims it to "profile email" hits exactly that. This flow
+// cannot work without an id_token, so put openid back instead of failing later.
+export function normalizeScopes(value) {
+  const scopes = ((value || "").trim() || DEFAULT_SCOPES).split(/\s+/).filter(Boolean);
+  if (!scopes.includes("openid")) scopes.unshift("openid");
+  return scopes.join(" ");
 }
 
 export function getPublicOrigin(request) {
@@ -48,9 +58,13 @@ export function isOidcConfigured(settings) {
   );
 }
 
+export function isOidcAuthMode(authMode) {
+  return ["sso", "oidc", "both"].includes(authMode);
+}
+
 export async function getOidcRuntimeConfig() {
   const settings = await getSettings();
-  if (!["oidc", "both"].includes(settings.authMode) || !isOidcConfigured(settings)) return null;
+  if (!isOidcAuthMode(settings.authMode) || !isOidcConfigured(settings)) return null;
 
   const issuerUrl = trimTrailingSlashes(settings.oidcIssuerUrl);
   return {
@@ -63,7 +77,9 @@ export async function getOidcRuntimeConfig() {
 }
 
 export async function fetchOidcDiscovery(issuerUrl) {
-  const discoveryUrl = `${trimTrailingSlashes(issuerUrl)}/.well-known/openid-configuration`;
+  const trimmed = trimTrailingSlashes(issuerUrl);
+  assertPublicUrl(trimmed);
+  const discoveryUrl = `${trimmed}/.well-known/openid-configuration`;
   const res = await fetch(discoveryUrl, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to load OIDC discovery document from ${discoveryUrl}`);

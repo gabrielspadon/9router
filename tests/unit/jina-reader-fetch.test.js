@@ -40,6 +40,8 @@ describe("Jina Reader fetch", () => {
     expect(init.headers).toEqual({
       "content-type": "application/json",
       authorization: "Bearer jina-test-key",
+      // The requested return format travels on this header (#2239).
+      "x-return-format": "markdown",
     });
     expect(JSON.parse(init.body)).toEqual({ url: "https://example.com/article" });
   });

@@ -1,5 +1,7 @@
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
-import "open-sse/index.js";
+import { installGlobalProxyFetch } from "open-sse/utils/proxyFetch.js";
+
+installGlobalProxyFetch();
 
 import { generatePKCE } from "../utils/pkce.js";
 import { extractCodexAccountInfo, fetchKiroProfileArn } from "../providerHelpers.js";
@@ -26,6 +28,7 @@ import kimchi from "./kimchi.js";
 import trae from "./trae.js";
 import windsurf from "./windsurf.js";
 import zed from "./zed.js";
+import devin from "./devin.js";
 
 // Provider configurations
 const PROVIDERS = {
@@ -51,6 +54,7 @@ const PROVIDERS = {
   trae,
   windsurf,
   zed,
+  devin,
 };
 
 export { PROVIDERS };

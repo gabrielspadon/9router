@@ -5,6 +5,7 @@ import {
 } from "@/lib/localDb";
 
 const MODEL_LOCK_PREFIX = "modelLock_";
+const MODEL_FAILURE_PREFIX = "modelFailure_";
 
 function getActiveModelLocks(connection) {
   const now = Date.now();
@@ -39,14 +40,30 @@ export async function GET() {
       }
 
       if (locks.length === 0 && connection.testStatus === "unavailable") {
-        models.push({
-          provider: connection.provider,
-          model: "__all",
-          status: "unavailable",
-          connectionId: connection.id,
-          connectionName: connection.name || connection.email || connection.id,
-          lastError: connection.lastError || null,
-        });
+        // testStatus is account-wide but the failure behind it usually is not:
+        // an "Invalid model ID" for one model left this reporting __all once its
+        // short lock expired, and the dashboard then marked every model on the
+        // connection red while showing the one model's error text (#2568).
+        //
+        // The per-model failure records say which models actually failed. Use
+        // them when there are any, and fall back to __all only when the failure
+        // genuinely carries no model, which is what an account-level rejection
+        // (401, payment required) looks like.
+        const failed = Object.keys(connection)
+          .filter((key) => key.startsWith(MODEL_FAILURE_PREFIX) && connection[key])
+          .map((key) => key.slice(MODEL_FAILURE_PREFIX.length) || "__all");
+        const scopedModels = failed.filter((m) => m !== "__all");
+        for (const model of scopedModels.length > 0 ? scopedModels : ["__all"]) {
+          models.push({
+            provider: connection.provider,
+            model,
+            status: "unavailable",
+            connectionId: connection.id,
+            connectionName: connection.name || connection.email || connection.id,
+            lastError: connection[`${MODEL_FAILURE_PREFIX}${model}`]?.message
+              || connection.lastError || null,
+          });
+        }
       }
     }
 

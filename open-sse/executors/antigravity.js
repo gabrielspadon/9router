@@ -1,12 +1,14 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, rewriteAntigravityBranding } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { sanitizeAntigravitySystemPrompt } from "../translator/request/openai-to-gemini.js";
+import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, classifyAntigravityValidation } from "../services/antigravityValidation.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -109,6 +111,25 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
   return `agent/${conversationId}/${Date.now()}/${trajectoryId}/${step}`;
 }
 
+// Thought-only history entries are removed before Antigravity sees them. That
+// can leave two same-role turns adjacent, which generateContent rejects. Keep
+// their part order while producing the alternating history the upstream needs.
+function mergeAdjacentContentRoles(contents) {
+  const normalized = [];
+  for (const content of contents) {
+    const previous = normalized.at(-1);
+    if (previous?.role === content.role) {
+      normalized[normalized.length - 1] = {
+        ...previous,
+        parts: [...previous.parts, ...content.parts],
+      };
+      continue;
+    }
+    normalized.push({ ...content, parts: [...content.parts] });
+  }
+  return normalized;
+}
+
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
@@ -121,6 +142,26 @@ export class AntigravityExecutor extends BaseExecutor {
     const forceNonStream = isImageModel(model);
     const action = (stream && !forceNonStream) ? "streamGenerateContent?alt=sse" : "generateContent";
     return `${baseUrl}/v1internal:${action}`;
+  }
+
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    let payload = null;
+    try {
+      payload = JSON.parse(bodyText || "");
+    } catch {
+      payload = null;
+    }
+    const validation = classifyAntigravityValidation({
+      status: response.status,
+      payload,
+      source: "chat",
+    });
+    return {
+      ...base,
+      message: ANTIGRAVITY_SAFE_ERROR_MESSAGE,
+      ...(validation ? { validation } : {}),
+    };
   }
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
@@ -146,13 +187,44 @@ export class AntigravityExecutor extends BaseExecutor {
       // Strip model name suffixes for the actual API model name
       const cleanModel = model.replace(/-(\d+)x(\d+)$/, "");
 
-      // Build simplified contents — text-only, merge all user messages
+      // Build simplified contents with allowlisted text and image parts.
       const contents = [];
-      const srcContents = body.request?.contents || body.contents || [];
+      const nestedContents = body.request?.contents;
+      const srcContents = Array.isArray(nestedContents)
+        ? nestedContents
+        : (Array.isArray(body.contents) ? body.contents : []);
       for (const c of srcContents) {
-        const textParts = (c.parts || []).filter(p => p.text !== undefined).map(p => ({ text: p.text }));
-        if (textParts.length > 0) {
-          contents.push({ role: c.role || "user", parts: textParts });
+        if (!c || typeof c !== "object" || Array.isArray(c) || !Array.isArray(c.parts)) continue;
+
+        const validParts = [];
+        for (const p of c.parts) {
+          if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+          if (typeof p.text === "string" && p.text.length > 0) {
+            validParts.push({ text: p.text });
+            continue;
+          }
+
+          const inlineData = p.inlineData;
+          if (
+            inlineData
+            && typeof inlineData === "object"
+            && !Array.isArray(inlineData)
+            && Object.getPrototypeOf(inlineData) === Object.prototype
+            && typeof inlineData.data === "string"
+            && inlineData.data.length > 0
+          ) {
+            const mimeType = typeof inlineData.mimeType === "string" && inlineData.mimeType.length > 0
+              ? inlineData.mimeType
+              : inlineData.mime_type;
+            if (typeof mimeType === "string" && mimeType.length > 0) {
+              validParts.push({
+                inlineData: { mimeType, data: inlineData.data },
+              });
+            }
+          }
+        }
+        if (validParts.length > 0) {
+          contents.push({ role: c.role || "user", parts: validParts });
         }
       }
 
@@ -189,7 +261,7 @@ export class AntigravityExecutor extends BaseExecutor {
 
     // ─── Standard (non-image) request ───
     // Fix contents for Claude models via Antigravity
-    const contents = body.request?.contents?.map(c => {
+    const filteredContents = body.request?.contents?.map(c => {
       let role = c.role;
       // functionResponse must be role "user" for Claude models
       if (c.parts?.some(p => p.functionResponse)) {
@@ -216,7 +288,8 @@ export class AntigravityExecutor extends BaseExecutor {
         };
       }
       return c;
-    });
+    }).filter(c => c.parts?.length > 0);
+    const contents = filteredContents && mergeAdjacentContentRoles(filteredContents);
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
@@ -246,13 +319,17 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
+    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt, Hermes Agent, OpenCode branding) to prevent Antigravity from 
+    // flagging the request and immediately blocking it with a 429 Quota Exhausted response.
     if (requestWithoutTools.systemInstruction?.parts) {
+      const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
       for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text !== "string") continue;
-        for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
-          part.text = part.text.replaceAll(from, to);
+        if (typeof part.text === "string") {
+          if (part.text.includes(oldText)) {
+            part.text = part.text.split(oldText).join("");
+          }
+          part.text = sanitizeAntigravitySystemPrompt(part.text);
+          part.text = rewriteAntigravityBranding(part.text);
         }
       }
     }
@@ -314,8 +391,8 @@ export class AntigravityExecutor extends BaseExecutor {
         expiresIn: tokens.expires_in,
         projectId: credentials.projectId
       };
-    } catch (error) {
-      log?.error?.("TOKEN", `Antigravity refresh error: ${error.message}`);
+    } catch {
+      log?.error?.("TOKEN", ANTIGRAVITY_SAFE_ERROR_MESSAGE);
       return null;
     }
   }

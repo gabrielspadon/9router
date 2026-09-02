@@ -22,7 +22,7 @@ const MIN_SHARE = 0.5;
 // Ignore limit differences below this: gateways round 200000 vs 202752.
 const LIMIT_TOLERANCE = 0.1;
 
-// 9router provider id -> models.dev provider id, for context/maxOutput only.
+// tokenproxy provider id -> models.dev provider id, for context/maxOutput only.
 // Providers absent here keep whatever the local pattern table resolves; names
 // that already match are resolved automatically.
 const PROVIDER_ALIASES = {
@@ -40,11 +40,24 @@ const PROVIDER_ALIASES = {
   "cloudflare-ai": "cloudflare-workers-ai",
 };
 
-let state = { running: false, lastSync: null, lastError: null, lastResult: null, etag: null };
-let timer = null;
+// Same shape as the other schedulers here (freeModelSync, quotaAutoPing): one
+// scheduler and one run state per server process, held on the global so a
+// Next.js hot reload re-importing this module cannot arm a second timer.
+const g = (globalThis.__modelCatalogSync ??= {
+  running: false, lastSync: null, lastError: null, lastResult: null, etag: null, timer: null,
+});
+
+// Same skip as src/shared/services/bootstrap.js: a build or prerender pass must
+// not reach out to the network.
+function isBuildPhase() {
+  return process.env.NEXT_PHASE === "phase-production-build"
+    || process.env.NEXT_PHASE === "phase-export"
+    || process.env.NEXT_PHASE === "phase-static";
+}
 
 export function getSyncState() {
-  return { ...state, file: CATALOG_FILE, url: CATALOG_URL, intervalMs: SYNC_INTERVAL_MS };
+  const { timer, ...rest } = g;
+  return { ...rest, scheduled: !!timer, file: CATALOG_FILE, url: CATALOG_URL, intervalMs: SYNC_INTERVAL_MS };
 }
 
 // "zai-org/GLM-4.6V:free" -> "glm-4.6v"
@@ -168,11 +181,11 @@ async function collectEntries() {
 
 // Run one sync. Returns a summary, or null when it could not complete.
 export async function syncModelCatalog() {
-  if (state.running) return null;
-  state.running = true;
+  if (g.running) return null;
+  g.running = true;
   try {
     const headers = { accept: "application/json" };
-    if (state.etag) headers["if-none-match"] = state.etag;
+    if (g.etag) headers["if-none-match"] = g.etag;
     const response = await fetch(CATALOG_URL, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
     let result;
@@ -192,7 +205,7 @@ export async function syncModelCatalog() {
       writeAtomic(CATALOG_FILE, serialized);
       writeAtomic(CATALOG_RAW_FILE, JSON.stringify(slim(catalog)));
 
-      state.etag = etag;
+      g.etag = etag;
       invalidateCatalog();
       result = {
         status: "updated",
@@ -204,18 +217,18 @@ export async function syncModelCatalog() {
       console.log(`[modelCatalog] ${result.models} models, ${result.providers} providers, ${(result.bytes / 1024).toFixed(1)}KB`);
     }
 
-    state.lastSync = Date.now();
-    state.lastError = null;
-    state.lastResult = result;
+    g.lastSync = Date.now();
+    g.lastError = null;
+    g.lastResult = result;
     return result;
   } catch (error) {
-    state.lastError = error?.message || String(error);
-    console.log(`[modelCatalog] sync failed: ${state.lastError}`);
+    g.lastError = error?.message || String(error);
+    console.log(`[modelCatalog] sync failed: ${g.lastError}`);
     return null;
   } finally {
     // collectEntries() detaches the reader; put it back whatever happened.
     await installCatalogSource().catch(() => {});
-    state.running = false;
+    g.running = false;
   }
 }
 
@@ -223,25 +236,27 @@ export async function syncModelCatalog() {
 // of re-downloading 4.3MB to be told nothing changed.
 function restoreEtag() {
   try {
-    state.etag = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")).etag || null;
-    state.lastSync = fs.statSync(CATALOG_FILE).mtimeMs;
+    g.etag = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")).etag || null;
+    g.lastSync = fs.statSync(CATALOG_FILE).mtimeMs;
   } catch {
-    state.etag = null;
+    g.etag = null;
   }
 }
 
 // Schedule the recurring sync. Disable entirely with MODEL_CATALOG_SYNC=off.
+// Called only from src/instrumentation.js, so nothing arms it under test.
 export function startModelCatalogSync() {
-  if (timer) return;
+  if (g.timer) return;
+  if (isBuildPhase()) return;
   if (String(process.env.MODEL_CATALOG_SYNC || "").toLowerCase() === "off") return;
   restoreEtag();
 
   const schedule = (delay) => {
-    timer = setTimeout(async () => {
+    g.timer = setTimeout(async () => {
       const result = await syncModelCatalog();
       schedule(result ? SYNC_INTERVAL_MS : RETRY_DELAY_MS);
     }, delay);
-    timer.unref?.();
+    g.timer.unref?.();
   };
   schedule(STARTUP_DELAY_MS);
 }

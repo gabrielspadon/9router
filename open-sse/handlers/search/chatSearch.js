@@ -1,7 +1,7 @@
 /**
  * Wrap chat-completions endpoints (with built-in web search) into the unified
  * /v1/search response format. Supports gemini, antigravity, openai, xai, kimi,
- * minimax, perplexity.
+ * minimax, glm, perplexity.
  */
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "../../providers/shared.js";
@@ -340,6 +340,43 @@ const CHAT_SEARCH_CONFIG = {
             }
           }
         }
+      }
+      const tokens = data?.usage?.total_tokens || 0;
+      return { text, citations, tokens };
+    }
+  },
+
+  glm: {
+    endpoint: () => searchEndpoint("glm"),
+    buildBody: (query, model) => ({
+      model,
+      messages: [{ role: "user", content: query }],
+      tools: [
+        {
+          type: "web_search",
+          web_search: { enable: true, search_engine: "search-prime", search_result: true }
+        }
+      ]
+    }),
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    }),
+    extractAnswer: (data) => {
+      const msg = data?.choices?.[0]?.message || {};
+      const text = msg.content || "";
+      // z.ai returns the sources alongside the answer, not inside it, and names
+      // the target `link` rather than `url`.
+      const raw = Array.isArray(data?.web_search) ? data.web_search : [];
+      const citations = [];
+      for (const it of raw) {
+        const url = it?.link || it?.url;
+        if (!url) continue;
+        citations.push({
+          url,
+          title: it.title || "",
+          snippet: it.content || it.snippet || ""
+        });
       }
       const tokens = data?.usage?.total_tokens || 0;
       return { text, citations, tokens };

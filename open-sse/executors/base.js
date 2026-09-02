@@ -1,13 +1,58 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import {
+  HTTP_STATUS,
+  RETRY_CONFIG,
+  DEFAULT_RETRY_CONFIG,
+  resolveRetryEntry,
+  FETCH_CONNECT_TIMEOUT_MS,
+} from "../config/runtimeConfig.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  createExecutorResponseHeaderTimeout,
+  isConnectTimeoutError,
+} from "../utils/responseHeaderTimeout.js";
 import { dbg } from "../utils/debugLog.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import {
+  ANTHROPIC_API_VERSION,
+  OPENAI_COMPAT_BASE,
+  ANTHROPIC_COMPAT_BASE,
+} from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+
+// Format byte count to human-readable string for debug logs
+function fmtBytes(n) {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)}MB`;
+}
 
 /**
  * BaseExecutor - Base class for provider executors
  */
+function parseDurationToMs(durationStr) {
+  if (!durationStr || typeof durationStr !== "string") return null;
+
+  // Format 1: "547098.015490101s" (seconds only, with decimals)
+  const secondsMatch = durationStr.match(/^([\d.]+)\s*s$/i);
+  if (secondsMatch) {
+    const secs = parseFloat(secondsMatch[1]);
+    return isNaN(secs) ? null : Math.round(secs * 1000);
+  }
+
+  // Format 2: "151h58m18.015490101s" (hours, minutes, seconds with decimals)
+  const match = durationStr.match(
+    /(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i,
+  );
+  if (!match) return null;
+
+  let totalMs = 0;
+  if (match[1]) totalMs += parseInt(match[1], 10) * 3600 * 1000;
+  if (match[2]) totalMs += parseInt(match[2], 10) * 60 * 1000;
+  if (match[3]) totalMs += Math.round(parseFloat(match[3]) * 1000);
+
+  return totalMs > 0 ? totalMs : null;
+}
+
 export class BaseExecutor {
   constructor(provider, config) {
     this.provider = provider;
@@ -20,7 +65,9 @@ export class BaseExecutor {
   }
 
   getBaseUrls() {
-    return this.config.baseUrls || (this.config.baseUrl ? [this.config.baseUrl] : []);
+    return (
+      this.config.baseUrls || (this.config.baseUrl ? [this.config.baseUrl] : [])
+    );
   }
 
   getFallbackCount() {
@@ -29,13 +76,19 @@ export class BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
+      const baseUrl =
+        credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
+      const path =
+        resolveOpenAICompatibleApiType(this.provider, credentials) ===
+        "responses"
+          ? "/responses"
+          : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || ANTHROPIC_COMPAT_BASE;
+      const baseUrl =
+        credentials?.providerSpecificData?.baseUrl || ANTHROPIC_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
     }
@@ -46,7 +99,7 @@ export class BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = {
       "Content-Type": "application/json",
-      ...this.config.headers
+      ...this.config.headers,
     };
 
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -76,12 +129,15 @@ export class BaseExecutor {
   }
 
   // Override in subclass for provider-specific transformations
-  transformRequest(model, body, stream, credentials) {
+  transformRequest(model, body, stream, credentials, sourceFormat) {
     return body;
   }
 
   shouldRetry(status, urlIndex) {
-    return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
+    return (
+      status === HTTP_STATUS.RATE_LIMITED &&
+      urlIndex + 1 < this.getFallbackCount()
+    );
   }
 
   // Override in subclass for provider-specific refresh
@@ -94,14 +150,106 @@ export class BaseExecutor {
   }
 
   parseError(response, bodyText) {
-    return { status: response.status, message: bodyText || `HTTP ${response.status}` };
+    let message = bodyText || `HTTP ${response.status}`;
+    let resetsAtMs = null;
+
+    if (bodyText) {
+      try {
+        const json = JSON.parse(bodyText);
+        message = json.error?.message || json.message || json.error || message;
+
+        // Parse Google RPC error details
+        const details = json?.error?.details;
+        if (Array.isArray(details)) {
+          for (const d of details) {
+            // ErrorInfo: quotaResetTimeStamp (ISO) or quotaResetDelay
+            if (d?.["@type"] === "type.googleapis.com/google.rpc.ErrorInfo") {
+              if (d.reason) {
+                // json.error may be an object (no .message), leaving `message` non-string
+                if (!String(message).includes(d.reason)) {
+                  message = `${message} [${d.reason}]`;
+                }
+              }
+              const metadata = d.metadata;
+              if (metadata) {
+                if (metadata.quotaResetTimeStamp) {
+                  const t = new Date(metadata.quotaResetTimeStamp).getTime();
+                  if (!isNaN(t) && t > Date.now()) {
+                    resetsAtMs = t;
+                  }
+                }
+                if (!resetsAtMs && metadata.quotaResetDelay) {
+                  const delayMs = parseDurationToMs(metadata.quotaResetDelay);
+                  if (delayMs) {
+                    resetsAtMs = Date.now() + delayMs;
+                  }
+                }
+              }
+            }
+            // RetryInfo: retryDelay
+            if (
+              !resetsAtMs &&
+              d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" &&
+              d?.retryDelay
+            ) {
+              const delayMs = parseDurationToMs(d.retryDelay);
+              if (delayMs) {
+                resetsAtMs = Date.now() + delayMs;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+
+    // Try to parse from message string using regex (e.g. "Resets in 151h58m18s" or "reset after 2h7m23s")
+    if (
+      !resetsAtMs &&
+      message &&
+      typeof message === "string" &&
+      response.status === 429
+    ) {
+      const match = message.match(
+        /reset(?:s)?\s+(?:after|in)\s+(\d+h)?\s*(\d+m)?\s*(\d+s)?/i,
+      );
+      if (match) {
+        let totalMs = 0;
+        if (match[1]) totalMs += parseInt(match[1], 10) * 3600 * 1000;
+        if (match[2]) totalMs += parseInt(match[2], 10) * 60 * 1000;
+        if (match[3]) totalMs += parseInt(match[3], 10) * 1000;
+        if (totalMs > 0) {
+          resetsAtMs = Date.now() + totalMs;
+        }
+      }
+    }
+
+    return {
+      status: response.status,
+      message,
+      ...(resetsAtMs && { resetsAtMs }),
+    };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({
+    model,
+    body,
+    stream,
+    credentials,
+    signal,
+    log,
+    proxyOptions = null, sourceFormat, targetFormat,
+    connectTimeout = null,
+  }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
+    // Captured from a retried attempt's own body before it is discarded, so an
+    // exhausted final attempt that comes back empty doesn't leave the caller
+    // with nothing but the generic "Internal server error" default (#2722).
+    let lastRetriedErrorText = null;
 
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
@@ -110,77 +258,169 @@ export class BaseExecutor {
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
     const tryRetry = async (urlIndex, statusKey, reason, response = null) => {
       const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
-      if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
+      if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts)
+        return false;
       // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
       let waitMs = delayMs;
       if (response && this.computeRetryDelay) {
-        const dynamic = await this.computeRetryDelay(response, retryAttemptsByUrl[urlIndex] + 1, delayMs);
+        const dynamic = await this.computeRetryDelay(
+          response,
+          retryAttemptsByUrl[urlIndex] + 1,
+          delayMs,
+        );
         if (dynamic === false) return false; // hook vetoes retry (e.g. Retry-After too long)
         if (dynamic != null) waitMs = dynamic;
       }
       retryAttemptsByUrl[urlIndex]++;
-      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
-      await new Promise(resolve => setTimeout(resolve, waitMs));
+      log?.debug?.(
+        "RETRY",
+        `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
       return true;
     };
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
-      const transformedBody = this.transformRequest(model, body, stream, credentials);
+      const transformedBody = this.transformRequest(
+        model,
+        body,
+        stream,
+        credentials,
+        sourceFormat,
+        targetFormat,
+      );
       const headers = this.buildHeaders(credentials, stream, url, model);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Abort if upstream doesn't return response headers within connection timeout
-      const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
-      const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
+      const deadline = createExecutorResponseHeaderTimeout({
+        connectTimeout,
+        registryTimeout: this.config?.timeoutMs,
+        envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+        signal,
+      });
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
-        const response = await proxyAwareFetch(url, {
-          method: "POST",
-          headers,
-          body: bodyStr,
-          signal: mergedSignal
-        }, proxyOptions);
-        clearTimeout(connectTimer);
+        dbg(
+          "FETCH",
+          `${this.provider.toUpperCase()} → ${url} | model=${model} | body=${fmtBytes(bodyStr.length)} | connectTimeout=${deadline.timeoutMs}ms`,
+        );
+        const response = await proxyAwareFetch(
+          url,
+          {
+            method: "POST",
+            headers,
+            body: bodyStr,
+            signal: deadline.signal,
+          },
+          proxyOptions,
+        );
+        deadline.clear();
         const ct = response.headers?.get?.("content-type") || "";
         const cl = response.headers?.get?.("content-length") || "?";
-        dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
+        dbg(
+          "FETCH",
+          `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`,
+        );
 
-        if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) { urlIndex--; continue; }
+        if (
+          await tryRetry(
+            urlIndex,
+            response.status,
+            `status ${response.status}`,
+            response,
+          )
+        ) {
+          // This response is about to be replaced by the next attempt and
+          // never reaches the caller — read its body now, while it's still
+          // the only copy, in case the eventual final attempt has nothing.
+          // clone() is guarded because unit tests script minimal response
+          // doubles ({status, headers}) that don't implement it.
+          if (typeof response.clone === "function") {
+            try {
+              const text = await response.clone().text();
+              if (text && text.trim()) lastRetriedErrorText = text;
+            } catch {
+              // best-effort capture only, never blocks the actual retry
+            }
+          }
+          urlIndex--;
+          continue;
+        }
 
         if (this.shouldRetry(response.status, urlIndex)) {
-          log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
+          log?.debug?.(
+            "RETRY",
+            `${response.status} on ${url}, trying fallback ${urlIndex + 1}`,
+          );
           lastStatus = response.status;
           continue;
         }
 
+        if (lastRetriedErrorText && response.status >= 500 && typeof response.clone === "function") {
+          let finalText = "";
+          try {
+            finalText = await response.clone().text();
+          } catch {
+            finalText = "";
+          }
+          if (!finalText || !finalText.trim()) {
+            const preservedHeaders = new Headers(response.headers);
+            preservedHeaders.delete("content-length");
+            return {
+              response: new Response(lastRetriedErrorText, {
+                status: response.status,
+                headers: preservedHeaders,
+              }),
+              url,
+              headers,
+              transformedBody,
+            };
+          }
+        }
+
         return { response, url, headers, transformedBody };
-      } catch (error) {
-        clearTimeout(connectTimer);
+      } catch (rawError) {
+        deadline.clear();
+        const error = deadline.classify(rawError);
         lastError = error;
-        const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
-        dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
-        // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
-        if (error.name === "AbortError" && !isConnectTimeout) throw error;
+        dbg(
+          "FETCH",
+          `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeoutError(error) ? " (connect timeout)" : ""}`,
+        );
+        if (isConnectTimeoutError(error)) throw error;
+        if (error.name === "AbortError") throw error;
 
         // Map network/fetch exceptions to 502 retry config
-        if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
+        if (
+          await tryRetry(
+            urlIndex,
+            HTTP_STATUS.BAD_GATEWAY,
+            `network "${error.message}"`,
+          )
+        ) {
+          urlIndex--;
+          continue;
+        }
 
         if (urlIndex + 1 < fallbackCount) {
-          log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
+          log?.debug?.(
+            "RETRY",
+            `Error on ${url}, trying fallback ${urlIndex + 1}`,
+          );
           continue;
         }
         throw error;
       }
     }
 
-    throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
+    throw (
+      lastError ||
+      new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`)
+    );
   }
 }
 

@@ -11,6 +11,28 @@ function stripAnthropicBillingHeader(text) {
 }
 
 // Convert Claude request to OpenAI format
+/**
+ * Give a tool schema the shape OpenAI-compatible providers require.
+ *
+ * The absent case was already handled, but a PRESENT-yet-malformed input_schema
+ * was forwarded verbatim — a schema with no `type`, or an object schema with no
+ * `properties`, reaches the provider and comes back as "Invalid tool
+ * parameters", which reads to the user as a broken edit rather than a schema
+ * problem (#2875). Same normalisation openai-responses.js applies on its own
+ * tool path.
+ */
+function normalizeToolSchema(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return { type: "object", properties: {} };
+  }
+  const out = { ...schema };
+  if (typeof out.type !== "string") out.type = "object";
+  if (out.type === "object" && (!out.properties || typeof out.properties !== "object")) {
+    out.properties = {};
+  }
+  return out;
+}
+
 export function claudeToOpenAIRequest(model, body, stream) {
   const result = {
     model: model,
@@ -30,15 +52,42 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // System message
   if (body.system) {
-    const systemContent = Array.isArray(body.system)
-      ? body.system.map(s => stripAnthropicBillingHeader(s.text || "")).filter(Boolean).join("\n")
-      : stripAnthropicBillingHeader(body.system);
-    
-    if (systemContent) {
-      result.messages.push({
-        role: ROLE.SYSTEM,
-        content: systemContent
-      });
+    // A Claude system prompt is usually the largest cacheable chunk, and its
+    // cache_control markers live on the individual blocks. Joining the blocks
+    // into one string discarded them here, before the provider quirk that would
+    // have preserved them ever ran, so a provider that honours cache_control
+    // (DashScope/alicode) never saw a marker on the system prompt at all.
+    //
+    // Keep the block shape ONLY when a marker is actually present. Without one
+    // the joined string is emitted exactly as before, so the common path is
+    // byte-identical; filterToOpenAIFormat then strips or keeps the markers
+    // according to the provider's quirk, and collapses the array back to a
+    // string when nothing survived.
+    const systemBlocks = Array.isArray(body.system) ? body.system : null;
+    const hasCacheControl = systemBlocks?.some(s => s && s.cache_control);
+
+    if (hasCacheControl) {
+      const blocks = systemBlocks
+        .map(s => {
+          const text = stripAnthropicBillingHeader(s.text || "");
+          if (!text) return null;
+          return s.cache_control
+            ? { type: OPENAI_BLOCK.TEXT, text, cache_control: s.cache_control }
+            : { type: OPENAI_BLOCK.TEXT, text };
+        })
+        .filter(Boolean);
+      if (blocks.length) result.messages.push({ role: ROLE.SYSTEM, content: blocks });
+    } else {
+      const systemContent = systemBlocks
+        ? systemBlocks.map(s => stripAnthropicBillingHeader(s.text || "")).filter(Boolean).join("\n")
+        : stripAnthropicBillingHeader(body.system);
+
+      if (systemContent) {
+        result.messages.push({
+          role: ROLE.SYSTEM,
+          content: systemContent
+        });
+      }
     }
   }
 
@@ -70,7 +119,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
       function: {
         name: tool.name,
         description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
+        parameters: normalizeToolSchema(tool.input_schema)
       }
     }));
   }
@@ -160,11 +209,19 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    const reasoning = [];
 
     for (const block of msg.content) {
       switch (block.type) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+          break;
+
+        // Assistant thinking has no OpenAI content-block equivalent; it rides on
+        // the message as reasoning_content. Without this case the block falls
+        // through the switch and the turn's reasoning is lost (#2400).
+        case CLAUDE_BLOCK.THINKING:
+          if (typeof block.thinking === "string" && block.thinking) reasoning.push(block.thinking);
           break;
 
         case CLAUDE_BLOCK.IMAGE:
@@ -194,10 +251,25 @@ function convertClaudeMessage(msg) {
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
-              .filter(c => c.type === CLAUDE_BLOCK.TEXT)
-              .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
+            // Keep text in the tool message; lift any images out as a following user
+            // turn (OpenAI `tool` messages can't carry images). Without this, an
+            // image-only tool_result is JSON.stringify'd -> base64 as text -> Codex
+            // "input exceeds the context window".
+            const textParts = [];
+            let hasImage = false;
+            for (const c of block.content) {
+              if (c.type === CLAUDE_BLOCK.TEXT) {
+                textParts.push(c.text);
+              } else if (c.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64") {
+                parts.push({
+                  type: OPENAI_BLOCK.IMAGE_URL,
+                  image_url: { url: encodeDataUri(c.source.media_type, c.source.data) }
+                });
+                hasImage = true;
+              }
+            }
+            resultContent = textParts.join("\n")
+              || (hasImage ? "[tool returned an image; see attached]" : JSON.stringify(block.content));
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
@@ -225,16 +297,31 @@ function convertClaudeMessage(msg) {
       if (parts.length > 0) {
         result.content = collapseTextParts(parts);
       }
+      // Always carry the field on a tool-call turn, empty when the assistant
+      // produced no thinking. Kimi with thinking enabled rejects the message
+      // outright — "thinking is enabled but reasoning_content is missing in
+      // assistant tool call message at index N" — and the other families that
+      // read this field (GLM, Qwen, DeepSeek, Step, Hunyuan) treat an empty
+      // string as the absence it describes (#1480). A provider that dislikes
+      // the field names it in its rejection, which the adaptive stripper then
+      // removes on retry, so this is recoverable rather than fatal.
+      result.reasoning_content = reasoning.length > 0 ? reasoning.join("") : "";
       result.tool_calls = toolCalls;
       return result;
     }
 
     // Return content
     if (parts.length > 0) {
-      return {
-        role,
-        content: collapseTextParts(parts)
-      };
+      const result = { role, content: collapseTextParts(parts) };
+      if (reasoning.length > 0 && role === ROLE.ASSISTANT) {
+        result.reasoning_content = reasoning.join("");
+      }
+      return result;
+    }
+
+    // A turn that was nothing but thinking still carries the reasoning forward.
+    if (reasoning.length > 0 && role === ROLE.ASSISTANT) {
+      return { role, content: "", reasoning_content: reasoning.join("") };
     }
     
     // Empty content array

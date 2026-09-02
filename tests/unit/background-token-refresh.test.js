@@ -155,6 +155,37 @@ describe("runBackgroundTokenRefreshTick", () => {
     expect(refreshConnection).not.toHaveBeenCalled();
   });
 
+  it("logs refresh progress without connection identifiers", async () => {
+    const completed = conn({
+      id: "connection-id-must-never-log-completed",
+      provider: "codex",
+    });
+    const failed = conn({
+      id: "connection-id-must-never-log-failed",
+      provider: "grok-cli",
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const refreshConnection = vi.fn(async (connection) => {
+      if (connection === failed) throw new Error("upstream rejected refresh");
+    });
+
+    const { runBackgroundTokenRefreshTick } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+
+    await runBackgroundTokenRefreshTick({
+      loadConnections: async () => [completed, failed],
+      refreshConnection,
+    });
+
+    const output = [...logSpy.mock.calls, ...warnSpy.mock.calls].flat().join(" ");
+    expect(output).not.toContain(completed.id);
+    expect(output).not.toContain(failed.id);
+    expect(output).toContain("codex");
+    expect(output).toContain("grok-cli");
+  });
+
   it("swallows top-level load errors", async () => {
     const refreshConnection = vi.fn();
     const loadConnections = vi.fn(async () => {

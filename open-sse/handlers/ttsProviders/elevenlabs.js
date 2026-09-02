@@ -22,19 +22,36 @@ export async function fetchElevenLabsVoices(apiKey) {
 }
 
 export default {
-  async synthesize(text, model, credentials) {
+  async synthesize(text, model, credentials, _responseFormat, opts = {}) {
     if (!credentials?.apiKey) throw new Error("ElevenLabs API key required");
     let modelId = "eleven_flash_v2_5";
     let voiceId = model;
     if (model && model.includes("/")) [modelId, voiceId] = model.split("/");
 
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    // ElevenLabs reads output_format from the query string, not the body, so
+    // spreading it in with the rest of the options would silently do nothing.
+    const { output_format: outputFormat, ...bodyOptions } = opts.providerOptions || {};
+    const query = outputFormat ? `?output_format=${encodeURIComponent(outputFormat)}` : "";
+
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}${query}`, {
       method: "POST",
       headers: { "xi-api-key": credentials.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
+        // Caller-supplied settings first, so this vendor's own controls
+        // (seed, previous_text, ...) survive the normalized shape (#2036).
+        // text and model_id are applied AFTER and cannot be overridden from a
+        // request: the text is the input and the model came from the id the
+        // router resolved, so letting a request change either would synthesize
+        // something nobody asked for. voice_settings merges per key, so a
+        // caller who sets one knob keeps the defaults for the rest.
+        ...bodyOptions,
         text,
         model_id: modelId,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          ...(bodyOptions.voice_settings || {}),
+        },
       }),
     });
     if (!res.ok) {

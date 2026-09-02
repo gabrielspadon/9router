@@ -111,6 +111,8 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     const normalized = normalizeSearchResponse(provider.id, data, params.query, params.searchType);
     const results = normalized.results.slice(0, params.maxResults);
     const duration = Date.now() - startTime;
+    // A provider that bills per returned post (xquik) has no per-query dollar
+    // price; reporting 0 would read as free rather than as unpriced.
     const usage = {
       queries_used: 1,
       search_cost_usd: providerConfig.costPerQuery ?? null,

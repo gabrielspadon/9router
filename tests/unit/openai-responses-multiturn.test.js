@@ -7,8 +7,13 @@ import {
   openaiToOpenAIResponsesRequest,
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.js";
-import { GrokCliExecutor, _resetGrokCliTurnStore } from "../../open-sse/executors/grok-cli.js";
+import {
+  GrokCliExecutor,
+  _resetGrokCliTurnStore,
+  resolveGrokCliTurnIdx,
+} from "../../open-sse/executors/grok-cli.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 describe("openai ↔ responses multi-turn reasoning", () => {
   it("openai→responses re-emits reasoning item with summary + encrypted_content", () => {
@@ -135,6 +140,24 @@ describe("openai ↔ responses multi-turn reasoning", () => {
       true
     );
   });
+
+  it("serializes Chat reasoning as a Responses object without dropping options", () => {
+    const out = translateRequest(
+      FORMATS.OPENAI,
+      FORMATS.OPENAI_RESPONSES,
+      "gpt-5.6-sol",
+      {
+        messages: [{ role: "user", content: "reason carefully" }],
+        reasoning: { effort: "ultra", mode: "auto", summary: "detailed" },
+      },
+      true,
+      {},
+      "codex",
+    );
+
+    expect(out.reasoning).toEqual({ effort: "ultra", mode: "auto", summary: "detailed" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
 });
 
 describe("GrokCliExecutor multi-turn input", () => {
@@ -176,6 +199,12 @@ describe("GrokCliExecutor multi-turn input", () => {
     }
     expect(out.include).toContain("reasoning.encrypted_content");
     expect(out.store).toBe(false);
-    expect(executor._currentTurnIdx).toBe(2);
+    // The turn index used to be cached on the executor instance as
+    // _currentTurnIdx. Commit 4568509f3 removed that deliberately, because
+    // per-instance mutable state is shared across concurrent requests, and
+    // moved it into the per-request state that feeds the x-grok-turn-idx
+    // header. Assert it through the resolver that now owns it, which is the
+    // observable behaviour rather than a field that no longer exists.
+    expect(resolveGrokCliTurnIdx("mt-1", body.input)).toBe(2);
   });
 });

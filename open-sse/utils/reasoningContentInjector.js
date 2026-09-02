@@ -2,11 +2,22 @@
 // to be echoed back on assistant messages. Clients in OpenAI format don't send it,
 // so we inject a non-empty placeholder to satisfy upstream validation.
 import { PROVIDERS } from "../config/providers.js";
+import { FORMATS } from "../translator/formats.js";
 
 const PLACEHOLDER = " ";
 
 // Provider-level rules derive from registry transport.reasoningInject (single source)
-const providerRuleFor = (provider) => PROVIDERS[provider]?.reasoningInject;
+// Xiaomi's OpenAI-compatible endpoints enforce the same follow-up history
+// contract, but do not currently carry transport reasoningInject metadata.
+const COMPATIBILITY_PROVIDER_RULES = {
+  "xiaomi-mimo": { scope: "all" },
+  "xiaomi-tokenplan": { scope: "all" },
+};
+
+const providerRuleFor = (provider, targetFormat) => (
+  PROVIDERS[provider]?.reasoningInject
+  || (targetFormat === FORMATS.OPENAI ? COMPATIBILITY_PROVIDER_RULES[provider] : undefined)
+);
 
 // Model-level rules: matched by predicate against model id
 const MODEL_RULES = [
@@ -67,10 +78,17 @@ function applyDeepSeekV4ProAlias({ provider, model, body }) {
   return nextBody;
 }
 
-export function injectReasoningContent({ provider, model, body }) {
-  const providerRule = providerRuleFor(provider);
+export function injectReasoningContent({ provider, model, body, targetFormat = FORMATS.OPENAI }) {
+  const nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
+  // reasoning_content is an OpenAI-dialect message key. A multi-endpoint
+  // provider can resolve a non-OpenAI wire for the same account: MiniMax M3
+  // declares targetFormat "claude" and lands on /anthropic/v1/messages, where
+  // the extra key is rejected on every message it was written to. The rules
+  // above are keyed on the provider, not on the endpoint, so gate the injector
+  // on the resolved wire (#2705). An unresolved transport keeps the old path.
+  if (targetFormat && targetFormat !== FORMATS.OPENAI) return nextBody;
+  const providerRule = providerRuleFor(provider, targetFormat);
   const modelRule = MODEL_RULES.find(r => r.match(model));
   const rule = providerRule || modelRule;
-  const nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
   return applyRule(nextBody, rule);
 }

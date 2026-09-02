@@ -3,7 +3,7 @@
  * built-in model for both the `minimax` (international) and
  * `minimax-cn` (China) providers, with `targetFormat: "claude"`.
  *
- * Run: cd tests && NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run tests/unit/provider-models-minimax-m3.test.js --reporter=verbose
+ * Run: cd tests && npx vitest run tests/unit/provider-models-minimax-m3.test.js --reporter=verbose
  */
 
 import { describe, it, expect } from "vitest";

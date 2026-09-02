@@ -1,13 +1,20 @@
 // Quota auto-ping scheduler: warms 5h windows by sending tiny opt-in requests right after reset.
 import "open-sse/index.js";
 
-import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import {
+  getSettings,
+  getProviderConnections,
+  updateProviderConnection,
+} from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
+import { getAntigravityUsage } from "open-sse/services/usage/google.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
+import { PROVIDER_MODELS } from "open-sse/providers/index.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
 
@@ -22,6 +29,15 @@ const providerHandlers = {
   codex: {
     getUsage: getCodexUsage,
     sendPing: sendCodexPing,
+  },
+  antigravity: {
+    // The dispatcher calls getUsage(accessToken, proxyOptions); this one takes
+    // (accessToken, providerSpecificData, proxyOptions, hooks), so it is adapted
+    // here rather than bending the call for two providers that do not need it.
+    // providerSpecificData goes unread by that function, and hooks drives the
+    // account-verification reporter, which an unattended timer must not trigger.
+    getUsage: (accessToken, proxyOptions) => getAntigravityUsage(accessToken, null, proxyOptions, null),
+    sendPing: sendAntigravityPing,
   },
 };
 
@@ -84,6 +100,28 @@ function hasExhaustedBlockingQuota(quotas, sessionKey) {
   return Object.entries(quotas || {}).some(([name, quota]) => isBlockingQuotaName(name, sessionKey) && isQuotaExhausted(quota));
 }
 
+// Claude and Codex each meter one named window, so `quotaKey` is a literal.
+// Antigravity meters per MODEL: its quota map is keyed by the registry model id,
+// one window per quota family, so a provider may name a SET via `quotaKeys`.
+// The governing reset is the EARLIEST of them — the next window to roll over,
+// which is the deadline that decides when this connection is next pinged.
+// The single-key path stays a plain lookup, so Claude and Codex are untouched.
+export function resolveQuotaEntry(quotas, providerConfig) {
+  const keys = providerConfig.quotaKeys || [providerConfig.quotaKey];
+  if (keys.length === 1) return quotas?.[keys[0]];
+
+  let governing = null;
+  let governingMs = Infinity;
+  for (const key of keys) {
+    const quota = quotas?.[key];
+    const resetMs = new Date(quota?.resetAt).getTime();
+    if (!Number.isFinite(resetMs) || resetMs >= governingMs) continue;
+    governing = quota;
+    governingMs = resetMs;
+  }
+  return governing;
+}
+
 function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
   if (providerConfig.pingWhenResetAtSlides) {
     return Boolean(cachedReset) && getResetDriftMs(cachedReset, resetAt) >= (providerConfig.resetAtDriftMs || 0);
@@ -94,30 +132,87 @@ function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
 }
 
 function buildProxyOptions(cfg) {
+  if (cfg?.kind === "usable") return toConnectionProxyOptions(cfg);
   return {
     connectionProxyEnabled: cfg.connectionProxyEnabled === true,
     connectionProxyUrl: cfg.connectionProxyUrl || "",
     connectionNoProxy: cfg.connectionNoProxy || "",
     vercelRelayUrl: cfg.vercelRelayUrl || "",
-    strictProxy: false,
+    strictProxy: cfg.strictProxy === true,
   };
 }
 
+function snapshotOwner(conn, deps) {
+  const data = conn.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof deps.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => deps.updateConnectionProxyPoolSnapshotIfBound(conn.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
+
+// The models this fork routes for Claude, cheapest last so the ping costs as
+// little as possible when the configured one is refused.
+export function claudePingCandidates(providerConfig) {
+  // PROVIDER_MODELS is keyed by the registry ALIAS where one exists, and the
+  // Claude entry aliases to "cc", so keying on the provider id alone finds
+  // nothing and the walk would have no candidates at all.
+  const registry = (PROVIDER_MODELS.cc || PROVIDER_MODELS.claude || [])
+    .map((m) => m?.id)
+    .filter(Boolean);
+  const cheapestFirst = [
+    ...registry.filter((id) => id.includes("haiku")),
+    ...registry.filter((id) => !id.includes("haiku")),
+  ];
+  return [providerConfig.pingModel, ...cheapestFirst].filter(
+    (id, i, all) => id && all.indexOf(id) === i,
+  );
+}
+
+// A 404, or a 400 whose message names the model, means THIS model is refused for
+// this account and another may work. A 401, 403 or 429 is about the account or
+// the rate limiter and must never make us walk the catalogue.
+export function isClaudeModelRejection(status, bodyText) {
+  if (status === 404) return true;
+  if (status !== 400) return false;
+  return /model/i.test(bodyText || "");
+}
+
 async function sendClaudePing(connection, providerConfig, proxyOptions, deps) {
-  const res = await deps.proxyAwareFetch(CLAUDE_PING_URL, {
-    method: "POST",
-    headers: {
-      ...CLAUDE_CLI_SPOOF_HEADERS,
-      "Authorization": `Bearer ${connection.accessToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: providerConfig.pingModel,
-      max_tokens: providerConfig.pingMaxTokens,
-      messages: [{ role: "user", content: providerConfig.pingText }],
-    }),
-  }, proxyOptions);
-  return res.ok;
+  const candidates = claudePingCandidates(providerConfig);
+  for (let i = 0; i < candidates.length; i++) {
+    const model = candidates[i];
+    const res = await deps.proxyAwareFetch(CLAUDE_PING_URL, {
+      method: "POST",
+      headers: {
+        ...CLAUDE_CLI_SPOOF_HEADERS,
+        "Authorization": `Bearer ${connection.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: providerConfig.pingMaxTokens,
+        messages: [{ role: "user", content: providerConfig.pingText }],
+      }),
+    }, proxyOptions);
+    if (res.ok) {
+      if (i > 0) console.log(`[AutoPing] claude: ${candidates[0]} refused, pinged with ${model}`);
+      return true;
+    }
+    // The configured model erroring used to end the tick, so the window was
+    // never warmed and the countdown never started, with nothing said about why
+    // (#2592). Walk to the next model instead, but only when the refusal is
+    // about the model.
+    const bodyText = await res.text?.().catch(() => "") || "";
+    if (!isClaudeModelRejection(res.status, bodyText)) {
+      console.log(`[AutoPing] claude: ping failed with ${res.status}, not retrying another model`);
+      return false;
+    }
+    if (i === candidates.length - 1) {
+      console.log(`[AutoPing] claude: every candidate model was refused (last ${res.status})`);
+    }
+  }
+  return false;
 }
 
 function buildCodexPingInput(text) {
@@ -147,10 +242,73 @@ async function drainResponseBody(response) {
   }
 }
 
+// Codex model access is per-account and moves over time, so a model fixed in
+// config can be unavailable for an otherwise valid account (#3212). Ask the
+// account's own catalog instead of inferring access from a Free/Plus/Pro label.
+// Duplicated from src/app/api/providers/[id]/models/route.js, which owns the
+// canonical copy but does not export it; the client_version must stay in step
+// with it, because the endpoint silently omits entries gated above it.
+const CODEX_MODELS_URL = "https://chatgpt.com/backend-api/codex/models?client_version=0.144.6";
+
+/**
+ * Pick the model to ping from a Codex model catalog.
+ *
+ * @returns {string} the selected model id,
+ *          `null` when the catalog is readable but offers nothing callable
+ *          (the account genuinely cannot ping — do not spend a request), or
+ *          `undefined` when the payload is not a catalog at all (unknown, so
+ *          the caller keeps the configured model rather than guessing).
+ */
+export function selectCodexPingModel(catalog) {
+  const entries = Array.isArray(catalog) ? catalog
+    : Array.isArray(catalog?.models) ? catalog.models
+    : Array.isArray(catalog?.data) ? catalog.data
+    : null;
+  if (!entries) return undefined;
+
+  // Catalog order IS the preference order; `is_default` only overrides it when
+  // the endpoint states one. Entries are filtered on the endpoint's own
+  // supported_in_api flag, absent meaning supported.
+  const usable = entries.filter((m) => m && m.supported_in_api !== false);
+  const chosen = usable.find((m) => m.is_default === true) || usable[0];
+  if (!chosen) return null;
+  const id = chosen.slug || chosen.id || chosen.model || chosen.name;
+  return typeof id === "string" && id ? id : null;
+}
+
+// Fetched only once a ping is actually about to be sent (every skip guard in
+// pingConnection has already passed), so this costs one GET per 5h window per
+// account rather than one per scheduler tick.
+async function resolveCodexPingModel(connection, providerConfig, proxyOptions, deps) {
+  try {
+    const res = await deps.proxyAwareFetch(CODEX_MODELS_URL, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${connection.accessToken}`,
+        "originator": "codex_cli_rs",
+      },
+    }, proxyOptions);
+    if (!res?.ok) return providerConfig.pingModel;
+    const selected = selectCodexPingModel(await res.json());
+    return selected === undefined ? providerConfig.pingModel : selected;
+  } catch {
+    // Catalog unreachable is not evidence the model is gone — keep the
+    // configured one so a transient failure cannot disable auto-ping.
+    return providerConfig.pingModel;
+  }
+}
+
 async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
+  const pingModel = await resolveCodexPingModel(connection, providerConfig, proxyOptions, deps);
+  // The catalog answered and listed nothing this account can call in the API.
+  // Reported as a failed ping so the cooldown backs off instead of retrying
+  // the same doomed request every tick.
+  if (!pingModel) return false;
+
   const executor = deps.getExecutor("codex");
   const { response } = await executor.execute({
-    model: providerConfig.pingModel,
+    model: pingModel,
     stream: true,
     credentials: {
       accessToken: connection.accessToken,
@@ -160,7 +318,7 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
     proxyOptions,
     log: console,
     body: {
-      model: providerConfig.pingModel,
+      model: pingModel,
       input: buildCodexPingInput(providerConfig.pingText),
       instructions: providerConfig.pingInstructions,
       reasoning: providerConfig.pingReasoningEffort
@@ -180,9 +338,88 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
   return true;
 }
 
+// A 401, 403 or 429 is about the ACCOUNT or the limiter, never about this one
+// model, so the remaining quota families are left alone: poking them would be
+// one more request at an endpoint that is already refusing this account.
+export function isAntigravityAccountRefusal(status) {
+  return status === 401 || status === 403 || status === 429;
+}
+
+// Antigravity's countdown only starts once a window is actually used, and each
+// quota family has its own window, so this pokes one model from EVERY family
+// rather than only the family that governed the schedule. Two families sharing a
+// reset timestamp share a reset key, so a single governing poke would leave the
+// other one cold for good.
+//
+// Any other status counts as warmed. The poke's goal is that the request reaches
+// upstream and spends a token, not that it comes back 2xx: Google's transport
+// commonly answers 5xx or drops the stream after processing the request. Same
+// reading as the manual hot reload in
+// src/app/api/providers/[id]/hotreload/route.js:31-37.
+async function sendAntigravityPing(connection, providerConfig, proxyOptions, deps) {
+  const executor = deps.getExecutor("antigravity");
+  const models = providerConfig.quotaKeys || [];
+  let landed = 0;
+
+  for (const model of models) {
+    try {
+      const { response } = await executor.execute({
+        model,
+        stream: true,
+        credentials: {
+          accessToken: connection.accessToken,
+          projectId: connection.projectId,
+          email: connection.email || connection.name,
+          connectionId: connection.id,
+          providerSpecificData: connection.providerSpecificData,
+        },
+        proxyOptions,
+        log: console,
+        body: {
+          model,
+          request: {
+            contents: [{ role: "user", parts: [{ text: providerConfig.pingText }] }],
+            generationConfig: { maxOutputTokens: providerConfig.pingMaxTokens, temperature: 0 },
+          },
+        },
+      });
+      if (!response) continue;
+
+      const status = response.status;
+      await drainResponseBody(response);
+      if (isAntigravityAccountRefusal(status)) {
+        console.log(`[AutoPing] antigravity: ${model} refused with ${status}, leaving the other quota families alone`);
+        break;
+      }
+      landed += 1;
+    } catch (e) {
+      console.log(`[AutoPing] antigravity: ${model} ping errored: ${e.message}`);
+    }
+  }
+
+  // A partial success still counts. Failing the whole tick would put the
+  // connection on the failure cooldown and re-poke the family that DID answer
+  // every 15min, for a model this account may simply not be entitled to.
+  if (landed > 0 && landed < models.length) {
+    console.log(`[AutoPing] antigravity: ${landed}/${models.length} quota families warmed`);
+  }
+  return landed > 0;
+}
+
 function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
   const failedAt = state.failureCache[key];
   return failedAt && nowMs - failedAt < C.failureCooldownMs;
+}
+
+async function markRateLimitedUntil(connection, resetAt, provider, deps) {
+  if (connection.rateLimitedUntil === resetAt) return;
+  try {
+    await deps.updateProviderConnection(connection.id, { rateLimitedUntil: resetAt });
+    console.log(`[AutoPing] ${provider}:${connection.id}: quota exhausted, skipped until ${resetAt}`);
+  } catch (e) {
+    // Never fail a poll tick over bookkeeping; the next tick retries.
+    console.warn(`[AutoPing] ${provider}:${connection.id}: could not record exhausted quota: ${e.message}`);
+  }
 }
 
 async function pingConnection(conn, provider, providerConfig, handler, deps, state = g) {
@@ -195,7 +432,12 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   // Avoid hammering provider auth/quota endpoints if a ping failed recently.
   if (shouldSkipAfterFailure(state, key)) return;
 
-  const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
+  const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData, snapshotOwner(conn, deps));
+  if (proxyCfg?.kind === "required-unavailable") {
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${conn.id}: required_proxy_unavailable`);
+    return { code: "required_proxy_unavailable", status: 503 };
+  }
   const proxyOptions = buildProxyOptions(proxyCfg);
 
   let connection = conn;
@@ -210,14 +452,23 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
 
   const usage = await handler.getUsage(connection.accessToken, proxyOptions);
   const quotas = usage?.quotas || {};
-  const quota = quotas?.[providerConfig.quotaKey];
+  const quota = resolveQuotaEntry(quotas, providerConfig);
   const resetAt = quota?.resetAt;
   if (!resetAt) return;
 
   state.resetCache[key] = resetAt;
 
   if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
-  if (isQuotaExhausted(quota)) return;
+  if (isQuotaExhausted(quota)) {
+    // The poller is the only thing that KNOWS the account is spent before a real
+    // request finds out the hard way. Returning here left that knowledge in this
+    // function (#1125): selection kept offering the account until an actual
+    // request 429'd. `rateLimitedUntil` is the field account fallback already
+    // filters on, so writing the reset the provider reported makes the account
+    // skipped the same way a paused one is, and it lapses on its own at reset.
+    await markRateLimitedUntil(connection, resetAt, provider, deps);
+    return;
+  }
 
   const now = Date.now();
   const resetKey = normalizeResetKey(resetAt);
@@ -250,6 +501,7 @@ function createDefaultDeps() {
   return {
     getSettings,
     getProviderConnections,
+    updateConnectionProxyPoolSnapshotIfBound: localDb.updateConnectionProxyPoolSnapshotIfBound,
     updateProviderConnection,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,

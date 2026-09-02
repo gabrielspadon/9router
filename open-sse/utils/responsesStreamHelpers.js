@@ -30,6 +30,26 @@ export function buildAbortedResponsesTerminalBytes() {
   return sharedEncoder.encode(`${formatIncompleteOpenAIResponsesStreamFailure()}data: [DONE]\n\n`);
 }
 
+// The early Responses bridge has already committed a 200 SSE response when
+// routing fails. Keep its terminal generic so provider error bodies never leak.
+export function buildEarlyResponsesFailureTerminalBytes() {
+  return sharedEncoder.encode(`${formatSSE({
+    event: "response.failed",
+    data: {
+      type: "response.failed",
+      response: {
+        id: `resp_${Date.now()}`,
+        status: "failed",
+        error: {
+          type: "upstream_error",
+          code: "upstream_error",
+          message: "request failed before stream started"
+        }
+      }
+    }
+  }, FORMATS.OPENAI_RESPONSES)}data: [DONE]\n\n`);
+}
+
 // Synthesize a response.failed event for streams that close without a terminal event
 export function formatIncompleteOpenAIResponsesStreamFailure() {
   return formatSSE({

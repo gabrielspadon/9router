@@ -6,22 +6,31 @@ import {
   APIKEY_PROVIDERS,
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
+  FREE_TIER_PROVIDERS,
 } from "@/shared/constants/providers";
 import { testSingleConnection } from "../[id]/test/testUtils.js";
+
+// The dashboard's "Free Tier Providers" section renders BOTH categories and its
+// Test All sends mode "free", so both have to answer to that group. Checking only
+// FREE_PROVIDERS left every freeTier provider skipped by the button sitting above
+// it and tested by the API-key button instead (#2680).
+function isFreeGroup(providerId) {
+  return Boolean(FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);
+}
 
 function getAuthGroup(providerId, connection = null) {
   // Prioritize authType from connection if available
   if (connection?.authType) {
     if (connection.authType === "oauth") {
       // Check if it's a free provider
-      if (FREE_PROVIDERS[providerId]) return "free";
+      if (isFreeGroup(providerId)) return "free";
       return "oauth";
     }
     return connection.authType;
   }
-  
+
   // Fallback to constants
-  if (FREE_PROVIDERS[providerId]) return "free";
+  if (isFreeGroup(providerId)) return "free";
   if (OAUTH_PROVIDERS[providerId]) return "oauth";
   if (APIKEY_PROVIDERS[providerId]) return "apikey";
   if (

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
@@ -63,6 +64,27 @@ const GROK_CLI_FREEFORM_TOOL_PARAMETERS = {
 // Per-session last turn index so multi-turn headers never go backwards within this process
 const sessionTurnStore = new Map();
 let requestTurnStore = new WeakMap();
+const grokCliRequestState = new AsyncLocalStorage();
+let anonymousGrokCliAgentIdPromise = null;
+
+function formatGrokCliAgentId(machineId) {
+  return [
+    machineId.slice(0, 8),
+    machineId.slice(8, 12),
+    "5" + machineId.slice(13, 16),
+    "a" + machineId.slice(17, 20),
+    machineId.slice(0, 12).padEnd(12, "0"),
+  ].join("-");
+}
+
+function getAnonymousGrokCliAgentId() {
+  if (!anonymousGrokCliAgentIdPromise) {
+    anonymousGrokCliAgentIdPromise = getConsistentMachineId("grok-cli-agent")
+      .then(formatGrokCliAgentId)
+      .catch(() => crypto.randomUUID());
+  }
+  return anonymousGrokCliAgentIdPromise;
+}
 
 /**
  * Count user turns in a Responses `input` array.
@@ -340,10 +362,6 @@ function resolveEffortFromModel(modelId) {
 export class GrokCliExecutor extends BaseExecutor {
   constructor() {
     super("grok-cli", PROVIDERS["grok-cli"]);
-    this._currentSessionId = null;
-    this._currentReqId = null;
-    this._currentTurnIdx = 1;
-    this._agentId = null;
   }
 
   buildUrl() {
@@ -359,8 +377,9 @@ export class GrokCliExecutor extends BaseExecutor {
     return shouldRefreshCredentials("grok-cli", credentials);
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = null, model = null) {
     const headers = super.buildHeaders(credentials, stream);
+    const requestState = grokCliRequestState.getStore();
 
     // Static fingerprint from registry
     const staticHeaders = this.config.headers || {};
@@ -373,18 +392,22 @@ export class GrokCliExecutor extends BaseExecutor {
     headers["x-grok-client-version"] =
       this.config.clientVersion || headers["x-grok-client-version"] || GROK_CLI_VERSION;
 
-    const sessionId = this._currentSessionId || credentials?.connectionId || crypto.randomUUID();
-    const reqId = this._currentReqId || crypto.randomUUID();
+    const sessionId = requestState?.sessionId || resolveGrokCliSessionId(credentials);
+    const reqId = requestState?.reqId || crypto.randomUUID();
     headers["x-grok-session-id"] = sessionId;
     // CLI uses the same id for conv + session on chat turns
     headers["x-grok-conv-id"] = sessionId;
     headers["x-grok-req-id"] = reqId;
-    headers["x-grok-turn-idx"] = String(this._currentTurnIdx || 1);
+    headers["x-grok-turn-idx"] = String(requestState?.turnIdx || 1);
 
-    if (this._agentId) headers["x-grok-agent-id"] = this._agentId;
+    const agentId = requestState?.agentId ||
+      credentials?.providerSpecificData?.deviceId ||
+      credentials?.providerSpecificData?.agentId;
+    if (agentId) headers["x-grok-agent-id"] = agentId;
 
     // Surface model override (CLI always sets this)
-    if (this._currentModel) headers["x-grok-model-override"] = this._currentModel;
+    const modelOverride = requestState?.model || model;
+    if (modelOverride) headers["x-grok-model-override"] = modelOverride;
 
     // Identity: mapTokens stores email top-level AND in providerSpecificData;
     // fall back either way so OAuth connections always fingerprint like the CLI.
@@ -417,14 +440,14 @@ export class GrokCliExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    const requestState = grokCliRequestState.getStore();
     // Session / request ids for headers — stable per client conversation when possible
     const requestKey = body;
-    this._currentSessionId = resolveGrokCliSessionId(credentials, body);
-    this._currentReqId = crypto.randomUUID();
-    this._agentId =
-      credentials?.providerSpecificData?.deviceId ||
-      credentials?.providerSpecificData?.agentId ||
-      null;
+    const sessionId = resolveGrokCliSessionId(credentials, body);
+    if (requestState) {
+      requestState.sessionId = sessionId;
+      requestState.reqId = crypto.randomUUID();
+    }
 
     // Normalize Responses input
     const normalized = normalizeResponsesInput(body.input);
@@ -453,7 +476,8 @@ export class GrokCliExecutor extends BaseExecutor {
     normalizeGrokCliTools(body);
 
     // Turn index after input is finalized (user-message count, monotonic per session)
-    this._currentTurnIdx = resolveGrokCliTurnIdx(this._currentSessionId, body.input, requestKey);
+    const turnIdx = resolveGrokCliTurnIdx(sessionId, body.input, requestKey);
+    if (requestState) requestState.turnIdx = turnIdx;
 
     body.stream = true;
     body.store = false;
@@ -470,8 +494,7 @@ export class GrokCliExecutor extends BaseExecutor {
       resolvedModel = getModelUpstreamId("grok-cli", resolvedModel) || resolvedModel;
     }
     body.model = resolvedModel;
-    this._currentModel = resolvedModel;
-
+    if (requestState) requestState.model = resolvedModel;
     // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high.
     // grok-build and Composer reject reasoningEffort but still accept summary/encrypted continuity.
     const supportsReasoningEffort = supportsGrokCliReasoningEffort(resolvedModel);
@@ -526,26 +549,12 @@ export class GrokCliExecutor extends BaseExecutor {
   }
 
   async execute(args) {
-    // Lazy-resolve stable agent id once per process if connection has none
-    if (!this._agentId && !args.credentials?.providerSpecificData?.deviceId) {
-      try {
-        const mid = await getConsistentMachineId("grok-cli-agent");
-        // Format as UUID-ish for header aesthetics
-        this._agentId = [
-          mid.slice(0, 8),
-          mid.slice(8, 12),
-          "5" + mid.slice(13, 16),
-          "a" + mid.slice(17, 20),
-          mid.slice(0, 12).padEnd(12, "0"),
-        ].join("-");
-      } catch {
-        this._agentId = crypto.randomUUID();
-      }
-    } else if (args.credentials?.providerSpecificData?.deviceId) {
-      this._agentId = args.credentials.providerSpecificData.deviceId;
-    }
-
-    return super.execute(args);
+    const providerData = args.credentials?.providerSpecificData;
+    const agentId = providerData?.deviceId || providerData?.agentId || await getAnonymousGrokCliAgentId();
+    return grokCliRequestState.run(
+      { agentId, sessionId: null, reqId: null, turnIdx: 1, model: null },
+      () => super.execute(args),
+    );
   }
 }
 

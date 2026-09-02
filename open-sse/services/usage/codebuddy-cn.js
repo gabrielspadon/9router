@@ -7,13 +7,13 @@
  * Quota lives behind a Tencent billing endpoint (POST, payload wrapped twice
  * under data.Response.Data). It mixes two credit types that must NOT be merged:
  *
- *  - Refill / base ("基础体验包"): a recurring allowance whose cycle resets long
- *    before the resource itself expires (CycleEndTime << DeductionEndTime). The
- *    live numbers live in the *Cycle* fields (e.g. CycleCapacityUsed 6.54 / 500)
- *    and resetAt is the next monthly refresh.
- *  - Bonus ("活动赠送包"): one-shot credits that run a single cycle and then
- *    expire for good (CycleEndTime == DeductionEndTime). Numbers live in the
- *    plain Capacity fields.
+ *  - Refill / base, upstream PackageName "基础体验包". A recurring allowance whose
+ *    cycle resets long before the resource itself expires (CycleEndTime <<
+ *    DeductionEndTime). The live numbers live in the *Cycle* fields (e.g.
+ *    CycleCapacityUsed 6.54 / 500) and resetAt is the next monthly refresh.
+ *  - Bonus, upstream PackageName "活动赠送包". One-shot credits that run a single
+ *    cycle and then expire for good (CycleEndTime == DeductionEndTime). Numbers
+ *    live in the plain Capacity fields.
  *
  * We surface one quota row per package — a cadence label (Monthly/Weekly/Daily)
  * for refill packs, "Bonus Pack N" for bonus packs (soonest-expiring first).

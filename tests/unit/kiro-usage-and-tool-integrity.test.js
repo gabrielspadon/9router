@@ -133,7 +133,12 @@ function response(frames, status = 200) {
 async function execute(executor = new KiroExecutor(), overrides = {}) {
   return executor.execute({
     model: "kr/claude-opus-4.8",
-    body: { systemPrompt: "base", conversationState: {} },
+    body: {
+      conversationState: {
+        history: [],
+        currentMessage: { userInputMessage: { content: "base", modelId: "claude-opus-4.8" } },
+      },
+    },
     stream: true,
     credentials,
     ...overrides

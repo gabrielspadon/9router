@@ -1,4 +1,5 @@
 import { createErrorResult } from "../utils/error.js";
+import { getVideoAdapter, findVideoAdapterForRequestId } from "./videoProviders/index.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
@@ -90,6 +91,30 @@ export async function handleVideoProxyCore({
   if (!config) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support video generation`);
   }
+
+  // An upstream this proxy cannot serve names an adapter instead of relying on
+  // the xAI-shaped POST {base}/{action} and GET {base}/{id} below (#3656). A
+  // poll is routed by the id itself, because the client sends back whatever
+  // request_id it was given and the provider prefix has already been stripped
+  // from the model by then.
+  const adapter = requestId
+    ? findVideoAdapterForRequestId(requestId) || (config.adapter ? getVideoAdapter(config.adapter) : null)
+    : (config.adapter ? getVideoAdapter(config.adapter) : null);
+  if (adapter) {
+    const signalForAdapter = combineSignals(signal, timeoutMs);
+    if (requestId) return adapter.poll({ requestId, credentials, signal: signalForAdapter, log });
+    if (!VIDEO_ACTIONS.has(action)) {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Unknown video action: ${action}`);
+    }
+    let parsedBody = null;
+    try {
+      parsedBody = typeof rawBody === "string" ? JSON.parse(rawBody) : JSON.parse(Buffer.from(rawBody || "").toString("utf8"));
+    } catch {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] video requires a JSON body`);
+    }
+    return adapter.create({ model: parsedBody?.model || null, body: parsedBody, credentials, signal: signalForAdapter, log });
+  }
+
   if (!requestId && !VIDEO_ACTIONS.has(action)) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Unknown video action: ${action}`);
   }

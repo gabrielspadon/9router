@@ -5,8 +5,11 @@
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
 
-export { getGlmUsage } from "./glm.js";
-
+// GLM quota endpoints (region-aware) — url from registry transport.usage
+const GLM_QUOTA_URLS = {
+  international: U("glm").url,
+  china: U("glm-cn").url,
+};
 
 // Vercel AI Gateway credits endpoint
 // Returns { balance: "95.50", total_used: "4.50" } (USD as decimal strings).
@@ -109,7 +112,71 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
   }
 }
 
+/**
+ * GLM Coding Plan usage (international + China regions)
+ */
+export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "GLM API key not available." };
+  }
 
+  const region = provider === "glm-cn" ? "china" : "international";
+  const quotaUrl = GLM_QUOTA_URLS[region];
+
+  try {
+    const response = await proxyAwareFetch(quotaUrl, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        return { message: "GLM API key invalid or expired." };
+      }
+      return { message: `GLM quota API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const data = json?.data && typeof json.data === "object" ? json.data : {};
+    const limits = Array.isArray(data.limits) ? data.limits : [];
+    const quotas = {};
+
+    // Every TOKENS_LIMIT was written to the same "session" key, so an account
+    // that returns more than one window reported only whichever came last and
+    // the others vanished with no sign they had been dropped (#3596). One entry
+    // per limit now; the first keeps the "session" key the dashboard already
+    // shows, so nothing about the single-window case changes.
+    let tokenLimitCount = 0;
+    for (const limit of limits) {
+      if (!limit || limit.type !== "TOKENS_LIMIT") continue;
+      const usedPercent = Number(limit.percentage) || 0;
+      const resetMs = Number(limit.nextResetTime) || 0;
+      const remaining = Math.max(0, 100 - usedPercent);
+
+      tokenLimitCount += 1;
+      const key = tokenLimitCount === 1 ? "session" : `session (${tokenLimitCount})`;
+      quotas[key] = {
+        used: usedPercent,
+        total: 100,
+        remaining,
+        remainingPercentage: remaining,
+        resetAt: resetMs > 0 ? new Date(resetMs).toISOString() : null,
+        unlimited: false,
+      };
+    }
+
+    const levelRaw = typeof data.level === "string" ? data.level : "";
+    const plan = levelRaw
+      ? levelRaw.charAt(0).toUpperCase() + levelRaw.slice(1).toLowerCase()
+      : "Unknown";
+
+    return { plan, quotas };
+  } catch (error) {
+    return { message: `GLM error: ${error.message}` };
+  }
+}
 
 /**
  * Vercel AI Gateway usage — credit balance for the API key
@@ -252,5 +319,73 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     };
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+/**
+ * OpenCode Go usage (Rolling, Weekly, Monthly limits)
+ * GET https://opencode.ai/zen/go/v1/usage
+ */
+export async function getOpencodeGoUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenCode Go API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch("https://opencode.ai/zen/go/v1/usage", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "OpenCode Go API key invalid or expired." };
+      }
+      return { message: `OpenCode Go usage error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const usage = json?.usage || {};
+    const quotas = {};
+
+    if (usage.rolling) {
+      const p = Math.min(100, Math.max(0, Number(usage.rolling.percent) || 0));
+      quotas["Rolling (5h)"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.rolling.resetsAt || null,
+        unlimited: false,
+      };
+    }
+    if (usage.weekly) {
+      const p = Math.min(100, Math.max(0, Number(usage.weekly.percent) || 0));
+      quotas["Weekly"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.weekly.resetsAt || null,
+        unlimited: false,
+      };
+    }
+    if (usage.monthly) {
+      const p = Math.min(100, Math.max(0, Number(usage.monthly.percent) || 0));
+      quotas["Monthly"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.monthly.resetsAt || null,
+        unlimited: false,
+      };
+    }
+
+    return { plan: "OpenCode Go", quotas };
+  } catch (error) {
+    return { message: `OpenCode Go error: ${error.message}` };
   }
 }

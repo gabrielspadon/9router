@@ -1,4 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { EventEmitter } from "node:events";
+import { describe, it, expect, vi } from "vitest";
+
+const { nativeHttp2Connect } = vi.hoisted(() => ({ nativeHttp2Connect: vi.fn() }));
+
+vi.mock("http2", () => ({ connect: nativeHttp2Connect }));
 
 import { CursorExecutor } from "../../open-sse/executors/cursor.js";
 import { encodeField, wrapConnectRPCFrame } from "../../open-sse/utils/cursorProtobuf.js";
@@ -31,7 +36,87 @@ function parseSSE(text) {
     .map((data) => JSON.parse(data));
 }
 
+function fakeAgentSession() {
+  const client = new EventEmitter();
+  const request = new EventEmitter();
+  client.close = vi.fn();
+  client.request = vi.fn(() => request);
+  request.destroy = vi.fn();
+  request.write = vi.fn();
+  request.end = vi.fn();
+  return { client, request };
+}
+
+function terminalAgentFrame(internalReasoning) {
+  const update = encodeField(14, LEN, internalReasoning);
+  const serverMessage = encodeField(1, LEN, update);
+  return Buffer.from(wrapConnectRPCFrame(serverMessage));
+}
+
+const agentCredentials = {
+  accessToken: "cursor-token",
+  providerSpecificData: { machineId: "a".repeat(64) },
+};
+
 describe("CursorExecutor Composer thinking-field responses", () => {
+  it("does not expose opaque AgentService terminal reasoning in JSON", async () => {
+    const native = fakeAgentSession();
+    const lease = {
+      session: native.client,
+      effectiveRoute: { kind: "direct", strictProxy: false, cacheIdentity: "direct" },
+      close: vi.fn(() => native.client.close()),
+    };
+    const connectHttp2 = vi.fn().mockResolvedValue(lease);
+    nativeHttp2Connect.mockReturnValue(native.client);
+    const pending = new CursorExecutor({ connectHttp2 }).execute({
+      model: "gpt-5.3-codex",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials: agentCredentials,
+      connectTimeout: { globalTimeout: 15000 },
+    });
+
+    await vi.waitFor(() => expect(native.client.request).toHaveBeenCalledTimes(1));
+    native.request.emit("response", { ":status": 200 });
+    native.request.emit("data", terminalAgentFrame("private AgentService reasoning"));
+    native.request.emit("end");
+
+    const result = await pending;
+    const payload = await result.response.json();
+    expect(payload.choices[0].message.content).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain("private AgentService reasoning");
+    expect(JSON.stringify(payload)).not.toContain("reasoning_content");
+  });
+
+  it("does not expose opaque AgentService terminal reasoning in SSE", async () => {
+    const native = fakeAgentSession();
+    const lease = {
+      session: native.client,
+      effectiveRoute: { kind: "direct", strictProxy: false, cacheIdentity: "direct" },
+      close: vi.fn(() => native.client.close()),
+    };
+    const connectHttp2 = vi.fn().mockResolvedValue(lease);
+    nativeHttp2Connect.mockReturnValue(native.client);
+    const pending = new CursorExecutor({ connectHttp2 }).execute({
+      model: "gpt-5.3-codex",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true,
+      credentials: agentCredentials,
+      connectTimeout: { globalTimeout: 15000 },
+    });
+
+    await vi.waitFor(() => expect(native.client.request).toHaveBeenCalledTimes(1));
+    native.request.emit("response", { ":status": 200 });
+    const result = await pending;
+    native.request.emit("data", terminalAgentFrame("private AgentService reasoning"));
+    native.request.emit("end");
+
+    const events = parseSSE(await result.response.text());
+    expect(JSON.stringify(events)).not.toContain("private AgentService reasoning");
+    expect(JSON.stringify(events)).not.toContain("reasoning_content");
+    expect(events.at(-1).choices[0].finish_reason).toBe("stop");
+  });
+
   it("uses visible content after </think> for non-streaming Composer responses", async () => {
     const executor = new CursorExecutor();
     const buffer = cursorResponseFrame({

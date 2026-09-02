@@ -1,6 +1,8 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
+import { getCustomModels } from "@/lib/localDb";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -8,14 +10,16 @@ const KIND_ENDPOINT = {
   tts: "/v1/audio/speech",
   stt: "/v1/audio/transcriptions",
   embedding: "/v1/embeddings",
+  ocr: "/v1/ocr",
+  moderation: "/v1/moderations",
   imageToText: "/v1/chat/completions",
   webSearch: "/v1/search",
   webFetch: "/v1/fetch",
 };
 
-const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
+const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device", "minimax", "minimax-cn"]);
 
-function buildInfo({ alias, providerId, model, kind, providerInfo }) {
+export function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
     id: `${alias}/${model.id}`,
     name: model.name || model.id,
@@ -24,10 +28,29 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
     endpoint: KIND_ENDPOINT[kind] || null,
   };
   if (model.params) out.params = model.params;
-  if (model.capabilities) out.capabilities = model.capabilities;
+  // The id TokenProxy exposes and the id the upstream actually receives differ
+  // whenever a registry row sets upstreamModelId: virtual variants, review
+  // models, vendor-prefixed ids. Nothing surfaced the mapping, so a caller
+  // could not tell which upstream model a TokenProxy id resolves to (#2872).
+  // Emitted only when the two differ, so the common case does not grow.
+  if (model.upstreamModelId && model.upstreamModelId !== model.id) {
+    out.upstreamModelId = model.upstreamModelId;
+  }
+  if (kind === "llm") {
+    const runtimeCapabilities = getCapabilitiesForModel(providerId, model.id);
+    out.capabilities = Array.isArray(model.capabilities)
+      ? model.capabilities
+      : { ...runtimeCapabilities, ...model.capabilities };
+    const contextWindow = model.contextWindow
+      ?? model.capabilities?.contextWindow
+      ?? runtimeCapabilities.contextWindow;
+    if (contextWindow != null) out.contextWindow = contextWindow;
+  } else if (model.capabilities) {
+    out.capabilities = model.capabilities;
+  }
   if (model.options) out.options = model.options;
   if (model.dimensions) out.dimensions = model.dimensions;
-  if (model.contextWindow) out.contextWindow = model.contextWindow;
+  if (kind !== "llm" && model.contextWindow) out.contextWindow = model.contextWindow;
   if (kind === "tts" && TTS_VOICES_API.has(providerId)) {
     out.voicesUrl = `/v1/audio/voices?provider=${providerId}`;
   }
@@ -42,7 +65,7 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
 
 // id format: "{alias}/{modelId}" - alias may also be providerId
 // requestedKind: optional, disambiguates duplicate ids across kinds (e.g. gemini-2.5-pro llm vs stt)
-function lookup(fullId, requestedKind) {
+async function lookup(fullId, requestedKind) {
   if (!fullId || !fullId.includes("/")) return null;
   const slash = fullId.indexOf("/");
   const alias = fullId.slice(0, slash);
@@ -73,6 +96,42 @@ function lookup(fullId, requestedKind) {
       model: { id: "fetch", name: `${providerInfo.name} Fetch`, params: ["url", "format", "max_characters"] },
     });
   }
+
+  let customModels = [];
+  try {
+    customModels = await getCustomModels();
+  } catch {}
+  const customModel = customModels.find((candidate) =>
+    candidate?.id === modelId
+    && (candidate.providerAlias === alias || candidate.providerAlias === providerId)
+    && (!requestedKind || (candidate.type || "llm") === requestedKind),
+  );
+  if (customModel) {
+    const customKind = customModel.type || "llm";
+    const limits = {};
+    if (Number.isInteger(customModel.maxInputTokens) && customModel.maxInputTokens > 0) {
+      limits.contextWindow = customModel.maxInputTokens;
+    }
+    if (Number.isInteger(customModel.maxOutputTokens) && customModel.maxOutputTokens > 0) {
+      limits.maxOutput = customModel.maxOutputTokens;
+    }
+    const customCapabilities = customModel.capabilities
+      && !Array.isArray(customModel.capabilities)
+      && typeof customModel.capabilities === "object"
+      ? customModel.capabilities
+      : {};
+    return buildInfo({
+      alias,
+      providerId,
+      kind: customKind,
+      providerInfo,
+      model: {
+        ...customModel,
+        ...("contextWindow" in limits ? { contextWindow: limits.contextWindow } : {}),
+        capabilities: { ...customCapabilities, ...limits },
+      },
+    });
+  }
   return null;
 }
 
@@ -93,7 +152,7 @@ export async function GET(request) {
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
-  const info = lookup(id, kind);
+  const info = await lookup(id, kind);
   if (!info) {
     return Response.json(
       { error: { message: `Model not found: ${id}`, type: "not_found" } },

@@ -1,5 +1,5 @@
 import {
-  getRefreshLeadMs,
+  getEffectiveRefreshLeadMs,
   isUnrecoverableRefreshError,
   refreshTokenByProvider,
 } from "./tokenRefresh.js";
@@ -46,7 +46,10 @@ export function shouldRefreshCredentials(provider, credentials, nowMs = Date.now
   if (!credentials) return false;
 
   const expiresAtMs = getCredentialExpiryMs(credentials);
-  if (expiresAtMs !== null && expiresAtMs - nowMs < getRefreshLeadMs(provider)) {
+  if (
+    expiresAtMs !== null &&
+    expiresAtMs - nowMs < getEffectiveRefreshLeadMs(provider, credentials, nowMs)
+  ) {
     return true;
   }
 

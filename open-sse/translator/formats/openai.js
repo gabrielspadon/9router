@@ -1,5 +1,6 @@
 // OpenAI helper functions for translator
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES } from "../schema/index.js";
+import { sanitizeOpenAIFunction } from "../concerns/toolSchema.js";
 
 // Re-export valid-type lists (moved to schema/blocks.js) to keep existing importers working.
 export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
@@ -23,8 +24,8 @@ export function filterToOpenAIFormat(body, opts = {}) {
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === ROLE.TOOL) return msg;
 
-    // Keep assistant messages with tool_calls as-is
-    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return msg;
+    // Keep assistant messages with tool_calls as-is (an empty array carries none)
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls?.length) return msg;
 
     // Handle string content
     if (typeof msg.content === "string") return msg;
@@ -53,7 +54,17 @@ export function filterToOpenAIFormat(body, opts = {}) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
-      
+
+      // A system prompt only travels as blocks so its cache_control markers can
+      // reach a provider that honours them. When none survived the strip there
+      // is nothing the block shape carries that a string does not, so collapse
+      // it back and keep the wire shape identical to what every other provider
+      // already receives.
+      if (msg.role === ROLE.SYSTEM
+        && filteredContent.every(b => b.type === OPENAI_BLOCK.TEXT && !b.cache_control)) {
+        return { ...msg, content: filteredContent.map(b => b.text).filter(Boolean).join("\n") };
+      }
+
       return { ...msg, content: filteredContent };
     }
     
@@ -64,8 +75,8 @@ export function filterToOpenAIFormat(body, opts = {}) {
   body.messages = body.messages.filter(msg => {
     // Always keep tool messages
     if (msg.role === ROLE.TOOL) return true;
-    // Always keep assistant messages with tool_calls
-    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return true;
+    // Always keep assistant messages with tool_calls (an empty array carries none)
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls?.length) return true;
     
     if (typeof msg.content === "string") return msg.content.trim() !== "";
     if (Array.isArray(msg.content)) {
@@ -114,6 +125,16 @@ export function filterToOpenAIFormat(body, opts = {}) {
       
       return tool;
     }).flat();
+
+    // Last point every OpenAI-target request passes through, whatever built it —
+    // including a tool that arrived already in OpenAI format and so skipped the
+    // conversion above. Strict validators reject a zero-argument object schema
+    // and a string-valued numeric constraint at ANY depth (#349, #422).
+    body.tools = body.tools.map(tool => {
+      if (tool?.type !== OPENAI_BLOCK.FUNCTION || !tool.function) return tool;
+      const fn = sanitizeOpenAIFunction(tool.function);
+      return fn === tool.function ? tool : { ...tool, function: fn };
+    });
   }
 
   // Normalize tool_choice to OpenAI format

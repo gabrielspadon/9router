@@ -3,16 +3,18 @@ const http2 = require("http2");
 const tls = require("tls");
 const fs = require("fs");
 const path = require("path");
-const dns = require("dns");
-const { promisify } = require("util");
 const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
 const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost, isChatRequest, extractModel } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { generateCert, getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
-const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
-const LOCAL_PORT = 443;
+const { applyAntigravityIdeVersionOverride, isAntigravityChatEndpoint } = require("./antigravityIdeVersion");
+// Set by the manager from its own MITM_PORT so both ends stay on one port.
+const LOCAL_PORT = (() => {
+  const raw = Number.parseInt(process.env.MITM_PORT || "", 10);
+  return Number.isInteger(raw) && raw > 0 && raw < 65536 ? raw : 443;
+})();
 const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = IS_DEV;
 
@@ -73,19 +75,9 @@ try {
 
 // ── Helpers ───────────────────────────────────────────────────
 
-const cachedTargetIPs = {};
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-async function resolveTargetIP(hostname) {
-  const cached = cachedTargetIPs[hostname];
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.ip;
-  const resolver = new dns.Resolver();
-  resolver.setServers(["8.8.8.8"]);
-  const resolve4 = promisify(resolver.resolve4.bind(resolver));
-  const addresses = await resolve4(hostname);
-  cachedTargetIPs[hostname] = { ip: addresses[0], ts: Date.now() };
-  return cachedTargetIPs[hostname].ip;
-}
+// Resolution lives in its own module so it stays testable without standing up
+// this server, the same way antigravityIdeVersion.js is split out (#760).
+const { resolveTargetIP } = require("./resolveTargetIP");
 
 function collectBodyRaw(req) {
   return new Promise((resolve, reject) => {
@@ -126,12 +118,16 @@ function getMappedModel(tool, model) {
 async function passthrough(req, res, bodyBuffer, onResponse) {
   const originalHost = (req.headers.host || TARGET_HOSTS[0]).split(":")[0];
   // Only rewrite host for chat endpoints — daily-cloudcode-pa rejects auth/login requests
-  const isChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
+  const isChatEndpoint = isAntigravityChatEndpoint(req.url);
   const targetHost = isChatEndpoint ? (HOST_REWRITE[originalHost] || originalHost) : originalHost;
   const dumper = ENABLE_FILE_LOG ? createResponseDumper(req, "passthrough") : null;
 
   const tool = getToolForHost(req.headers.host);
-  const versionOverride = tool === "antigravity"
+  // Scoped to chat turns only — #1884: applying this to loadCodeAssist/onboardUser
+  // (account setup) requests made Google's account-setup flow see a different IDE
+  // fingerprint than the one that established the OAuth session, forcing repeated
+  // sign-in prompts. Non-chat antigravity traffic now passes through untouched.
+  const versionOverride = tool === "antigravity" && isChatEndpoint
     ? applyAntigravityIdeVersionOverride(bodyBuffer, req.headers)
     : { bodyBuffer, headers: req.headers };
   const bodyForForwarding = versionOverride.bodyBuffer;
@@ -303,7 +299,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
     const bodyBuffer = await collectBodyRaw(req);
     if (ENABLE_FILE_LOG) dumpRequest(req, bodyBuffer, "raw");
 
-    // Anti-loop: skip requests from 9Router
+    // Anti-loop: skip requests from TokenProxy
     if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
       return passthrough(req, res, bodyBuffer);
     }
@@ -342,8 +338,16 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 });
 
-// Kill only processes LISTENING on LOCAL_PORT (not outbound connections)
+// Reclaim LOCAL_PORT only when the user has explicitly agreed to it.
+//
+// This used to SIGKILL whatever held the port on every start, so enabling MITM
+// silently tore down a co-resident nginx or Apache on 443 (#1069). The manager
+// probes the port first, names the holder, asks, and only then sets
+// MITM_FORCE_KILL_PORT=1; a leftover MITM of our own is already reaped there by
+// PID file and by pkill against this server's path. Without consent the bind
+// below fails with EADDRINUSE, which is reported rather than acted on.
 function killPort(port) {
+  if (process.env.MITM_FORCE_KILL_PORT !== "1") return;
   try {
     let pidList = [];
     if (IS_WIN) {

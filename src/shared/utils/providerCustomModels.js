@@ -1,3 +1,23 @@
+/**
+ * Split a pasted model-id list into ids. Accepts newline or comma separated
+ * input so a catalog can be pasted straight in, and keeps first position on a
+ * repeat so the order the user pasted survives.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function parseModelIdList(text) {
+  if (typeof text !== "string") return [];
+  const seen = new Set();
+  const ids = [];
+  for (const raw of text.split(/[\n,]/)) {
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
 function modelType(model) {
   return model?.kind || model?.type || "llm";
 }

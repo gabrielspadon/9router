@@ -1,4 +1,5 @@
-import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, MAX_RATE_LIMIT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -37,6 +38,31 @@ export function errorResponse(statusCode, message) {
   });
 }
 
+export class CallerAbortError extends Error {
+  constructor(reason) {
+    super("Request aborted", { cause: reason });
+    this.name = "CallerAbortError";
+    this.code = "CLIENT_ABORTED";
+    this.reason = reason;
+  }
+}
+
+export function isCallerAbortError(error) {
+  return error?.name === "CallerAbortError" || error?.code === "CLIENT_ABORTED";
+}
+
+export function createCallerAbortResult() {
+  const status = 499;
+  const error = "Request aborted";
+  return {
+    success: false,
+    clientAborted: true,
+    status,
+    error,
+    response: errorResponse(status, error),
+  };
+}
+
 /**
  * Write error to SSE stream (for streaming)
  * @param {WritableStreamDefaultWriter} writer - Stream writer
@@ -50,10 +76,142 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Best-effort extraction of a precise rate-limit reset time from common
+ * provider error shapes. GLM/Z.AI: "Your limit will reset at 2026-08-17 02:56:15"
+ * (UTC). Also handles "retry in N seconds", "resets in Ns" and Retry-After.
+ * Returns epoch ms or null.
+ */
+export function extractResetsAtMs(response, message) {
+  if (!message) return null;
+  const text = typeof message === "string" ? message : JSON.stringify(message);
+
+  // GLM/Z.AI: "reset at 2026-08-17 02:56:15" (provider sends UTC without suffix)
+  const resetAt = text.match(/reset at\s+(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/i);
+  if (resetAt) {
+    const ms = Date.parse(`${resetAt[1]}T${resetAt[2]}Z`);
+    if (Number.isFinite(ms) && ms > Date.now()) return ms;
+  }
+
+  // "retry in 300 seconds" / "resets in 5 minutes" / "try again in 1 hour"
+  const inTime = text.match(/(?:retry|try again|resets?)\s+(?:after|in)\s+(\d+(?:\.\d+)?)\s*(seconds?|minutes?|hours?)/i);
+  if (inTime) {
+    const n = Number(inTime[1]);
+    const unit = inTime[2][0].toLowerCase();
+    const mult = unit === "s" ? 1000 : unit === "m" ? 60000 : 3600000;
+    const ms = Date.now() + n * mult;
+    if (Number.isFinite(ms)) return ms;
+  }
+
+  // Retry-After header (seconds or HTTP-date)
+  const ra = response?.headers?.get?.("retry-after");
+  if (ra) {
+    const secs = Number(ra);
+    if (Number.isFinite(secs) && secs > 0) return Date.now() + secs * 1000;
+    const dateMs = Date.parse(ra);
+    if (Number.isFinite(dateMs) && dateMs > Date.now()) return dateMs;
+  }
+
+  return extractRateLimitWindowMs(response);
+}
+
+// The per-key request window an OpenAI-compatible upstream reports alongside a
+// 429. Reading it benches the account for exactly as long as the provider says
+// and no longer, so a burst rotates through the pool inside its real window
+// instead of parking every key on the blind exponential backoff, which is how a
+// short RPM limit took a whole healthy pool out for minutes (#3203). Nothing new
+// holds this state: it rides the existing resetsAtMs path into the model lock.
+//
+// The request-specific header wins over the shared one, which on several
+// providers reports the far longer token window.
+const RATE_LIMIT_RESET_HEADERS = ["x-ratelimit-reset-requests", "x-ratelimit-reset"];
+
+// A duration as OpenAI writes it: "20s", "1m30s", "6m0s", "500ms".
+const RATE_LIMIT_DURATION = /^(?:\d+(?:ms|h|m|s))+$/;
+
+function parseRateLimitDurationMs(text) {
+  if (!RATE_LIMIT_DURATION.test(text)) return null;
+  let total = 0;
+  for (const [, amount, unit] of text.matchAll(/(\d+)(ms|h|m|s)/g)) {
+    total += Number(amount) * (unit === "ms" ? 1 : unit === "s" ? 1000 : unit === "m" ? 60000 : 3600000);
+  }
+  return total > 0 ? total : null;
+}
+
+// Strict on purpose, for the reason the body parser above is: a value that
+// cannot be read exactly is left to the classifier rather than guessed at, since
+// a wrong guess here benches a healthy account. A bare integer is read as a
+// window in seconds and only up to an hour -- past that it is far more likely to
+// be an epoch stamp, and mistaking one for a duration would lock the account for
+// the maximum.
+const MAX_BARE_WINDOW_SECONDS = 3600;
+
+function extractRateLimitWindowMs(response) {
+  for (const name of RATE_LIMIT_RESET_HEADERS) {
+    const raw = response?.headers?.get?.(name)?.trim();
+    if (!raw) continue;
+
+    const durationMs = parseRateLimitDurationMs(raw.toLowerCase());
+    if (durationMs) return Date.now() + Math.min(durationMs, MAX_RATE_LIMIT_COOLDOWN_MS);
+
+    const seconds = Number(raw);
+    if (Number.isInteger(seconds) && seconds > 0 && seconds <= MAX_BARE_WINDOW_SECONDS) {
+      return Date.now() + seconds * 1000;
+    }
+
+    const absoluteMs = parseFutureRfc3339(raw);
+    if (absoluteMs) return Math.min(absoluteMs, Date.now() + MAX_RATE_LIMIT_COOLDOWN_MS);
+  }
+  return null;
+}
+
+const RFC3339_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i;
+
+function parseFutureRfc3339(timestamp) {
+  const parts = RFC3339_TIMESTAMP.exec(timestamp);
+  if (!parts) return null;
+
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number);
+  const calendar = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    calendar.getUTCFullYear() !== year ||
+    calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day ||
+    calendar.getUTCHours() !== hour ||
+    calendar.getUTCMinutes() !== minute ||
+    calendar.getUTCSeconds() !== second
+  ) return null;
+
+  const resetAtMs = Date.parse(timestamp);
+  return Number.isFinite(resetAtMs) && resetAtMs > Date.now() ? resetAtMs : null;
+}
+
+// Parsed error bodies sometimes carry structured quota metadata instead of a
+// human-readable retry message. Keep this deliberately narrow: only the
+// established error envelope and unambiguous values become account cooldowns.
+function extractBodyResetsAtMs(errorPayload) {
+  const error = errorPayload?.error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return null;
+
+  const retryAfter = error.retryAfter;
+  if (typeof retryAfter === "string") {
+    const resetAtMs = parseFutureRfc3339(retryAfter);
+    if (resetAtMs) return resetAtMs;
+  }
+
+  for (const delayMs of [error.retry_after_ms, error.retryAfterMs]) {
+    if (typeof delayMs !== "number" || !Number.isFinite(delayMs) || delayMs <= 0) continue;
+    const resetAtMs = Date.now() + Math.min(delayMs, MAX_RATE_LIMIT_COOLDOWN_MS);
+    if (Number.isFinite(resetAtMs) && resetAtMs > Date.now()) return resetAtMs;
+  }
+
+  return null;
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
- * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
+ * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number, errorPayload?: object|null}>}
  */
 export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
@@ -63,29 +221,76 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  let errorPayload = null;
+  try {
+    errorPayload = JSON.parse(bodyText);
+  } catch {
+    errorPayload = null;
+  }
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        // Executor parse wins; fill resetsAtMs from generic patterns when absent
+        const resetsAtMs = parsed.resetsAtMs ?? (
+          response.status === 429
+            ? extractResetsAtMs(response, msg) ?? extractBodyResetsAtMs(errorPayload)
+            : null
+        );
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          resetsAtMs,
+          errorPayload,
+          ...(parsed.validation ? { validation: parsed.validation } : {}),
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
 
   let message = "";
+  let providerName = null;
+  let invalidUrlEmpty = false;
   try {
-    const json = JSON.parse(bodyText);
-    message = json.error?.message || json.message || json.error || bodyText;
+    if (!errorPayload) throw new Error("not JSON");
+    message = errorPayload.error?.message || errorPayload.message || errorPayload.error || bodyText;
+    providerName = errorPayload.error?.metadata?.provider_name || null;
+    // OpenRouter's internal "Stealth" upstream returns a malformed message like
+    // "Invalid URL: " with the URL value left empty (the upstream's url field in
+    // OpenRouter's routing table is unset). Detect the signature so we can
+    // surface a friendlier hint instead of the opaque 502 + empty message.
+    if (typeof message === "string") {
+      const m = /^Invalid URL:\s*(.*)$/.exec(message);
+      if (m) invalidUrlEmpty = m[1].trim() === "";
+    }
   } catch {
     message = bodyText;
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+  let finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  // Annotate OpenRouter "Stealth" (or any upstream whose routing table has an
+  // empty url field) with a hint explaining the failure mode. The OpenRouter
+  // executor sets `provider.allow_fallbacks = true` on outbound requests; this
+  // annotation gives the user a legible reason when no alternate upstream exists.
+  if ((providerName || invalidUrlEmpty) && (response.status === HTTP_STATUS.BAD_GATEWAY || response.status === HTTP_STATUS.SERVER_ERROR)) {
+    const hint = providerName
+      ? `OpenRouter upstream "${providerName}" returned an invalid routing URL — its endpoint is misconfigured on OpenRouter's side`
+      : "Upstream returned an invalid (empty) routing URL";
+    finalMessage = `${finalMessage} — ${hint}. Try a different model, or set \`provider: { allow_fallbacks: true }\` to opt into OpenRouter's automatic upstream fallback.`;
+  }
+
+  // Generic reset-time extraction for rate limits (GLM "reset at ...", Retry-After, ...)
+  if (response.status === 429) {
+    const resetsAtMs = extractResetsAtMs(response, finalMessage) ?? extractBodyResetsAtMs(errorPayload);
+    if (resetsAtMs) return { statusCode: 429, message: finalMessage, resetsAtMs, errorPayload };
+  }
+
+  return { statusCode: response.status, message: finalMessage, errorPayload };
 }
 
 /**
@@ -93,14 +298,15 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
+ * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, failureMetadata?: object }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, failureMetadata) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
+    ...(failureMetadata ? { failureMetadata } : {}),
     response: errorResponse(statusCode, message)
   };
 }

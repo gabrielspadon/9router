@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
-import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import { useState } from "react";
+import { LOCALE_COOKIE, LOCALE_NAMES, normalizeLocale } from "@/i18n/config";
 import LanguageSwitcher from "./LanguageSwitcher";
+import Button from "@/shared/components/Button";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -17,21 +17,30 @@ function getLocaleFromCookie() {
 export default function HeaderLanguage() {
   const [open, setOpen] = useState(false);
   const [locale, setLocale] = useState("en");
+  // A flag is a country, not a language: en is not the United States and es is
+  // not Spain. The control shows the language's own name instead.
+  const name = LOCALE_NAMES[locale] || locale;
 
-  useEffect(() => {
+  const handleOpen = () => {
     setLocale(getLocaleFromCookie());
-  }, [open]);
+    setOpen(true);
+  };
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
-        title="Language"
+      <Button
+        variant="ghost" size="sm"
+        className="min-h-11 max-w-[11rem]"
+        onClick={handleOpen}
+        aria-label={`Language: ${name}`}
+        aria-haspopup="dialog"
         data-i18n-skip="true"
       >
-        <span className="text-lg leading-none">{LOCALE_FLAGS[locale] || "🌐"}</span>
-      </button>
+        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+          language
+        </span>
+        <span className="hidden sm:inline truncate text-xs font-medium">{name}</span>
+      </Button>
 
       <LanguageSwitcher
         hideTrigger

@@ -1,5 +1,20 @@
 import { FORMATS } from "../translator/formats.js";
 
+// Gemini CLI occasionally writes terminal progress controls into its SSE body.
+const ANSI_ESCAPE_RE = /\x1b\[[0-?]*[\x40-\x7e]|\x9b[0-?]*[\x40-\x7e]|\x1b\][^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|\x9d[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|\x1b[\x30-\x7e]/g;
+const TEXT_CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+const WIRE_CONTROL_RE = /[\x00-\x1f\x7f-\x9f]/g;
+const HAS_WIRE_CONTROL_RE = /[\x00-\x1f\x7f-\x9f]/;
+
+export function stripAnsiCodes(value) {
+  // Text keeps normal whitespace, while raw wire controls cannot remain in JSON.
+  return typeof value === "string" ? value.replace(ANSI_ESCAPE_RE, "").replace(TEXT_CONTROL_RE, "") : value;
+}
+
+function stripGeminiCLIWireControls(line) {
+  return line.replace(ANSI_ESCAPE_RE, "").replace(WIRE_CONTROL_RE, "");
+}
+
 // Parse SSE data line
 export function parseSSELine(line, format = null) {
   if (!line) return null;
@@ -17,10 +32,17 @@ export function parseSSELine(line, format = null) {
     return null;
   }
 
-  // Standard SSE format: "data: {...}"
-  if (line.charCodeAt(0) !== 100) return null; // 'd' = 100
+  // Only Gemini CLI has been observed emitting terminal output in the wire
+  // protocol. Sanitize the whole line before JSON parsing because controls can
+  // appear either before `data:` or inside a JSON string.
+  const clean = format === FORMATS.GEMINI_CLI && HAS_WIRE_CONTROL_RE.test(line)
+    ? stripGeminiCLIWireControls(line)
+    : line;
 
-  const data = line.slice(5).trim();
+  // Standard SSE format: "data: {...}"
+  if (clean.charCodeAt(0) !== 100) return null; // 'd' = 100
+
+  const data = clean.slice(5).trim();
   if (data === "[DONE]") return { done: true };
 
   try {
@@ -40,7 +62,13 @@ export function hasValuableContent(chunk, format) {
     const delta = chunk.choices[0].delta;
     return delta.content && delta.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
+           delta.reasoning && delta.reasoning !== "" ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
+           // Generated images arrive on their own chunk with nothing else in the
+           // delta, so leaving `images` out of this list dropped every one of them.
+           // The translator emits exactly this shape (gemini-to-openai.js:105) and
+           // the golden snapshot for "inlineData -> delta.images" locks it.
+           delta.images && delta.images.length > 0 ||
            chunk.choices[0].finish_reason ||
            delta.role;
   }
@@ -59,6 +87,24 @@ export function hasValuableContent(chunk, format) {
   }
 
   return true; // Other formats: keep all chunks
+}
+
+// Same-format Claude streams bypass the response translator, so their
+// content_block_start tool name needs the request cloaking map applied here.
+export function decloakClaudePassthroughToolUse(chunk, sourceFormat, toolNameMap) {
+  if (
+    sourceFormat !== FORMATS.CLAUDE ||
+    chunk?.type !== "content_block_start" ||
+    chunk.content_block?.type !== "tool_use" ||
+    typeof chunk.content_block.name !== "string" ||
+    typeof toolNameMap?.get !== "function"
+  ) return false;
+
+  const originalName = toolNameMap.get(chunk.content_block.name);
+  if (typeof originalName !== "string") return false;
+
+  chunk.content_block.name = originalName;
+  return true;
 }
 
 // Fix invalid id (generic or too short)
@@ -102,7 +148,7 @@ function cleanUsagePayload(payload) {
 
 // Format output as SSE
 export function formatSSE(data, sourceFormat) {
-  if (data === null || data === undefined) return "data: null\n\n";
+  if (data === null || data === undefined) return "";
   if (data && data.done) return "data: [DONE]\n\n";
 
   // OpenAI Responses API format

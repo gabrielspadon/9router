@@ -7,6 +7,7 @@ import {
   pollForToken
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { reauthorizeProviderConnection } from "@/lib/db/repos/connectionsRepo.js";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -33,11 +34,49 @@ import {
   registerZedSession,
   getZedSessionStatus,
   clearZedSession,
+  startDevinProxy,
+  stopDevinProxy,
+  registerDevinSession,
+  getDevinSessionStatus,
+  clearDevinSession,
 } from "@/lib/oauth/utils/server";
 import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect";
 import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 
-async function completeXaiManualCode(code, state) {
+// #1851 — re-authenticating an expired account used to mean deleting it and
+// adding it back, which lost its place in the fallback order, its proxy binding
+// and its metadata. When the dashboard names a target connection, the sign-in
+// updates that row's credential fields instead of creating a second row.
+//
+// The target id is read from the JSON body this route already receives from the
+// authenticated dashboard. No provider redirect lands here — the callback goes to
+// a local proxy and the dashboard posts the result — so nothing an upstream
+// controls can choose which row is written. reauthorizeProviderConnection still
+// refuses a cross-provider write, a payload with no usable credential, and a
+// visibly different account, so a mistaken id cannot quietly overwrite a
+// working credential.
+const REAUTH_FAILURE = {
+  not_found: [404, "Re-authentication target no longer exists"],
+  provider_mismatch: [400, "Re-authentication target belongs to a different provider"],
+  empty_credential: [400, "Sign-in returned no usable credential; the existing one was kept"],
+  identity_mismatch: [409, "Signed in as a different account than this connection holds; re-send with forceReauth to rebind it"],
+};
+
+function readReauthTarget(body) {
+  const id = typeof body?.reauthConnectionId === "string" ? body.reauthConnectionId.trim() : "";
+  return id ? { id, force: body?.forceReauth === true } : null;
+}
+
+// Returns { connection } on success, or { failure } — a response the caller returns as-is.
+async function saveConnection(data, reauth) {
+  if (!reauth) return { connection: await createProviderConnection(data) };
+  const outcome = await reauthorizeProviderConnection(reauth.id, { ...data, force: reauth.force });
+  if (outcome.ok) return { connection: outcome.connection, reauthorized: true };
+  const [status, error] = REAUTH_FAILURE[outcome.code] || [400, "Re-authentication failed"];
+  return { failure: NextResponse.json({ error }, { status }) };
+}
+
+async function completeXaiManualCode(code, state, reauth) {
   const session = state ? getXaiSessionStatus(state) : null;
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
@@ -52,7 +91,7 @@ async function completeXaiManualCode(code, state) {
       session.codeVerifier,
       state
     );
-    const connection = await createProviderConnection({
+    const saved = await saveConnection({
       provider: "xai",
       authType: "oauth",
       ...tokenData,
@@ -60,14 +99,18 @@ async function completeXaiManualCode(code, state) {
         ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
         : null,
       testStatus: "active",
-    });
+    }, reauth);
     clearXaiSession(state);
     stopXaiProxy();
+    if (saved.failure) return saved;
+    const connection = saved.connection;
     return {
-      id: connection.id,
-      provider: connection.provider,
-      email: connection.email,
-      displayName: connection.displayName,
+      connection: {
+        id: connection.id,
+        provider: connection.provider,
+        email: connection.email,
+        displayName: connection.displayName,
+      },
     };
   } catch (err) {
     clearXaiSession(state);
@@ -120,8 +163,12 @@ export async function GET(request, { params }) {
         const result = await startZedProxy(searchParams.get("native_app_port") || ZED_HOSTED_CONFIG.defaultNativeAppPort);
         return NextResponse.json(result);
       }
+      if (provider === "devin") {
+        const result = await startDevinProxy();
+        return NextResponse.json(result);
+      }
       if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed/devin" }, { status: 400 });
       }
       const appPort = searchParams.get("app_port");
       if (!appPort) {
@@ -149,6 +196,7 @@ export async function GET(request, { params }) {
       }
       let session;
       if (provider === "trae") session = getTraeSessionStatus(state);
+      else if (provider === "devin") session = getDevinSessionStatus(state);
       else if (provider === "windsurf") session = getWindsurfSessionStatus(state);
       else if (provider === "zed") session = getZedSessionStatus(state);
       else if (provider === "xai") session = getXaiSessionStatus(state);
@@ -158,6 +206,7 @@ export async function GET(request, { params }) {
       if (session.status === "done" || session.status === "error") {
         const payload = { ...session };
         if (provider === "trae") clearTraeSession(state);
+        else if (provider === "devin") clearDevinSession(state);
         else if (provider === "windsurf") clearWindsurfSession(state);
         else if (provider === "zed") clearZedSession(state);
         else if (provider === "xai") clearXaiSession(state);
@@ -169,11 +218,12 @@ export async function GET(request, { params }) {
 
     if (action === "stop-proxy") {
       if (provider === "trae") stopTraeProxy();
+      else if (provider === "devin") stopDevinProxy();
       else if (provider === "windsurf") stopWindsurfProxy();
       else if (provider === "zed") stopZedProxy();
       else if (provider === "xai") stopXaiProxy();
       else if (provider === "codex") stopCodexProxy();
-      else return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+      else return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed/devin" }, { status: 400 });
       return NextResponse.json({ success: true });
     }
 
@@ -251,6 +301,8 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
     }
 
+    const reauth = readReauthTarget(body);
+
     if (action === "register-session") {
       // Register proxy session out of URL query (state) + body (codeVerifier).
       // Zed's codeVerifier encodes the RSA private key — must stay out of URL/logs.
@@ -259,14 +311,34 @@ export async function POST(request, { params }) {
       if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
       let ok = false;
       if (provider === "trae") ok = registerTraeSession({ state });
+      else if (provider === "devin") ok = registerDevinSession({ state, codeVerifier: body?.codeVerifier, redirectUri: body?.redirectUri });
       else if (provider === "windsurf") ok = registerWindsurfSession({ state });
       else if (provider === "zed") ok = registerZedSession({ state, codeVerifier: body?.codeVerifier });
-      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed" }, { status: 400 });
+      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed/devin" }, { status: 400 });
       return NextResponse.json({ success: ok });
     }
 
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state, meta } = body;
+
+      if (provider === "devin") {
+        const session = getDevinSessionStatus(state);
+        const verifier = codeVerifier || session?.codeVerifier;
+        const callbackRedirectUri = redirectUri || session?.redirectUri;
+        if (!code || !state || !verifier || !callbackRedirectUri) {
+          return NextResponse.json({ error: "Missing Devin callback URL, state, or PKCE session" }, { status: 400 });
+        }
+        try {
+          const tokenData = await exchangeTokens(provider, code, callbackRedirectUri, verifier, state);
+          const saved = await saveConnection({ provider, authType: "oauth", ...tokenData, testStatus: "active" }, reauth);
+          clearDevinSession(state);
+          stopDevinProxy();
+          if (saved.failure) return saved.failure;
+          return NextResponse.json({ success: true, connection: { id: saved.connection.id, provider: saved.connection.provider } });
+        } catch (err) {
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
 
       // Trae/Windsurf: code is either a raw callback URL or a pasted token.
       // exchangeTokens() handles both paths; no PKCE, skip codex JWT extraction.
@@ -277,7 +349,14 @@ export async function POST(request, { params }) {
         }
         try {
           const tokenData = await exchangeTokens(provider, token, null, null, state);
-          const connection = await createProviderConnection({
+          // Never persist a tokenless "active" connection — surface the failure instead.
+          if (!tokenData?.accessToken) {
+            return NextResponse.json(
+              { error: "Token exchange returned no access token" },
+              { status: 502 }
+            );
+          }
+          const saved = await saveConnection({
             provider,
             authType: provider === "windsurf" ? "api_key" : "oauth",
             ...tokenData,
@@ -285,7 +364,9 @@ export async function POST(request, { params }) {
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
             testStatus: "active",
-          });
+          }, reauth);
+          if (saved.failure) return saved.failure;
+          const connection = saved.connection;
           return NextResponse.json({
             success: true,
             connection: {
@@ -322,14 +403,16 @@ export async function POST(request, { params }) {
         if (accountId) providerSpecificData.chatgptAccountId = accountId;
         if (planType) providerSpecificData.chatgptPlanType = planType;
 
-        const connection = await createProviderConnection({
+        const saved = await saveConnection({
           provider,
           authType: "access_token",
           accessToken: code,
           email: email || null,
           providerSpecificData,
           testStatus: "active",
-        });
+        }, reauth);
+        if (saved.failure) return saved.failure;
+        const connection = saved.connection;
 
         return NextResponse.json({
           success: true,
@@ -351,8 +434,16 @@ export async function POST(request, { params }) {
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
       const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
 
+      // Never persist a tokenless "active" connection — surface the failure instead.
+      if (!tokenData?.accessToken) {
+        return NextResponse.json(
+          { error: "Token exchange returned no access token" },
+          { status: 502 }
+        );
+      }
+
       // Save to database
-      const connection = await createProviderConnection({
+      const saved = await saveConnection({
         provider,
         authType: "oauth",
         ...tokenData,
@@ -360,7 +451,9 @@ export async function POST(request, { params }) {
           ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
           : null,
         testStatus: "active",
-      });
+      }, reauth);
+      if (saved.failure) return saved.failure;
+      const connection = saved.connection;
 
       return NextResponse.json({ 
         success: true, 
@@ -408,7 +501,7 @@ export async function POST(request, { params }) {
       if (result.success) {
         // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
         const providerId = provider === "kimi-coding" ? "kimi" : provider;
-        const connection = await createProviderConnection({
+        const saved = await saveConnection({
           provider: providerId,
           authType: "oauth",
           ...result.tokens,
@@ -416,7 +509,9 @@ export async function POST(request, { params }) {
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
             : null,
           testStatus: "active",
-        });
+        }, reauth);
+        if (saved.failure) return saved.failure;
+        const connection = saved.connection;
 
         return NextResponse.json({ 
           success: true, 
@@ -443,8 +538,9 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Manual code only supported for xai" }, { status: 400 });
       }
       const { code, state } = body;
-      const connection = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim());
-      return NextResponse.json({ success: true, connection });
+      const result = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim(), reauth);
+      if (result.failure) return result.failure;
+      return NextResponse.json({ success: true, connection: result.connection });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

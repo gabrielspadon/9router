@@ -44,19 +44,22 @@ function RecentRequests({ requests = [] }) {
     <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
       {/* Header */}
       <div className="px-1 py-2 border-b border-border shrink-0">
-        <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-muted">Recent Requests</span>
       </div>
 
       {!requests.length ? (
         <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No requests yet.</div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full min-w-[300px] border-collapse text-xs">
+          {/* Numeric columns below keep physical `text-right`: digits are an
+              LTR run, so they stay right-aligned in RTL too. Do not convert. */}
+          <table className="metric w-full min-w-[300px] border-collapse text-xs">
             <thead className="sticky top-0 bg-bg z-10">
               <tr className="border-b border-border">
-                <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
-                <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
+                <th className="py-1.5 text-start font-semibold text-text-muted w-2"></th>
+                <th className="py-1.5 text-start font-semibold text-text-muted">Model</th>
+                <th className="py-1.5 text-start font-semibold text-text-muted hidden sm:table-cell">Key</th>
+                <th className="py-1.5 text-right font-semibold text-text-muted">In / Out</th>
                 <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
               </tr>
             </thead>
@@ -64,13 +67,16 @@ function RecentRequests({ requests = [] }) {
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
                 return (
-                  <tr key={i} className="hover:bg-bg-subtle transition-colors">
+                  <tr key={i} className="hover:bg-surface-2 transition-colors">
                     <td className="py-1.5">
-                      <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
+                      <span role="img" aria-label={ok ? "Succeeded" : "Failed"} title={ok ? "Succeeded" : "Failed"} className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-danger"}`} />
                     </td>
                     <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
+                    <td className="py-1.5 font-mono text-text-muted truncate max-w-[90px] hidden sm:table-cell" title={r.apiKey || "No key (loopback)"}>
+                      {r.apiKey || "—"}
+                    </td>
                     <td className="py-1.5 text-right whitespace-nowrap">
-                      <span className="text-primary">{fmt(r.promptTokens)}↑</span>
+                      <span className="text-brand">{fmt(r.promptTokens)}↑</span>
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
                     </td>
@@ -154,6 +160,10 @@ function groupDataByKey(data, keyField) {
   return Object.values(groups);
 }
 
+function getSingleGroupItem(group) {
+  return group.items.length === 1 ? group.items[0] : null;
+}
+
 const MODEL_COLUMNS = [
   { field: "rawModel", label: "Model" },
   { field: "provider", label: "Provider" },
@@ -162,9 +172,9 @@ const MODEL_COLUMNS = [
 ];
 
 const ACCOUNT_COLUMNS = [
+  { field: "accountName", label: "Account" },
   { field: "rawModel", label: "Model" },
   { field: "provider", label: "Provider" },
-  { field: "accountName", label: "Account" },
   { field: "requests", label: "Requests", align: "right" },
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
@@ -211,11 +221,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
-  const [viewMode, setViewMode] = useState("costs");
+  const [viewMode, setViewMode] = useState("tokens");
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
+  const statsFetchAbortRef = useRef(null);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
@@ -253,6 +264,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
+    const controller = new AbortController();
+    statsFetchAbortRef.current = controller;
+
     // First load: show full spinner; subsequent: show subtle fetching indicator
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
@@ -261,7 +275,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       setFetching(true);
     }
 
-    fetch(`/api/usage/stats?period=${period}`)
+    fetch(`/api/usage/stats?period=${period}`, { signal: controller.signal })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) {
@@ -271,30 +285,31 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       })
       .catch(() => {})
       .finally(() => {
-        setLoading(false);
-        setFetching(false);
+        if (statsFetchAbortRef.current === controller) {
+          statsFetchAbortRef.current = null;
+          setLoading(false);
+          setFetching(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+      if (statsFetchAbortRef.current === controller) statsFetchAbortRef.current = null;
+    };
   }, [period]);
 
-  // SSE connection - real-time updates for activeRequests + recentRequests only
+  // Keep the full, period-filtered snapshot current as completed requests are persisted.
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(`/api/usage/stream?period=${encodeURIComponent(period)}`);
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
-        setStats((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            activeRequests: data.activeRequests,
-            recentRequests: data.recentRequests,
-            errorProvider: data.errorProvider,
-            pending: data.pending,
-          };
-        });
-        if (hasLoadedStats.current) setLoading(false);
+        // The SSE snapshot is newer than an in-flight initial/period REST fetch.
+        statsFetchAbortRef.current?.abort();
+        setStats(data);
+        hasLoadedStats.current = true;
+        setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
@@ -303,7 +318,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [period]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -327,19 +342,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           groupedData: groupDataByKey(sortData(stats.byModel, pendingMap, sortBy, sortOrder), "rawModel"),
           storageKey: "usage-stats:expanded-models",
           emptyMessage: "No usage recorded yet.",
-          renderSummaryCells: (group) => (
-            <>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
-            </>
-          ),
+          renderSummaryCells: (group) => {
+            const item = getSingleGroupItem(group);
+            return (
+              <>
+                <td className="px-5.5 py-3">
+                  {item ? <Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider || "—"}</Badge> : <span className="text-text-muted">—</span>}
+                </td>
+                <td className="px-5.5 py-3 text-right metric">{fmt(group.summary.requests)}</td>
+                <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              </>
+            );
+          },
           renderDetailCells: (item) => (
             <>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
-              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className={`px-5.5 py-3 font-medium transition-colors ${item.pending > 0 ? "text-brand" : ""}`}>{item.rawModel}</td>
+              <td className="px-5.5 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
+              <td className="px-5.5 py-3 text-right metric">{fmt(item.requests)}</td>
+              <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
         };
@@ -360,21 +380,26 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           groupedData: groupDataByKey(sortData(stats.byAccount, pendingMap, sortBy, sortOrder), "accountName"),
           storageKey: "usage-stats:expanded-accounts",
           emptyMessage: "No account-specific usage recorded yet.",
-          renderSummaryCells: (group) => (
-            <>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
-            </>
-          ),
+          renderSummaryCells: (group) => {
+            const item = getSingleGroupItem(group);
+            return (
+              <>
+                <td className="px-5.5 py-3">{item?.rawModel || <span className="text-text-muted">—</span>}</td>
+                <td className="px-5.5 py-3">
+                  {item ? <Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider || "—"}</Badge> : <span className="text-text-muted">—</span>}
+                </td>
+                <td className="px-5.5 py-3 text-right metric">{fmt(group.summary.requests)}</td>
+                <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              </>
+            );
+          },
           renderDetailCells: (item) => (
             <>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.accountName || `Account ${item.connectionId?.slice(0, 8)}...`}</td>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
-              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className={`px-5.5 py-3 font-medium transition-colors ${item.pending > 0 ? "text-brand" : ""}`}>{item.accountName || `Account ${item.connectionId?.slice(0, 8)}...`}</td>
+              <td className={`px-5.5 py-3 font-medium transition-colors ${item.pending > 0 ? "text-brand" : ""}`}>{item.rawModel}</td>
+              <td className="px-5.5 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
+              <td className="px-5.5 py-3 text-right metric">{fmt(item.requests)}</td>
+              <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
         };
@@ -385,21 +410,26 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           groupedData: groupDataByKey(sortData(stats.byApiKey, {}, sortBy, sortOrder), "keyName"),
           storageKey: "usage-stats:expanded-apikeys",
           emptyMessage: "No API key usage recorded yet.",
-          renderSummaryCells: (group) => (
-            <>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
-            </>
-          ),
+          renderSummaryCells: (group) => {
+            const item = getSingleGroupItem(group);
+            return (
+              <>
+                <td className="px-5.5 py-3">{item?.rawModel || <span className="text-text-muted">—</span>}</td>
+                <td className="px-5.5 py-3">
+                  {item ? <Badge variant="neutral" size="sm">{item.provider || "—"}</Badge> : <span className="text-text-muted">—</span>}
+                </td>
+                <td className="px-5.5 py-3 text-right metric">{fmt(group.summary.requests)}</td>
+                <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              </>
+            );
+          },
           renderDetailCells: (item) => (
             <>
-              <td className="px-6 py-3 font-medium">{item.keyName}</td>
-              <td className="px-6 py-3">{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
-              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className="px-5.5 py-3 font-medium">{item.keyName}</td>
+              <td className="px-5.5 py-3">{item.rawModel}</td>
+              <td className="px-5.5 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+              <td className="px-5.5 py-3 text-right metric">{fmt(item.requests)}</td>
+              <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
         };
@@ -411,21 +441,26 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           groupedData: groupDataByKey(sortData(stats.byEndpoint, {}, sortBy, sortOrder), "endpoint"),
           storageKey: "usage-stats:expanded-endpoints",
           emptyMessage: "No endpoint usage recorded yet.",
-          renderSummaryCells: (group) => (
-            <>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
-            </>
-          ),
+          renderSummaryCells: (group) => {
+            const item = getSingleGroupItem(group);
+            return (
+              <>
+                <td className="px-5.5 py-3">{item?.rawModel || <span className="text-text-muted">—</span>}</td>
+                <td className="px-5.5 py-3">
+                  {item ? <Badge variant="neutral" size="sm">{item.provider || "—"}</Badge> : <span className="text-text-muted">—</span>}
+                </td>
+                <td className="px-5.5 py-3 text-right metric">{fmt(group.summary.requests)}</td>
+                <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              </>
+            );
+          },
           renderDetailCells: (item) => (
             <>
-              <td className="px-6 py-3 font-medium font-mono text-sm">{item.endpoint}</td>
-              <td className="px-6 py-3">{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
-              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className="px-5.5 py-3 font-medium font-mono text-sm">{item.endpoint}</td>
+              <td className="px-5.5 py-3">{item.rawModel}</td>
+              <td className="px-5.5 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+              <td className="px-5.5 py-3 text-right metric">{fmt(item.requests)}</td>
+              <td className="px-5.5 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
         };
@@ -437,41 +472,47 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   const spinner = (
     <div className="flex items-center justify-center py-12 text-text-muted">
-      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
+      <span aria-hidden="true" className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
     </div>
   );
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-5.5">
       {/* Period selector (hidden when controlled by parent) */}
       {!hidePeriodSelector && (
         <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end">
-          <div className="grid flex-1 grid-cols-5 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex sm:flex-none">
+          <div className="grid flex-1 grid-cols-5 items-center gap-1 rounded-lg border border-border bg-surface-2 p-1 sm:flex sm:flex-none">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value)}
                 disabled={fetching}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:bg-bg-hover hover:text-text"}`}
+                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${period === p.value ? "bg-brand-solid text-brand-on shadow-sm" : "text-text-muted hover:bg-surface-2 hover:text-text-main"}`}
               >
                 {p.label}
               </button>
             ))}
           </div>
           {fetching && (
-            <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
           )}
         </div>
       )}
 
       {/* Overview cards */}
-      {loading ? spinner : <OverviewCards stats={stats} />}
+      {loading ? spinner : (
+        <OverviewCards
+          stats={stats}
+          periodLabel={PERIODS.find((p) => p.value === period)?.label || ""}
+        />
+      )}
 
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
             providers={providers}
+            byProvider={stats.byProvider || {}}
             activeRequests={stats.activeRequests || []}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}
@@ -481,31 +522,32 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       )}
 
       {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} />}
+      {loading ? spinner : <UsageChart period={period} refreshKey={stats.totalRequests} />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <select
+            aria-label="Group the usage table by"
             value={tableView}
             onChange={(e) => setTableView(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50 sm:w-auto"
+            className="focus-ring min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-main sm:w-auto"
             style={{ colorScheme: 'auto' }}
           >
             {TABLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex">
+          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-surface-2 p-1 sm:flex">
             <button
               onClick={() => setViewMode("costs")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+              className={`focus-ring hit-44 px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-brand-solid text-brand-on shadow-sm" : "text-text-muted hover:text-text-main hover:bg-surface-2"}`}
             >
               Costs
             </button>
             <button
               onClick={() => setViewMode("tokens")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+              className={`focus-ring hit-44 px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-brand-solid text-brand-on shadow-sm" : "text-text-muted hover:text-text-main hover:bg-surface-2"}`}
             >
               Tokens
             </button>

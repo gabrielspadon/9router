@@ -1,6 +1,7 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { extractThinking } from "../../translator/concerns/thinkingUnified.js";
 import { COLORS } from "../../utils/stream.js";
-import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { canonicalizeUsage, clampReasoningTokens, stripBufferFromUsage } from "../../utils/usageTracking.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -26,11 +27,20 @@ export function extractUsageFromResponse(responseBody) {
 
   // Claude format
   if (responseBody.usage?.input_tokens !== undefined) {
+    const completionTokens = responseBody.usage.output_tokens || 0;
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
-      completion_tokens: responseBody.usage.output_tokens || 0,
+      completion_tokens: completionTokens,
+      cached_tokens: responseBody.usage.input_tokens_details?.cached_tokens,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
+      reasoning_tokens: clampReasoningTokens(
+        responseBody.usage.output_tokens_details?.thinking_tokens,
+        completionTokens,
+      ),
+      cost_usd: responseBody.usage.cost_usd,
+      cost_in_usd: responseBody.usage.cost_in_usd,
+      cost_in_usd_ticks: responseBody.usage.cost_in_usd_ticks,
     };
   }
 
@@ -40,7 +50,10 @@ export function extractUsageFromResponse(responseBody) {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
       cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
+      cost_usd: responseBody.usage.cost_usd,
+      cost_in_usd: responseBody.usage.cost_in_usd,
+      cost_in_usd_ticks: responseBody.usage.cost_in_usd_ticks,
     };
   }
 
@@ -94,8 +107,38 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
-  if (!tokens || typeof tokens !== "object") return;
+/**
+ * One short, stable label for the reasoning a request actually ran with, so
+ * usage can be grouped by it (#2483). Derived from the TRANSLATED body, which
+ * is the one that went upstream: a provider-level thinking override injected in
+ * chatCore is part of what was used, and the client's own body would not show
+ * it.
+ *
+ * extractThinking already normalises every client shape (Claude thinking,
+ * Ollama think, OpenAI reasoning_effort, the model-name suffix) into one
+ * intent, so nothing here re-parses a format.
+ */
+export function summarizeReasoning(translatedBody) {
+  const intent = extractThinking(translatedBody);
+  if (!intent?.mode) return undefined;
+  if (intent.mode === "none") return "off";
+  if (intent.mode === "auto") return "auto";
+  if (intent.mode === "level") return intent.level || undefined;
+  if (intent.mode === "budget") {
+    // Bucketed by thousands, because a per-token budget would make every
+    // request its own group and answer nothing.
+    return intent.budget >= 1000 ? `${Math.round(intent.budget / 1000)}k` : `${intent.budget}`;
+  }
+  return undefined;
+}
+
+export function saveUsageStats({ provider, model, tokens: rawTokens, connectionId, apiKey, endpoint, requestedModel, translatedBody, label = "USAGE", silent = false }) {
+  if (!rawTokens || typeof rawTokens !== "object") return;
+
+  // Estimated usage arrives with the client headroom buffer already baked in
+  // (formatUsage), unlike wire usage whose buffered copy never reaches here.
+  // Strip it so both bill identically. See stripBufferFromUsage.
+  const tokens = stripBufferFromUsage(rawTokens);
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
   const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
@@ -122,6 +165,8 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    requestedModel: requestedModel || undefined,
+    reasoningEffort: summarizeReasoning(translatedBody),
   }).catch(() => {});
 }

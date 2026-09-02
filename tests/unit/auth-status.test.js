@@ -66,4 +66,20 @@ describe("GET /api/auth/status", () => {
     expect(response.body.authenticated).toBe(false);
     expect(response.body.requireLogin).toBe(true);
   });
+
+  it.each([undefined, ""])("fails during session initialization without a JWT secret (%j)", async (jwtSecret) => {
+    const savedJwtSecret = process.env.JWT_SECRET;
+    if (jwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = jwtSecret;
+
+    try {
+      vi.resetModules();
+      await expect(vi.importActual("../../src/lib/auth/dashboardSession.js"))
+        .rejects.toThrow("JWT_SECRET environment variable is required");
+    } finally {
+      if (savedJwtSecret === undefined) delete process.env.JWT_SECRET;
+      else process.env.JWT_SECRET = savedJwtSecret;
+      vi.resetModules();
+    }
+  });
 });

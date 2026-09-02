@@ -4,19 +4,18 @@ import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "@/lib/oauth/
 
 /**
  * POST /api/oauth/grok-cli/bulk-import
- * Bulk import multiple Grok CLI (OAuth/Device) account JSON objects in one call.
+ * Bulk import multiple Grok CLI (OAuth device-code) account JSON objects in one call.
  *
  * Body accepts any of:
  *   - Array:    [{...}, {...}]
  *   - Single:   {...}
  *   - Wrapped:  { accounts: [{...}, ...] }
  *
- * Each item accepts snake_case or camelCase:
- *   access_token / accessToken
- *   refresh_token / refreshToken
- *   id_token / idToken
- *   email
- *   expires_in / expiresIn / expires_at / expiresAt
+ * Each item must carry an access token, as `access_token` or `accessToken` —
+ * the CLI writes snake_case, the dashboard export writes camelCase. A missing
+ * email is best-effort backfilled from the id_token, then from the access token.
+ *
+ * Tokens are NEVER echoed back in the response.
  */
 export async function POST(request) {
   let body;
@@ -29,6 +28,7 @@ export async function POST(request) {
     );
   }
 
+  // Normalize to array
   let accounts;
   if (Array.isArray(body)) {
     accounts = body;
@@ -51,6 +51,8 @@ export async function POST(request) {
   let success = 0;
   let failed = 0;
 
+  // SERIAL loop — createProviderConnection reads max(priority) and reorders
+  // inside a transaction. Parallel calls would race on priority assignment.
   for (let i = 0; i < accounts.length; i++) {
     const raw = accounts[i];
     try {
@@ -59,58 +61,53 @@ export async function POST(request) {
       }
 
       const accessToken = raw.access_token || raw.accessToken;
-      const refreshToken = raw.refresh_token || raw.refreshToken || null;
-      const idToken = raw.id_token || raw.idToken || null;
-      let email = raw.email || null;
-
       if (!accessToken || typeof accessToken !== "string") {
         throw new Error("Missing access_token / accessToken");
       }
+      const refreshToken = raw.refresh_token || raw.refreshToken || null;
+      const idToken = raw.id_token || raw.idToken || null;
 
-      if (!email) {
-        email =
-          decodeXaiIdTokenEmail(idToken) ||
-          extractEmailFromAccessToken(accessToken) ||
-          null;
-      }
+      const email =
+        raw.email ||
+        decodeXaiIdTokenEmail(idToken) ||
+        extractEmailFromAccessToken(accessToken) ||
+        null;
 
       let expiresAt = raw.expires_at || raw.expiresAt || null;
-      const expiresIn = raw.expires_in || raw.expiresIn;
+      const expiresIn = raw.expires_in ?? raw.expiresIn;
       if (!expiresAt && typeof expiresIn === "number" && expiresIn > 0) {
         expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
       }
 
-      const psd = {
-        authMethod: "device_code",
-        ...(idToken ? { idToken } : {}),
-        ...(email ? { email } : {}),
-        ...(raw.providerSpecificData || {}),
-      };
-
+      // Mirrors mapTokens in src/lib/oauth/providers/grok-cli.js — GrokCliExecutor
+      // reads identity off providerSpecificData, not off the top-level fields.
       const created = await createProviderConnection({
         provider: "grok-cli",
         authType: "oauth",
         accessToken,
         refreshToken,
+        idToken,
         expiresAt,
         email,
         displayName: raw.displayName || raw.name || undefined,
-        providerSpecificData: psd,
         testStatus: "active",
+        isActive: true,
+        lastRefreshAt: new Date().toISOString(),
+        providerSpecificData: {
+          authMethod: "device_code",
+          idToken,
+          email,
+          ...(raw.providerSpecificData || {}),
+        },
       });
 
+      results.push({ index: i, ok: true, id: created.id });
       success++;
-      results.push({ index: i, ok: true, id: created.id, email: created.email });
-    } catch (err) {
+    } catch (e) {
+      results.push({ index: i, ok: false, error: e.message || "Unknown error" });
       failed++;
-      results.push({ index: i, ok: false, error: err.message });
     }
   }
 
-  return NextResponse.json({
-    total: accounts.length,
-    success,
-    failed,
-    results,
-  });
+  return NextResponse.json({ success, failed, results });
 }

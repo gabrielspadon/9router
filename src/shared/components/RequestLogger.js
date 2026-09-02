@@ -46,7 +46,7 @@ export default function RequestLogger() {
             <span>Auto Refresh (3s)</span>
             <div
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${autoRefresh ? "bg-primary" : "bg-bg-subtle border border-border"
+              className={`focus-ring relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${autoRefresh ? "bg-brand-solid" : "bg-surface-2 border border-border"
                 }`}
             >
               <span
@@ -58,15 +58,17 @@ export default function RequestLogger() {
         </div>
       </div>
 
-      <Card className="overflow-hidden bg-black/5 dark:bg-black/20">
+      <Card className="overflow-hidden bg-surface-2">
         <div className="p-0 overflow-x-auto max-h-[600px] overflow-y-auto font-mono text-xs">
           {loading && logs.length === 0 ? (
             <div className="p-8 text-center text-text-muted">Loading logs...</div>
           ) : logs.length === 0 ? (
             <div className="p-8 text-center text-text-muted">No logs recorded yet.</div>
           ) : (
-            <table className="w-full text-left border-collapse whitespace-nowrap">
-              <thead className="sticky top-0 bg-bg-subtle border-b border-border z-10">
+            // Raw log transcript: fixed-width LTR log lines split on " | ".
+            // Every text-left/text-right/border-r here is physical on purpose.
+            <table className="metric w-full text-left border-collapse whitespace-nowrap">
+              <thead className="sticky top-0 bg-surface-2 border-b border-border z-10">
                 <tr>
                   <th className="px-3 py-2 border-r border-border">DateTime</th>
                   <th className="px-3 py-2 border-r border-border">Model</th>
@@ -88,20 +90,20 @@ export default function RequestLogger() {
                   const isSuccess = status.includes("OK");
 
                   return (
-                    <tr key={i} className={`hover:bg-primary/5 transition-colors ${isPending ? 'bg-primary/5' : ''}`}>
+                    <tr key={i} className={`hover:bg-brand-soft transition-colors ${isPending ? 'bg-brand-soft' : ''}`}>
                       <td className="px-3 py-1.5 border-r border-border text-text-muted">{parts[0]}</td>
                       <td className="px-3 py-1.5 border-r border-border font-medium">{parts[1]}</td>
                       <td className="px-3 py-1.5 border-r border-border">
-                        <span className="px-1.5 py-0.5 rounded bg-bg-subtle border border-border text-[10px] uppercase font-bold">
+                        <span className="px-1.5 py-1 rounded bg-surface-2 border border-border font-mono text-[10.5px] font-bold">
                           {parts[2]}
                         </span>
                       </td>
                       <td className="px-3 py-1.5 border-r border-border truncate max-w-[150px]" title={parts[3]}>{parts[3]}</td>
-                      <td className="px-3 py-1.5 border-r border-border text-right text-primary">{parts[4]}</td>
+                      <td className="px-3 py-1.5 border-r border-border text-right text-brand">{parts[4]}</td>
                       <td className="px-3 py-1.5 border-r border-border text-right text-success">{parts[5]}</td>
                       <td className={`px-3 py-1.5 font-bold ${isSuccess ? 'text-success' :
-                          isFailed ? 'text-error' :
-                            'text-primary animate-pulse'
+                          isFailed ? 'text-danger' :
+                            'text-brand animate-pulse'
                         }`}>
                         {status}
                       </td>
@@ -113,7 +115,7 @@ export default function RequestLogger() {
           )}
         </div>
       </Card>
-      <div className="text-[10px] text-text-muted italic">
+      <div className="text-xs text-text-muted italic">
         Logs are loaded from the request history database.
       </div>
     </div>

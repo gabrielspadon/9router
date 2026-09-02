@@ -7,6 +7,31 @@
 import fs from "fs";
 import path from "path";
 
+function toResponsesUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+
+  const inputTokens = Number.isFinite(usage.prompt_tokens) ? usage.prompt_tokens : 0;
+  const outputTokens = Number.isFinite(usage.completion_tokens) ? usage.completion_tokens : 0;
+  const responseUsage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: Number.isFinite(usage.total_tokens)
+      ? usage.total_tokens
+      : inputTokens + outputTokens
+  };
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
+
+  if (Number.isFinite(cachedTokens)) {
+    responseUsage.input_tokens_details = { cached_tokens: cachedTokens };
+  }
+  if (Number.isFinite(reasoningTokens)) {
+    responseUsage.output_tokens_details = { reasoning_tokens: reasoningTokens };
+  }
+
+  return responseUsage;
+}
+
 // Create log directory for responses (Node.js only)
 export function createResponsesLogger(model, logsDir = null) {
   // Skip logging in worker environment (no fs)
@@ -73,6 +98,7 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
+    usage: null,
     completedSent: false
   };
 
@@ -233,16 +259,25 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
+          error: null,
+          ...(state.usage ? { usage: state.usage } : {})
         }
       });
     }
   };
 
-  return new TransformStream({
+  // One decoder for the whole stream: a multi-byte character split across two
+  // network chunks must be held until the rest of its bytes arrive, or both
+  // halves decode to replacement characters.
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  // Fed to the transform in flush() so a message left in the buffer without its
+  // blank-line terminator still goes through the normal path.
+  const SSE_MESSAGE_TERMINATOR = encoder.encode("\n\n");
+
+  const handlers = {
     transform(chunk, controller) {
-      const text = new TextDecoder().decode(chunk);
-      logger?.logInput(text.trim());
+      const text = decoder.decode(chunk, { stream: true });
+      if (text.trim()) logger?.logInput(text.trim());
       state.buffer += text;
 
       const messages = state.buffer.split("\n\n");
@@ -262,6 +297,10 @@ export function createResponsesApiTransformStream(logger = null) {
           parsed = JSON.parse(dataStr);
         } catch {
           continue;
+        }
+
+        if (parsed.usage) {
+          state.usage = toResponsesUsage(parsed.usage);
         }
 
         if (!parsed.choices?.length) continue;
@@ -419,12 +458,14 @@ export function createResponsesApiTransformStream(logger = null) {
           for (const i in state.msgItemAdded) closeMessage(controller, i);
           closeReasoning(controller);
           for (const i in state.funcCallIds) closeToolCall(controller, i);
-          sendCompleted(controller);
         }
       }
     },
 
     flush(controller) {
+      state.buffer += decoder.decode();
+      if (state.buffer.trim()) handlers.transform(SSE_MESSAGE_TERMINATOR, controller);
+
       for (const i in state.msgItemAdded) closeMessage(controller, i);
       closeReasoning(controller);
       for (const i in state.funcCallIds) closeToolCall(controller, i);
@@ -434,6 +475,7 @@ export function createResponsesApiTransformStream(logger = null) {
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       logger?.flush();
     }
-  });
-}
+  };
 
+  return new TransformStream(handlers);
+}

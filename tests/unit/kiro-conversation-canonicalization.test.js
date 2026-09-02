@@ -369,4 +369,100 @@ describe("Kiro conversation canonicalizer", () => {
       state.currentMessage.userInputMessage.userInputMessageContext.tools
     ).valid).toBe(true);
   });
+
+  const directKiroTranslators = [
+    [
+      "Claude",
+      () => claudeToKiroRequest(modelId, {
+        tools: [tool("first")],
+        messages: [
+          { role: "user", content: "start" },
+          { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "first", input: {} }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "one" }] },
+        ],
+      }, true, {}),
+      () => claudeToKiroRequest(modelId, {
+        tools: [tool("first")],
+        messages: [
+          { role: "user", content: "start" },
+          { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "first", input: {} }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "one" }] },
+          { role: "assistant", content: "answer" },
+          { role: "user", content: "next question" },
+        ],
+      }, true, {}),
+      () => claudeToKiroRequest(modelId, {
+        messages: [{
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "AA==" } }],
+        }],
+      }, true, {}),
+      () => claudeToKiroRequest(modelId, {
+        messages: [{ role: "user", content: "" }],
+      }, true, {}),
+    ],
+    [
+      "OpenAI",
+      () => openaiToKiroRequest(modelId, {
+        tools: [{ type: "function", function: { name: "first", parameters: { type: "object", properties: {} } } }],
+        messages: [
+          { role: "user", content: "start" },
+          { role: "assistant", content: null, tool_calls: [{ id: "t1", type: "function", function: { name: "first", arguments: "{}" } }] },
+          { role: "tool", tool_call_id: "t1", content: "one" },
+        ],
+      }, true, {}),
+      () => openaiToKiroRequest(modelId, {
+        tools: [{ type: "function", function: { name: "first", parameters: { type: "object", properties: {} } } }],
+        messages: [
+          { role: "user", content: "start" },
+          { role: "assistant", content: null, tool_calls: [{ id: "t1", type: "function", function: { name: "first", arguments: "{}" } }] },
+          { role: "tool", tool_call_id: "t1", content: "one" },
+          { role: "assistant", content: "answer" },
+          { role: "user", content: "next question" },
+        ],
+      }, true, {}),
+      () => openaiToKiroRequest(modelId, {
+        messages: [{
+          role: "user",
+          content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }],
+        }],
+      }, true, {}),
+      () => openaiToKiroRequest(modelId, {
+        messages: [{ role: "user", content: "" }],
+      }, true, {}),
+    ],
+  ];
+
+  it.each(directKiroTranslators)("does not fabricate a continuation on a current structured tool turn for %s", (_name, translate) => {
+    const current = translate().conversationState.currentMessage.userInputMessage;
+
+    expect(current.content).toContain("[Context: Current time is");
+    expect(current.content).not.toContain("continue");
+    expect(current.userInputMessageContext.toolResults.map((item) => item.toolUseId)).toEqual(["t1"]);
+  });
+
+  it.each(directKiroTranslators)("uses the neutral nonempty placeholder for a historical structured tool turn for %s", (_name, _current, translateHistory) => {
+    const state = translateHistory().conversationState;
+    const historicalToolTurn = state.history.find(
+      (turn) => turn.userInputMessage?.userInputMessageContext?.toolResults?.[0]?.toolUseId === "t1"
+    );
+
+    expect(historicalToolTurn.userInputMessage.content).toBe("...");
+    expect(historicalToolTurn.userInputMessage.userInputMessageContext.toolResults).toHaveLength(1);
+  });
+
+  it.each(directKiroTranslators)("does not fabricate a continuation on an image-only turn for %s", (_name, _current, _history, translateImage) => {
+    const current = translateImage().conversationState.currentMessage.userInputMessage;
+
+    expect(current.content).toContain("[Context: Current time is");
+    expect(current.content).not.toContain("continue");
+    expect(current.images).toHaveLength(1);
+  });
+
+  it.each(directKiroTranslators)("retains continuation for a truly empty structural user turn for %s", (_name, _current, _history, _image, translateEmpty) => {
+    const current = translateEmpty().conversationState.currentMessage.userInputMessage;
+
+    expect(current.content).toMatch(/continue$/);
+    expect(current.userInputMessageContext).toBeUndefined();
+  });
 });

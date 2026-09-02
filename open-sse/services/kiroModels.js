@@ -3,7 +3,7 @@
  *
  * Calls AWS CodeWhisperer's `ListAvailableModels` endpoint to get the live
  * catalog for an authenticated Kiro account, then expands each upstream model
- * into 9router-shaped variants:
+ * into tokenproxy-shaped variants:
  *
  *   {upstream}                          - base model
  *   {upstream}-thinking                 - same model, thinking on at request time
@@ -11,7 +11,7 @@
  *   {upstream}-thinking-agentic         - both
  *
  * The `-thinking` and `-agentic` suffixes do not exist on the Kiro upstream
- * API. They are 9router fictions and the `openai-to-kiro` translator strips
+ * API. They are tokenproxy fictions and the `openai-to-kiro` translator strips
  * them before the request leaves this process.
  *
  * The runtime UA is built to match what Kiro IDE itself sends, because the
@@ -22,6 +22,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 import { refreshKiroToken } from "./tokenRefresh.js";
+import { assertValidAwsRegion } from "../config/awsRegions.js";
 
 const KIRO_RUNTIME_SDK_VERSION = "1.0.0";
 const KIRO_AGENT_OS = "windows";
@@ -93,7 +94,7 @@ function buildKiroFingerprintHeaders(credentials) {
 }
 
 /**
- * Build the synthetic 9router variant set for a single upstream Kiro model.
+ * Build the synthetic tokenproxy variant set for a single upstream Kiro model.
  *
  * Returns objects shaped for `PROVIDER_MODELS` (`{ id, name }`) so they can
  * be slotted directly into the existing model registry.
@@ -158,7 +159,7 @@ function formatDisplayName(modelName, modelId, rateMultiplier) {
  */
 async function fetchKiroCatalogRaw(credentials, signal) {
   const profileArn = credentials?.providerSpecificData?.profileArn || "";
-  const region = regionFromProfileArn(profileArn);
+  const region = assertValidAwsRegion(regionFromProfileArn(profileArn));
   const params = new URLSearchParams();
   params.set("origin", "AI_EDITOR");
   if (profileArn) params.set("profileArn", profileArn);
@@ -176,28 +177,35 @@ async function fetchKiroCatalogRaw(credentials, signal) {
     signal.addEventListener("abort", () => controller.abort(signal.reason));
   }
 
-  let response;
+  // The timeout has to outlive the body read, not just the header exchange
+  // (#1357). fetch() resolves as soon as headers arrive, so clearing the timer
+  // there left response.json()/response.text() with no deadline at all: an
+  // endpoint that answered headers and then stalled its body hung this call
+  // forever. /v1/models awaits one live resolver per connection in sequence,
+  // so one stalled account starved every other account's catalog. Keep the
+  // body inside the timed block, as every sibling catalog fetcher already does
+  // (copilotModels, kimchiModels, clineModels).
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       method: "GET",
       headers,
       signal: controller.signal
     });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      const err = new Error(`Kiro ListAvailableModels ${response.status}: ${text || response.statusText}`);
+      err.status = response.status;
+      err.body = text;
+      throw err;
+    }
+
+    const data = await response.json();
+    const models = Array.isArray(data?.models) ? data.models : [];
+    return models;
   } finally {
     clearTimeout(timer);
   }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    const err = new Error(`Kiro ListAvailableModels ${response.status}: ${text || response.statusText}`);
-    err.status = response.status;
-    err.body = text;
-    throw err;
-  }
-
-  const data = await response.json();
-  const models = Array.isArray(data?.models) ? data.models : [];
-  return models;
 }
 
 /**
@@ -218,7 +226,7 @@ function cacheKey(credentials) {
 
 /**
  * Resolve the live Kiro model catalog for a credential and expand each entry
- * into 9router variants (`-thinking`, `-agentic`, `-thinking-agentic`).
+ * into tokenproxy variants (`-thinking`, `-agentic`, `-thinking-agentic`).
  *
  * On any error (network, 4xx, 5xx), returns `null` so callers can fall back
  * to the static catalog without taking down the dashboard or `/v1/models`.

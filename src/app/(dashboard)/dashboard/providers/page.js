@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
-import {
-  Card,
-  CardSkeleton,
-  Badge,
-  Button,
-  Toggle,
-} from "@/shared/components";
+import Card from "@/shared/components/Card";
+import { CardSkeleton } from "@/shared/components/Loading";
+import Badge from "@/shared/components/Badge";
+import Button from "@/shared/components/Button";
+import Toggle from "@/shared/components/Toggle";
+import Select from "@/shared/components/Select";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import StatusToken from "@/shared/components/StatusToken";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
@@ -20,91 +20,61 @@ import {
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import Link from "next/link";
-import { getErrorCode, getRelativeTime } from "@/shared/utils";
+import { getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
-
-function getStatusDisplay(connected, error, errorCode) {
-  const parts = [];
-  if (connected > 0) {
-    parts.push(
-      <Badge key="connected" variant="success" size="sm" dot>
-        {connected} Connected
-      </Badge>,
-    );
-  }
-  if (error > 0) {
-    const errText = errorCode
-      ? `${error} Error (${errorCode})`
-      : `${error} Error`;
-    parts.push(
-      <Badge key="error" variant="error" size="sm" dot>
-        {errText}
-      </Badge>,
-    );
-  }
-  if (parts.length === 0) {
-    return <span className="text-text-muted">No connections</span>;
-  }
-  return parts;
-}
-
-function getConnectionErrorTag(connection) {
-  if (!connection) return null;
-
-  const explicitType = connection.lastErrorType;
-  if (explicitType === "runtime_error") return "RUNTIME";
-  if (
-    explicitType === "upstream_auth_error" ||
-    explicitType === "auth_missing" ||
-    explicitType === "token_refresh_failed" ||
-    explicitType === "token_expired"
-  )
-    return "AUTH";
-  if (explicitType === "upstream_rate_limited") return "429";
-  if (explicitType === "upstream_unavailable") return "5XX";
-  if (explicitType === "network_error") return "NET";
-
-  const numericCode = Number(connection.errorCode);
-  if (Number.isFinite(numericCode) && numericCode >= 400)
-    return String(numericCode);
-
-  const fromMessage = getErrorCode(connection.lastError);
-  if (fromMessage === "401" || fromMessage === "403") return "AUTH";
-  if (fromMessage && fromMessage !== "ERR") return fromMessage;
-
-  const msg = (connection.lastError || "").toLowerCase();
-  if (
-    msg.includes("runtime") ||
-    msg.includes("not runnable") ||
-    msg.includes("not installed")
-  )
-    return "RUNTIME";
-  if (
-    msg.includes("invalid api key") ||
-    msg.includes("token invalid") ||
-    msg.includes("revoked") ||
-    msg.includes("unauthorized")
-  )
-    return "AUTH";
-
-  return "ERR";
-}
+import NewModelsButton from "./components/NewModelsButton";
+import ProviderStatusTokens from "./components/ProviderStatusTokens";
+import ProviderHealthMatrix, { headroomFor } from "./components/ProviderHealthMatrix";
+import { summarizeProviderConnections } from "./connectionStatus";
 
 const APIKEY_INITIAL_VISIBLE = 20;
 
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
+  // Signature element 4. Measured performance per upstream, read from the
+  // health endpoint the requestStats rows already back.
+  const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
+  const [showAddMultiCompatibleModal, setShowAddMultiCompatibleModal] =
+    useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  // Grid filters: hide disabled providers / hide providers with no connections.
+  // Persisted locally so the choice survives page reloads.
+  const [hideDisabled, setHideDisabled] = useState(false);
+  const [hideUnconfigured, setHideUnconfigured] = useState(false);
+
+  useEffect(() => {
+    // Deferred one tick: keeps SSR markup (all visible) consistent and avoids
+    // the sync-setState-in-effect cascade the react-hooks rule flags.
+    const t = setTimeout(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("providers.gridFilters") || "{}");
+        if (saved.hideDisabled) setHideDisabled(true);
+        if (saved.hideUnconfigured) setHideUnconfigured(true);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  const updateGridFilter = (key, value) => {
+    (key === "hideDisabled" ? setHideDisabled : setHideUnconfigured)(value);
+    try {
+      const saved = JSON.parse(localStorage.getItem("providers.gridFilters") || "{}");
+      localStorage.setItem(
+        "providers.gridFilters",
+        JSON.stringify({ ...saved, [key]: value }),
+      );
+    } catch {}
+  };
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
@@ -117,8 +87,19 @@ export default function ProvidersPage() {
 
   const matchSearch = (name) => {
     if (!searchQuery.trim()) return true;
+    // A provider entry with no name reached this and threw on toLowerCase,
+    // taking the whole grid down mid-search.
     if (!name) return false;
     return name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  };
+
+  // Grid-level filter applied to every card entry list. "Disabled" = all
+  // connections toggled off (allDisabled); "unconfigured" = zero connections.
+  const matchGridFilter = (key, authType) => {
+    const s = getProviderStats(key, authType);
+    if (hideUnconfigured && s.total === 0) return false;
+    if (hideDisabled && s.total > 0 && s.allDisabled) return false;
+    return true;
   };
 
   const sortByPriority = (entries, authType) =>
@@ -150,15 +131,20 @@ export default function ProvidersPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [connectionsRes, nodesRes] = await Promise.all([
+        const [connectionsRes, nodesRes, healthRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/provider-nodes"),
+          // Grouped by provider, not by account: this grid compares upstreams.
+          // A failure here costs the health grid and nothing else, which is why
+          // it is settled beside the other two rather than gating them.
+          fetch("/api/usage/stats/health?period=7d&groupBy=provider").catch(() => null),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
         if (connectionsRes.ok)
           setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+        if (healthRes?.ok) setHealth(await healthRes.json());
       } catch (error) {
         console.log("Error fetching data:", error);
       } finally {
@@ -168,48 +154,14 @@ export default function ProvidersPage() {
     fetchData();
   }, []);
 
+  // Every state a card can show is decided in one place, by connectionStatus.js.
   const getProviderStats = (providerId, authType) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
-    const providerConnections = connections.filter(
-      (c) => c.provider === providerId && authTypes.includes(c.authType),
+    return summarizeProviderConnections(
+      connections.filter(
+        (c) => c.provider === providerId && authTypes.includes(c.authType),
+      ),
     );
-
-    const getEffectiveStatus = (conn) => {
-      const isCooldown = Object.entries(conn).some(
-        ([k, v]) =>
-          k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now(),
-      );
-      return conn.testStatus === "unavailable" && !isCooldown
-        ? "active"
-        : conn.testStatus;
-    };
-
-    const connected = providerConnections.filter((c) => {
-      const status = getEffectiveStatus(c);
-      return status === "active" || status === "success";
-    }).length;
-
-    const errorConns = providerConnections.filter((c) => {
-      const status = getEffectiveStatus(c);
-      return (
-        status === "error" || status === "expired" || status === "unavailable"
-      );
-    });
-
-    const error = errorConns.length;
-    const total = providerConnections.length;
-    const allDisabled =
-      total > 0 && providerConnections.every((c) => c.isActive === false);
-
-    const latestError = errorConns.sort(
-      (a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0),
-    )[0];
-    const errorCode = latestError ? getConnectionErrorTag(latestError) : null;
-    const errorTime = latestError?.lastErrorAt
-      ? getRelativeTime(latestError.lastErrorAt)
-      : null;
-
-    return { connected, error, total, errorCode, errorTime, allDisabled };
   };
 
   // Toggle all connections for a provider on/off. authType may be a single
@@ -267,7 +219,11 @@ export default function ProvidersPage() {
       textIcon: "OC",
       apiType: node.apiType,
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter(
+      (p) =>
+        matchSearch(p.name) &&
+        matchGridFilter(p.id, ["apikey", "api_key"]),
+    );
 
   const anthropicCompatibleProviders = providerNodes
     .filter((node) => node.type === "anthropic-compatible")
@@ -276,6 +232,21 @@ export default function ProvidersPage() {
       name: node.name || "Anthropic Compatible",
       color: "#D97757",
       textIcon: "AC",
+    }))
+    .filter(
+      (p) =>
+        matchSearch(p.name) &&
+        matchGridFilter(p.id, ["apikey", "api_key"]),
+    );
+
+  const multiCompatibleProviders = providerNodes
+    .filter((node) => node.type === "multi-compatible")
+    .map((node) => ({
+      id: node.id,
+      name: node.name || "Multi-protocol Compatible",
+      color: "#7C3AED",
+      textIcon: "MP",
+      apiType: "multi",
     }))
     .filter((p) => matchSearch(p.name));
 
@@ -298,21 +269,30 @@ export default function ProvidersPage() {
   };
 
   const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
+    Object.entries(OAUTH_PROVIDERS).filter(
+      ([key, info]) =>
+        !info.hidden && matchSearch(info.name) && matchGridFilter(key, dualAuthTypes(info, key)),
+    ),
     "oauth",
   );
   const freeEntries = Object.entries(FREE_PROVIDERS)
-    .filter(([, info]) => !info.hidden && matchSearch(info.name))
+    .filter(
+      ([key, info]) =>
+        !info.hidden &&
+        matchSearch(info.name) &&
+        matchGridFilter(key, dualAuthTypes(info, key)),
+    )
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
   // dualAuthTypes per provider instead of a fixed "apikey" — otherwise oauth
   // connections are invisible here (mismatch with the detail page).
   const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS)
     .filter(
-      ([, info]) =>
+      ([key, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
-        (info.serviceKinds ?? ["llm"]).includes("llm"),
+        (info.serviceKinds ?? ["llm"]).includes("llm") &&
+        matchGridFilter(key, dualAuthTypes(info, key)),
     )
     .sort(([ka, a], [kb, b]) => {
       const pa = a.priority ?? 999;
@@ -328,10 +308,11 @@ export default function ProvidersPage() {
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
-      ([, info]) =>
+      ([key, info]) =>
         !info.hidden &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
-        matchSearch(info.name),
+        matchSearch(info.name) &&
+        matchGridFilter(key, "apikey"),
     )
     .sort(([ka, a], [kb, b]) => {
       const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
@@ -348,7 +329,7 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-5.5">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -361,28 +342,141 @@ export default function ProvidersPage() {
     freeTierEntries.length > 0 ||
     apikeyEntries.length > 0 ||
     compatibleProviders.length > 0 ||
-    anthropicCompatibleProviders.length > 0;
+    anthropicCompatibleProviders.length > 0 ||
+    multiCompatibleProviders.length > 0;
+
+  // One row per upstream that actually carried traffic in the window. A
+  // provider with no requests has no measured health, and inventing a row for
+  // it would put "Healthy" against something nothing has ever reached.
+  const healthRows = (health?.rows || [])
+    .filter((r) => r.provider && r.requests > 0)
+    .map((r) => ({
+      provider: r.provider,
+      name:
+        OAUTH_PROVIDERS[r.provider]?.name
+        || APIKEY_PROVIDERS[r.provider]?.name
+        || FREE_PROVIDERS[r.provider]?.name
+        || FREE_TIER_PROVIDERS[r.provider]?.name
+        || providerNodes.find((n) => n.id === r.provider)?.name
+        || r.providerName
+        || r.provider,
+      requests: r.requests,
+      errors: r.errors,
+      avgLatencyMs: r.avgLatencyMs ?? null,
+      headroom: headroomFor(connections.filter((c) => c.provider === r.provider)),
+    }))
+    // Worst first: the reason to look at this grid is the upstream that is
+    // failing or about to run out, not the alphabet.
+    .sort((a, b) => {
+      const ra = a.requests > 0 ? a.errors / a.requests : 0;
+      const rb = b.requests > 0 ? b.errors / b.requests : 0;
+      if (ra !== rb) return rb - ra;
+      return b.requests - a.requests;
+    });
+
+  const filterBtnCls = (active) =>
+    `focus-ring hit-44 flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors duration-150 sm:py-1.5 ${
+      active
+        ? "bg-brand-soft border-brand-line text-brand"
+        : "bg-bg border-border text-text-muted hover:text-text-main hover:border-brand-line"
+    }`;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-5.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href="/dashboard/providers/new"
+          className="focus-ring hit-44 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[var(--radius-brand)] bg-brand-solid px-3 text-xs font-semibold text-brand-on transition-colors duration-150 hover:bg-brand-solid-hover"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">add</span>
+          Connect a Provider
+        </Link>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            onClick={() => updateGridFilter("hideDisabled", !hideDisabled)}
+            className={filterBtnCls(hideDisabled)}
+            title={hideDisabled ? "Show disabled providers" : "Hide providers with all connections disabled"}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+              {hideDisabled ? "visibility_off" : "visibility"}
+            </span>
+            {hideDisabled ? "Showing enabled only" : "Hide disabled"}
+          </button>
+          <button
+            onClick={() => updateGridFilter("hideUnconfigured", !hideUnconfigured)}
+            className={filterBtnCls(hideUnconfigured)}
+            title={hideUnconfigured ? "Show unconfigured providers" : "Hide providers with no connections"}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+              {hideUnconfigured ? "visibility_off" : "visibility"}
+            </span>
+            {hideUnconfigured ? "Showing configured only" : "Hide unconfigured"}
+          </button>
+        </div>
+      </div>
+
+      {/* Signature element 4, direction.md:85. It sits above the inventory
+          because a degraded upstream is the reason to open this route, and
+          below the filters because it answers for what is connected rather
+          than for what could be. */}
+      <ProviderHealthMatrix rows={healthRows} period={health?.period || "7d"} />
+
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
-          <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
+          <span aria-hidden="true" className="material-symbols-outlined text-[32px] text-text-muted mb-2">
             search_off
           </span>
           <p className="text-text-muted text-sm">No providers match your search</p>
         </div>
       )}
 
-      {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
+      {/* New Models discovery */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col">
+          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+            Model Discovery
+          </h2>
+          <p className="text-xs text-text-muted">
+            Track new models added by any provider, including free ones
+          </p>
+        </div>
+        <NewModelsButton />
+      </div>
+
+      {/* Custom Providers — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
-            Custom Providers (OpenAI/Anthropic Compatible){" "}
+            Custom Providers
           </h2>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
+            {/* The batch endpoint has always accepted mode "compatible" and no UI
+                ever sent it, so this was the one provider section without the
+                Test All the three above it have had (#3505). */}
             <Button
               size="sm"
+              variant="secondary"
+              icon="play_arrow"
+              loading={testingMode === "compatible"}
+              onClick={() => handleBatchTest("compatible")}
+              disabled={!!testingMode}
+              className="w-full sm:w-auto"
+              title="Test all custom provider connections"
+              aria-label="Test all custom provider connections"
+            >
+              {testingMode === "compatible" ? "Testing..." : "Test All"}
+            </Button>
+            <Button
+              size="sm"
+              icon="add"
+              onClick={() => setShowAddMultiCompatibleModal(true)}
+              className="w-full sm:w-auto"
+            >
+              Add Multi-protocol
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               icon="add"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
               className="w-full sm:w-auto"
@@ -394,34 +488,37 @@ export default function ProvidersPage() {
               variant="secondary"
               icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
-              className="w-full !bg-white !text-black hover:!bg-gray-100 sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Add OpenAI Compatible
             </Button>
           </div>
         </div>
         {compatibleProviders.length === 0 &&
-        anthropicCompatibleProviders.length === 0 ? (
+        anthropicCompatibleProviders.length === 0 &&
+        multiCompatibleProviders.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[18px]">extension</span>
-            <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">extension</span>
+            <span>No custom providers. Use the buttons above to add one.</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-            {[...compatibleProviders, ...anthropicCompatibleProviders].map(
-              (info) => (
-                <ApiKeyProviderCard
-                  key={info.id}
-                  providerId={info.id}
-                  provider={info}
-                  stats={getProviderStats(info.id, "apikey")}
-                  authType="compatible"
-                  onToggle={(active) =>
-                    handleToggleProvider(info.id, "apikey", active)
-                  }
-                />
-              ),
-            )}
+            {[
+              ...multiCompatibleProviders,
+              ...compatibleProviders,
+              ...anthropicCompatibleProviders,
+            ].map((info) => (
+              <ApiKeyProviderCard
+                key={info.id}
+                providerId={info.id}
+                provider={info}
+                stats={getProviderStats(info.id, "apikey")}
+                authType="compatible"
+                onToggle={(active) =>
+                  handleToggleProvider(info.id, "apikey", active)
+                }
+              />
+            ))}
           </div>
         )}
       </div>
@@ -435,43 +532,69 @@ export default function ProvidersPage() {
           </h2>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <ModelAvailabilityBadge />
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="play_arrow"
+              loading={testingMode === "oauth"}
               onClick={() => handleBatchTest("oauth")}
               disabled={!!testingMode}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-                testingMode === "oauth"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-              }`}
+              className="w-full sm:w-auto"
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
             >
-              <span
-                className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}
-              >
-                play_arrow
-              </span>
               {testingMode === "oauth" ? "Testing..." : "Test All"}
-            </button>
+            </Button>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => {
+        {(() => {
+          // Forty providers rendered as one uniform grid weighted the six
+          // accounts that carry traffic exactly the same as the thirty-odd that
+          // are configured and idle. The set is unchanged and the sort inside
+          // each band is unchanged; this only separates what is in use from
+          // what is inventory, and lifts anything reporting an error to the
+          // front of the band that needs attention.
+          const withStats = oauthEntries.map(([key, info]) => {
             const authTypes = dualAuthTypes(info, key);
-            return (
-              <ProviderCard
-                key={key}
-                providerId={key}
-                provider={info}
-                stats={getProviderStats(key, authTypes)}
-                authType="oauth"
-                onToggle={(active) => handleToggleProvider(key, authTypes, active)}
-              />
-            );
-          })}
-        </div>
+            return { key, info, authTypes, stats: getProviderStats(key, authTypes) };
+          });
+          const inUse = withStats
+            .filter((e) => e.stats.total > 0)
+            .sort((a, b) => (b.stats.error > 0) - (a.stats.error > 0));
+          const idle = withStats.filter((e) => e.stats.total === 0);
+          const bands = [
+            { id: "in-use", label: "Connected", entries: inUse },
+            { id: "idle", label: "Not connected", entries: idle },
+          ].filter((b) => b.entries.length > 0);
+
+          return bands.map((band) => (
+            <div key={band.id} className="flex flex-col gap-3">
+              {bands.length > 1 && (
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
+                  {band.label}
+                  <span className="ms-2 tabular-nums">{band.entries.length}</span>
+                </p>
+              )}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+                {band.entries.map(({ key, info, authTypes, stats }) => (
+                  <ProviderCard
+                    key={key}
+                    providerId={key}
+                    provider={info}
+                    stats={stats}
+                    authType="oauth"
+                    onToggle={(active) => handleToggleProvider(key, authTypes, active)}
+                  />
+                ))}
+              </div>
+            </div>
+          ));
+        })()}
       </div>
       )}
+
+      {/* Free-model auto-discovery */}
+      <FreeModelSyncCard />
 
       {/* Free Tier Providers */}
       {(freeEntries.length > 0 || freeTierEntries.length > 0) && (
@@ -480,24 +603,19 @@ export default function ProvidersPage() {
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             Free Tier Providers
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="play_arrow"
+            loading={testingMode === "free"}
             onClick={() => handleBatchTest("free")}
             disabled={!!testingMode}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-              testingMode === "free"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-            }`}
+            className="w-full sm:w-auto"
             title="Test all Free connections"
             aria-label="Test all Free provider connections"
           >
-            <span
-              className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}
-            >
-              play_arrow
-            </span>
             {testingMode === "free" ? "Testing..." : "Test All"}
-          </button>
+          </Button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {freeEntries.map(([key, info]) => {
@@ -541,24 +659,19 @@ export default function ProvidersPage() {
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             API Key Providers{" "}
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="play_arrow"
+            loading={testingMode === "apikey"}
             onClick={() => handleBatchTest("apikey")}
             disabled={!!testingMode}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
-              testingMode === "apikey"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-            }`}
+            className="w-full sm:w-auto"
             title="Test all API Key connections"
             aria-label="Test all API Key connections"
           >
-            <span
-              className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}
-            >
-              play_arrow
-            </span>
             {testingMode === "apikey" ? "Testing..." : "Test All"}
-          </button>
+          </Button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {visibleApikeyEntries.map(([key, info]) => (
@@ -575,9 +688,9 @@ export default function ProvidersPage() {
         {!isApikeySearching && !showAllApikey && hiddenApikeyCount > 0 && (
           <button
             onClick={() => setShowAllApikey(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
+            className="focus-ring flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-3 text-sm font-medium text-brand transition-colors duration-150 hover:border-brand hover:bg-brand-soft"
           >
-            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">expand_more</span>
             Show all {apikeyEntries.length} providers
           </button>
         )}
@@ -623,6 +736,15 @@ export default function ProvidersPage() {
           setShowAddAnthropicCompatibleModal(false);
         }}
       />
+      <AddCompatibleModal
+        variant="multi"
+        isOpen={showAddMultiCompatibleModal}
+        onClose={() => setShowAddMultiCompatibleModal(false)}
+        onCreated={(node) => {
+          setProviderNodes((prev) => [...prev, node]);
+          setShowAddMultiCompatibleModal(false);
+        }}
+      />
 
       {/* Test Results Modal */}
       {testResults && (
@@ -632,20 +754,20 @@ export default function ProvidersPage() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl"
+            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-elev"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-5.5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
               <h3 className="font-semibold">Test Results</h3>
-              <button
+              <Button
+                variant="ghost" size="icon"
                 onClick={() => setTestResults(null)}
-                className="p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors"
                 aria-label="Close test results"
               >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
+                <span aria-hidden="true" className="material-symbols-outlined text-lg">close</span>
+              </Button>
             </div>
-            <div className="p-5">
+            <div className="p-5.5">
               <ProviderTestResultsView results={testResults} />
             </div>
           </div>
@@ -655,28 +777,133 @@ export default function ProvidersPage() {
   );
 }
 
-function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
-  const isNoAuth = !!provider.noAuth;
+const FREE_SYNC_INTERVAL_OPTIONS = [
+  { value: "4", label: "Every 4 hours" },
+  { value: "8", label: "Every 8 hours" },
+  { value: "12", label: "Every 12 hours" },
+  { value: "24", label: "Every 24 hours" },
+];
 
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
+function FreeModelSyncCard() {
+  const [status, setStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const notify = useNotificationStore();
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models/free-sync");
+      if (res.ok) setStatus(await res.json());
+    } catch (error) {
+      console.log("Error fetching free-sync status:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Deferred so the first paint isn't blocked; not polled afterwards.
+    const t = setTimeout(refreshStatus, 0);
+    return () => clearTimeout(t);
+  }, [refreshStatus]);
+
+  const patchConfig = async (patch) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freeModelSync: patch }),
+      });
+      if (res.ok) await refreshStatus();
+    } catch (error) {
+      console.log("Error updating free-model sync config:", error);
+    } finally {
+      setSaving(false);
+    }
   };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
+
+  const handleFetchNow = async () => {
+    if (running) return;
+    setRunning(true);
+    try {
+      const res = await fetch("/api/models/free-sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && !data.error && !data.skipped)
+        notify.success(`Free-model sync finished (+${data.added ?? 0} new, -${data.removed ?? 0} gone)`);
+      else if (data.skipped) notify.warning("A sync is already running");
+      else notify.error(data.error || "Free-model sync failed");
+      await refreshStatus();
+    } catch (error) {
+      notify.error("Free-model sync failed");
+    } finally {
+      setRunning(false);
+    }
   };
+
+  const cfg = status?.config || { enabled: false, intervalHours: 4 };
+  const providerEntries = Object.entries(status?.providers || {});
+  const totalModels = providerEntries.reduce((n, [, p]) => n + (p.count || 0), 0);
+
+  return (
+    <Card padding="sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="size-9 shrink-0 rounded-lg bg-brand-soft flex items-center justify-center">
+            <span aria-hidden="true" className="material-symbols-outlined text-brand text-[20px]">auto_awesome</span>
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold leading-tight">Auto-fetch free models</h3>
+            <p className="text-xs text-text-muted mt-1">
+              Discover free models on every free-tier provider and add them to tokenproxy.
+              {totalModels > 0 && (
+                <> Currently {totalModels} models across {providerEntries.length} providers.</>
+              )}
+              {status?.lastRunAt && <> Last run {getRelativeTime(status.lastRunAt)}.</>}
+              {status?.lastError && <> <span className="text-danger">Last run failed.</span></>}
+            </p>
+          </div>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:shrink-0">
+          <Select
+            aria-label="Free model sync interval"
+            options={FREE_SYNC_INTERVAL_OPTIONS}
+            value={String(cfg.intervalHours)}
+            onChange={(e) => patchConfig({ ...cfg, intervalHours: Number(e.target.value) })}
+            disabled={!cfg.enabled || saving}
+            selectClassName="py-1.5 text-xs"
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="sync"
+            loading={running}
+            onClick={handleFetchNow}
+            disabled={running}
+            className="w-full sm:w-auto"
+            title="Run a free-model sync immediately"
+          >
+            {running ? "Fetching..." : "Fetch now"}
+          </Button>
+          <Toggle
+            checked={cfg.enabled}
+            onChange={(v) => patchConfig({ ...cfg, enabled: v })}
+            ariaLabel="Auto-fetch free models"
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
+  const { allDisabled, latestErrorAt } = stats;
+  const errorTime = latestErrorAt ? getRelativeTime(latestErrorAt) : null;
+  const isNoAuth = !!provider.noAuth;
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
       <Card
         padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        className={`h-full hover:bg-surface-2 transition-colors duration-150 cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -698,22 +925,17 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate font-semibold">{provider.name}</h3>
+              <h3 className="truncate font-semibold" title={provider.name}>{provider.name}</h3>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
-                {allDisabled ? (
-                  <Badge variant="default" size="sm">
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">
-                        pause_circle
-                      </span>
-                      Disabled
-                    </span>
-                  </Badge>
-                ) : isNoAuth ? (
-                  <Badge variant="success" size="sm" dot>Ready</Badge>
+                {/* A no-auth provider needs no credential, so it is ready as
+                    long as the operator has not switched it off. Disabled still
+                    wins: "Ready" over a provider nothing routes to is the same
+                    lie this route was fixed to stop telling. */}
+                {isNoAuth && !allDisabled ? (
+                  <StatusToken tone="ok">Ready</StatusToken>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                    <ProviderStatusTokens summary={stats} />
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
@@ -725,7 +947,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
           <div className="flex shrink-0 items-center gap-2">
             {stats.total > 0 && (
               <div
-                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                className="opacity-100 transition-opacity duration-150 sm:opacity-0 sm:group-hover:opacity-100"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -736,7 +958,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   size="sm"
                   checked={!allDisabled}
                   onChange={() => {}}
-                  title={allDisabled ? "Enable provider" : "Disable provider"}
+                  title={`${allDisabled ? "Enable" : "Disable"} all ${provider.name} connections`}
                 />
               </div>
             )}
@@ -756,10 +978,11 @@ ProviderCard.propTypes = {
     textIcon: PropTypes.string,
   }).isRequired,
   stats: PropTypes.shape({
+    total: PropTypes.number,
     connected: PropTypes.number,
-    error: PropTypes.number,
-    errorCode: PropTypes.string,
-    errorTime: PropTypes.string,
+    states: PropTypes.array,
+    latestErrorAt: PropTypes.string,
+    allDisabled: PropTypes.bool,
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
@@ -772,26 +995,15 @@ function ApiKeyProviderCard({
   authType,
   onToggle,
 }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { allDisabled, latestErrorAt } = stats;
+  const errorTime = latestErrorAt ? getRelativeTime(latestErrorAt) : null;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
   );
 
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
-
   const getIconPath = () => {
+    if (provider.apiType === "multi") return null;
     if (isCompatible && provider.apiType)
       return provider.apiType === "responses"
         ? "/providers/oai-r.png"
@@ -804,7 +1016,7 @@ function ApiKeyProviderCard({
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
       <Card
         padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        className={`h-full hover:bg-surface-2 transition-colors duration-150 cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -826,36 +1038,25 @@ function ApiKeyProviderCard({
               />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate font-semibold">{provider.name}</h3>
+              <h3 className="truncate font-semibold" title={provider.name}>{provider.name}</h3>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
-                {allDisabled ? (
+                <ProviderStatusTokens summary={stats} />
+                {isCompatible && (
                   <Badge variant="default" size="sm">
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">
-                        pause_circle
-                      </span>
-                      Disabled
-                    </span>
+                    {provider.apiType === "multi"
+                      ? "Chat + Messages"
+                      : provider.apiType === "responses"
+                        ? "Responses"
+                        : "Chat"}
                   </Badge>
-                ) : (
-                  <>
-                    {getStatusDisplay(connected, error, errorCode)}
-                    {isCompatible && (
-                      <Badge variant="default" size="sm">
-                        {provider.apiType === "responses"
-                          ? "Responses"
-                          : "Chat"}
-                      </Badge>
-                    )}
-                    {isAnthropicCompatible && (
-                      <Badge variant="default" size="sm">
-                        Messages
-                      </Badge>
-                    )}
-                    {errorTime && (
-                      <span className="text-text-muted">{errorTime}</span>
-                    )}
-                  </>
+                )}
+                {isAnthropicCompatible && (
+                  <Badge variant="default" size="sm">
+                    Messages
+                  </Badge>
+                )}
+                {errorTime && (
+                  <span className="text-text-muted">{errorTime}</span>
                 )}
               </div>
             </div>
@@ -863,7 +1064,7 @@ function ApiKeyProviderCard({
           <div className="flex shrink-0 items-center gap-2">
             {stats.total > 0 && (
               <div
-                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                className="opacity-100 transition-opacity duration-150 sm:opacity-0 sm:group-hover:opacity-100"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -874,7 +1075,7 @@ function ApiKeyProviderCard({
                   size="sm"
                   checked={!allDisabled}
                   onChange={() => {}}
-                  title={allDisabled ? "Enable provider" : "Disable provider"}
+                  title={`${allDisabled ? "Enable" : "Disable"} all ${provider.name} connections`}
                 />
               </div>
             )}
@@ -895,10 +1096,11 @@ ApiKeyProviderCard.propTypes = {
     apiType: PropTypes.string,
   }).isRequired,
   stats: PropTypes.shape({
+    total: PropTypes.number,
     connected: PropTypes.number,
-    error: PropTypes.number,
-    errorCode: PropTypes.string,
-    errorTime: PropTypes.string,
+    states: PropTypes.array,
+    latestErrorAt: PropTypes.string,
+    allDisabled: PropTypes.bool,
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
@@ -907,11 +1109,11 @@ ApiKeyProviderCard.propTypes = {
 function ProviderTestResultsView({ results }) {
   if (results.error && !results.results) {
     return (
-      <div className="text-center py-6">
-        <span className="material-symbols-outlined text-red-500 text-[32px] mb-2 block">
+      <div className="text-center py-5.5">
+        <span aria-hidden="true" className="material-symbols-outlined text-danger text-[32px] mb-2 block">
           error
         </span>
-        <p className="text-sm text-red-400">{results.error}</p>
+        <p className="text-sm text-danger">{results.error}</p>
       </div>
     );
   }
@@ -932,26 +1134,28 @@ function ProviderTestResultsView({ results }) {
       {summary && (
         <div className="flex flex-wrap items-center gap-2 text-xs mb-1 sm:gap-3">
           <span className="text-text-muted">{modeLabel} Test</span>
-          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">
-            {summary.passed} passed
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-success-soft text-success font-medium">
+            <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden="true">check_circle</span>
+            <span className="metric">{summary.passed}</span> passed
           </span>
           {summary.failed > 0 && (
-            <span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400 font-medium">
-              {summary.failed} failed
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-danger-soft text-danger font-medium">
+              <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden="true">error</span>
+              <span className="metric">{summary.failed}</span> failed
             </span>
           )}
-          <span className="text-text-muted sm:ml-auto">
-            {summary.total} tested
+          <span className="text-text-muted sm:ms-auto">
+            <span className="metric">{summary.total}</span> tested
           </span>
         </div>
       )}
       {items.map((r, i) => (
         <div
           key={r.connectionId || i}
-          className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-black/[0.03] px-3 py-2 text-xs dark:bg-white/[0.03] sm:flex-nowrap"
+          className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs sm:flex-nowrap"
         >
-          <span
-            className={`material-symbols-outlined text-[16px] ${r.valid ? "text-emerald-500" : "text-red-500"}`}
+          <span aria-hidden="true"
+            className={`material-symbols-outlined text-[16px] ${r.valid ? "text-success" : "text-danger"}`}
           >
             {r.valid ? "check_circle" : "error"}
           </span>
@@ -959,20 +1163,20 @@ function ProviderTestResultsView({ results }) {
             <span className="block truncate font-medium sm:inline">
               {r.connectionName}
             </span>
-            <span className="block truncate text-text-muted sm:ml-1.5 sm:inline">
+            <span className="block truncate text-text-muted sm:ms-1.5 sm:inline">
               ({r.provider})
             </span>
           </div>
           {r.latencyMs !== undefined && (
-            <span className="shrink-0 text-text-muted font-mono tabular-nums">
+            <span className="shrink-0 text-text-muted font-mono metric">
               {r.latencyMs}ms
             </span>
           )}
           <span
-            className={`shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+            className={`shrink-0 font-mono text-xs font-bold px-1.5 py-1 rounded ${
               r.valid
-                ? "bg-emerald-500/15 text-emerald-400"
-                : "bg-red-500/15 text-red-400"
+                ? "bg-success-soft text-success"
+                : "bg-danger-soft text-danger"
             }`}
           >
             {r.valid ? "OK" : r.diagnosis?.type || "ERROR"}

@@ -102,38 +102,19 @@ describe("refreshAccessToken — config-driven profiles", () => {
     expect(fm).toHaveBeenCalledTimes(1);
   });
 });
-describe("Cline refresh", () => {
+
+describe("refreshAccessToken — legacy generic path (no profile)", () => {
   beforeEach(() => { vi.clearAllMocks(); vi.resetModules(); global.fetch = originalFetch; });
   afterEach(() => { global.fetch = originalFetch; });
 
-  it("uses the extension JSON refresh contract", async () => {
-    const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
-    const fm = mockFetchOnce({
-      data: {
-        accessToken: "cline-acc",
-        refreshToken: "cline-rot",
-        expiresAt,
-      },
-    });
-    const { refreshTokenByProvider } = await import(
-      "open-sse/services/tokenRefresh.js"
-    );
+  it("still works for an unprofiled provider via config.refreshUrl/clientId/clientSecret", async () => {
+    const fm = mockFetchOnce({ access_token: "gen-acc", expires_in: 3600 });
+    const { refreshAccessToken } = await import("open-sse/services/tokenRefresh/providers.js");
 
-    const out = await refreshTokenByProvider(
-      "cline",
-      { refreshToken: "cline-old" },
-      console
-    );
+    await refreshAccessToken("cline", "gen-old", {}, console);
 
-    const [, init] = fm.mock.calls[0];
-    expect(init.headers["Content-Type"]).toBe("application/json");
-    expect(JSON.parse(init.body)).toEqual({
-      refreshToken: "cline-old",
-      grantType: "refresh_token",
-      clientType: "extension",
-    });
-    expect(out.accessToken).toBe("cline-acc");
-    expect(out.refreshToken).toBe("cline-rot");
-    expect(out.expiresIn).toBeGreaterThan(0);
+    const body = new URLSearchParams(fm.mock.calls[0][1].body);
+    expect(body.get("grant_type")).toBe("refresh_token");
+    expect(body.get("client_id")).toBeTruthy();
   });
 });

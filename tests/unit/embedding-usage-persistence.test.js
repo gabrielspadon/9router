@@ -13,8 +13,7 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   }),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
-  extractApiKey: () => "client-key",
-  isValidApiKey: vi.fn(),
+  isValidApiKey: vi.fn(async () => true),
 }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({ requireApiKey: false }) }));
 vi.mock("../../src/sse/services/model.js", () => ({
@@ -52,6 +51,7 @@ describe("embedding usage persistence", () => {
   it("records exact provider usage for successful embedding requests", async () => {
     await handleEmbeddings(new Request("http://localhost/v1/embeddings", {
       method: "POST",
+      headers: { Authorization: "Bearer client-key" },
       body: JSON.stringify({ model: "openai/text-embedding-3-small", input: "hello" }),
     }));
 
@@ -83,6 +83,7 @@ describe("embedding usage persistence", () => {
 
     await handleEmbeddings(new Request("http://localhost/v1/embeddings", {
       method: "POST",
+      headers: { Authorization: "Bearer client-key" },
       body: JSON.stringify({ model: "openai/text-embedding-3-small", input: "hello" }),
     }));
 

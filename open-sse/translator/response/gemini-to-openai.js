@@ -6,14 +6,20 @@ import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { rememberThoughtSignature } from "../concerns/thoughtSignature.js";
+import { stripAnsiCodes } from "../../utils/streamHelpers.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
   return { id: `chatcmpl-${state.messageId}`, created: Math.floor(Date.now() / 1000), model: state.model };
 }
 
+function sanitizeGeminiCLIText(text, state) {
+  return state.provider === "gemini-cli" ? stripAnsiCodes(text) : text;
+}
+
 // Build a tool_call chunk from a gemini functionCall part (shared by sig/non-sig branches)
-function emitFunctionCall(functionCall, state) {
+function emitFunctionCall(functionCall, state, thoughtSignature) {
   const rawName = functionCall.name;
   // Restore original tool name from mapping (AG cloaking)
   const fcName = state.toolNameMap?.get(rawName) || rawName;
@@ -25,6 +31,10 @@ function emitFunctionCall(functionCall, state) {
     type: OPENAI_BLOCK.FUNCTION,
     function: { name: fcName, arguments: JSON.stringify(fcArgs) },
   };
+  // The signature Gemini bound to this call has nowhere to live in the OpenAI
+  // tool_call, and must not be smuggled into the client-visible id, so park it
+  // under that id for the replay in openai-to-gemini (#3646).
+  rememberThoughtSignature(toolCall.id, thoughtSignature);
   // Keep Gemini bookkeeping separate from the shared translator state.toolCalls map.
   // The downstream OpenAI→Claude translator uses state.toolCalls for Claude block
   // metadata; pre-populating it here makes Anthropic tool deltas lose index.
@@ -61,19 +71,20 @@ export function geminiToOpenAIResponse(chunk, state) {
       
       // Handle thought signature (thinking mode)
       if (hasThoughtSig) {
-        const hasTextContent = part.text !== undefined && part.text !== "";
+        const text = sanitizeGeminiCLIText(part.text, state);
+        const hasTextContent = text !== undefined && text !== "";
         const hasFunctionCall = !!part.functionCall;
         
         if (hasTextContent) {
           results.push(buildChunk(
             chunkMeta(state),
-            isThought ? reasoningDelta(part.text) : { content: part.text },
+            isThought ? reasoningDelta(text) : { content: text },
             null
           ));
         }
         
         if (hasFunctionCall) {
-          results.push(emitFunctionCall(part.functionCall, state));
+          results.push(emitFunctionCall(part.functionCall, state, hasThoughtSig));
         }
         continue;
       }
@@ -83,11 +94,14 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
-        results.push(buildChunk(
-          chunkMeta(state),
-          isThought ? reasoningDelta(part.text) : { content: part.text },
-          null
-        ));
+        const text = sanitizeGeminiCLIText(part.text, state);
+        if (text !== "") {
+          results.push(buildChunk(
+            chunkMeta(state),
+            isThought ? reasoningDelta(text) : { content: text },
+            null
+          ));
+        }
       }
 
       // Function call
@@ -144,4 +158,3 @@ register(FORMATS.GEMINI, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.VERTEX, FORMATS.OPENAI, null, geminiToOpenAIResponse);
-

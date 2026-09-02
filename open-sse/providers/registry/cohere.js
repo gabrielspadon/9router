@@ -14,8 +14,8 @@ export default {
   },
   category: "apikey",
   transport: {
-    baseUrl: "https://api.cohere.ai/v1/chat/completions",
-    validateUrl: "https://api.cohere.ai/v1/models",
+    baseUrl: "https://api.cohere.ai/compatibility/v1/chat/completions",
+    validateUrl: "https://api.cohere.ai/compatibility/v1/models",
   },
   models: [
     { id: "command-r-plus-08-2024", name: "Command R+ (Aug 2024)" },

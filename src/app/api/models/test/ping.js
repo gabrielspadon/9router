@@ -1,8 +1,10 @@
 import { getApiKeys } from "@/lib/localDb";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { isLoopbackInternalUrl } from "@/lib/auth/internalCliToken";
+import { PROBE_MAX_TOKENS } from "open-sse/config/runtimeConfig.js";
 
-const CLI_TOKEN_SALT = "9r-cli-auth";
+const CLI_TOKEN_SALT = "tp-cli-auth";
 
 function createSilentWavFile() {
   const sampleRate = 16000;
@@ -37,7 +39,10 @@ function createSilentWavFile() {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-async function getInternalHeaders() {
+async function getInternalHeaders(baseUrl) {
+  if (!isLoopbackInternalUrl(baseUrl)) {
+    throw new Error("Model test self-call target must be loopback");
+  }
   let apiKey = null;
   try {
     const keys = await getApiKeys();
@@ -46,19 +51,19 @@ async function getInternalHeaders() {
 
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-  headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  headers["x-tp-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
-  const headers = await getInternalHeaders();
+export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, customPrompt = null) {
+  const headers = await getInternalHeaders(baseUrl);
   const start = Date.now();
 
   if (kind === "embedding") {
     const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, input: "test" }),
+      body: JSON.stringify({ model, input: customPrompt || "test" }),
       signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
@@ -74,14 +79,14 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!hasEmbedding) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no embedding data" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: `Embedding [${parsed.data[0].embedding.length} dims]` };
   }
 
   if (kind === "image") {
     const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, prompt: "test" }),
+      body: JSON.stringify({ model, prompt: customPrompt || "test" }),
       signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
@@ -98,7 +103,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!hasImages) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no image data for this model" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: "Image generated successfully" };
   }
 
   if (kind === "stt") {
@@ -127,21 +132,22 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!text.trim()) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: text };
   }
 
+  const promptContent = customPrompt || "hi";
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify({
       model,
-      // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
-      // their budget on chain-of-thought before emitting an answer. A tiny probe like
-      // max_tokens:16 starves the answer and yields a false "no choices" failure.
-      // See issue #3010.
-      max_tokens: 1024,
+      // Reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend their
+      // budget on chain-of-thought before emitting an answer, so a tiny probe
+      // starves the answer and yields a false "no choices" failure (#3010).
+      // The connection test hit the same wall and now shares this floor (#1672).
+      max_tokens: PROBE_MAX_TOKENS,
       stream: false,
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "user", content: promptContent }],
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -206,5 +212,6 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     };
   }
 
-  return { ok: true, latencyMs, error: null, status: res.status };
+  const preview = parsed?.choices?.[0]?.message?.content || parsed?.choices?.[0]?.text || null;
+  return { ok: true, latencyMs, error: null, status: res.status, preview };
 }

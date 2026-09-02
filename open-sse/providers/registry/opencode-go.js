@@ -2,9 +2,7 @@ export default {
   id: "opencode-go",
   priority: 210,
   alias: "opencode-go",
-  aliases: [
-    "ocg",
-  ],
+  aliases: ["ocg"],
   uiAlias: "ocg",
   display: {
     name: "OpenCode Go",
@@ -26,26 +24,107 @@ export default {
   // translation. Guarded per-model by `supportedFormats` (see chatCore) because
   // opencode-go models differ in endpoint support.
   transports: [
-    { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
-    { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
-    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+    {
+      format: "openai",
+      baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      baseUrl: "https://opencode.ai/zen/go/v1/messages",
+      auth: {
+        combined: true,
+        header: "x-api-key",
+        scheme: "raw",
+        anthropicVersion: true,
+      },
+    },
+    {
+      format: "openai-responses",
+      baseUrl: "https://opencode.ai/zen/go/v1/responses",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
   ],
   models: [
-    { id: "glm-5.3-flash", name: "GLM 5.3 Flash (Vision)", supportedFormats: ["openai"] },
     { id: "glm-5.2", name: "GLM 5.2", supportedFormats: ["openai"] },
     { id: "glm-5.1", name: "GLM 5.1", supportedFormats: ["openai"] },
-    { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", supportedFormats: ["openai"] },
+    {
+      id: "kimi-k2.7-code",
+      name: "Kimi K2.7 Code",
+      supportedFormats: ["openai"],
+    },
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai", "claude", "openai-responses"] },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai", "claude", "openai-responses"] },
-    { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision (Exp)", supportedFormats: ["openai", "claude", "openai-responses"] },
+    // supportedFormats pins this to the Chat Completions transport, which is
+    // what makes a Codex request translate rather than pass through. Without
+    // the entry the route fell to the /responses transport and the Codex
+    // input_image blocks stayed in Responses shape, which the upstream counted
+    // as an enormous text payload: "exceeded model token limit: 1048576,
+    // requested: 1300675" on a conversation nowhere near that size (#3392).
+    { id: "kimi-k3", name: "Kimi K3", supportedFormats: ["openai"] },
+    // Official docs expose DeepSeek through /chat/completions only; the
+    // /messages shim rejects real Claude Code parallel tool_use history.
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai"] },
+    {
+      id: "deepseek-v4-flash-vision-exp",
+      name: "DeepSeek V4 Flash Vision Exp",
+      supportedFormats: ["openai", "claude", "openai-responses"],
+    },
     { id: "mimo-v2.5", name: "MiMo V2.5", supportedFormats: ["openai"] },
-    { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", supportedFormats: ["openai"] },
-    { id: "minimax-m3", name: "MiniMax M3", supportedFormats: ["openai", "claude"] },
-    { id: "minimax-m2.7", name: "MiniMax M2.7", supportedFormats: ["openai", "claude"] },
-    { id: "minimax-m2.5", name: "MiniMax M2.5", supportedFormats: ["openai", "claude"] },
-    { id: "qwen3.7-max", name: "Qwen 3.7 Max", supportedFormats: ["openai", "claude"] },
-    { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["openai", "claude"] },
-    { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["openai", "claude"] },
+    {
+      id: "mimo-v2.5-pro",
+      name: "MiMo V2.5 Pro",
+      supportedFormats: ["openai"],
+    },
+    {
+      id: "minimax-m3",
+      name: "MiniMax M3",
+      supportedFormats: ["openai", "claude"],
+    },
+    {
+      id: "minimax-m2.7",
+      name: "MiniMax M2.7",
+      supportedFormats: ["openai", "claude"],
+    },
+    {
+      id: "minimax-m2.5",
+      name: "MiniMax M2.5",
+      supportedFormats: ["openai", "claude"],
+    },
+    {
+      id: "qwen3.7-max",
+      name: "Qwen 3.7 Max",
+      supportedFormats: ["openai", "claude"],
+    },
+    {
+      id: "qwen3.7-plus",
+      name: "Qwen 3.7 Plus",
+      supportedFormats: ["openai", "claude"],
+    },
+    {
+      id: "qwen3.6-plus",
+      name: "Qwen 3.6 Plus",
+      supportedFormats: ["openai", "claude"],
+    },
+    // Free-tier models — upstream /v1/messages returns 500 for these, only
+    // /v1/chat/completions works. Restrict to openai so claude-format clients
+    // (Claude Code via the compat layer) get translated to openai instead of
+    // passthrough to the broken claude endpoint.
+    {
+      id: "ox-alpha-free",
+      name: "OX Alpha Free",
+      supportedFormats: ["openai"],
+    },
+    { id: "glm-5.3", name: "GLM 5.3", supportedFormats: ["openai"] },
+    { id: "glm-5.3-flash", name: "GLM 5.3 Flash (Vision)", supportedFormats: ["openai"] },
+    {
+      id: "deepseek-v4-flash-free",
+      name: "DeepSeek V4 Flash Free",
+      supportedFormats: ["openai"],
+    },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };

@@ -68,9 +68,13 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
   formatRtkLog: vi.fn(() => ""),
 }));
 
-vi.mock("../../open-sse/rtk/headroom.js", () => ({
+// Spread the real module: chatCore imports four things from here, and a factory
+// that lists only the ones it needed at the time breaks the whole file the next
+// time an export is added (it did — formatHeadroomSizeLog and
+// isHeadroomPhantomSavings). Only the call that would reach out is stubbed.
+vi.mock("../../open-sse/rtk/headroom.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   compressWithHeadroom: vi.fn(async () => null),
-  formatHeadroomLog: vi.fn(() => ""),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -102,7 +106,10 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetail: vi.fn(() => Promise.resolve()),
 }));
 
-const FORCED = ["openai", "codex", "commandcode"];
+// commandcode left this set when the provider moved off the CLI endpoint onto
+// the documented Provider API (#1528): /provider/v1/chat/completions answers
+// a non-streaming request with a normal JSON body, so nothing has to force it.
+const FORCED = ["openai", "codex", "kimi"];
 
 function makeOptions(bodyStream) {
   const body = {
@@ -131,13 +138,13 @@ describe("forceStream provider config", () => {
     executeMock.mockRejectedValue(new Error("boom"));
   });
 
-  it("only openai/codex/commandcode force streaming", async () => {
+  it("only openai/codex/kimi force streaming", async () => {
     const { PROVIDERS } = await import("../../open-sse/config/providers.js");
     for (const id of FORCED) {
       expect(PROVIDERS[id]?.forceStream, `${id} forced`).toBe(true);
     }
     // a sample of others must NOT force
-    for (const id of ["deepseek", "claude", "gemini", "openrouter"]) {
+    for (const id of ["deepseek", "claude", "gemini", "openrouter", "commandcode"]) {
       expect(PROVIDERS[id]?.forceStream, `${id} not forced`).not.toBe(true);
     }
   });
@@ -149,5 +156,21 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+    // The negotiated flag must also land in the upstream BODY, not just the
+    // stream param: openai→openai (passthrough/transport) skips translators, so
+    // a stale client body.stream:false would reach the provider and make it
+    // answer with a plain JSON body while the response path treats it as SSE.
+    const sentBody = executeMock.mock.calls[0][0].body;
+    expect(sentBody.stream).toBe(true);
+  });
+
+  it("syncs negotiated stream:true into a same-format openai→kimi JSON-client body", async () => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const options = makeOptions(false);
+    options.body.stream = false;
+    await handleChatCore(options);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(executeMock.mock.calls[0][0].stream).toBe(true);
+    expect(executeMock.mock.calls[0][0].body.stream).toBe(true);
   });
 });

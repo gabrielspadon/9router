@@ -5,6 +5,18 @@ import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
+// A failed tool result is a trace, and compressing it destroys the evidence
+// whoever reads it is looking for. Skipping those is part of this module's
+// contract, but the vocabulary differs by shape: Claude puts `is_error` on the
+// block, OpenAI Responses puts `status` on the function_call_output, and Kiro
+// uses `isError`. headroom.js recognises all three at hasErrorToolBlock; this
+// path recognised only the first, and only on one of its four shapes, so an
+// error result reached the compressor through the other three.
+function isErrorToolResult(node) {
+  if (!node || typeof node !== "object") return false;
+  return node.is_error === true || node.isError === true || node.status === "error";
+}
+
 export function compressMessages(body, enabled) {
   if (!enabled) return null;
   if (!body) return null;
@@ -28,6 +40,7 @@ export function compressMessages(body, enabled) {
 
       // Shape 4: OpenAI Responses — top-level { type:"function_call_output", output: string | [{type:"input_text", text}] }
       if (msg.type === "function_call_output") {
+        if (isErrorToolResult(msg)) continue;
         if (typeof msg.output === "string") {
           msg.output = compressText(msg.output, stats, "openai-responses-string");
         } else if (Array.isArray(msg.output)) {
@@ -43,6 +56,7 @@ export function compressMessages(body, enabled) {
 
       // Shape 1: OpenAI tool message — { role:"tool", content: "string" }
       if (msg.role === "tool" && typeof msg.content === "string") {
+        if (isErrorToolResult(msg)) continue;
         msg.content = compressText(msg.content, stats, "openai-tool");
         continue;
       }
@@ -51,6 +65,7 @@ export function compressMessages(body, enabled) {
 
       // Shape 1b: OpenAI tool message — { role:"tool", content:[{type:"text", text:"..."}] }
       if (msg.role === "tool") {
+        if (isErrorToolResult(msg)) continue;
         for (let k = 0; k < msg.content.length; k++) {
           const part = msg.content[k];
           if (part && part.type === "text" && typeof part.text === "string") {
@@ -64,7 +79,7 @@ export function compressMessages(body, enabled) {
       for (let j = 0; j < msg.content.length; j++) {
         const block = msg.content[j];
         if (!block || block.type !== "tool_result") continue;
-        if (block.is_error === true) continue; // preserve error traces
+        if (isErrorToolResult(block)) continue; // preserve error traces
 
         if (typeof block.content === "string") {
           // Shape 2: claude string form

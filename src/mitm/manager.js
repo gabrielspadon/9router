@@ -38,7 +38,15 @@ async function resolveMitmRouterBaseUrl() {
   }
 }
 
-const MITM_PORT = 443;
+// The interception port. DNS-redirected tools connect on 443, so moving it only
+// works behind something that forwards 443 here (an nginx `stream` block, say),
+// which is the only way MITM and a co-resident web server share a host (#1069).
+// server.js reads the same variable, so both ends stay on one port by construction.
+const MITM_PORT = (() => {
+  const raw = Number.parseInt(process.env.MITM_PORT || "", 10);
+  return Number.isInteger(raw) && raw > 0 && raw < 65536 ? raw : 443;
+})();
+const MITM_HEALTH_TIMEOUT_MS = 8000;
 const MITM_WIN_NODE_PORT = 8443;
 const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
 const LOCK_FILE = path.join(MITM_DIR, ".mitm.lock");
@@ -63,7 +71,7 @@ function resolveBundledServerPath() {
 }
 
 // Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
-// (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
+// (prevents EBUSY on `npm i -g tokenproxy@latest` while MITM is running).
 function ensureRuntimeServer(bundledPath) {
   try {
     if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;
@@ -95,30 +103,7 @@ function ensureRuntimeServer(bundledPath) {
 
 const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
 const ENCRYPT_ALGO = "aes-256-gcm";
-const ENCRYPT_SALT = "9router-mitm-pwd";
-
-function getProcessUsingPort443() {
-  try {
-    if (IS_WIN) {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command ` +
-        `"$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.OwningProcess } else { 0 }"`;
-      const pidStr = execSync(psCmd, { encoding: "utf8", windowsHide: true }).trim();
-      const pid = parseInt(pidStr, 10);
-      if (pid && pid > 4) {
-        const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8", windowsHide: true });
-        const processMatch = tasklistResult.match(/"([^"]+)"/);
-        if (processMatch) return processMatch[1].replace(".exe", "");
-      }
-    } else {
-      const result = execSync(`${LSOF_BIN} -i :443`, { encoding: "utf8", windowsHide: true });
-      const lines = result.trim().split("\n");
-      if (lines.length > 1) return lines[1].split(/\s+/)[0];
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
+const ENCRYPT_SALT = "tokenproxy-mitm-pwd";
 
 let serverProcess = null;
 let serverPid = null;
@@ -126,12 +111,21 @@ let serverPid = null;
 function getCachedPassword() { return globalThis.__mitmSudoPassword || null; }
 function setCachedPassword(pwd) { globalThis.__mitmSudoPassword = pwd; }
 
+/**
+ * Is this pid actually running?
+ *
+ * Signal 0 performs the existence and permission checks without delivering
+ * anything. A process owned by another user throws rather than succeeding, and
+ * it is still alive — Node reports that as EPERM on Linux and macOS, which this
+ * previously missed by checking EACCES alone.
+ */
 function isProcessAlive(pid) {
+  if (!pid) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    return err.code === "EACCES";
+    return err?.code === "EPERM" || err?.code === "EACCES";
   }
 }
 
@@ -271,36 +265,73 @@ async function hasDnsPrivilege() {
   return !!pwd;
 }
 
-function checkPort443Free() {
+/**
+ * Which of the three unrelated start failures an errno actually is.
+ *
+ * "Another process holds the port", "this process may not bind a privileged
+ * port" and "something else broke" want three different actions from the
+ * operator. The old probe folded every errno that was not EADDRINUSE into one
+ * bucket and the caller then discarded even that, so all three reached the user
+ * as the same sentence (#876, #1069, #1256).
+ */
+function classifyBindError(code) {
+  if (code === "EADDRINUSE") return "in-use";
+  if (code === "EACCES" || code === "EPERM") return "no-permission";
+  return "error";
+}
+
+/** What the operator does about a privilege failure, per platform. */
+function describeNoPermission(code, port) {
+  if (IS_WIN) return `TokenProxy is not allowed to bind port ${port} (${code}). Restart it as Administrator, or stop the service that has reserved the port.`;
+  if (IS_MAC) return `TokenProxy is not allowed to bind port ${port} (${code}). Ports below 1024 need root — start MITM with a sudo password.`;
+  return `TokenProxy is not allowed to bind port ${port} (${code}). Ports below 1024 need root: run it with sudo, grant the node binary CAP_NET_BIND_SERVICE, or set MITM_PORT to a port above 1024 and forward ${port} to it.`;
+}
+
+/**
+ * Probe the listen port the way server.js binds it — every interface, not just
+ * loopback. A process bound to one specific interface let the old loopback-only
+ * probe answer "free", and the real bind then failed eight seconds later with
+ * nothing said about why.
+ */
+function probeMitmPort(port = MITM_PORT) {
   return new Promise((resolve) => {
     const tester = net.createServer();
-    tester.once("error", (err) => {
-      if (err.code === "EADDRINUSE") resolve("in-use");
-      else resolve("no-permission");
-    });
-    tester.once("listening", () => { tester.close(() => resolve("free")); });
-    tester.listen(MITM_PORT, "127.0.0.1");
+    tester.once("error", (e) => resolve({ status: classifyBindError(e.code), code: e.code || null }));
+    tester.once("listening", () => { tester.close(() => resolve({ status: "free", code: null })); });
+    tester.listen(port);
   });
 }
 
-function getPort443Owner(sudoPassword) {
+// Windows kernel-mode listeners (HTTP.sys, behind IIS, WinNAT, BranchCache and
+// Docker Desktop) are owned by System, PID 4, and Windows reports their
+// reservation as EACCES rather than EADDRINUSE. The old lookup returned null for
+// pid <= 4, so the commonest reason 443 is taken on Windows was reported as "no
+// owner" and fell through into the generic failure (#876).
+const WIN_SYSTEM_OWNER = {
+  pid: 4,
+  name: "the Windows System process (HTTP.sys — IIS, WinNAT, BranchCache or Docker Desktop)",
+  unkillable: true,
+};
+
+function getPortOwner(sudoPassword, port = MITM_PORT) {
   return new Promise((resolve) => {
     if (IS_WIN) {
       const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "` +
-        `$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
-        `if ($c) { $c.OwningProcess } else { 0 }"`;    
+        `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
+        `if ($c) { $c.OwningProcess } else { 0 }"`;
       exec(psCmd, { windowsHide: true }, (err, stdout) => {
         if (err) return resolve(null);
         const pid = parseInt(stdout.trim(), 10);
-        if (!pid || pid <= 4) return resolve(null);
+        if (!pid) return resolve(null);
+        if (pid <= 4) return resolve(WIN_SYSTEM_OWNER);
         exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }, (e2, out2) => {
           const m = out2?.match(/"([^"]+)"/);
           resolve({ pid, name: m ? m[1] : "unknown" });
         });
       });
     } else {
-      // Only find process actually LISTENING on TCP port 443
-      exec(`${LSOF_BIN} -nP -iTCP:443 -sTCP:LISTEN -t`, { windowsHide: true }, (err, stdout) => {
+      // Only find the process actually LISTENING on the MITM port
+      exec(`${LSOF_BIN} -nP -iTCP:${port} -sTCP:LISTEN -t`, { windowsHide: true }, (err, stdout) => {
         if (err || !stdout?.trim()) return resolve(null);
         const pid = parseInt(stdout.trim().split("\n")[0], 10);
         if (!pid || isNaN(pid)) return resolve(null);
@@ -310,6 +341,35 @@ function getPort443Owner(sudoPassword) {
       });
     }
   });
+}
+
+/**
+ * Turn what the child actually said into the one sentence naming the cause.
+ *
+ * Every branch below used to be the same string — "Check sudo password or port
+ * 443 access" — including the cases where the sudo password and the port had
+ * both already been verified before the spawn.
+ */
+function summarizeStartFailure({ stderrTail = "", port = 443, ownerName = null, timeoutMs = MITM_HEALTH_TIMEOUT_MS } = {}) {
+  const tail = String(stderrTail).trim();
+  const excerpt = tail ? ` Server said: ${tail.slice(-500)}` : "";
+  if (/Cannot find module|MODULE_NOT_FOUND/i.test(tail)) {
+    return `The MITM server process could not load its own modules, so its runtime copy is incomplete for this build. Reinstall tokenproxy, or delete the copy under <data dir>/runtime/mitm so it is written again.${excerpt}`;
+  }
+  if (/EADDRINUSE|address already in use|already in use/i.test(tail)) {
+    return `Port ${port} was taken between the check and the bind${ownerName ? ` (now held by ${ownerName})` : ""}.${excerpt}`;
+  }
+  if (/EACCES|EPERM|[Pp]ermission denied/.test(tail)) {
+    return `The server process is not allowed to bind port ${port}. It needs root or Administrator, CAP_NET_BIND_SERVICE on the node binary, or an MITM_PORT above 1024 with ${port} forwarded to it.${excerpt}`;
+  }
+  if (/incorrect password|Sorry, try again|no password was provided|a password is required/i.test(tail)) {
+    return `The sudo password was rejected.${excerpt}`;
+  }
+  if (/Root CA|rootCA/.test(tail)) {
+    return `The server could not read its Root CA. Re-run "Trust certificate" so it is regenerated.${excerpt}`;
+  }
+  if (tail) return `The server exited during startup.${excerpt}`;
+  return `The server never answered /_mitm_health on port ${port} within ${Math.round(timeoutMs / 1000)}s and wrote nothing to stderr${ownerName ? `, and port ${port} is held by ${ownerName}` : ""}. Check whether a firewall or security product is blocking a local TLS listener on that port.`;
 }
 
 async function killLeftoverMitm(sudoPassword) {
@@ -450,7 +510,7 @@ async function scheduleMitmRestart(apiKey) {
  * Start MITM server only (cert + server, no DNS)
  */
 async function killPort443Owner(owner, sudoPassword) {
-  if (!owner || !owner.pid) return;
+  if (!owner || !owner.pid || owner.unkillable) return;
   if (IS_WIN) {
     try {
       execSync(`powershell -NonInteractive -WindowStyle Hidden -Command "Stop-Process -Id ${owner.pid} -Force -ErrorAction SilentlyContinue"`, { windowsHide: true });
@@ -486,9 +546,29 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     } catch { /* ignore */ }
   }
 
-  if (serverProcess && !serverProcess.killed) {
+  // `.killed` says only that WE signalled it, so a process that died on its own
+  // — crash, OOM, killed by something else — leaves a non-null handle with
+  // killed false, and this threw "already running" for a process that was not
+  // (#1462). The exit handler nulls the handle, but until that event is
+  // processed, or if it never fires, the stale handle blocks every restart.
+  // Ask the OS instead.
+  if (serverProcess && !serverProcess.killed && isProcessAlive(serverProcess.pid)) {
     throw new Error("MITM server is already running");
   }
+  if (serverProcess) {
+    // Dead but not cleaned up. Drop the handle so startup proceeds rather than
+    // waiting for an exit event that may already have been missed.
+    log("Clearing a stale MITM server handle (process is gone)");
+    serverProcess = null;
+    serverPid = null;
+  }
+
+  // Ensure the MITM state dir exists before writing PID/lock files — on a fresh
+  // install ~/.tokenproxy/mitm/ may not exist yet, which would make the lock write
+  // below fail with ENOENT (not EEXIST) and abort startup.
+  try {
+    fs.mkdirSync(MITM_DIR, { recursive: true });
+  } catch { /* best-effort; the writes below will surface any real error */ }
 
   // Atomically claim lock to prevent concurrent startServer across processes.
   // O_EXCL (flag: "wx") fails with EEXIST if the file already exists.
@@ -510,24 +590,47 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   try {
     await killLeftoverMitm(sudoPassword);
 
-  if (!IS_WIN) {
-    const portStatus = await checkPort443Free();
-    if (portStatus === "in-use" || portStatus === "no-permission") {
-      const owner = await getPort443Owner(sudoPassword);
-      if (owner) {
-        const shortName = owner.name.includes("/")
-          ? owner.name.split("/").filter(Boolean).pop()
-          : owner.name;
-        if (forceKillPort443) {
-          log(`Killing process on port 443 (PID ${owner.pid}, name=${shortName})...`);
-          await killPort443Owner(owner, sudoPassword);
-        } else {
-          const e = new Error(`Port 443 is already in use by "${shortName}" (PID ${owner.pid}).`);
-          e.code = "PORT_443_BUSY";
-          e.portOwner = { pid: owner.pid, name: shortName };
-          throw e;
-        }
+  // One probe for every platform, and every outcome it can produce is reported.
+  // This previously ran on non-Windows only, and silently continued whenever the
+  // port's holder could not be named — so a privilege failure, an unidentifiable
+  // holder and a crashing child all surfaced as one sentence eight seconds later.
+  const probe = await probeMitmPort();
+  if (probe.status !== "free") {
+    const owner = await getPortOwner(sudoPassword);
+    if (owner) {
+      const shortName = owner.name.includes("/")
+        ? owner.name.split("/").filter(Boolean).pop()
+        : owner.name;
+      if (owner.unkillable) {
+        const e = new Error(`Port ${MITM_PORT} is held by ${owner.name}, which cannot be killed. Stop the service reserving it ("net stop http" for HTTP.sys), or set MITM_PORT to a free port and forward ${MITM_PORT} to it.`);
+        e.code = "PORT_443_BUSY";
+        throw e;
       }
+      if (forceKillPort443) {
+        log(`Killing process on port ${MITM_PORT} (PID ${owner.pid}, name=${shortName})...`);
+        await killPort443Owner(owner, sudoPassword);
+      } else {
+        const e = new Error(`Port ${MITM_PORT} is already in use by "${shortName}" (PID ${owner.pid}).`);
+        e.code = "PORT_443_BUSY";
+        e.portOwner = { pid: owner.pid, name: shortName };
+        throw e;
+      }
+    } else if (probe.status === "no-permission") {
+      // With sudo the child binds as root, so this process failing to bind says
+      // nothing about the child. Only fatal where the child inherits our own
+      // privileges: Windows, and the no-sudo container spawn.
+      if (IS_WIN || !isSudoAvailable()) {
+        const e = new Error(describeNoPermission(probe.code, MITM_PORT));
+        e.code = "PORT_NO_PERMISSION";
+        throw e;
+      }
+      log(`[MITM] this process cannot bind ${MITM_PORT} (${probe.code}); the sudo-spawned child will`);
+    } else if (probe.status === "in-use") {
+      const e = new Error(`Port ${MITM_PORT} is already in use, and the process holding it could not be identified${IS_WIN ? "" : ` (${LSOF_BIN} returned nothing — it may not be installed, or the holder runs as another user)`}. Free that port, or set MITM_PORT to a free port and forward ${MITM_PORT} to it.`);
+      e.code = "PORT_BUSY_UNKNOWN_OWNER";
+      throw e;
+    } else {
+      log(`[MITM] port ${MITM_PORT} probe returned ${probe.code}; spawning anyway`);
     }
   }
 
@@ -578,26 +681,13 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     log(`[MITM] server.js missing at ${effectiveServerPath} → recopying`);
     effectiveServerPath = ensureRuntimeServer(resolveBundledServerPath());
     if (!effectiveServerPath || !fs.existsSync(effectiveServerPath)) {
-      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall 9router.`);
+      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall tokenproxy.`);
     }
   }
   const mitmRouterBase = await resolveMitmRouterBaseUrl();
   log(`🚀 Starting server... (router: ${mitmRouterBase})`);
   if (IS_WIN) {
-    // Check port 443 — ask user before killing
-    const winOwner = await getPort443Owner(sudoPassword);
-    if (winOwner) {
-      if (forceKillPort443) {
-        log(`Killing process on port 443 (PID ${winOwner.pid}, name=${winOwner.name})...`);
-        await killPort443Owner(winOwner, sudoPassword);
-      } else {
-        const e = new Error(`Port 443 is already in use by "${winOwner.name}" (PID ${winOwner.pid}).`);
-        e.code = "PORT_443_BUSY";
-        e.portOwner = { pid: winOwner.pid, name: winOwner.name };
-        throw e;
-      }
-    }
-
+    // Port ownership was settled by the shared probe above.
     // Spawn directly — process already has admin rights
     // cwd=tmpdir so process doesn't lock the install dir on Windows (EBUSY on update)
     serverProcess = spawn(
@@ -613,6 +703,8 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
           ROUTER_API_KEY: apiKey,
           NODE_ENV: "production",
           MITM_ROUTER_BASE: mitmRouterBase,
+          MITM_PORT: String(MITM_PORT),
+          MITM_FORCE_KILL_PORT: forceKillPort443 ? "1" : "0",
         },
       }
     );
@@ -625,6 +717,8 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       `HOME=${shellQuoteSingle(os.homedir())}`,
       `ROUTER_API_KEY=${shellQuoteSingle(apiKey)}`,
       `MITM_ROUTER_BASE=${shellQuoteSingle(mitmRouterBase)}`,
+      `MITM_PORT=${shellQuoteSingle(String(MITM_PORT))}`,
+      `MITM_FORCE_KILL_PORT=${forceKillPort443 ? "1" : "0"}`,
       "NODE_ENV=production",
       shellQuoteSingle(process.execPath),
       shellQuoteSingle(effectiveServerPath),
@@ -647,6 +741,8 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         ROUTER_API_KEY: apiKey,
         NODE_ENV: "production",
         MITM_ROUTER_BASE: mitmRouterBase,
+        MITM_PORT: String(MITM_PORT),
+        MITM_FORCE_KILL_PORT: forceKillPort443 ? "1" : "0",
       },
     });
   }
@@ -676,7 +772,10 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     }
   }
 
-  let startError = null;
+  // Keep the whole tail rather than the last chunk. A Node MODULE_NOT_FOUND
+  // arrives as a multi-line stack whose final chunk is a stack frame, so
+  // overwriting per chunk threw away the one line naming the cause (#1256).
+  let stderrTail = "";
   if (serverProcess) {
     serverProcess.stdout.on("data", (data) => {
       // server.js already formats its own logs — print as-is
@@ -687,7 +786,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       // Mac/Linux: filter sudo password prompt noise
       if (msg && (IS_WIN || (!msg.includes("Password:") && !msg.includes("password for")))) {
         err(msg);
-        startError = msg;
+        stderrTail = `${stderrTail}${msg}\n`.slice(-4000);
       }
       // Detect wrong/missing password — clear cache and stop retry loop
       if (!IS_WIN && (msg.includes("incorrect password") || msg.includes("no password was provided"))) {
@@ -707,12 +806,16 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     });
   }
 
-  const health = await pollMitmHealth(8000, MITM_PORT);
+  const health = await pollMitmHealth(MITM_HEALTH_TIMEOUT_MS, MITM_PORT);
   if (!health) {
     if (serverProcess && !serverProcess.killed) { try { serverProcess.kill(); } catch { /* ignore */ } serverProcess = null; }
-    const processUsing443 = getProcessUsingPort443();
-    const portInfo = processUsing443 ? ` Port 443 already in use by ${processUsing443}.` : "";
-    const reason = startError || `Check sudo password or port 443 access.${portInfo}`;
+    const owner = await getPortOwner(sudoPassword);
+    const reason = summarizeStartFailure({
+      stderrTail,
+      port: MITM_PORT,
+      ownerName: owner ? owner.name : null,
+      timeoutMs: MITM_HEALTH_TIMEOUT_MS,
+    });
     throw new Error(`MITM server failed to start. ${reason}`);
   }
 
@@ -749,21 +852,14 @@ async function stopServer(sudoPassword) {
   mitmRestartCount = 0;
   log("⏹ Stopping server...");
 
-  // Kill server process
-  const proc = serverProcess;
-  const pidToKill = proc && !proc.killed
-    ? proc.pid
-    : (() => { try { return parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10); } catch { return null; } })();
-
-  if (pidToKill && isProcessAlive(pidToKill)) {
-    log(`Killing server (PID: ${pidToKill})...`);
-    killProcess(pidToKill, false, sudoPassword);
-    await new Promise(r => setTimeout(r, 1000));
-    if (isProcessAlive(pidToKill)) killProcess(pidToKill, true, sudoPassword);
-  }
-  serverProcess = null;
-  serverPid = null;
-
+  // The redirect has to go before the listener does. While the hosts file still
+  // maps a tool host to 127.0.0.1 and nothing answers on 443, that tool's every
+  // request dies as "connect ECONNREFUSED 127.0.0.1:443" — and when the cleanup
+  // itself then fails (elevation declined, no cached sudo password) the machine
+  // stays that way with no server left to serve it. That is why stopping DNS by
+  // hand before stopping the server was the working workaround (#1809). Removing
+  // the entries first also makes a failed cleanup harmless: the server is still
+  // listening, so traffic keeps flowing and the operator can retry.
   if (IS_WIN) {
     const hostsFile = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts");
     const allHosts = Object.values(TOOL_HOSTS).flat();
@@ -795,6 +891,41 @@ async function stopServer(sudoPassword) {
   } else {
     await removeAllDNSEntries(sudoPassword);
   }
+
+  // Removal is best-effort on both platforms: the Windows branch swallows a
+  // declined elevation prompt and the POSIX one swallows a per-tool failure. Kill
+  // the server anyway and the host keeps resolving to 127.0.0.1 with nothing
+  // behind it — the permanent form of #1809, which no retry from inside the app
+  // can undo because the entries need the rights that just failed. Stop instead
+  // and say so: MITM stays up, the redirected tools keep working, and the
+  // operator can retry with the rights the removal needs. Reports a tool only
+  // when ALL of its hosts survived, which is what the status UI already models.
+  const survivingDNS = Object.entries(checkAllDNSStatus())
+    .filter(([, active]) => active)
+    .map(([tool]) => tool);
+  if (survivingDNS.length) {
+    mitmIsRestarting = false;
+    const detail = survivingDNS.join(", ");
+    err(`DNS entries still redirect ${detail} to 127.0.0.1 — server left running`);
+    throw new Error(
+      `Could not remove the DNS entries for ${detail}. The server was left running so those tools keep working; retry with administrator/sudo rights.`
+    );
+  }
+
+  // Kill server process
+  const proc = serverProcess;
+  const pidToKill = proc && !proc.killed
+    ? proc.pid
+    : (() => { try { return parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10); } catch { return null; } })();
+
+  if (pidToKill && isProcessAlive(pidToKill)) {
+    log(`Killing server (PID: ${pidToKill})...`);
+    killProcess(pidToKill, false, sudoPassword);
+    await new Promise(r => setTimeout(r, 1000));
+    if (isProcessAlive(pidToKill)) killProcess(pidToKill, true, sudoPassword);
+  }
+  serverProcess = null;
+  serverPid = null;
 
   // Unset NODE_EXTRA_CA_CERTS so apps don't keep trusting stale MITM cert
   if (IS_MAC) {
@@ -862,6 +993,12 @@ const startMitm = startServer;
 const stopMitm = stopServer;
 
 module.exports = {
+  // Pure failure classification — exported so the taxonomy is testable without
+  // binding a privileged port or spawning the server.
+  classifyBindError,
+  describeNoPermission,
+  summarizeStartFailure,
+  MITM_PORT,
   getMitmStatus,
   startServer,
   stopServer,

@@ -13,6 +13,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { randomUUID } from "crypto";
 import { ROLE, OPENAI_BLOCK } from "../schema/index.js";
+import { stripThinkingSuffix } from "../concerns/thinkingUnified.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 
 function flattenText(content) {
@@ -41,7 +42,8 @@ function toContentBlocks(content) {
         if (part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL || part.type === OPENAI_BLOCK.IMAGE) {
-          blocks.push({ type: OPENAI_BLOCK.TEXT, text: "[image omitted]" });
+          const url = typeof part.image_url === "string" ? part.image_url : (part.image_url?.url || part.image || part.url);
+          if (url) blocks.push({ type: "image", image: url });
         } else if (typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         }
@@ -136,7 +138,10 @@ function convertTools(tools) {
 export function openaiToCommandCodeRequest(model, body, stream /* , credentials */) {
   const { messages, system } = convertMessages(body.messages);
   const params = {
-    model,
+    // Upstream reads params.model and rejects unknown ids — never leak the
+    // client thinking suffix "model(level)" (chatCore strips only the top-level
+    // model field; the suffix is consumed by applyThinking, not the wire).
+    model: stripThinkingSuffix(model),
     messages,
     stream: stream !== false,
     max_tokens: body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS,

@@ -2,22 +2,22 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router Proxy",
+  name: "TokenProxy",
   description: "AI Infrastructure Management",
   version: pkg.version,
 };
 
-// GitHub configuration
+// Changelog source. TokenProxy ships its own CHANGELOG.md and serves it from the
+// running instance, so the dashboard reads no external repository feed.
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
-  donateUrl: "https://9router.com/api/donate",
+  changelogUrl: "/api/changelog",
 };
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
-  installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  npmPackageName: "tokenproxy",
+  installCmd: "npm i -g tokenproxy",
+  installCmdLatest: "npm i -g tokenproxy@latest --prefer-online",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,
@@ -57,10 +57,17 @@ export const API_ENDPOINTS = {
 export const CONSOLE_LOG_CONFIG = {
   maxLines: 200,
   pollIntervalMs: 1000,
+  streamTimeoutMs: 5000,
 };
 
 // Client-side store TTL: how long fetched data stays fresh before re-fetching
 export const CLIENT_STORE_TTL_MS = 60000;
+
+// One cheapest model per Antigravity quota family (Gemini, and Claude/GPT).
+// Antigravity meters per model, and the families roll independently, so both the
+// manual hot reload and the auto-ping poke one model out of each. Same truth,
+// one owner: a model id renamed upstream must move for both.
+const ANTIGRAVITY_QUOTA_MODELS = ["gemini-3.5-flash-extra-low", "gpt-oss-120b-medium"];
 
 // Quota auto-ping: keep 5h windows warm by sending a tiny request right after reset.
 export const QUOTA_AUTOPING_CONFIG = {
@@ -89,7 +96,52 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingInstructions: "Reply with OK.",
       pingReasoningEffort: "none",
     },
+    antigravity: {
+      // Opt-in like the other two: absent settings read OFF, so this scheduler
+      // makes no real request until an operator turns it on per connection.
+      settingsKey: "antigravityAutoPing",
+      // Antigravity meters per MODEL rather than by one named window, so this is
+      // a SET of quota keys — one per family — not a single literal.
+      quotaKeys: ANTIGRAVITY_QUOTA_MODELS,
+      // Both families can share a reset timestamp, so every family is poked on
+      // the same rollover; 10min stops a second poke while usage settles.
+      minPingIntervalMs: 600000,
+      pingText: "hi",
+      pingMaxTokens: 1,
+    },
   },
+};
+
+// Every settings key the auto-ping scheduler recognises, derived from the table
+// above rather than listed again. Three call sites used to enumerate the two
+// original providers by hand (the settings-write reconfigure, the boot check,
+// and the CLI menu), so adding a third provider left it unreachable from any of
+// them until each was edited (#2564).
+export const QUOTA_AUTOPING_SETTINGS_KEYS = Object.values(QUOTA_AUTOPING_CONFIG.providers)
+  .map((p) => p.settingsKey)
+  .filter(Boolean);
+
+// The same table as label pairs, so a menu can be generated from it.
+export const QUOTA_AUTOPING_PROVIDERS = Object.entries(QUOTA_AUTOPING_CONFIG.providers)
+  .map(([id, cfg]) => ({ id, settingsKey: cfg.settingsKey }))
+  .filter((p) => p.settingsKey);
+
+// Quota hot-reload: one location for all hot-reloadable providers + target models.
+// Add a provider key here and it automatically enables the button in providers/[id]
+// page, per-row ConnectionRow, QuotaTracker, and the backend /hotreload route.
+export const HOT_RELOAD_CONFIG = {
+  providers: {
+    antigravity: {
+      authType: "oauth",
+      models: ANTIGRAVITY_QUOTA_MODELS,
+      tooltip: "Hot reload: poke the quota models so the pending 7-day countdown starts now",
+    },
+  },
+};
+
+export const getHotReloadConfig = (provider, authType = "oauth") => {
+  const cfg = HOT_RELOAD_CONFIG.providers[provider];
+  return cfg && (!cfg.authType || cfg.authType === authType) ? cfg : null;
 };
 
 // Re-export from providers.js for backward compatibility

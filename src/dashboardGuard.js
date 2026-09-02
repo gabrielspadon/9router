@@ -3,20 +3,29 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { collectClientApiKeyCandidates, resolveClientApiKey } from "@/lib/auth/clientApiKey";
 
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
-const CLI_TOKEN_SALT = "9r-cli-auth";
+// A 401 from the gateway itself and a 401 relayed from an upstream provider
+// rendered identically in clients, so users could not tell whether to sign in
+// to TokenProxy or to fix a provider credential (#1160). Tag the ones TokenProxy
+// raises; an upstream body passes through untouched and carries no such field.
+const GATEWAY_ERROR_SOURCE = "tokenproxy";
+
+
+const CLI_TOKEN_HEADER = "x-tp-cli-token";
+const CLI_TOKEN_SALT = "tp-cli-auth";
 
 let cachedCliToken = null;
 async function getCliToken() {
-  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  if (!cachedCliToken)
+    cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
   return cachedCliToken;
 }
 
-async function hasValidCliToken(request) {
+export async function hasValidCliToken(request) {
   const token = request.headers.get(CLI_TOKEN_HEADER);
   if (!token) return false;
-  return token === await getCliToken();
+  return token === (await getCliToken());
 }
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
@@ -42,8 +51,6 @@ const ALWAYS_PROTECTED = [
   "/api/settings/database",
   "/api/version/shutdown",
   "/api/version/update",
-  "/api/oauth/cursor/auto-import",
-  "/api/oauth/kiro/auto-import",
 ];
 
 // Require auth, but allow through if requireLogin is disabled
@@ -81,9 +88,13 @@ const LOCAL_ONLY_PATHS = [
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
   "/api/auth/reset-password",
+  "/api/headroom",
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  "/api/headroom/status",
+  "/api/token-saver/stats",
+  "/api/pxpipe",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -98,7 +109,10 @@ function isLoopbackHostname(h) {
     const end = name.indexOf("]");
     if (end === -1) return false;
     name = name.slice(1, end);
-  } else if (name.indexOf(":") !== -1 && name.indexOf(":") === name.lastIndexOf(":")) {
+  } else if (
+    name.indexOf(":") !== -1 &&
+    name.indexOf(":") === name.lastIndexOf(":")
+  ) {
     name = name.slice(0, name.indexOf(":"));
   }
   if (name.startsWith("::ffff:")) name = name.slice(7);
@@ -107,7 +121,7 @@ function isLoopbackHostname(h) {
 
 function isLoopbackPeer(request) {
   if (hasTrustedPeerHeaders(request)) {
-    return isLoopbackHostname(request.headers.get("x-9r-real-ip"));
+    return isLoopbackHostname(request.headers.get("x-tp-real-ip"));
   }
   // Bare `next dev` forks its server, so the wrapper never loads and no peer address
   // reaches us. Host is spoofable, so this stays confined to development.
@@ -120,35 +134,31 @@ function isLoopbackPeer(request) {
 export function isLocalRequest(request) {
   // Stamped by custom-server.js when forwarding headers exist: request came through
   // a reverse proxy, so the loopback socket is the proxy hop, not the end-user.
-  if (request.headers.get("x-9r-via-proxy")) return false;
+  if (request.headers.get("x-tp-via-proxy")) return false;
   if (!isLoopbackPeer(request)) return false;
   const origin = request.headers.get("origin");
   if (origin) {
     try {
       if (!isLoopbackHostname(new URL(origin).hostname)) return false;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
   return true;
 }
 
 function isPublicLlmApi(pathname) {
-  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return PUBLIC_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 function extractApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) return apiKeyHeader;
-  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) return googleApiKeyHeader;
-  return request.nextUrl.searchParams?.get("key") || null;
+  return collectClientApiKeyCandidates(request)[0] || null;
 }
 
 async function hasValidApiKey(request) {
-  const apiKey = extractApiKey(request);
-  if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  return (await resolveClientApiKey(request, validateApiKey)).valid;
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -160,7 +170,7 @@ async function canAccessPublicLlmApi(request) {
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
-  if (isLocalRequest(request) && await isAuthenticated(request)) return true;
+  if (isLocalRequest(request) && (await isAuthenticated(request))) return true;
   return false;
 }
 
@@ -187,7 +197,9 @@ async function isAuthenticated(request) {
 
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
-  return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return PUBLIC_API_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 export const __test__ = {
@@ -204,28 +216,77 @@ export async function proxy(request) {
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
-      return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Local only: CLI token required" },
+        { status: 403 },
+      );
     }
   }
 
-  // Always protected - require valid JWT or local CLI token (machineId-based)
+  // Always protected - require valid JWT or local CLI token (machineId-based).
+  // Deliberately does NOT honour requireLogin=false: these routes shut the server
+  // down, export the credential database, or trigger an update, so an open
+  // dashboard is not identity enough (GHSA-qvfm / upstream PR #3500).
+  //
+  // The consequence is that with login disabled these actions are unreachable
+  // from the browser, and a bare "Unauthorized" made that look like a broken
+  // feature rather than a deliberate gate — the reported "Download Backup ->
+  // Unauthorized" (#933). Say which it is; the boundary itself is unchanged.
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (await hasValidCliToken(request) || await hasValidToken(request))
+    if ((await hasValidCliToken(request)) || (await hasValidToken(request)))
       return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({
+      error: "Sign in required. This action needs a logged-in session even when login is otherwise disabled, because it can export credentials, update, or shut down the server.",
+      source: GATEWAY_ERROR_SOURCE,
+    }, { status: 401 });
+  }
+
+  // CORS preflight: browsers send OPTIONS without auth headers by design.
+  // Short-circuit before the auth check so cross-origin browser/WebView clients
+  // (e.g. extensions, Claude for Office) can reach /v1/* endpoints.
+  // GET/POST auth is fully preserved — only OPTIONS is exempted. (#1381)
+  if (request.method === "OPTIONS" && isPublicLlmApi(pathname)) {
+    const reqHeaders = request.headers.get("access-control-request-headers");
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": reqHeaders || "*",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
   }
 
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    return NextResponse.json(
+      { error: "API key required for remote API access", source: GATEWAY_ERROR_SOURCE },
+      { status: 401 },
+    );
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
+    // Settings writes configure SSO/proxy/tunnel for the whole instance; a remote
+    // caller must never reach them just because requireLogin is off. Reads keep the
+    // requireLogin=false dashboard-read behavior (upstream PR #3499).
+    if (
+      pathname === "/api/settings" &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    ) {
+      if (
+        !(await hasValidCliToken(request)) &&
+        !(await hasValidToken(request)) &&
+        !isLocalRequest(request)
+      ) {
+        return NextResponse.json({ error: "Unauthorized", source: GATEWAY_ERROR_SOURCE }, { status: 401 });
+      }
+    }
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
+    if ((await hasValidCliToken(request)) || (await isAuthenticated(request)))
       return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized", source: GATEWAY_ERROR_SOURCE }, { status: 401 });
   }
 
   // Protect all dashboard routes
@@ -241,10 +302,19 @@ export async function proxy(request) {
 
         // Block tunnel/tailscale access if disabled (redirect to login)
         if (!tunnelDashboardAccess) {
-          const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
-          const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
-          const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
-          if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
+          const host = (request.headers.get("host") || "")
+            .split(":")[0]
+            .toLowerCase();
+          const tunnelHost = settings.tunnelUrl
+            ? new URL(settings.tunnelUrl).hostname.toLowerCase()
+            : "";
+          const tailscaleHost = settings.tailscaleUrl
+            ? new URL(settings.tailscaleUrl).hostname.toLowerCase()
+            : "";
+          if (
+            (tunnelHost && host === tunnelHost) ||
+            (tailscaleHost && host === tailscaleHost)
+          ) {
             return NextResponse.redirect(new URL("/login", request.url));
           }
         }

@@ -28,13 +28,25 @@ export default {
     website: "https://github.com/ggml-org/whisper.cpp",
   },
   category: "apikey",
+  // See the TTS entry: without this the dashboard cannot point the connection
+  // at a separately hosted server.
+  baseUrlField: {
+    label: "Base URL",
+    placeholder: "http://localhost:8080/v1/audio/transcriptions",
+    help: "Full transcriptions endpoint.",
+  },
   auth: {
     apiKey: {
-      text: "Set providerSpecificData.baseUrl to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",
+      text: "Set Base URL to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",
     },
   },
   models: [
-    { id: "whisper-1", name: "Whisper (self-hosted)", params: ["language", "response_format", "temperature", "prompt"], kind: "stt" },
+    {
+      id: "whisper-1",
+      name: "Whisper (self-hosted)",
+      params: ["language", "response_format", "temperature", "prompt"],
+      kind: "stt",
+    },
   ],
   serviceKinds: ["stt"],
   sttConfig: {

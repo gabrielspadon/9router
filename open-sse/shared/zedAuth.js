@@ -11,6 +11,7 @@
 
 import crypto from "node:crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { createExecutorResponseHeaderTimeout } from "../utils/responseHeaderTimeout.js";
 
 export const ZED_WEB_BASE_URL = "https://zed.dev";
 export const ZED_CLOUD_BASE_URL = "https://cloud.zed.dev";
@@ -172,8 +173,8 @@ function getSystemId(credentials) {
   );
 }
 
-async function fetchJson(url, options, proxyOptions = null) {
-  const res = await proxyAwareFetch(url, options, proxyOptions);
+async function fetchJson(url, options) {
+  const res = await proxyAwareFetch(url, options);
   const text = await res.text();
   let data = null;
   if (text) {
@@ -203,15 +204,11 @@ export async function fetchZedAuthenticatedUser(credentials, options = {}) {
   const systemId = getSystemId(credentials);
   if (systemId) headers[ZED_HEADERS.systemId] = systemId;
 
-  return fetchJson(
-    zedUrl(config, "cloudBaseUrl", "/client/users/me", ZED_CLOUD_BASE_URL),
-    {
-      method: "GET",
-      headers,
-      signal: options.signal ?? undefined,
-    },
-    options.proxyOptions ?? null,
-  );
+  return fetchJson(zedUrl(config, "cloudBaseUrl", "/client/users/me", ZED_CLOUD_BASE_URL), {
+    method: "GET",
+    headers,
+    signal: options.signal ?? undefined,
+  });
 }
 
 function normalizeOrganizationId(value) {
@@ -301,14 +298,32 @@ export async function zedLlmFetch(credentials, path, options = {}) {
   const url = zedUrl(config, "llmBaseUrl", path, ZED_LLM_BASE_URL);
   const buildRequest = async (forceRefresh) => {
     const token = await fetchZedLlmToken(credentials, { ...options, forceRefresh });
-    return proxyAwareFetch(url, {
+    const fetchOptions = {
       ...options.fetchOptions,
       headers: {
         ...(options.fetchOptions?.headers || {}),
         Authorization: `Bearer ${token}`,
       },
-      signal: options.signal ?? undefined,
+    };
+    if (!options.connectTimeout && options.registryTimeout == null && options.envTimeout == null) {
+      return proxyAwareFetch(url, { ...fetchOptions, signal: options.signal ?? undefined });
+    }
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout: options.connectTimeout,
+      registryTimeout: options.registryTimeout,
+      envTimeout: options.envTimeout,
+      signal: options.signal,
     });
+    try {
+      return await proxyAwareFetch(url, {
+        ...fetchOptions,
+        signal: deadline.signal,
+      });
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
   };
 
   let response = await buildRequest(false);

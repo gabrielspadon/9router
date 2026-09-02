@@ -1,14 +1,15 @@
 import REGISTRY from "../providers/registry/index.js";
+import { PROVIDER_MODELS } from "../config/providerModels.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
 // Media-only providers without a registry transport entry keep explicit aliases here.
-const MEDIA_ONLY_ALIASES = {
+export const MEDIA_ONLY_ALIASES = Object.freeze({
   el: "elevenlabs",
   jina: "jina-ai",
   "jina-ai": "jina-ai",
   polly: "aws-polly",
   "aws-polly": "aws-polly",
-};
+});
 
 const ALIAS_TO_PROVIDER_ID = { ...MEDIA_ONLY_ALIASES };
 for (const entry of REGISTRY) {
@@ -21,11 +22,67 @@ const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
 
+// Connection-less catalog providers (noAuth + live modelsFetcher) strip their
+// provider prefix upstream and echo the bare id back. The listing emits their
+// models as `${alias}/${id}`, so the response echo must use the same form for
+// clients that validate the echo against /v1/models.
+const CONNECTIONLESS_CATALOG_ALIASES = new Map();
+for (const entry of REGISTRY) {
+  if (entry.noAuth && entry.modelsFetcher && entry.alias) {
+    CONNECTIONLESS_CATALOG_ALIASES.set(entry.id, entry.alias);
+  }
+}
+
+/**
+ * Model name a response should echo back to the client. Prefixed requests keep
+ * their exact form (already listing-valid). Bare requests that resolved to a
+ * connection-less catalog provider get the listing form re-injected — e.g.
+ * bare "big-pickle" → "oc/big-pickle" — so re-sending the echoed name routes
+ * again and passes listing validation instead of triggering client warnings.
+ */
+export function canonicalEchoModel({ requestedModel, provider, model }) {
+  if (!requestedModel || requestedModel.includes("/")) return requestedModel;
+  const alias = CONNECTIONLESS_CATALOG_ALIASES.get(provider);
+  if (alias) return `${alias}/${model}`;
+  return requestedModel;
+}
+
 /**
  * Resolve provider alias to provider ID
  */
 export function resolveProviderAlias(aliasOrId) {
   return ALIAS_TO_PROVIDER_ID[aliasOrId] || aliasOrId;
+}
+
+/**
+ * Deterministic owner for a bare model name from the static registry catalog.
+ * Returns the provider ID that declares `modelStr`, or null when no static
+ * provider declares it. A provider can opt into a bare-model prefix only for
+ * ids it declares. Other collisions resolve to an id/alias prefix, then the
+ * first registry declaration.
+ */
+export function resolveBareModelStaticOwner(modelStr) {
+  if (!modelStr) return null;
+  const owners = [];
+  for (const [alias, models] of Object.entries(PROVIDER_MODELS)) {
+    if (Array.isArray(models) && models.some((m) => m && m.id === modelStr)) {
+      owners.push(alias);
+    }
+  }
+  if (owners.length === 0) return null;
+  if (owners.length === 1) return resolveProviderAlias(owners[0]);
+  const declaredPrefixOwner = REGISTRY.find(
+    (entry) =>
+      entry.bareModelPrefixes?.some((prefix) => modelStr.startsWith(prefix)) &&
+      owners.some((alias) => resolveProviderAlias(alias) === entry.id),
+  );
+  if (declaredPrefixOwner) return declaredPrefixOwner.id;
+  const byPrefix = owners.find((alias) => modelStr.startsWith(alias));
+  if (byPrefix) return resolveProviderAlias(byPrefix);
+  // Same id shipped by several providers (e.g. opencode-go and opencode-zen
+  // share the OpenCode catalog): the first registry declaration wins so the
+  // name never falls through to blind prefix inference.
+  return resolveProviderAlias(owners[0]);
 }
 
 /**
@@ -115,6 +172,14 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
     return resolved;
   }
 
+  // Static catalog declarations are a more specific ownership signal than a
+  // generic name prefix. This keeps standalone open-sse callers aligned with
+  // the dashboard resolver and avoids misrouting bare provider models.
+  const staticOwner = resolveBareModelStaticOwner(parsed.model);
+  if (staticOwner) {
+    return { provider: staticOwner, model: parsed.model };
+  }
+
   // Fallback: infer provider from model name prefix
   return {
     provider: inferProviderFromModelName(parsed.model),
@@ -123,6 +188,10 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 }
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
+// Only fires for bare names that survive the full resolution chain in
+// src/sse/services/model.js (resolveBareModelToProvider) — custom models, user
+// aliases, static registry declarations, and the live opencode catalog all win
+// first. Names that genuinely belong to openrouter hit the deepseek rule here.
 const MODEL_PREFIX_PROVIDERS = [
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],

@@ -19,6 +19,9 @@ const STEPS = [
 ];
 
 const EDITOR_OPTIONS = {
+  // Monaco's real focus target is a hidden textarea. Without this it is a tab
+  // stop a screen reader cannot announce.
+  ariaLabel: "Translator payload editor",
   minimap: { enabled: false },
   fontSize: 12,
   lineNumbers: "on",
@@ -211,20 +214,20 @@ export default function TranslatorPage() {
   };
 
   return (
-    <div className="p-8 space-y-3">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
+          <h1 className="text-lg font-semibold text-text-main">Translator Debug</h1>
           <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
         </div>
         {meta && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
-            <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-            <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
-            <MetaBadge label="provider" value={meta.provider} color="green" />
-            <MetaBadge label="model" value={meta.model} color="purple" />
+          <div className="flex min-w-0 items-center gap-2 flex-wrap justify-end">
+            <MetaBadge label="src" value={meta.sourceFormat} />
+            <span className="material-symbols-outlined dir-icon text-text-muted text-[14px]" aria-hidden="true">arrow_forward</span>
+            <MetaBadge label="dst" value={meta.targetFormat} />
+            <MetaBadge label="provider" value={meta.provider} />
+            <MetaBadge label="model" value={meta.model} />
           </div>
         )}
       </div>
@@ -235,22 +238,26 @@ export default function TranslatorPage() {
         const content = contents[step.id] || "";
 
         return (
-          <Card key={step.id}>
-            <div className="p-4 space-y-3">
+          <Card key={step.id} padding="none">
+            <div className="p-4 space-y-4">
               {/* Step header */}
               <div className="flex items-center justify-between">
-                <button onClick={() => toggle(step.id)} className="flex items-center gap-2 flex-1 text-left group">
-                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
+                <button
+                  onClick={() => toggle(step.id)}
+                  aria-expanded={isExpanded}
+                  className="focus-ring hit-44 rounded-[var(--radius-brand)] flex min-w-0 items-center gap-2 flex-1 text-start group"
+                >
+                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-brand transition-colors duration-150" aria-hidden="true">
                     {isExpanded ? "expand_more" : "chevron_right"}
                   </span>
-                  <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
+                  <span className="text-xs font-mono text-text-muted metric">{step.id}</span>
                   <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
-                  <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
-                  {content && <span className="text-xs text-green-500">({content.length} chars)</span>}
+                  <span className="text-xs text-text-muted font-mono">{step.file}</span>
+                  {content && <span className="text-xs text-text-muted metric">({content.length} chars)</span>}
                 </button>
                 {!isExpanded && (
                   <div className="flex gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
+                    <Button size="sm" variant="ghost" icon="folder_open" aria-label="Load file" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
                     {action}
                   </div>
                 )}
@@ -259,7 +266,7 @@ export default function TranslatorPage() {
               {/* Expanded content */}
               {isExpanded && (
                 <>
-                  <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="border border-border rounded-[var(--radius-brand)] overflow-hidden">
                     <Editor
                       height="400px"
                       defaultLanguage={step.lang === "text" ? "plaintext" : "json"}
@@ -273,9 +280,9 @@ export default function TranslatorPage() {
                     />
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
-                    <Button size="sm" variant="outline" icon="data_object" onClick={() => handleFormat(step.id)}>Format</Button>
-                    <Button size="sm" variant="outline" icon="content_copy" onClick={() => handleCopy(step.id)}>Copy</Button>
+                    <Button size="sm" variant="secondary" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
+                    <Button size="sm" variant="secondary" icon="data_object" onClick={() => handleFormat(step.id)}>Format</Button>
+                    <Button size="sm" variant="secondary" icon="content_copy" onClick={() => handleCopy(step.id)}>Copy</Button>
                     {action}
                   </div>
                 </>
@@ -288,16 +295,11 @@ export default function TranslatorPage() {
   );
 }
 
-function MetaBadge({ label, value, color }) {
-  const colors = {
-    blue: "bg-blue-500/10 text-blue-500",
-    orange: "bg-orange-500/10 text-orange-500",
-    green: "bg-green-500/10 text-green-500",
-    purple: "bg-purple-500/10 text-purple-500",
-  };
+// Metadata, not status — the label carries the meaning, so these stay neutral.
+function MetaBadge({ label, value }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono ${colors[color]}`}>
-      <span className="text-text-muted/70 font-sans text-[10px]">{label}:</span>{value}
+    <span className="inline-flex min-w-0 items-center gap-1 px-2 py-1 rounded-[var(--radius-brand)] border border-border bg-surface-2 text-xs font-mono text-text-main">
+      <span className="text-text-muted font-mono text-[10.5px]">{label}:</span>{value}
     </span>
   );
 }

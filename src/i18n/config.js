@@ -38,6 +38,10 @@ export const LOCALES = [
 export const DEFAULT_LOCALE = "en";
 export const LOCALE_COOKIE = "locale";
 
+// Single source of truth for text direction. Everything that needs `dir` reads
+// getLocaleDirection() rather than re-listing these.
+export const RTL_LOCALES = ["ar", "he", "fa", "ur"];
+
 export const LOCALE_NAMES = {
   en: "English",
   vi: "Tiếng Việt",
@@ -187,4 +191,8 @@ export function normalizeLocale(locale) {
 
 export function isSupportedLocale(locale) {
   return LOCALES.includes(locale);
+}
+
+export function getLocaleDirection(locale) {
+  return RTL_LOCALES.includes(normalizeLocale(locale)) ? "rtl" : "ltr";
 }

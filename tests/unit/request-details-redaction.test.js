@@ -1,18 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
-// Mirror the redaction logic from src/app/api/usage/request-details/route.js
-// so we can test it in isolation.
-function redactDetails(details) {
-  return (details || []).map((d) => {
-    const redacted = { ...d };
-    for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-      if (redacted[key] !== undefined) {
-        redacted[key] = { redacted: true };
-      }
-    }
-    return redacted;
-  });
-}
+// This file used to hold a hand-copy of the route's redaction loop, so it went
+// on asserting the old shape after the route changed. Bind to the real exported
+// function instead (#2221 added the failed-request error envelope).
+vi.mock("@/lib/usageDb", () => ({ getRequestDetails: async () => ({ details: [] }) }));
+vi.mock("@/lib/requestDetailsDb", () => ({ isObservabilityEnabled: async () => false }));
+
+const { redactDetail } = await import("@/app/api/usage/request-details/route.js");
+
+const redactDetails = (details) => (details || []).map(redactDetail);
 
 describe("request-details redaction", () => {
   it("removes conversation payloads but keeps metadata", () => {

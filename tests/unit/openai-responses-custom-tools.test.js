@@ -3,7 +3,7 @@ import {
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
-import { initState } from "../../open-sse/translator/index.js";
+import { initState, translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const EXEC_TOOL = {
@@ -15,6 +15,13 @@ const EXEC_TOOL = {
     syntax: "lark",
     definition: "start: /(.|\\n)+/",
   },
+};
+
+const WAIT_TOOL = {
+  type: "function",
+  name: "wait",
+  description: "Pause before the next turn.",
+  parameters: { type: "object", properties: {}, additionalProperties: false },
 };
 
 describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
@@ -149,5 +156,72 @@ describe("OpenAI Chat stream → Codex custom_tool_call", () => {
       name: "search",
       arguments: "{\"q\":\"x\"}",
     });
+  });
+});
+
+describe("Codex Responses Lite passthrough → Responses upstream", () => {
+  // A Responses client routed to a Responses provider skips every translator, so the
+  // Codex-only additional_tools item used to reach chatgpt.com verbatim and fail the
+  // whole request with `Unknown parameter: 'input[0].content'`.
+  const body = () => ({
+    model: "cx/gpt-5.6-sol",
+    input: [
+      {
+        type: "additional_tools",
+        role: "developer",
+        tools: [{ type: "namespace", name: "functions", tools: [EXEC_TOOL, WAIT_TOOL] }],
+      },
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Run pwd" }] },
+    ],
+  });
+  const passthrough = (input) =>
+    translateRequest(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSES, "cx/gpt-5.6-sol", input, false);
+
+  it("hoists additional_tools out of input and unwraps tool namespaces", () => {
+    const out = passthrough(body());
+    expect(out.input.map((item) => item.type)).toEqual(["message"]);
+    expect(out.tools).toEqual([EXEC_TOOL, WAIT_TOOL]);
+  });
+
+  it("appends hoisted tools after tools the client already declared", () => {
+    const out = passthrough({ ...body(), tools: [WAIT_TOOL] });
+    expect(out.tools).toEqual([WAIT_TOOL, EXEC_TOOL, WAIT_TOOL]);
+  });
+
+  it("leaves a body carrying no additional_tools item untouched", () => {
+    const out = passthrough({
+      model: "cx/gpt-5.6-sol",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      tools: [EXEC_TOOL],
+    });
+    expect(out.input.map((item) => item.type)).toEqual(["message"]);
+    expect(out.tools).toEqual([EXEC_TOOL]);
+  });
+
+  it("stops walking namespaces a client nested past the bound", () => {
+    let deep = { type: "namespace", name: "leaf", tools: [EXEC_TOOL] };
+    for (let level = 0; level < 12; level += 1) {
+      deep = { type: "namespace", name: `level${level}`, tools: [deep] };
+    }
+    const out = passthrough({
+      model: "cx/gpt-5.6-sol",
+      input: [
+        { type: "additional_tools", role: "developer", tools: [deep, WAIT_TOOL] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] },
+      ],
+    });
+    expect(out.tools).toEqual([WAIT_TOOL]);
+  });
+
+  it("drops an empty additional_tools item rather than declaring an empty tools[]", () => {
+    const out = passthrough({
+      model: "cx/gpt-5.6-sol",
+      input: [
+        { type: "additional_tools", role: "developer", tools: [] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] },
+      ],
+    });
+    expect(out.input.map((item) => item.type)).toEqual(["message"]);
+    expect(out.tools).toBeUndefined();
   });
 });

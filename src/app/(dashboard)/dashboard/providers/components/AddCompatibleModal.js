@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import Badge from "@/shared/components/Badge";
+import Button from "@/shared/components/Button";
+import Input from "@/shared/components/Input";
+import Modal from "@/shared/components/Modal";
+import Select from "@/shared/components/Select";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -27,6 +31,16 @@ const VARIANT_CONFIG = {
     errorLabel: "Anthropic Compatible",
     hasApiType: false,
   },
+  multi: {
+    title: "Add Multi-protocol Compatible",
+    type: "multi-compatible",
+    namePlaceholder: "Multi-protocol Provider (Prod)",
+    prefixPlaceholder: "multi-prod",
+    modelIdPlaceholder: "e.g. shared-model-id",
+    errorLabel: "Multi-protocol Compatible",
+    hasApiType: false,
+    isMulti: true,
+  },
 };
 
 const API_TYPE_OPTIONS = [
@@ -40,7 +54,13 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     name: "",
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
-    baseUrl: config.defaultBaseUrl,
+    ...(config.isMulti
+      ? {
+          openaiUrl: "",
+          anthropicUrl: "",
+          supportsResponses: false,
+        }
+      : { baseUrl: config.defaultBaseUrl }),
   });
 
   const [formData, setFormData] = useState(initialFormData);
@@ -50,7 +70,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
-  // openai: reset baseUrl when apiType changes; anthropic: reset checks when opened
+  // openai: reset baseUrl when apiType changes; other variants: reset checks when opened
   useEffect(() => {
     if (config.hasApiType) {
       setFormData((prev) => ({ ...prev, baseUrl: config.defaultBaseUrl }));
@@ -59,10 +79,14 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
       setCheckKey("");
       setCheckModelId("");
     }
-  }, [config.hasApiType ? formData.apiType : isOpen]);
+  }, [config.hasApiType, config.defaultBaseUrl, formData.apiType, isOpen]);
+
+  const hasRequiredEndpoints = config.isMulti
+    ? formData.openaiUrl.trim() && formData.anthropicUrl.trim()
+    : formData.baseUrl.trim();
 
   const handleSubmit = async () => {
-    if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    if (!formData.name.trim() || !formData.prefix.trim() || !hasRequiredEndpoints) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/provider-nodes", {
@@ -72,7 +96,13 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           name: formData.name,
           prefix: formData.prefix,
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
-          baseUrl: formData.baseUrl,
+          ...(config.isMulti
+            ? {
+                openaiUrl: formData.openaiUrl,
+                anthropicUrl: formData.anthropicUrl,
+                supportsResponses: formData.supportsResponses,
+              }
+            : { baseUrl: formData.baseUrl }),
           type: config.type,
         }),
       });
@@ -97,7 +127,13 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          baseUrl: formData.baseUrl,
+          ...(config.isMulti
+            ? {
+                openaiUrl: formData.openaiUrl,
+                anthropicUrl: formData.anthropicUrl,
+                supportsResponses: formData.supportsResponses,
+              }
+            : { baseUrl: formData.baseUrl }),
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
@@ -105,6 +141,12 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
       });
       const data = await res.json();
       setValidationResult(data);
+      if (config.isMulti && data.valid) {
+        setFormData((prev) => ({
+          ...prev,
+          supportsResponses: Boolean(data.supportsResponses),
+        }));
+      }
     } catch {
       setValidationResult({ valid: false, error: "Network error" });
     } finally {
@@ -119,16 +161,22 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
       return (
         <>
           <Badge variant="success">Valid</Badge>
-          {method === "chat" && (
+          {config.isMulti ? (
+            <span className="text-sm text-text-muted">
+              {validationResult.supportsResponses
+                ? "Responses supported"
+                : "Responses will use Chat fallback"}
+            </span>
+          ) : method === "chat" ? (
             <span className="text-sm text-text-muted">(via inference test)</span>
-          )}
+          ) : null}
         </>
       );
     }
     return (
       <div className="flex flex-col gap-1">
         <Badge variant="error">Invalid</Badge>
-        {error && <span className="text-sm text-red-500">{error}</span>}
+        {error && <span className="text-sm text-danger">{error}</span>}
       </div>
     );
   };
@@ -158,13 +206,36 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
           />
         )}
-        <Input
-          label="Base URL"
-          value={formData.baseUrl}
-          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-          placeholder={config.defaultBaseUrl}
-          hint={config.baseUrlHint}
-        />
+        {config.isMulti ? (
+          <>
+            <Input
+              label="OpenAI URL"
+              value={formData.openaiUrl}
+              onChange={(e) => setFormData({
+                ...formData,
+                openaiUrl: e.target.value,
+                supportsResponses: false,
+              })}
+              placeholder="https://provider.example/v1"
+              hint="Required. Base URL, Chat Completions URL, or Responses URL. Check detects Responses support."
+            />
+            <Input
+              label="Anthropic Messages URL"
+              value={formData.anthropicUrl}
+              onChange={(e) => setFormData({ ...formData, anthropicUrl: e.target.value })}
+              placeholder="https://provider.example/v1/messages"
+              hint="Required. Base URL or full Anthropic Messages endpoint URL."
+            />
+          </>
+        ) : (
+          <Input
+            label="Base URL"
+            value={formData.baseUrl}
+            onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+            placeholder={config.defaultBaseUrl}
+            hint={config.baseUrlHint}
+          />
+        )}
         <Input
           label="API Key (for Check)"
           type="password"
@@ -172,16 +243,20 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           onChange={(e) => setCheckKey(e.target.value)}
         />
         <Input
-          label="Model ID (optional)"
+          label={config.isMulti ? "Model ID" : "Model ID (optional)"}
           value={checkModelId}
           onChange={(e) => setCheckModelId(e.target.value)}
           placeholder={config.modelIdPlaceholder}
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+          hint={
+            config.isMulti
+              ? "Required to check each protocol endpoint."
+              : "If the provider lacks /models, enter a model ID to validate with inference."
+          }
         />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
             onClick={handleValidate}
-            disabled={!checkKey || validating || !formData.baseUrl.trim()}
+            disabled={!checkKey || validating || !hasRequiredEndpoints || (config.isMulti && !checkModelId.trim())}
             variant="secondary"
             className="w-full sm:w-auto"
           >
@@ -196,7 +271,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
             disabled={
               !formData.name.trim() ||
               !formData.prefix.trim() ||
-              !formData.baseUrl.trim() ||
+              !hasRequiredEndpoints ||
               submitting
             }
           >
@@ -212,7 +287,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
 }
 
 AddCompatibleModal.propTypes = {
-  variant: PropTypes.oneOf(["openai", "anthropic"]).isRequired,
+  variant: PropTypes.oneOf(["openai", "anthropic", "multi"]).isRequired,
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onCreated: PropTypes.func.isRequired,

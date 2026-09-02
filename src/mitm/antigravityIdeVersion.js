@@ -4,7 +4,10 @@
 // User-Agent header (antigravity/<old>) and body.metadata.ideVersion are forced
 // to a known-good IDE version. Hardcoded MVP — toggle/version configurable later.
 
-const ANTIGRAVITY_IDE_VERSION = "1.23.2";
+// Single source of truth: open-sse/providers/shared.js pins the official
+// Antigravity IDE version (Antigravity IDE Desktop fingerprint). require(ESM)
+// works on Node >= 22.18 / 25, which is the Docker + host runtime floor.
+const { ANTIGRAVITY_IDE_VERSION } = require("../../open-sse/providers/shared.js");
 const ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED = true;
 
 function shouldRewriteMetadata(metadata) {
@@ -17,6 +20,15 @@ function shouldRewriteMetadata(metadata) {
 function rewriteAntigravityUserAgent(userAgent, version) {
   if (typeof userAgent !== "string" || !userAgent.includes("antigravity/")) return userAgent;
   return userAgent.replace(/antigravity\/[^\s]+/, `antigravity/${version}`);
+}
+
+// Chat turns only (:generateContent / :streamGenerateContent). loadCodeAssist,
+// onboardUser and other account-setup/session calls must reach Google carrying
+// the IDE's real User-Agent and metadata -- see #1884: rewriting those too made
+// Google's account-setup flow see a different IDE fingerprint than the one that
+// established the OAuth session, and it started asking the user to sign in again.
+function isAntigravityChatEndpoint(url) {
+  return typeof url === "string" && (url.includes(":generateContent") || url.includes(":streamGenerateContent"));
 }
 
 function applyAntigravityIdeVersionOverride(bodyBuffer, headers) {
@@ -47,4 +59,5 @@ module.exports = {
   ANTIGRAVITY_IDE_VERSION,
   applyAntigravityIdeVersionOverride,
   rewriteAntigravityUserAgent,
+  isAntigravityChatEndpoint,
 };

@@ -2,6 +2,20 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { GEMINI_ROLE, OPENAI_FINISH, GEMINI_FINISH } from "../schema/index.js";
 
+// Antigravity buffers an entire tool-call argument before emitting it, because
+// a Gemini functionCall part must carry complete, parseable JSON args and
+// can't stream partially. For a large argument (a write-file call for a long
+// implementation plan) that buffering can silently run well past a minute:
+// nothing else on this leg of the MITM pivot writes bytes to the client while
+// it accumulates. The reported abort timestamps (#2431, ~130s twice) sit well
+// under this project's own TTFT/stall timeouts (200s/360s, runtimeConfig.js),
+// so something outside those timers -- a proxy or client read-idle timeout --
+// is severing the connection during the silence. This interval is a
+// fork-local mitigation, not a Google API contract value: it only needs to
+// stay well under the ~60-130s idle timeouts commonly seen in front of a
+// self-hosted deployment.
+const ANTIGRAVITY_TOOLCALL_HEARTBEAT_MS = 8000;
+
 // Convert OpenAI SSE chunk to Antigravity SSE format
 // Real Antigravity format:
 //   data: {"response":{"candidates":[{"content":{"role":"model","parts":[...]}, "finishReason":"STOP"}], "usageMetadata":{...}, "modelVersion":"...", "responseId":"..."}}
@@ -49,8 +63,22 @@ export function openaiToAntigravityResponse(chunk, state) {
       if (tc.function?.name) accum.name += tc.function.name;
       if (tc.function?.arguments) accum.arguments += tc.function.arguments;
     }
-    // Skip emit — wait for finish_reason
-    if (parts.length === 0 && !finishReason) return null;
+    // Skip emit -- wait for finish_reason, but not silently forever: emit a
+    // harmless empty-text heartbeat on a timer so the client keeps seeing
+    // traffic while the real functionCall args are still buffering (#2431).
+    if (parts.length === 0 && !finishReason) {
+      const now = Date.now();
+      if (!state._agToolCallHeartbeatAt) state._agToolCallHeartbeatAt = now;
+      if (now - state._agToolCallHeartbeatAt < ANTIGRAVITY_TOOLCALL_HEARTBEAT_MS) return null;
+      state._agToolCallHeartbeatAt = now;
+      return {
+        response: {
+          candidates: [{ content: { role: GEMINI_ROLE.MODEL, parts: [{ text: "" }] } }],
+          modelVersion: state._modelVersion,
+          responseId: state._responseId
+        }
+      };
+    }
   }
 
   // On finish, emit accumulated tool calls as complete functionCall parts

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
-import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { isQuotaEligible } from "@/shared/utils/quotaPause.js";
 
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
@@ -9,10 +10,17 @@ const SAFE_FIELDS = [
   "testStatus", "lastError", "lastErrorAt", "errorCode",
   "expiresAt", "lastUsedAt", "consecutiveUseCount",
   "createdAt", "updatedAt",
+  // Per-account quota safety buffer (non-sensitive): per-window thresholds map
+  // + last per-window snapshot, so the Quota Tracker edit modal can show/remember
+  // the configured values.
+  "quotaPauseThresholds", "lastQuotaSnapshot",
 ];
 
 const SAFE_PSD_FIELDS = [
-  "baseUrl", "azureEndpoint", "deployment", "apiVersion", "accountId",
+  // apiType belongs beside baseUrl: both are the per-connection endpoint
+  // override (#2504), and leaving it out made the field write-only — an editor
+  // could set it and never see what it was set to.
+  "baseUrl", "apiType", "azureEndpoint", "deployment", "apiVersion", "accountId",
   "region", "projectId", "resourceUrl", "proxyPoolId",
   "connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy",
   "githubLogin", "githubName", "githubEmail", "githubUserId",
@@ -29,9 +37,24 @@ function maskName(name) {
   return name;
 }
 
+function hasExpiredModelLock(connection, now = Date.now()) {
+  let expired = false;
+  for (const [key, value] of Object.entries(connection)) {
+    if (!key.startsWith("modelLock_") || !value) continue;
+    const until = new Date(value).getTime();
+    if (!Number.isFinite(until)) continue;
+    if (until > now) return false;
+    expired = true;
+  }
+  return expired;
+}
+
 function sanitize(c) {
   const safe = {};
   for (const f of SAFE_FIELDS) if (c[f] !== undefined) safe[f] = c[f];
+  if (c.isActive !== false && safe.testStatus === "unavailable" && hasExpiredModelLock(c)) {
+    safe.effectiveStatus = "recovering";
+  }
   if (safe.name) safe.name = maskName(safe.name);
   if (c.providerSpecificData) {
     const psd = {};
@@ -43,10 +66,12 @@ function sanitize(c) {
   return safe;
 }
 
+// The provider must report usage at all, and the credential must be one the
+// usage route will actually accept. That second half is isQuotaEligible's, not
+// this file's — a private copy here was both looser (it let a cookie through)
+// and stricter (it dropped a pasted access token) than the route it lists for.
 function isUsageEligible(connection) {
-  return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
-  );
+  return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && isQuotaEligible(connection);
 }
 
 function parsePositiveInt(value, fallback) {

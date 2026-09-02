@@ -1,4 +1,5 @@
 import { register } from "../index.js";
+import { rememberThoughtSignature } from "../concerns/thoughtSignature.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
@@ -161,6 +162,11 @@ function convertContent(content) {
 
     // Function call
     if (part.functionCall) {
+      // A Gemini-speaking client does persist thoughtSignature, and pivoting
+      // through OpenAI dropped it just the same (#3646). Only an id upstream
+      // actually assigned is unique enough to key on; the name-derived fallback
+      // repeats across calls and would hand back the wrong signature.
+      rememberThoughtSignature(part.functionCall.id, part.thoughtSignature || part.thought_signature);
       toolCalls.push({
         // Deterministic id from name so the matching functionResponse pairs correctly.
         id: part.functionCall.id || `call_${part.functionCall.name}`,

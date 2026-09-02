@@ -7,7 +7,7 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
-const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
+const proxyClientMaxBodySize = process.env.TOKENPROXY_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -25,8 +25,16 @@ const nextConfig = {
     root: tracingRoot
   },
   outputFileTracingRoot: tracingRoot,
-  outputFileTracingExcludes: {
-    "*": ["./gitbook/**/*"]
+  // sql.js is the last link in the database driver chain and the one that is
+  // supposed to work everywhere, but it is WASM with a sidecar binary rather
+  // than pure JS. Nothing statically requires that binary — the loader resolves
+  // it at runtime — so the standalone trace shipped dist/sql-wasm.js without
+  // dist/sql-wasm.wasm and the fallback could not load, which is how an install
+  // reached "no SQLite driver available" with every link exhausted (#987).
+  outputFileTracingIncludes: {
+    "**": ["./node_modules/sql.js/dist/sql-wasm.wasm"],
+    // /api/changelog reads CHANGELOG.md from the product tree at runtime.
+    "/api/changelog": ["./CHANGELOG.md"],
   },
   images: {
     unoptimized: true
@@ -53,7 +61,7 @@ const nextConfig = {
     config.watchOptions = {
       ...config.watchOptions,
       aggregateTimeout: 300,
-      ignored: /[\\/](node_modules|\.git|logs|\.next|\.next-cli-build|gitbook|cli|open-sse\.old|tests|docs)[\\/]/,
+      ignored: /[\\/](node_modules|\.git|logs|\.next|\.next-cli-build|cli|open-sse\.old|tests|docs)[\\/]/,
     };
     return config;
   },

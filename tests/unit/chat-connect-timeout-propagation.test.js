@@ -1,0 +1,431 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  execute: vi.fn(),
+  refreshCredentials: vi.fn(),
+  refreshWithRetry: vi.fn(),
+  parseUpstreamError: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock("../../open-sse/executors/index.js", () => ({
+  getExecutor: vi.fn(() => ({
+    execute: mocks.execute,
+    refreshCredentials: mocks.refreshCredentials,
+    noAuth: false,
+  })),
+}));
+
+vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
+  refreshWithRetry: (...args) => mocks.refreshWithRetry(...args),
+}));
+
+vi.mock("../../open-sse/translator/index.js", () => ({
+  translateRequest: vi.fn((source, _target, model, body) => {
+    if (source === "claude") {
+      return {
+        model,
+        input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+        stream: body.stream,
+      };
+    }
+    return { ...body, model };
+  }),
+}));
+
+vi.mock("../../open-sse/utils/requestLogger.js", () => ({
+  createRequestLogger: vi.fn(async () => ({
+    logClientRawRequest: vi.fn(),
+    logRawRequest: vi.fn(),
+    logTargetRequest: vi.fn(),
+    logError: vi.fn(),
+  })),
+}));
+
+vi.mock("../../open-sse/utils/clientDetector.js", () => ({
+  detectClientTool: vi.fn(() => null),
+  isNativePassthrough: vi.fn(() => false),
+}));
+
+vi.mock("../../open-sse/utils/bypassHandler.js", () => ({
+  handleBypassRequest: vi.fn(() => null),
+}));
+
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  default: vi.fn(),
+  proxyAwareFetch: vi.fn(),
+}));
+
+vi.mock("../../open-sse/translator/formats/claude.js", () => ({
+  normalizeClaudePassthrough: vi.fn(),
+  anchorClaudeCache: vi.fn(),
+}));
+
+vi.mock("../../open-sse/utils/toolDeduper.js", () => ({
+  dedupeTools: vi.fn((tools) => ({ tools, stripped: [] })),
+}));
+
+vi.mock("../../open-sse/rtk/caveman.js", () => ({ injectCaveman: vi.fn() }));
+vi.mock("../../open-sse/rtk/ponytail.js", () => ({ injectPonytail: vi.fn() }));
+vi.mock("../../open-sse/rtk/index.js", () => ({
+  compressMessages: vi.fn(() => null),
+  formatRtkLog: vi.fn(() => ""),
+}));
+vi.mock("../../open-sse/rtk/headroom.js", () => ({
+  compressWithHeadroom: vi.fn(async () => null),
+  formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
+}));
+
+vi.mock("../../open-sse/providers/capabilities.js", () => ({
+  getCapabilitiesForModel: vi.fn(() => ({})),
+}));
+
+vi.mock("../../open-sse/translator/concerns/modality.js", () => ({
+  stripUnsupportedModalities: vi.fn(() => false),
+}));
+
+vi.mock("../../open-sse/translator/concerns/prefetch.js", () => ({
+  prefetchRemoteImages: vi.fn(async () => 0),
+}));
+
+vi.mock("../../open-sse/translator/concerns/adaptiveStripper.js", () => ({
+  stripRejectedFields: vi.fn((body) => {
+    if (!Object.hasOwn(body, "verbosity")) return null;
+    const stripped = { ...body };
+    delete stripped.verbosity;
+    return stripped;
+  }),
+  addRejectedFields: vi.fn(),
+  getRejectedFields: vi.fn(() => new Set()),
+  extractRejectedFieldNamesFromError: vi.fn((message) =>
+    message.includes("verbosity") ? ["verbosity"] : []),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
+  buildRequestDetail: vi.fn((detail) => detail),
+  extractRequestConfig: vi.fn((body, stream) => ({ body, stream })),
+}));
+
+vi.mock("../../open-sse/utils/error.js", () => ({
+  createCallerAbortResult: vi.fn(() => ({
+    success: false,
+    clientAborted: true,
+    status: 499,
+    error: "Request aborted",
+    response: Response.json({ error: { message: "Request aborted" } }, { status: 499 }),
+  })),
+  createErrorResult: vi.fn((status, message) => ({
+    success: false,
+    status,
+    error: message,
+    response: Response.json({ error: { message } }, { status }),
+  })),
+  formatProviderError: vi.fn((error) => error.message),
+  isCallerAbortError: vi.fn(() => false),
+  parseUpstreamError: (...args) => mocks.parseUpstreamError(...args),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/nonStreamingHandler.js", () => ({
+  handleNonStreamingResponse: vi.fn(async ({ providerResponse }) => ({
+    success: true,
+    response: providerResponse,
+  })),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/sseToJsonHandler.js", () => ({
+  handleForcedSSEToJson: vi.fn(async () => null),
+}));
+
+vi.mock("../../open-sse/handlers/chatCore/streamingHandler.js", () => ({
+  buildOnStreamComplete: vi.fn(() => ({
+    onStreamComplete: vi.fn(),
+    onStreamAbandoned: vi.fn(),
+    streamDetailId: null,
+    streamState: {},
+  })),
+  handleStreamingResponse: vi.fn(() => ({ success: true, response: new Response() })),
+}));
+
+vi.mock("@/lib/usageDb.js", () => ({
+  trackPendingRequest: vi.fn(),
+  appendRequestLog: vi.fn(() => Promise.resolve()),
+  saveRequestDetail: vi.fn(() => Promise.resolve()),
+}));
+
+const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+const { ConnectTimeoutError } = await import("../../open-sse/utils/responseHeaderTimeout.js");
+const { applyCodexFastMode } = await import("../../open-sse/config/codexFastMode.js");
+
+const connectTimeout = { providerOverride: 8000, globalTimeout: 15000 };
+
+function response(status) {
+  return {
+    response: new Response(null, { status }),
+    url: "https://upstream.test/chat",
+    headers: {},
+    transformedBody: {},
+  };
+}
+
+function options(overrides = {}) {
+  const body = {
+    model: "deepseek-chat",
+    messages: [{ role: "user", content: "hello" }],
+    stream: false,
+    ...overrides.body,
+  };
+  return {
+    body,
+    modelInfo: { provider: "deepseek", model: "deepseek-chat" },
+    credentials: { apiKey: "test", providerSpecificData: {} },
+    clientRawRequest: {
+      endpoint: "/v1/chat/completions",
+      body,
+      headers: { accept: "application/json" },
+    },
+    connectionId: "connection-1",
+    log: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: mocks.warn,
+      error: vi.fn(),
+    },
+    connectTimeout,
+    ...overrides,
+    body,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.refreshCredentials.mockResolvedValue({ accessToken: "fresh-token" });
+  mocks.refreshWithRetry.mockImplementation(async (refresh) => refresh());
+  mocks.parseUpstreamError.mockImplementation(async (upstream) => ({
+    statusCode: upstream.status,
+    message: upstream.status === 400 ? "Unsupported parameter: verbosity" : "upstream rejected request",
+  }));
+});
+
+describe("chat connect timeout propagation", () => {
+  it("carries caller cancellation into the initial executor attempt", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let started;
+    const executorStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    mocks.execute.mockImplementationOnce(({ signal }) => {
+      started(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+
+    const pending = handleChatCore(options({ callerSignal: caller.signal }));
+    const executorSignal = await executorStarted;
+    caller.abort(reason);
+
+    await expect(pending).resolves.toMatchObject({ success: false, status: 499, clientAborted: true });
+    expect(executorSignal).not.toBe(caller.signal);
+    expect(executorSignal).toMatchObject({ aborted: true, reason });
+  });
+
+  it("carries caller cancellation into the credential-refresh executor attempt", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let started;
+    const retryStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    mocks.execute
+      .mockResolvedValueOnce(response(401))
+      .mockImplementationOnce(({ signal }) => {
+        started(signal);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      });
+
+    const pending = handleChatCore(options({ callerSignal: caller.signal }));
+    const executorSignal = await retryStarted;
+    caller.abort(reason);
+
+    await expect(pending).resolves.toMatchObject({ success: false, status: 499, clientAborted: true });
+    expect(executorSignal).toMatchObject({ aborted: true, reason });
+  });
+
+  it("carries caller cancellation into the field-strip executor attempt", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("client left", "AbortError");
+    let started;
+    const retryStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    mocks.execute
+      .mockResolvedValueOnce(response(400))
+      .mockImplementationOnce(({ signal }) => {
+        started(signal);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      });
+
+    const pending = handleChatCore(options({
+      callerSignal: caller.signal,
+      body: { verbosity: "high" },
+    }));
+    const executorSignal = await retryStarted;
+    caller.abort(reason);
+
+    await expect(pending).resolves.toMatchObject({ success: false, status: 499, clientAborted: true });
+    expect(executorSignal).toMatchObject({ aborted: true, reason });
+  });
+
+  it("passes the same context to initial and credential-refresh attempts", async () => {
+    mocks.execute.mockResolvedValueOnce(response(401)).mockResolvedValueOnce(response(200));
+
+    const result = await handleChatCore(options());
+
+    expect(result.success).toBe(true);
+    expect(mocks.execute.mock.calls.map(([request]) => request.connectTimeout)).toEqual([
+      connectTimeout,
+      connectTimeout,
+    ]);
+  });
+
+  it("passes the same context to initial and field-strip attempts", async () => {
+    mocks.execute.mockResolvedValueOnce(response(400)).mockResolvedValueOnce(response(200));
+
+    const result = await handleChatCore(options({ body: { verbosity: "high" } }));
+
+    expect(result.success).toBe(true);
+    expect(mocks.execute.mock.calls.map(([request]) => request.connectTimeout)).toEqual([
+      connectTimeout,
+      connectTimeout,
+    ]);
+  });
+
+  it("maps an initial typed timeout to 502", async () => {
+    mocks.execute.mockRejectedValueOnce(new ConnectTimeoutError(8000));
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 502 });
+  });
+
+  it("maps an initial caller abort to 499", async () => {
+    mocks.execute.mockRejectedValueOnce(new DOMException("client left", "AbortError"));
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 499 });
+  });
+
+  it.each([
+    [new ConnectTimeoutError(8000), 502],
+    [new DOMException("client left", "AbortError"), 499],
+  ])("maps credential-refresh retry transport error to %s", async (failure, expectedStatus) => {
+    mocks.execute.mockResolvedValueOnce(response(401)).mockRejectedValueOnce(failure);
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: expectedStatus });
+  });
+
+  it("maps an unrelated credential-refresh retry error to 502", async () => {
+    mocks.execute.mockResolvedValueOnce(response(401)).mockRejectedValueOnce(new Error("socket closed"));
+    await expect(handleChatCore(options())).resolves.toMatchObject({ success: false, status: 502 });
+  });
+
+  it.each([
+    [new ConnectTimeoutError(8000), 502],
+    [new DOMException("client left", "AbortError"), 499],
+  ])("maps field-strip retry transport error to %s", async (failure, expectedStatus) => {
+    mocks.execute.mockResolvedValueOnce(response(400)).mockRejectedValueOnce(failure);
+    await expect(handleChatCore(options({ body: { verbosity: "high" } }))).resolves.toMatchObject({
+      success: false,
+      status: expectedStatus,
+    });
+  });
+
+  it("retains the original 400 for an unrelated field-strip retry error", async () => {
+    mocks.execute.mockResolvedValueOnce(response(400)).mockRejectedValueOnce(new Error("socket closed"));
+    await expect(handleChatCore(options({ body: { verbosity: "high" } }))).resolves.toMatchObject({
+      success: false,
+      status: 400,
+    });
+    expect(mocks.warn).toHaveBeenCalledWith("FIELDSTRIP", "Retry threw: socket closed");
+  });
+});
+
+describe("Codex Sol Fast policy", () => {
+  it("is provider-scoped and leaves the input body untouched", () => {
+    const body = Object.freeze({ model: "gpt-5.6-sol", input: [] });
+
+    expect(applyCodexFastMode(body, {
+      provider: "openai",
+      model: "gpt-5.6-sol(max)",
+      enabled: true,
+    })).toBe(body);
+    expect(applyCodexFastMode(body, {
+      provider: "codex",
+      model: "codex/gpt-5.6-sol(max)",
+      enabled: true,
+    })).toEqual({ ...body, service_tier: "priority" });
+    expect(body).not.toHaveProperty("service_tier");
+  });
+
+  it.each([
+    "gpt-5.6-sol(max)",
+    "gpt-5.6-sol-review(ultra)",
+  ])("applies priority after Claude translation for %s", async (model) => {
+    mocks.execute.mockResolvedValueOnce(response(200));
+
+    await handleChatCore(options({
+      body: {
+        model,
+        system: "Be concise",
+        messages: [{ role: "user", content: "hello" }],
+      },
+      modelInfo: { provider: "codex", model },
+      sourceFormatOverride: "claude",
+      codexFastMode: true,
+    }));
+
+    expect(mocks.execute.mock.calls[0][0].body).toMatchObject({
+      model: expect.stringMatching(/^gpt-5\.6-sol/),
+      service_tier: "priority",
+    });
+  });
+
+  it.each([
+    [false, "gpt-5.6-sol(max)"],
+    [true, "gpt-5.6-codex(max)"],
+    [true, "gpt-5.6-solstice(max)"],
+  ])("does not apply outside the enabled Sol scope", async (enabled, model) => {
+    mocks.execute.mockResolvedValueOnce(response(200));
+
+    await handleChatCore(options({
+      modelInfo: { provider: "codex", model },
+      codexFastMode: enabled,
+    }));
+
+    expect(mocks.execute.mock.calls[0][0].body).not.toHaveProperty("service_tier");
+  });
+
+  it.each([
+    ["default", true, "gpt-5.6-sol"],
+    ["priority", true, "gpt-5.6-sol"],
+    ["unsupported", true, "gpt-5.6-sol"],
+    ["priority", false, "gpt-5.6-sol"],
+    ["priority", true, "gpt-5.6-terra"],
+    ["default", false, "gpt-5.6-luna"],
+  ])(
+    'preserves explicit service tier "%s" with Fast=%s for %s',
+    async (serviceTier, codexFastMode, model) => {
+    mocks.execute.mockResolvedValueOnce(response(200));
+
+    await handleChatCore(options({
+      body: { service_tier: serviceTier },
+      modelInfo: { provider: "codex", model },
+      sourceFormatOverride: "claude",
+      codexFastMode,
+    }));
+
+      expect(mocks.execute.mock.calls[0][0].body.service_tier).toBe(serviceTier);
+    },
+  );
+});

@@ -24,6 +24,18 @@ const oauthCooldown = new Map();
 const USAGE_CACHE_TTL_MS = 300000;
 const usageCache = new Map(); // token -> { promise } | { result, expiresAt }
 
+// Both maps are keyed by access token, and an OAuth token rotates on every
+// refresh, so nothing ever revisited the old key: the maps grew one dead entry
+// per refresh for the life of the process (#2848). Insertion-ordered eviction is
+// enough here -- entries are all the same cheap shape and all carry their own
+// expiry, so the oldest is always the safest to drop.
+const MAX_CACHE_ENTRIES = 128;
+function setBounded(map, key, value) {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > MAX_CACHE_ENTRIES) map.delete(map.keys().next().value);
+}
+
 export async function getClaudeUsage(accessToken, proxyOptions = null, options = {}) {
   const force = options?.force === true;
 
@@ -37,21 +49,32 @@ export async function getClaudeUsage(accessToken, proxyOptions = null, options =
   const stale = (!force && accessToken && usageCache.get(accessToken)?.result) || null;
 
   const promise = (async () => {
-    const result = await fetchClaudeUsageRaw(accessToken, proxyOptions);
-    // Only cache real quota data, not soft-failure {message: ...} payloads
-    if (accessToken && result?.quotas) {
-      usageCache.set(accessToken, {
-        result,
-        expiresAt: Date.now() + USAGE_CACHE_TTL_MS,
-      });
+    try {
+      const result = await fetchClaudeUsageRaw(accessToken, proxyOptions);
+      // Only cache real quota data, not soft-failure {message: ...} payloads
+      if (accessToken && result?.quotas) {
+        setBounded(usageCache, accessToken, {
+          result,
+          expiresAt: Date.now() + USAGE_CACHE_TTL_MS,
+        });
+        return result;
+      }
+      // Soft failure (429/error): prefer the last good read over a transient error.
+      // A dead credential is not transient, so its expiry must reach the caller
+      // rather than be papered over with the quota it had before it died.
+      if (stale && !result?.expired) return stale;
       return result;
+    } finally {
+      // The in-flight marker was only ever replaced by a cacheable result, so a
+      // soft failure left a settled promise in the map and every later call was
+      // answered with that same failure for the life of the process (#2848).
+      if (accessToken && usageCache.get(accessToken)?.promise === promise) {
+        usageCache.delete(accessToken);
+      }
     }
-    // Soft failure (429/error): prefer the last good read over a transient error
-    if (stale) return stale;
-    return result;
   })();
 
-  if (accessToken) usageCache.set(accessToken, { promise });
+  if (accessToken) setBounded(usageCache, accessToken, { promise });
   return promise;
 }
 
@@ -117,9 +140,19 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
       };
     }
 
+    // A 401 is the credential itself, not the quota endpoint: every cached read
+    // for this token is worthless and the legacy leg can only fail the same way.
+    // Purge and report the expiry so the account surfaces as needing a reconnect
+    // instead of showing the quota it had while it still worked (#2848).
+    if (oauthResponse.status === 401) {
+      usageCache.delete(accessToken);
+      oauthCooldown.delete(accessToken);
+      return { expired: true, message: "Claude credential expired. Reconnect the account." };
+    }
+
     // Cool down OAuth usage polling after a 429 (quota endpoint only)
     if (oauthResponse.status === 429) {
-      oauthCooldown.set(accessToken, Date.now() + OAUTH_429_COOLDOWN_MS);
+      setBounded(oauthCooldown, accessToken, Date.now() + OAUTH_429_COOLDOWN_MS);
     }
 
     // Fallback: legacy settings + org usage endpoint

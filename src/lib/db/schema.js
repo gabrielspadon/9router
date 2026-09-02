@@ -83,6 +83,17 @@ export const TABLES = {
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
+      // Optional expiry. NULL means "never expires", which is what a key
+      // created without one gets (#2351).
+      expiresAt: "TEXT",
+      // Optional spend ceilings. NULL in any of them means "no ceiling", which
+      // is what every key issued before them keeps, so an install that upgrades
+      // behaves exactly as it did (#3371). The counter is the key's own
+      // usageHistory rows — see idx_uh_apikey below — so no bookkeeping table
+      // is introduced and a ceiling applies to traffic already recorded.
+      maxPromptTokens: "INTEGER",
+      maxCompletionTokens: "INTEGER",
+      maxCostUsd: "REAL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },
@@ -127,6 +138,9 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
       "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
+      // Enforcing an API key's ceiling sums this table for one key on the auth
+      // path. Without this index that is a full scan of a table nothing prunes.
+      "CREATE INDEX IF NOT EXISTS idx_uh_apikey ON usageHistory(apiKey)",
     ],
   },
   usageDaily: {
@@ -150,6 +164,49 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+  // Tracks which provider/models the user has already "seen". Used by the
+  // New Models discovery feature to surface newly-added models (free or paid)
+  // across every connected provider, including self-added compatible nodes.
+  seenModels: {
+    columns: {
+      id: "TEXT PRIMARY KEY", // `${providerAlias}::${modelId}`
+      providerAlias: "TEXT NOT NULL",
+      modelId: "TEXT NOT NULL",
+      isFree: "INTEGER DEFAULT 0",
+      firstSeenAt: "TEXT NOT NULL",
+      acknowledged: "INTEGER DEFAULT 0",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_sm_provider ON seenModels(providerAlias)",
+      "CREATE INDEX IF NOT EXISTS idx_sm_unseen ON seenModels(acknowledged)",
+    ],
+  },
+  // Full-history statistics source (45-day retention). Written once per
+  // request from the same detail used for requestDetails; the Statistics page
+  // reads all aggregation from this table only.
+  requestStats: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      timestamp: "TEXT NOT NULL",
+      provider: "TEXT",
+      model: "TEXT",
+      connectionId: "TEXT",
+      status: "TEXT",
+      promptTokens: "INTEGER DEFAULT 0",
+      completionTokens: "INTEGER DEFAULT 0",
+      cachedTokens: "INTEGER DEFAULT 0",
+      cacheCreationTokens: "INTEGER DEFAULT 0",
+      reasoningTokens: "INTEGER DEFAULT 0",
+      latencyTotal: "INTEGER DEFAULT 0",
+      latencyTtft: "INTEGER DEFAULT 0",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_rs_ts ON requestStats(timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_provider ON requestStats(provider)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_model ON requestStats(model)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_conn ON requestStats(connectionId)",
     ],
   },
 };

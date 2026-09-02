@@ -5,6 +5,13 @@
  * Delete every block your provider does not need. Only `id` + `category` are required.
  * Field contract: see schema.js `@typedef RegistryEntry`. Runtime builders: providers/index.js.
  *
+ * NOT the route for a private or unofficial endpoint. A registry file is a
+ * SHIPPED provider and needs a PR. An endpoint only you can reach is declared
+ * at runtime instead: POST a JSON adapter to /api/providers/custom (baseUrl,
+ * endpoints[], static headers, auth header/scheme) - see customAdapters.js.
+ * Adapters are data, never code: no transformer, script or hook field is
+ * loaded or executed.
+ *
  * Quick recipes:
  *   - Plain API-key LLM      → id, alias, category:"apikey", display, transport{baseUrl}, models.
  *   - OAuth LLM (device/PKCE)→ add oauth{...}; clientId/tokenUrl auto-inject into transport.

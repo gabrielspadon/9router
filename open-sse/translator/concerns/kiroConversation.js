@@ -47,32 +47,141 @@ function uniqueName(rawName, index, usedNames) {
   return candidate;
 }
 
+const STRIPPED_SCHEMA_KEYS = new Set([
+  "additionalProperties", "$schema", "$id", "examples", "default", "title",
+]);
+const ROOT_COMBINATORS = ["allOf", "oneOf", "anyOf"];
+const SCHEMA_MAP_KEYS = new Set([
+  "properties", "patternProperties", "$defs", "definitions", "dependentSchemas",
+]);
+const STRING_ARRAY_MAP_KEYS = new Set(["dependentRequired"]);
+
+function isSchemaObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function cleanSchemaMap(value) {
+  if (!isSchemaObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    key,
+    cleanSchemaValue(child),
+  ]));
+}
+
+function cleanStringArrayMap(value) {
+  if (!isSchemaObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, clone(child)]));
+}
+
 function cleanSchemaValue(value) {
   if (Array.isArray(value)) return value.map(cleanSchemaValue);
-  if (!value || typeof value !== "object") return value;
+  if (!isSchemaObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
+    if (STRIPPED_SCHEMA_KEYS.has(key)) return [];
+    if (key === "required" && Array.isArray(child) && child.length === 0) return [];
+    if (SCHEMA_MAP_KEYS.has(key)) return [[key, cleanSchemaMap(child)]];
+    if (STRING_ARRAY_MAP_KEYS.has(key)) return [[key, cleanStringArrayMap(child)]];
+    if (key === "enum" || key === "const") return [[key, clone(child)]];
+    return [[key, cleanSchemaValue(child)]];
+  }));
+}
 
-  const cleaned = {};
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "additionalProperties") continue;
-    if (key === "required" && Array.isArray(child) && child.length === 0) continue;
-    cleaned[key] = cleanSchemaValue(child);
+function emptyFragment() {
+  return {
+    properties: new Map(),
+    required: [],
+    defs: new Map(),
+    definitions: new Map(),
+    sawDefs: false,
+    sawDefinitions: false,
+  };
+}
+
+function addFirst(target, source) {
+  if (!isSchemaObject(source)) return;
+  for (const [name, value] of Object.entries(source)) {
+    if (!target.has(name)) target.set(name, value);
   }
-  return cleaned;
+}
+
+function addRequired(target, names) {
+  if (!Array.isArray(names)) return;
+  for (const name of names) {
+    if (typeof name === "string" && !target.includes(name)) target.push(name);
+  }
+}
+
+function mergeShape(target, source) {
+  addFirst(target.properties, Object.fromEntries(source.properties));
+  addFirst(target.defs, Object.fromEntries(source.defs));
+  addFirst(target.definitions, Object.fromEntries(source.definitions));
+  target.sawDefs ||= source.sawDefs;
+  target.sawDefinitions ||= source.sawDefinitions;
+}
+
+function commonRequired(fragments) {
+  if (fragments.length === 0) return [];
+  const later = fragments.slice(1).map((item) => new Set(item.required));
+  return fragments[0].required.filter((name) => later.every((set) => set.has(name)));
+}
+
+function validBranches(value) {
+  return Array.isArray(value) ? value.filter(isSchemaObject) : [];
+}
+
+function collectRootFragment(schema) {
+  const fragment = emptyFragment();
+  addFirst(fragment.properties, schema.properties);
+  addRequired(fragment.required, schema.required);
+
+  if (isSchemaObject(schema.$defs)) {
+    fragment.sawDefs = true;
+    addFirst(fragment.defs, schema.$defs);
+  }
+  if (isSchemaObject(schema.definitions)) {
+    fragment.sawDefinitions = true;
+    addFirst(fragment.definitions, schema.definitions);
+  }
+
+  for (const branch of validBranches(schema.allOf)) {
+    const child = collectRootFragment(branch);
+    mergeShape(fragment, child);
+    addRequired(fragment.required, child.required);
+  }
+
+  for (const keyword of ["oneOf", "anyOf"]) {
+    const alternatives = validBranches(schema[keyword]).map(collectRootFragment);
+    for (const child of alternatives) mergeShape(fragment, child);
+    addRequired(fragment.required, commonRequired(alternatives));
+  }
+
+  return fragment;
 }
 
 function normalizeRootSchema(schema) {
-  const cleaned = cleanSchemaValue(schema && typeof schema === "object" ? clone(schema) : {});
-  cleaned.type = "object";
-  if (!cleaned.properties || typeof cleaned.properties !== "object" || Array.isArray(cleaned.properties)) {
-    cleaned.properties = {};
+  const cleaned = cleanSchemaValue(isSchemaObject(schema) ? schema : {});
+  const fragment = collectRootFragment(cleaned);
+  const preserved = Object.fromEntries(Object.entries(cleaned).filter(([key, value]) => {
+    if (ROOT_COMBINATORS.includes(key)) return false;
+    if (["type", "properties", "required"].includes(key)) return false;
+    if ((key === "$defs" || key === "definitions") && isSchemaObject(value)) return false;
+    return true;
+  }));
+  const normalized = {
+    ...preserved,
+    type: "object",
+    properties: Object.fromEntries(fragment.properties),
+  };
+  if (fragment.sawDefs && (cleaned.$defs === undefined || isSchemaObject(cleaned.$defs))) {
+    normalized.$defs = Object.fromEntries(fragment.defs);
   }
-  if (Array.isArray(cleaned.required)) {
-    cleaned.required = [...new Set(cleaned.required.filter(
-      (name) => typeof name === "string" && Object.hasOwn(cleaned.properties, name)
-    ))];
-    if (cleaned.required.length === 0) delete cleaned.required;
+  if (fragment.sawDefinitions &&
+      (cleaned.definitions === undefined || isSchemaObject(cleaned.definitions))) {
+    normalized.definitions = Object.fromEntries(fragment.definitions);
   }
-  return cleaned;
+  const required = fragment.required.filter((name) => fragment.properties.has(name));
+  if (required.length > 0) normalized.required = required;
+  return normalized;
 }
 
 /** Normalize OpenAI- or Claude-shaped tool definitions into Kiro tool specs. */
@@ -174,7 +283,22 @@ function normalizeTurns(history, currentMessage, modelId) {
 
   for (const turn of turns) {
     if (turn.userInputMessage) {
-      turn.userInputMessage.content = text(turn.userInputMessage.content).trim() || "continue";
+      // A turn carrying tool results or images has no user text by design: the
+      // payload is in userInputMessageContext. Substituting the literal word
+      // "continue" made the model read a user instruction that nobody typed, and
+      // it showed up in the visible conversation on every tool turn of an
+      // agentic loop (#2182). The field still has to be non-empty, which is what
+      // the fallback is for, so use the same neutral placeholder this function
+      // already uses for an empty assistant turn rather than an imperative.
+      //
+      // The structural turns below keep "continue": those are inserted where the
+      // conversation would otherwise start or end on the assistant, and there
+      // the model genuinely is being asked to carry on.
+      const carriesContext =
+        (turn.userInputMessage.userInputMessageContext?.toolResults?.length > 0) ||
+        (Array.isArray(turn.userInputMessage.images) && turn.userInputMessage.images.length > 0);
+      turn.userInputMessage.content =
+        text(turn.userInputMessage.content).trim() || (carriesContext ? "..." : "continue");
       turn.userInputMessage.modelId ||= modelId;
       if (turn.userInputMessage.userInputMessageContext?.tools) {
         delete turn.userInputMessage.userInputMessageContext.tools;

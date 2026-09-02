@@ -55,4 +55,63 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("marks DeepSeek V4 Flash Vision as vision-capable", () => {
+    const expected = { vision: true, reasoning: true, thinkingFormat: "deepseek" };
+    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash-vision-exp")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("commandcode", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash").vision).toBeFalsy();
+  });
+});
+
+describe("Ox Alpha capability entries (provider-scoped, upstream #3483)", () => {
+  const GO_ID = "ox-alpha-free";
+  const OX_PAIRS = [
+    ["opencode", GO_ID],
+    ["oc", GO_ID],
+    ["opencode-go", GO_ID],
+    ["ocg", GO_ID],
+  ];
+
+  it.each(OX_PAIRS)("caps %s/%s report image+reasoning via opencode format", (provider, model) => {
+    const caps = getCapabilitiesForModel(provider, model);
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+    expect(caps.thinkingFormat).toBe("opencode");
+    expect(caps.contextWindow).toBe(1000000);
+    expect(caps.maxOutput).toBe(131072);
+  });
+
+  it("bare id without a provider keeps default (no vision)", () => {
+    expect(getCapabilitiesForModel(null, GO_ID).vision).toBe(false);
+  });
+
+  it("mismatched providers do not pick up Ox Alpha caps", () => {
+    expect(getCapabilitiesForModel("nvidia", GO_ID).vision).toBe(false);
+    expect(getCapabilitiesForModel("openai", GO_ID).thinkingFormat).not.toBe("opencode");
+  });
+
+  it("suffix '(max)' resolves to identical caps for all 4 pairs", () => {
+    for (const [provider, model] of OX_PAIRS) {
+      expect(getCapabilitiesForModel(provider, `${model}(max)`)).toEqual(getCapabilitiesForModel(provider, model));
+    }
+  });
+
+  it("numeric suffix '(8192)' resolves to identical caps", () => {
+    expect(getCapabilitiesForModel("ocg", `${GO_ID}(8192)`)).toEqual(getCapabilitiesForModel("ocg", GO_ID));
+  });
+
+  it("generic claude-sonnet-4.6(max) equals its base caps (existing behavior kept)", () => {
+    expect(getCapabilitiesForModel(null, "claude-sonnet-4.6(max)")).toEqual(getCapabilitiesForModel(null, "claude-sonnet-4.6"));
+  });
+
+  it("x-preview-f-free keeps fork videoInput + opencode format", () => {
+    expect(getCapabilitiesForModel("opencode", "x-preview-f-free")).toMatchObject({
+      vision: true,
+      videoInput: true,
+      reasoning: true,
+      thinkingFormat: "opencode",
+    });
+  });
 });

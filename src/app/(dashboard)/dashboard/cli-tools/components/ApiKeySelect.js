@@ -34,8 +34,8 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
 
   if (noKeys && mode !== CUSTOM_VALUE) {
     return (
-      <span className={`min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5 ${className}`}>
-        {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+      <span className={`min-w-0 break-all rounded bg-surface-2 px-2 py-2 text-xs text-text-muted sm:py-1.5 ${className}`}>
+        {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_tokenproxy (default)"}
       </span>
     );
   }
@@ -45,7 +45,7 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
       <select
         value={mode}
         onChange={handleSelect}
-        className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+        className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus-ring sm:py-1.5"
       >
         {apiKeys.map((k) => (
           <option key={k.id} value={k.key}>{k.key}</option>
@@ -58,7 +58,7 @@ export default function ApiKeySelect({ value, onChange, apiKeys = [], cloudEnabl
           value={customInput}
           onChange={handleCustomInput}
           placeholder="sk-..."
-          className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+          className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus-ring sm:py-1.5"
         />
       )}
     </div>

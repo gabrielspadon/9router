@@ -1,0 +1,107 @@
+# gitleaks configuration for TokenProxy.
+#
+# The full default ruleset stays enabled. Every exemption below is scoped to one
+# rule and pinned to an exact literal, never to a path: a path in the global
+# allowlist blinds every rule for that file, so a real credential pasted beside
+# an exempted constant would pass unseen.
+#
+# What is exempted here is public-by-design material, not credentials:
+#
+#   * OAuth client secrets for NATIVE, PUBLIC clients. RFC 8252 section 8.5
+#     states such a client cannot keep a secret, so these are distributed with
+#     the client by design and confer nothing on their own; the authorization
+#     code and PKCE verifier are what actually gate the exchange. Each value
+#     below is already published in the upstream npm tarball and in every other
+#     tool that speaks the same provider CLI protocol.
+#   * A Firebase Web API key, which identifies a project rather than
+#     authorizing access. Google documents it as safe to expose; access is
+#     enforced by security rules.
+#   * Microsoft's fixed Edge read-aloud token, a constant of that public
+#     endpoint's protocol.
+#   * Test fixtures: a generated throwaway RSA key used to assert that jose
+#     rejects a short modulus, an example API key shape, and the constant from
+#     RFC 6455 section 1.3.
+#
+# No value here reaches a TokenProxy account, a user credential, or anything
+# stored in the local database. User credentials are encrypted at rest and never
+# enter the repository.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Public native-client OAuth secrets (RFC 8252 s8.5), shipped in the published package"
+  regexTarget = "line"
+  regexes = [
+    '''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''',
+    '''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''',
+    '''3GUryQ7ldAeKEuD2obYnppsnmj58eP5u''',
+    '''4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW''',
+  ]
+
+  [[rules.allowlists]]
+  description = "Firebase Web API key, matched here by key name as well as by the gcp-api-key rule"
+  regexTarget = "line"
+  regexes = ['''AIzaSyDsOl-1XpT5err0Tcn0TFFod1H8gVGIycY''']
+
+  [[rules.allowlists]]
+  description = "Microsoft Edge read-aloud fixed public token, a constant of that endpoint's protocol"
+  regexTarget = "line"
+  regexes = ['''trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4''']
+
+  [[rules.allowlists]]
+  description = "Anthropic beta feature flag, a protocol header value and not a token"
+  regexTarget = "line"
+  regexes = ['''"oauth-2025-04-20"''']
+
+  [[rules.allowlists]]
+  description = "Documentation placeholders in the bulk-import modal, truncated and non-functional"
+  regexTarget = "line"
+  regexes = [
+    '''"access_token": "eyJ0eXAiOiJhdCtqd3Qi\.\.\."''',
+    '''"refresh_token": "LZhriF9bf88pPykpXCuZ9\.\.\."''',
+    '''"id_token": "eyJ0eXAiOiJKV1QiLCJhbGci\.\.\."''',
+  ]
+
+  [[rules.allowlists]]
+  description = "Test fixtures: example key shapes and the RFC 6455 s1.3 constant"
+  regexTarget = "line"
+  regexes = [
+    '''sk-tp-abcdef0123456789''',
+    '''sk-mach01-key01-ab12cd34''',
+    '''Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==''',
+  ]
+
+  [[rules.allowlists]]
+  description = "Internal error-code constant whose value is its own name, not a key"
+  regexTarget = "line"
+  regexes = [
+    '''INVALID_API_KEY: "OLLAMA_INVALID_API_KEY"''',
+  ]
+
+[[rules]]
+id = "gcp-api-key"
+
+  [[rules.allowlists]]
+  description = "Firebase Web API key: a project identifier Google documents as safe to expose, gated by security rules"
+  regexTarget = "line"
+  regexes = ['''AIzaSyDsOl-1XpT5err0Tcn0TFFod1H8gVGIycY''']
+
+[[rules]]
+id = "private-key"
+
+  # Pinned to the exact fixture bodies rather than to the file path. A path
+  # allowlist would exempt the whole file, so a real key pasted into it later
+  # would pass unseen; matching the literals means a NEW key in the same file is
+  # still a finding. These two were generated as throwaways to assert that jose
+  # rejects a modulus under 2048 bits, and authorize nothing.
+  [[rules.allowlists]]
+  description = "Throwaway RSA fixtures pinned by content, asserting jose rejects a short modulus"
+  regexes = [
+    '''MIICXAIBAAKBgQC9s2WlG2fi5V58yOhlNNWMSUBBNGl2vnhhhSNKIizroY0pyg2u''',
+    '''MIIEowIBAAKCAQEA0DtJ2qNJT1riQwv6u5E3T5jhVx2R1a\+FEAEg5UkmvCosKP5n''',
+    '''MHcCAQEEIF9II7FMdqoQhbohjGGnhMdzn5Fswb2Vuqty2g6dqKjDoAoGCCqGSM49''',
+  ]

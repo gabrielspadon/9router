@@ -1,7 +1,7 @@
 /**
  * Search Provider Request Builders
  *
- * Builds HTTP request `{ url, init }` for 10 search providers.
+ * Builds HTTP request `{ url, init }` for the dedicated search providers.
  *
  * @typedef {Object} SearchProviderConfig
  * @property {string} id
@@ -64,21 +64,30 @@ export function getProviderSetting(params, key) {
 }
 
 /**
- * Resolve base URL with optional override from providerOptions.baseUrl.
+ * Resolve base URL with optional override from providerOptions.baseUrl
+ * (client-controlled) or providerSpecificData.baseUrl (admin-controlled).
  *
- * The override is client-controlled and therefore SSRF-hardened: only public
- * http(s) URLs are accepted (internal/private/loopback/metadata addresses are
- * rejected via assertPublicUrl). The provider's own configured baseUrl is
- * trusted as-is (admin-controlled).
+ * The client-controlled override is SSRF-hardened: only public http(s) URLs are
+ * accepted (internal/private/loopback/metadata addresses are rejected via
+ * assertPublicUrl). The provider's own configured baseUrl is trusted as-is, and
+ * so is the one stored on the connection: both are set by the operator, not by
+ * the caller. Guarding the stored one too is what made a self-hosted SearXNG
+ * unreachable, since those sit on a private address (#1231) — the guard belongs
+ * on the request body, which is where the untrusted value comes from
+ * (open-sse/handlers/search/index.js:83 vs :84).
  *
  * @param {SearchProviderConfig} config
  * @param {SearchRequestParams} params
  * @returns {string}
  */
 export function resolveBaseUrl(config, params) {
-  const override = getProviderSetting(params, "baseUrl");
+  const fromCaller = params.providerOptions?.baseUrl;
+  const clientOverride =
+    typeof fromCaller === "string" && fromCaller.trim().length > 0 ? fromCaller.trim() : undefined;
+  const override = clientOverride || getProviderSetting(params, "baseUrl");
   if (override) {
-    // SSRF guard: client-supplied base URLs must be public http(s) only.
+    // Shape is checked for both: a bad URL is an operator mistake either way,
+    // and a non-http scheme is never a search endpoint.
     let parsed;
     try {
       parsed = new URL(override);
@@ -88,7 +97,8 @@ export function resolveBaseUrl(config, params) {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
     }
-    assertPublicUrl(override);
+    // SSRF guard: client-supplied base URLs must be public http(s) only.
+    if (clientOverride) assertPublicUrl(override);
   }
   return (override || config.baseUrl).replace(/\/+$/, "");
 }
@@ -347,29 +357,38 @@ function buildSearxngRequest(config, params) {
   };
 }
 
-function buildXquikRequest(config, params) {
-  const apiKey = params.token;
-  if (!apiKey) throw new Error("Xquik requires an API key");
+// DDGS metasearch API server (deedy5/ddgs, `pip install ddgs[api]` then `ddgs api`).
+// POST /search/text and /search/news, JSON body, no auth.
+function buildDdgsRequest(config, params) {
+  // Tolerate an endpoint-shaped base URL (the SearXNG default carries one).
+  const baseUrl = resolveBaseUrl(config, params).replace(/\/search(\/(text|news))?$/, "");
+  const isNews = params.searchType === "news";
+  const body = { query: params.query, max_results: params.maxResults };
 
-  const queryType = getProviderSetting(params, "queryType");
-  if (queryType && !["Latest", "Top"].includes(queryType)) {
-    throw new Error("Xquik queryType must be Latest or Top");
+  // DDGS region is "<country>-<language>" (us-en, uk-en, ru-ru); it needs both halves.
+  if (params.country && params.language) {
+    body.region = `${params.country.toLowerCase()}-${params.language.toLowerCase()}`;
   }
+  // DDGS timelimit accepts d/w/m/y on text but only d/w/m on news.
+  const timelimit = { day: "d", week: "w", month: "m", year: "y" }[params.timeRange];
+  if (timelimit && !(isNews && timelimit === "y")) body.timelimit = timelimit;
 
-  const qp = new URLSearchParams({
-    q: params.query,
-    limit: String(params.maxResults),
-  });
-  const cursor = getProviderSetting(params, "cursor");
-  if (cursor) qp.set("cursor", cursor);
-  if (queryType) qp.set("queryType", queryType);
-  if (params.language) qp.set("language", params.language);
+  const page = toPageNumber(params.offset, params.maxResults);
+  if (page) body.page = page;
+
+  const safesearch = getProviderSetting(params, "safesearch");
+  if (safesearch) body.safesearch = safesearch;
+  // Single or comma-delimited engine: bing, brave, duckduckgo, google, grokipedia,
+  // mojeek, startpage, yandex, yahoo, wikipedia. Omitted means DDGS picks ("auto").
+  const backend = getProviderSetting(params, "backend");
+  if (backend) body.backend = backend;
 
   return {
-    url: `${resolveBaseUrl(config, params)}?${qp}`,
+    url: `${baseUrl}${isNews ? "/search/news" : "/search/text"}`,
     init: {
-      method: "GET",
-      headers: { Accept: "application/json", "x-api-key": apiKey },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     },
   };
 }
@@ -422,6 +441,33 @@ function buildGlmSearchRequest(config, params) {
   };
 }
 
+function buildXquikRequest(config, params) {
+  const apiKey = params.token;
+  if (!apiKey) throw new Error("Xquik requires an API key");
+
+  const queryType = getProviderSetting(params, "queryType");
+  if (queryType && !["Latest", "Top"].includes(queryType)) {
+    throw new Error("Xquik queryType must be Latest or Top");
+  }
+
+  const qp = new URLSearchParams({
+    q: params.query,
+    limit: String(params.maxResults),
+  });
+  const cursor = getProviderSetting(params, "cursor");
+  if (cursor) qp.set("cursor", cursor);
+  if (queryType) qp.set("queryType", queryType);
+  if (params.language) qp.set("language", params.language);
+
+  return {
+    url: `${resolveBaseUrl(config, params)}?${qp}`,
+    init: {
+      method: "GET",
+      headers: { Accept: "application/json", "x-api-key": apiKey },
+    },
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const BUILDERS = {
@@ -435,9 +481,10 @@ const BUILDERS = {
   "searchapi": buildSearchApiRequest,
   "youcom": buildYouComRequest,
   "searxng": buildSearxngRequest,
-  "xquik": buildXquikRequest,
+  "ddgs": buildDdgsRequest,
   "ollama-search": buildOllamaSearchRequest,
   "glm": buildGlmSearchRequest,
+  "xquik": buildXquikRequest,
 };
 
 /**

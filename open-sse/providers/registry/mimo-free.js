@@ -19,9 +19,13 @@ export default {
     baseUrl: "https://api.xiaomimimo.com/api/free-ai/openai/chat",
     noAuth: true,
   },
-  models: [
-    { id: "mimo-auto", name: "MiMo Auto" },
-  ],
+  // Emptied for the same reason the header gives and the mmf.js twin now does:
+  // the channel is gone, so advertising mimo-auto only offers a model the
+  // upstream answers with 403 "Illegal access" directly and 400 "Unsupported
+  // model" through the gateway (#3035). The fetcher below still runs, so a
+  // revived channel repopulates this on its own, and passthroughModels means
+  // anyone who wants to try an id by hand still can.
+  models: [],
   modelsFetcher: { url: "https://models.dev/api.json", type: "mimo-free" },
   passthroughModels: true,
 };

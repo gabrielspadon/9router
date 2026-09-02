@@ -2,6 +2,8 @@ import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { PROVIDERS } from "../config/providers.js";
 import { randomUUID } from "node:crypto";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { createExecutorResponseHeaderTimeout } from "../utils/responseHeaderTimeout.js";
 
 // WindsurfExecutor — Codeium gRPC-web chat.
 //
@@ -396,7 +398,7 @@ export class WindsurfExecutor extends BaseExecutor {
     return null;
   }
 
-  async execute({ model, body, stream, credentials, signal, log, upstreamExtraHeaders, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, upstreamExtraHeaders, proxyOptions = null, connectTimeout = null }) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || "";
     const wsModel = resolveWsModelId(model);
 
@@ -416,12 +418,25 @@ export class WindsurfExecutor extends BaseExecutor {
 
     log?.debug?.("WS", `Windsurf → ${wsModel} (${wsMessages.length} messages)`);
 
-    const upstream = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body: framedPayload,
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
       signal,
-    }, proxyOptions);
+    });
+    let upstream;
+    try {
+      upstream = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body: framedPayload,
+        signal: deadline.signal,
+      }, proxyOptions);
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
 
     if (!upstream.ok && upstream.status !== 200) {
       return { response: upstream, url, headers, transformedBody: protoPayload };

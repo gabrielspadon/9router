@@ -27,38 +27,15 @@ export default function Avatar({
     return name.substring(0, 2).toUpperCase();
   };
 
-  // Generate color from name
-  const getColorFromName = (name) => {
-    if (!name) return "bg-primary";
-    const colors = [
-      "bg-red-500",
-      "bg-orange-500",
-      "bg-amber-500",
-      "bg-yellow-500",
-      "bg-lime-500",
-      "bg-green-500",
-      "bg-emerald-500",
-      "bg-teal-500",
-      "bg-cyan-500",
-      "bg-sky-500",
-      "bg-blue-500",
-      "bg-indigo-500",
-      "bg-violet-500",
-      "bg-purple-500",
-      "bg-fuchsia-500",
-      "bg-pink-500",
-      "bg-rose-500",
-    ];
-    const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
-  };
+  // No generated hue. A hashed colour per name was decoration; the initials
+  // already carry the identity, so the chip stays neutral (contract section 3).
 
   if (src) {
     return (
       <div
         className={cn(
           "rounded-full bg-cover bg-center bg-no-repeat",
-          "ring-2 ring-white dark:ring-surface-dark shadow-sm",
+          "ring-2 ring-surface",
           sizes[size],
           className
         )}
@@ -72,10 +49,9 @@ export default function Avatar({
   return (
     <div
       className={cn(
-        "rounded-full flex items-center justify-center font-semibold text-white",
-        "ring-2 ring-white dark:ring-surface-dark shadow-sm",
+        "rounded-full flex items-center justify-center font-semibold",
+        "bg-surface-3 text-text-main ring-2 ring-surface",
         sizes[size],
-        getColorFromName(name),
         className
       )}
       role="img"

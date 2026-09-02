@@ -1,5 +1,8 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { errorResponse } from "open-sse/utils/error.js";
+import { createDeferredResponsesResponse } from "open-sse/utils/responsesStreamBridge.js";
 
 let initialized = false;
 
@@ -26,5 +29,17 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  return await handleChat(request);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
+  }
+
+  if (body?.stream !== true) return handleChat(request, null, { body });
+
+  return createDeferredResponsesResponse(
+    (signal) => handleChat(request, null, { body, signal }),
+    { signal: request.signal },
+  );
 }

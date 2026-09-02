@@ -1,8 +1,11 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { CLAUDE_BLOCK } from "../translator/schema/index.js";
+import { PROVIDERS } from "../config/providers.js";
+import { canonicalEchoModel } from "../services/model.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, decloakClaudePassthroughToolUse } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -13,6 +16,64 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
+
+function withoutExactProviderCosts(usage) {
+  if (!usage || typeof usage !== "object") return usage;
+  const { cost_usd, cost_in_usd, cost_in_usd_ticks, ...publicUsage } = usage;
+  return publicUsage;
+}
+
+// Tool-call bytes are model output too. Only visible text and reasoning fed
+// totalContentLength, so a turn that is entirely tool calls estimated zero
+// output tokens while the tool calls themselves arrived intact — an accounting
+// hole, not lost content (#1382). Counted into the length counter only:
+// accumulatedContent stays the visible transcript, so the empty-stream checks
+// that read it are unchanged.
+function toolCallOutputLength(parsed) {
+  let length = 0;
+  const add = (value) => {
+    if (typeof value === "string") length += value.length;
+    else if (value && typeof value === "object") length += JSON.stringify(value).length;
+  };
+
+  // OpenAI: streamed argument fragments, plus the legacy function_call shape.
+  const delta = parsed?.choices?.[0]?.delta;
+  if (Array.isArray(delta?.tool_calls)) {
+    for (const call of delta.tool_calls) {
+      add(call?.function?.name);
+      add(call?.function?.arguments);
+    }
+  }
+  add(delta?.function_call?.name);
+  add(delta?.function_call?.arguments);
+
+  // Claude: the name rides on the tool_use block start, the arguments arrive as
+  // input_json_delta fragments.
+  if (parsed?.type === "content_block_start" && parsed.content_block?.type === "tool_use") {
+    add(parsed.content_block.name);
+  }
+  add(parsed?.delta?.partial_json);
+
+  // Gemini: one whole functionCall per part, args as an object.
+  const parts = parsed?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    for (const part of parts) {
+      if (!part?.functionCall) continue;
+      add(part.functionCall.name);
+      add(part.functionCall.args);
+    }
+  }
+
+  // Ollama native NDJSON.
+  if (Array.isArray(parsed?.message?.tool_calls)) {
+    for (const call of parsed.message.tool_calls) {
+      add(call?.function?.name);
+      add(call?.function?.arguments);
+    }
+  }
+
+  return length;
+}
 
 /**
  * Stream modes
@@ -45,11 +106,13 @@ export function createSSEStream(options = {}) {
     reqLogger = null,
     toolNameMap = null,
     customToolNames = null,
+    responsesToolNameMap = null,
     model = null,
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    streamState = null
   } = options;
 
   let buffer = "";
@@ -59,7 +122,7 @@ export function createSSEStream(options = {}) {
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
   const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
+    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), responsesToolNameMap, model }
     : null;
 
   let totalContentLength = 0;
@@ -75,34 +138,37 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
-  let finalized = false;
+  let passthroughFinishSeen = false;  // passthrough: duplicate finish chunks from upstream
+  let passthroughDoneSent = false;    // passthrough: upstream already sent [DONE]
 
-  // Usage/logging tail, callable from transform() as well as flush(): a client that
-  // closes right after the terminal event cancels the reader, and flush() never runs.
-  const finalizeStream = () => {
-    if (finalized) return;
-    finalized = true;
+  // Keep streamState in sync so onStreamAbandoned can read partial usage on a
+  // disconnect or a mid-stream upstream error (flush/cancel never run when the
+  // upstream errors the readable before the client sees it).
+  const syncState = () => {
+    if (!streamState) return;
+    streamState.content = accumulatedContent;
+    streamState.thinking = accumulatedThinking;
+    streamState.ttftAt = ttftAt;
+    streamState.usage = mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage ?? null;
+  };
 
-    const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
-    let finalUsage = isPassthrough ? usage : state?.usage;
-
-    if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
-      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
-      if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
-    }
-
-    if (hasValidUsage(finalUsage)) {
-      logUsage(isPassthrough ? provider : (state?.provider || targetFormat), finalUsage, model, connectionId, apiKey);
-    } else {
-      appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
-    }
-
-    if (onStreamComplete) {
-      onStreamComplete({
-        content: accumulatedContent,
-        thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
-    }
+  // The stream finishes exactly once. `flush` runs when the upstream ends, and
+  // `cancel` when the client goes away mid-stream — the Streams spec calls one
+  // or the other, never both. Recording lived only in `flush`, so an aborted
+  // request left no usage row, no request detail and nothing in Recent
+  // Requests, even though the provider had already generated (and charged for)
+  // the partial answer (#3488).
+  let streamFinished = false;
+  const finishStream = (usage, { aborted = false } = {}) => {
+    if (streamFinished) return;
+    streamFinished = true;
+    if (!onStreamComplete) return;
+    onStreamComplete(
+      { content: accumulatedContent, thinking: accumulatedThinking },
+      usage,
+      ttftAt,
+      { aborted },
+    );
   };
 
   return new TransformStream({
@@ -112,10 +178,10 @@ export function createSSEStream(options = {}) {
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
         const trimmed = line.trim();
         if (isDebugEnabled && trimmed) {
           sseLineCount++;
@@ -134,16 +200,48 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
-          let responsesTerminal = false;
+
+          // Dedup terminators: some upstreams (e.g. stealth/ox-alpha) send the
+          // finish chunk twice and/or their own [DONE]; clients like AI SDK
+          // treat anything after the first finish_reason as a protocol error.
+          const isDoneLine = trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]";
+          if (isDoneLine && passthroughDoneSent) continue;
+          if (isDoneLine) passthroughDoneSent = true;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
+              // Some Anthropic-compatible providers omit `signature` from the
+              // thinking block start. Strict Messages clients deserialize that
+              // field before later signature_delta events arrive.
+              let fieldsInjected = false;
+              const toolNameDecloaked = decloakClaudePassthroughToolUse(parsed, sourceFormat, toolNameMap);
+              if (
+                PROVIDERS[provider]?.quirks?.ensureThinkingSignature &&
+                parsed.type === "content_block_start" &&
+                parsed.content_block?.type === CLAUDE_BLOCK.THINKING &&
+                parsed.content_block.signature === undefined
+              ) {
+                parsed.content_block.signature = "";
+                fieldsInjected = true;
+              }
+
               const idFixed = fixInvalidId(parsed);
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
-              let fieldsInjected = false;
+              // Echo a stable, listing-valid model name instead of the upstream
+              // id. Passthrough providers (opencode free tier) echo the bare
+              // resolved model with the provider prefix stripped; clients that
+              // trust the echo re-send it on the next hop. Prefixed requests
+              // keep their exact form; bare requests resolved to a
+              // connection-less catalog provider get the listing form
+              // re-injected (OpenRouter-style proxy echo).
+              const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+              if (typeof parsed.model === "string" && echoModel && parsed.model !== echoModel) {
+                parsed.model = echoModel;
+                fieldsInjected = true;
+              }
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
@@ -177,13 +275,22 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // OpenRouter-style gateways (e.g. stealth/ox-alpha) stream reasoning
+              // under `delta.reasoning`, but OpenAI-compatible clients (Cursor,
+              // OpenCode, pi) expect `delta.reasoning_content`. Normalize so
+              // clients render reasoning instead of an empty answer.
+              const delta = parsed.choices?.[0]?.delta;
+              if (delta && typeof delta.reasoning === "string" && delta.reasoning_content === undefined) {
+                delta.reasoning_content = delta.reasoning;
+                delete delta.reasoning;
+                fieldsInjected = true; // force output from the mutated parsed
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
-
-              const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              const reasoning = delta?.reasoning_content || delta?.reasoning;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -192,15 +299,24 @@ export function createSSEStream(options = {}) {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
               }
+              totalContentLength += toolCallOutputLength(parsed);
+
+              syncState();
 
               const extracted = extractUsage(parsed);
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
               }
-
-              responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
+              syncState();
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              if (isFinishChunk && passthroughFinishSeen) {
+                // Duplicate finish chunk (the second usually carries only
+                // upstream-side usage) — drop it: two finish_reasons in one
+                // stream break AI SDK clients ("content after finish reason").
+                continue;
+              }
+              if (isFinishChunk) passthroughFinishSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -212,7 +328,7 @@ export function createSSEStream(options = {}) {
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed || fieldsInjected) {
+              } else if (idFixed || fieldsInjected || toolNameDecloaked) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
@@ -234,8 +350,6 @@ export function createSSEStream(options = {}) {
 
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
-          // Responses clients (codex CLI) close on response.completed instead of [DONE]
-          if (responsesTerminal) finalizeStream();
           continue;
         }
 
@@ -298,8 +412,28 @@ export function createSSEStream(options = {}) {
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        } else if (parsed.choices?.[0]?.delta?.reasoning) {
+          totalContentLength += parsed.choices[0].delta.reasoning.length;
+          accumulatedThinking += parsed.choices[0].delta.reasoning;
         }
         
+        // Ollama native NDJSON: content rides on `message`, not on a delta or a
+        // choices array, so without this branch every Ollama stream is logged
+        // as an empty response no matter how much text the client received.
+        // Gated on the target format because `message` is a common key.
+        if (targetFormat === FORMATS.OLLAMA && parsed.message) {
+          const ollamaContent = parsed.message.content;
+          const ollamaThinking = parsed.message.thinking;
+          if (typeof ollamaContent === "string" && ollamaContent) {
+            totalContentLength += ollamaContent.length;
+            accumulatedContent += ollamaContent;
+          }
+          if (typeof ollamaThinking === "string" && ollamaThinking) {
+            totalContentLength += ollamaThinking.length;
+            accumulatedThinking += ollamaThinking;
+          }
+        }
+
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
@@ -315,19 +449,29 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        totalContentLength += toolCallOutputLength(parsed);
+
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        syncState();
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
-          const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
+          const outbound = parsed.response?.usage
+            ? {
+                ...parsed,
+                response: {
+                  ...parsed.response,
+                  usage: withoutExactProviderCosts(parsed.response.usage),
+                },
+              }
+            : parsed;
+          const output = formatSSE({ event: openAIResponsesEventName, data: outbound }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           currentOpenAIResponsesEvent = null;
           sseEmittedCount++;
-          // Responses clients (codex) close on response.completed instead of [DONE]
-          if (openAIResponsesTerminalSeen) finalizeStream();
           continue;
         }
 
@@ -384,26 +528,64 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (buffer) {
             let output = buffer;
-            if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
+            if (buffer.startsWith("data:")) {
+              try {
+                const parsed = JSON.parse(buffer.slice(5).trim());
+                if (parsed === null) {
+                  output = "";
+                } else if (decloakClaudePassthroughToolUse(parsed, sourceFormat, toolNameMap)) {
+                  output = `data: ${JSON.stringify(parsed)}`;
+                }
+              } catch {
+                // Preserve a malformed trailing frame exactly as received.
+              }
+            }
+            if (output.startsWith("data:") && !output.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
             }
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            // Ensure the trailing SSE frame ends with a newline before the
+            // [DONE] sentinel — upstreams that close without a final \n would
+            // glue "...}data: [DONE]" together and break client parsers.
+            if (output) {
+              if (!output.endsWith("\n")) output += "\n";
+              reqLogger?.appendConvertedChunk?.(output);
+              controller.enqueue(sharedEncoder.encode(output));
+            }
           }
 
+          if (!hasValidUsage(usage) && totalContentLength > 0) {
+            usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+          }
+
+          if (hasValidUsage(usage)) {
+            logUsage(provider, usage, model, connectionId, apiKey);
+          } else {
+            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          }
+          
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
+          //
+          // So do Anthropic clients, and for a better reason: `data: [DONE]` is
+          // not in the Anthropic wire protocol at all. That stream ends at
+          // `event: message_stop`, and every event on it carries an `event:`
+          // line, so a bare data-only frame arriving after the message has
+          // ended is a frame the SDK has no state for. The sentinel is an
+          // OpenAI convention and belongs only on streams whose CLIENT speaks
+          // OpenAI, which is the source format, not the provider.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
-          if (!streamDoneSent && !isGeminiFamily) {
+          const clientSpeaksClaude = sourceFormat === FORMATS.CLAUDE;
+          if (!streamDoneSent && !passthroughDoneSent && !isGeminiFamily && !clientSpeaksClaude) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
-          finalizeStream();
+          syncState();
+          finishStream(usage);
           return;
         }
 
@@ -414,12 +596,12 @@ export function createSSEStream(options = {}) {
           const parsed = parseSSELine(buffer.trim(), targetFormat);
           // parseSSELine turns the SSE sentinel "data: [DONE]" into { done: true },
           // which must not be translated. An Ollama chunk also carries done:true,
-          // but it is the real final chunk — it holds finish_reason and the token
+          // but it is the real final chunk — it holds done_reason and the token
           // counts — so it has to go through.
           const isDoneSentinel = parsed?.done && targetFormat !== FORMATS.OLLAMA;
           if (parsed && !isDoneSentinel) {
-            // Same accumulation the transform loop does, so finalizeStream() can
-            // log a tail chunk's tokens instead of falling back to null.
+            // Same accumulation the transform loop does, so the usage logged at
+            // cancel()/finish time carries a tail chunk's tokens instead of null.
             const extracted = extractUsage(parsed);
             if (extracted) state.usage = mergeUsage(state.usage, extracted);
 
@@ -441,6 +623,14 @@ export function createSSEStream(options = {}) {
               }
             }
           }
+        }
+
+        // Make fallback usage available before translators emit their terminal
+        // event. Responses clients read usage from response.completed, so
+        // estimating after flush leaves their context counters at zero.
+        if (sourceFormat === FORMATS.OPENAI_RESPONSES &&
+            !hasValidUsage(state?.usage) && totalContentLength > 0) {
+          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
@@ -478,16 +668,46 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
-        finalizeStream();
+        // Preserve the existing post-translation estimation timing for every
+        // other client format.
+        if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
+          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
+        }
+
+        if (hasValidUsage(state?.usage)) {
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
+        } else {
+          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+        }
+        
+        syncState();
+        finishStream(state?.usage);
       } catch (error) {
         console.log("Error in flush:", error);
-        finalizeStream();
+      }
+    },
+
+    // The client hung up. Nothing more can be written, but everything that was
+    // already generated is worth recording — with whatever usage the provider
+    // had reported by then.
+    cancel() {
+      try {
+        // TRANSLATE keeps usage on `state`, PASSTHROUGH in the closure variable
+        // — the same split the two flush paths above make.
+        let reported = state ? state.usage : usage;
+        if (!hasValidUsage(reported) && totalContentLength > 0) {
+          reported = estimateUsage(body, totalContentLength, state ? sourceFormat : FORMATS.OPENAI);
+        }
+        syncState();
+        finishStream(reported, { aborted: true });
+      } catch (error) {
+        console.log("Error in cancel:", error);
       }
     }
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, streamState = null, responsesToolNameMap = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -496,23 +716,28 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     reqLogger,
     toolNameMap,
     customToolNames,
+    responsesToolNameMap,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, streamState = null, toolNameMap = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
+    sourceFormat,
     provider,
     reqLogger,
+    toolNameMap,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }

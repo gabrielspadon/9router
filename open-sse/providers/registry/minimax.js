@@ -22,6 +22,7 @@ export default {
     headers: { ...CLAUDE_API_HEADERS },
     quirks: {
       dropOutputConfig: true,
+      ensureThinkingSignature: true,
     },
     reasoningInject: {
       scope: "all",
@@ -70,9 +71,11 @@ export default {
   ],
   serviceKinds: ["llm","image","imageToText","webSearch","tts"],
   ttsConfig: { baseUrl: "https://api.minimax.io/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts" },
-  imageConfig: { baseUrl: "https://api.minimaxi.com/v1/images/generations" },
+  // Image generation is /v1/image_generation on the .io host, not the OpenAI
+  // path on the .com one; the OpenAI path returns a 404 page (#2482).
+  imageConfig: { baseUrl: "https://api.minimax.io/v1/image_generation" },
   searchViaChat: {
-    defaultModel: "MiniMax-M2.7",
+    defaultModel: "MiniMax-M3",
     endpoint: "https://api.minimaxi.com/v1/text/chatcompletion_v2",
     pricingUrl: "https://www.minimaxi.com/document/price",
   },

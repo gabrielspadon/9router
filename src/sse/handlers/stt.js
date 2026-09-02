@@ -1,14 +1,19 @@
 import {
-  extractApiKey, isValidApiKey,
+  isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
+import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo } from "../services/model.js";
+import { isInternalModelTestAuthorized } from "@/lib/auth/internalCliToken";
+import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
+import { handleComboChat } from "open-sse/services/combo.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
+import { recordApiKeyDevice } from "@/sse/services/apiKeyDevices.js";
+import { refuseDisallowedModel } from "@/sse/services/modelAccess.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -29,16 +34,56 @@ export async function handleStt(request) {
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
+  const resolvedApiKey = await resolveClientApiKey(request, isValidApiKey);
+  const presentedApiKey = resolvedApiKey.apiKey;
+  const apiKey = resolvedApiKey.valid ? presentedApiKey : null;
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    const authorized = await isInternalModelTestAuthorized(request, apiKey, isValidApiKey);
+    if (!authorized) return errorResponse(HTTP_STATUS.UNAUTHORIZED, presentedApiKey ? "Invalid API key" : "Missing API key");
+    // Count the distinct clients on this key, so a leaked or shared key is
+    // visible as more than a bigger bill (#930). Only a VALIDATED key is
+    // recorded: counting unchecked strings would let anyone grow the map.
+    recordApiKeyDevice(apiKey, request);
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+
+  // The key's model allowlist (#1154) was only ever enforced in rerank, so
+  // every other modality could reach a barred model with the same key
+  // (#448, #2833).
+  const barred = await refuseDisallowedModel(apiKey, modelStr, log);
+  if (barred) return barred;
+
   if (!formData.get("file")) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
+  // Combo expansion: model may be a combo name -> run fallback/round-robin across
+  // members, as every other modality handler already does. Speech-to-text was the
+  // one that never got it, so a combo name here was parsed as a literal
+  // "provider/model" and rejected (#3600).
+  // autoSwitch is off: capability and context-fit reordering read a chat-shaped
+  // body, and this request carries multipart audio with nothing to classify.
+  const comboModels = await getComboModels(modelStr);
+  if (comboModels) {
+    const comboStrategies = settings.comboStrategies || {};
+    const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
+    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+    log.info("STT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    return handleComboChat({
+      body: formData,
+      models: comboModels,
+      handleSingleModel: (_body, m) => handleSingleModelStt(formData, m),
+      log,
+      comboName: modelStr,
+      comboStrategy,
+      comboStickyLimit,
+      autoSwitch: false,
+    });
+  }
+
+  return handleSingleModelStt(formData, modelStr);
+}
+
+async function handleSingleModelStt(formData, modelStr) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -62,8 +107,8 @@ export async function handleStt(request) {
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const msg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const msg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         return unavailableResponse(status, `[${provider}/${model}] ${msg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);

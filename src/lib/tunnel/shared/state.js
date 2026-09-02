@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { randomInt } from "crypto";
 import { DATA_DIR } from "@/lib/dataDir.js";
 
 const TUNNEL_DIR = path.join(DATA_DIR, "tunnel");
@@ -33,7 +34,7 @@ export function clearState() {
 export function generateShortId() {
   let result = "";
   for (let i = 0; i < SHORT_ID_LENGTH; i++) {
-    result += SHORT_ID_CHARS.charAt(Math.floor(Math.random() * SHORT_ID_CHARS.length));
+    result += SHORT_ID_CHARS.charAt(randomInt(SHORT_ID_CHARS.length));
   }
   return result;
 }

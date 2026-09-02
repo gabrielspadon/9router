@@ -4,14 +4,17 @@ import { useState } from "react";
 import Card from "@/shared/components/Card";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import Badge from "@/shared/components/Badge";
+import Button from "@/shared/components/Button";
 import QuotaProgressBar from "./QuotaProgressBar";
-import { calculatePercentage } from "./utils";
+import { getRemainingPercentage } from "./utils";
 
+// A plan tier is a label, not a health state, so every tier reads neutral and
+// the plan name itself carries the distinction. See docs/design/design-system.md section 1.
 const planVariants = {
-  free: "default",
-  pro: "primary",
-  ultra: "success",
-  enterprise: "info",
+  free: "neutral",
+  pro: "neutral",
+  ultra: "neutral",
+  enterprise: "neutral",
 };
 
 export default function ProviderLimitCard({
@@ -73,14 +76,14 @@ export default function ProviderLimitCard({
             />
           </div>
 
-          <div>
-            <h3 className="font-semibold text-text-primary">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-text-main">
               {name || provider}
             </h3>
             {plan && (
               <Badge
-                variant={planVariants[plan?.toLowerCase()] || "default"}
-                size="xs"
+                variant={planVariants[plan?.toLowerCase()] || "neutral"}
+                size="sm"
               >
                 {plan}
               </Badge>
@@ -89,56 +92,59 @@ export default function ProviderLimitCard({
         </div>
 
         {/* Refresh Button */}
-        <button
+        <Button
+          variant="ghost" size="icon"
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="shrink-0"
           title="Refresh quota"
+          aria-label={`Refresh quota for ${name || provider}`}
         >
           <span
-            className={`material-symbols-outlined text-[20px] text-text-muted ${
+            aria-hidden="true"
+            className={`material-symbols-outlined text-[20px] ${
               refreshing || loading ? "animate-spin" : ""
             }`}
           >
             refresh
           </span>
-        </button>
+        </Button>
       </div>
 
       {/* Loading State */}
       {loading && (
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="h-4 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
-            <div className="h-2 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
+            <div className="h-4 bg-surface-3 rounded animate-pulse" />
+            <div className="h-2 bg-surface-3 rounded animate-pulse" />
           </div>
           <div className="space-y-2">
-            <div className="h-4 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
-            <div className="h-2 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
+            <div className="h-4 bg-surface-3 rounded animate-pulse" />
+            <div className="h-2 bg-surface-3 rounded animate-pulse" />
           </div>
         </div>
       )}
 
       {/* Error State */}
       {!loading && error && (
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+        <div className="p-4 rounded-lg bg-danger-soft border border-danger-line" role="alert">
           <div className="flex items-start gap-2">
-            <span className="material-symbols-outlined text-red-500 text-[20px]">
+            <span className="material-symbols-outlined text-danger text-[20px]" aria-hidden="true">
               error
             </span>
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className="min-w-0 text-sm text-danger">{error}</p>
           </div>
         </div>
       )}
 
       {/* Info Message (for providers without API) */}
       {!loading && !error && message && (
-        <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+        <div className="p-4 rounded-lg bg-info-soft border border-info-line">
           <div className="flex items-start gap-2">
-            <span className="material-symbols-outlined text-blue-500 text-[20px]">
+            <span className="material-symbols-outlined text-info text-[20px]" aria-hidden="true">
               info
             </span>
-            <p className="text-sm text-blue-600 dark:text-blue-400">
+            <p className="min-w-0 text-sm text-info">
               {message}
             </p>
           </div>
@@ -149,11 +155,7 @@ export default function ProviderLimitCard({
       {!loading && !error && !message && quotas?.length > 0 && (
         <div className="space-y-4">
           {quotas.map((quota, index) => {
-            // For Antigravity, use remainingPercentage if available, otherwise calculate
-            const percentage =
-              quota.remainingPercentage !== undefined
-                ? Math.round(((quota.total - quota.used) / quota.total) * 100)
-                : calculatePercentage(quota.used, quota.total);
+            const percentage = getRemainingPercentage(quota);
             const unlimited = quota.total === 0 || quota.total === null;
 
             return (
@@ -175,7 +177,7 @@ export default function ProviderLimitCard({
       {/* Empty State */}
       {!loading && !error && !message && quotas?.length === 0 && (
         <div className="text-center py-8 text-text-muted">
-          <span className="material-symbols-outlined text-[48px] opacity-20">
+          <span className="material-symbols-outlined text-[48px] opacity-20" aria-hidden="true">
             data_usage
           </span>
           <p className="text-sm mt-2">No quota data available</p>

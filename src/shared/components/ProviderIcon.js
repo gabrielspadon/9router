@@ -19,7 +19,6 @@ export default function ProviderIcon({
   size = 32,
   className = "",
   fallbackText = "?",
-  fallbackColor,
 }) {
   const effectiveSrc = resolveSrc(src, providerId);
   const [errored, setErrored] = useState(false);
@@ -31,7 +30,8 @@ export default function ProviderIcon({
         style={{
           width: size,
           height: size,
-          color: fallbackColor,
+          backgroundColor: "var(--color-surface-3)",
+          color: "var(--color-text-main)",
           fontSize: Math.max(10, Math.floor(size * 0.38)),
         }}
       >
@@ -66,5 +66,4 @@ ProviderIcon.propTypes = {
   size: PropTypes.number,
   className: PropTypes.string,
   fallbackText: PropTypes.string,
-  fallbackColor: PropTypes.string,
 };

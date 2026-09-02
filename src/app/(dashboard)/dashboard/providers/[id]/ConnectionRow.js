@@ -3,12 +3,39 @@
 import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle, Tooltip } from "@/shared/components";
+import { Badge, Button, StatusToken, Toggle, Tooltip } from "@/shared/components";
+import { translate } from "@/i18n/runtime";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+const HOT_RELOAD_BADGE_VARIANTS = {
+  queued: "default",
+  testing: "primary",
+  success: "success",
+  failed: "error",
+  partial: "warning",
+};
+
+export function getPersistedCodexPlan(connection) {
+  if (connection?.provider !== "codex") return null;
+
+  const candidates = [
+    connection.providerSpecificData?.codexSubscriptionPlan,
+    connection.providerSpecificData?.chatgptPlanType,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const plan = candidate.trim();
+    if (plan && plan.toLowerCase() !== "unknown") return plan;
+  }
+  return null;
+}
+
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, hotReload = null, hotReloadStatus = null, verification = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [syncingUsername, setSyncingUsername] = useState(false);
+  const [syncedUsername, setSyncedUsername] = useState("");
+  const [usernameSyncStatus, setUsernameSyncStatus] = useState("");
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
@@ -74,7 +101,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const isCookieConnection = rowAuthType === "cookie";
   const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
   const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
-  const displayName = connection.name?.trim()
+  const displayName = syncedUsername || connection.name?.trim()
     || connection.email?.trim()
     || connection.displayName?.trim()
     || (isOAuthConnection ? "OAuth Account" : isCookieConnection ? "Cookie Account" : "API Key");
@@ -83,6 +110,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
       ? connection.displayName.trim()
       : null;
+  const verificationError = verification?.error === "Verification link expired" || verification?.error === "Unable to load verification link"
+    ? verification.error
+    : null;
+  const codexPlan = getPersistedCodexPlan(connection);
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -117,6 +148,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     : connection.testStatus;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
+  // Badge variants only cover success/error/default; StatusToken adds the
+  // hollow-ring idle glyph so a disabled or unknown row stays visually
+  // distinct from a genuinely healthy one instead of collapsing to grey text.
+  const statusTone = { success: "ok", error: "failing" }[getStatusVariant()] || "idle";
+  const statusLabel = connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown");
 
   const getOneByOneVariant = () => {
     if (!oneByOneStatus) return "default";
@@ -135,49 +171,106 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     return null;
   };
 
+  const getHotReloadLabel = () => {
+    if (!hotReloadStatus) return null;
+    if (hotReloadStatus.state === "queued") return "queued";
+    if (hotReloadStatus.state === "testing") return "reloading";
+    if (hotReloadStatus.state === "success") return "reloaded";
+    if (hotReloadStatus.state === "partial") return hotReloadStatus.error ? `partial: ${hotReloadStatus.error}` : "partial";
+    if (hotReloadStatus.state === "failed") return hotReloadStatus.error ? `failed: ${hotReloadStatus.error}` : "failed";
+    return null;
+  };
+
+  const handleSyncUsername = async () => {
+    if (connection.provider !== "github") return;
+
+    setSyncingUsername(true);
+    setUsernameSyncStatus("");
+    try {
+      const response = await fetch(`/api/providers/${encodeURIComponent(connection.id)}/sync-username`, {
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => ({}));
+      const username = typeof payload.username === "string" ? payload.username.trim() : "";
+      if (!response.ok || !username) {
+        setUsernameSyncStatus("Unable to sync username");
+        return;
+      }
+      setSyncedUsername(username);
+      setUsernameSyncStatus("Username synced");
+    } catch {
+      setUsernameSyncStatus("Unable to sync username");
+    } finally {
+      setSyncingUsername(false);
+    }
+  };
+
   return (
-    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors duration-150 hover:bg-surface-2 sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
-          <button
+          <Button
+            variant="bare" size="icon-sm"
             onClick={onMoveUp}
             disabled={isFirst}
-            className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            className={isFirst ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
+            title="Raise connection priority"
+            aria-label="Raise connection priority"
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
-          </button>
-          <button
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
+          </Button>
+          <Button
+            variant="bare" size="icon-sm"
             onClick={onMoveDown}
             disabled={isLast}
-            className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            className={isLast ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}
+            title="Lower connection priority"
+            aria-label="Lower connection priority"
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
-          </button>
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
+          </Button>
         </div>
-        <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
+        <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-sm text-text-muted">
           {authIcon}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{displayName}</p>
+          {/* Name and live state are the object this row exists to show, so
+              both sit on the primary line instead of the state Badge reading
+              at the same weight as the metadata row below. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="text-sm font-medium truncate" title={displayName}>{displayName}</p>
+            <StatusToken tone={statusTone} className="shrink-0">{statusLabel}</StatusToken>
+          </div>
           {secondaryDisplayName && (
-            <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
+            <p className="text-xs text-text-muted truncate" title={secondaryDisplayName}>{secondaryDisplayName}</p>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
-            </Badge>
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {codexPlan && (
+              <Badge variant="primary" size="sm">
+                <span className="sr-only">Codex subscription plan </span>
+                {codexPlan}
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
               </Badge>
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
-              <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
+            {/* Shown even when the connection is disabled. The dashboard's
+                error badge counts disabled rows, so hiding the text here left
+                the operator a count with nothing to explain it (#1447). Muted
+                rather than danger-coloured, so a disabled row still reads as
+                not-in-play. */}
+            {connection.lastError && (
+              <span
+                className={`max-w-full truncate text-xs sm:max-w-[300px] ${connection.isActive === false ? "text-text-muted" : "text-danger"}`}
+                title={connection.lastError}
+              >
                 {connection.lastError}
               </span>
             )}
@@ -190,19 +283,43 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {getOneByOneLabel()}
               </Badge>
             )}
+            {getHotReloadLabel() && (
+              <Badge
+                variant={HOT_RELOAD_BADGE_VARIANTS[hotReloadStatus.state] || "default"}
+                size="sm"
+                title={hotReloadStatus.error || undefined}
+              >
+                {getHotReloadLabel()}
+              </Badge>
+            )}
+            {verification && (
+              <span className="text-xs text-warning">
+                {translate("Antigravity account verification required")}
+              </span>
+            )}
+            {verificationError && (
+              <span className="text-xs text-warning">
+                {translate(verificationError)}
+              </span>
+            )}
+            {usernameSyncStatus && (
+              <span role="status" className={`text-xs ${usernameSyncStatus === "Username synced" ? "text-success" : "text-danger"}`}>
+                {usernameSyncStatus}
+              </span>
+            )}
           </div>
           {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
+              <span className="max-w-full truncate text-xs text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
                 {proxyDisplayText}
               </span>
               {maskedProxyUrl && (
-                <code className="max-w-full truncate rounded bg-black/5 px-1 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[260px]">
+                <code className="max-w-full truncate rounded bg-surface-2 px-1 py-1 font-mono text-xs text-text-muted sm:max-w-[260px]">
                   {maskedProxyUrl}
                 </code>
               )}
               {noProxyText && (
-                <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[320px]" title={noProxyText}>
+                <span className="max-w-full truncate text-xs text-text-muted sm:max-w-[320px]" title={noProxyText}>
                   no_proxy: {noProxyText}
                 </span>
               )}
@@ -211,25 +328,49 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </div>
       </div>
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-        <div className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-none">
+        <div className="flex flex-1 flex-wrap gap-1 sm:flex-none">
+          {verification?.href && (
+            <a
+              href={verification.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${translate("Verify Antigravity account")} ${displayName}`}
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-warning"
+            >
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">verified_user</span>
+              <span className="text-xs leading-tight">{translate("Verify Antigravity account")}</span>
+            </a>
+          )}
+          {verification && (
+            <button
+              onClick={verification.onRecheck}
+              disabled={verification.rechecking}
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-warning transition-colors duration-150 hover:bg-warning-soft disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${verification.rechecking ? "animate-spin" : ""}`}>
+                {verification.rechecking ? "progress_activity" : "refresh"}
+              </span>
+              <span className="text-xs leading-tight">{translate("Check verification")}</span>
+            </button>
+          )}
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors duration-150 hover:bg-surface-2 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
-                <span className="material-symbols-outlined text-[18px]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                   {updatingProxy ? "progress_activity" : "lan"}
                 </span>
-                <span className="text-[10px] leading-tight">Proxy</span>
+                <span className="text-xs leading-tight">Proxy</span>
               </button>
               {showProxyDropdown && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg">
+                <div className="absolute end-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-elev">
                   <button
                     onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    className={`focus-ring w-full text-start px-3 py-1.5 text-sm hover:bg-surface-2 ${!boundProxyPoolId ? "text-brand font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
@@ -237,7 +378,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                     <button
                       key={pool.id}
                       onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                      className={`focus-ring w-full text-start px-3 py-1.5 text-sm hover:bg-surface-2 ${boundProxyPoolId === pool.id ? "text-brand font-medium" : "text-text-main"}`}
                     >
                       {pool.name}
                     </button>
@@ -250,27 +391,52 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Tooltip text={autoPingTooltip}>
               <button
                 onClick={() => autoPing.onToggle(!autoPing.on)}
-                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex w-full flex-col items-center rounded px-2 py-1 transition-colors duration-150 hover:bg-surface-2 ${autoPing.on ? "text-brand" : "text-text-muted hover:text-brand"}`}
               >
-                <span className="material-symbols-outlined text-[18px]">bolt</span>
-                <span className="text-[10px] leading-tight">Auto-ping</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bolt</span>
+                <span className="text-xs leading-tight">Auto-ping</span>
               </button>
             </Tooltip>
           )}
-          <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-            <span className="text-[10px] leading-tight">Edit</span>
+          {hotReload && (
+            <Tooltip text="Hot reload: poke both quota models so the pending 7-day countdown starts now">
+              <button
+                onClick={hotReload.onRun}
+                disabled={hotReload.running}
+                title={hotReloadStatus?.state === "failed" ? hotReloadStatus.error : undefined}
+                className="focus-ring hit-44 flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand"
+              >
+                <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
+                <span className="text-xs leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
+              </button>
+            </Tooltip>
+          )}
+          {connection.provider === "github" && (
+            <button
+              onClick={handleSyncUsername}
+              disabled={syncingUsername}
+              className="focus-ring hit-44 flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span aria-hidden="true" className={`material-symbols-outlined text-[18px] ${syncingUsername ? "animate-spin" : ""}`}>
+                {syncingUsername ? "progress_activity" : "sync"}
+              </span>
+              <span className="text-xs leading-tight">Sync username</span>
+            </button>
+          )}
+          <button onClick={onEdit} className="focus-ring hit-44 flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-surface-2 hover:text-brand">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="text-xs leading-tight">Edit</span>
           </button>
-          <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-            <span className="text-[10px] leading-tight">Delete</span>
+          <button onClick={onDelete} className="focus-ring flex flex-col items-center rounded px-2 py-1 text-danger hover:bg-danger-soft">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="text-xs leading-tight">Delete</span>
           </button>
         </div>
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
           onChange={onToggleActive}
-          title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
+          title={`${(connection.isActive ?? true) ? "Disable" : "Enable"} connection ${displayName}`}
         />
       </div>
     </div>
@@ -280,6 +446,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 ConnectionRow.propTypes = {
   connection: PropTypes.shape({
     id: PropTypes.string,
+    provider: PropTypes.string,
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
@@ -289,6 +456,10 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    providerSpecificData: PropTypes.shape({
+      codexSubscriptionPlan: PropTypes.string,
+      chatgptPlanType: PropTypes.string,
+    }),
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
@@ -314,5 +485,22 @@ ConnectionRow.propTypes = {
     on: PropTypes.bool,
     onToggle: PropTypes.func,
     provider: PropTypes.string,
+  }),
+  hotReload: PropTypes.shape({
+    running: PropTypes.bool,
+    onRun: PropTypes.func,
+  }),
+  hotReloadStatus: PropTypes.shape({
+    state: PropTypes.string,
+    error: PropTypes.string,
+  }),
+  verification: PropTypes.shape({
+    connectionId: PropTypes.string,
+    challengeId: PropTypes.string,
+    expiresAt: PropTypes.number,
+    href: PropTypes.string,
+    rechecking: PropTypes.bool,
+    error: PropTypes.string,
+    onRecheck: PropTypes.func,
   }),
 };

@@ -1,21 +1,91 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
-import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
-import { getAntigravityQuotaCache } from "./antigravityQuota.js";
+import {
+  getProviderConnections,
+  validateApiKey,
+  updateProviderConnection,
+  updateConnectionProxyPoolSnapshotIfBound,
+  updateProviderStrategyProxyPoolSnapshotIfBound,
+  getSettings,
+  getProxyPools,
+} from "@/lib/localDb";
+import {
+  resolveConnectionProxyConfig,
+  toConnectionProxyOptions,
+  pickProxyPoolId,
+} from "@/lib/network/connectionProxy";
+import {
+  buildModelFailureUpdate,
+  buildModelLockUpdateAt,
+  checkFallbackError,
+  formatRetryAfter,
+  getActiveModelFailure,
+  getEarliestModelLockUntil,
+  getModelFailureKey,
+  getModelLockKey,
+  isModelLockActive,
+} from "open-sse/services/accountFallback.js";
+import { FREE_TIER_RATE_LIMIT_COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { ACCOUNT_ERROR_MESSAGE_MAX_CHARS } from "open-sse/config/runtimeConfig.js";
+import { resolveProviderId, NO_AUTH_PROVIDER_IDS, isNoAuthProvider, isProviderDisabled, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
+import { evaluateQuota } from "./quotaGuard.js";
 import * as log from "../utils/logger.js";
+import { collectClientApiKeyCandidates } from "@/lib/auth/clientApiKey";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// Serialize account selection per canonical provider without blocking unrelated providers.
+const providerSelectionQueues = new Map();
+
+export function _getProviderSelectionQueueSize() {
+  return providerSelectionQueues.size;
+}
+
+/**
+ * Longest an account of this provider may be benched for a rate limit. A free
+ * pool rate-limits on a roughly per-minute window, so both an overlong
+ * provider-reported reset and the blind exponential backoff are cut back to that
+ * window -- otherwise one burst locks every key in the pool for minutes to hours
+ * and selection has nothing left to hand out (#2895). Everything else keeps the
+ * global ceiling, which leaves paid providers' resets exactly as they were.
+ */
+function retryDelayCapMs(provider) {
+  if (!provider) return MAX_RATE_LIMIT_COOLDOWN_MS;
+  const id = resolveProviderId(provider) || provider;
+  return (FREE_PROVIDERS?.[id] || FREE_TIER_PROVIDERS?.[id])
+    ? FREE_TIER_RATE_LIMIT_COOLDOWN_MS
+    : MAX_RATE_LIMIT_COOLDOWN_MS;
+}
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
+const CODEX_PERMANENT_OAUTH_MARKERS = [
+  "invalidated oauth token",
+  "authentication token has been invalidated",
+  "refresh_token_invalidated",
+  "refresh_token_reused",
+  "refresh token already used",
+];
 
 function githubMonthlyResetMs(status, errorText, provider) {
   if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
   if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+}
+
+function isCodexPermanentOAuthFailure(status, errorText, provider) {
+  if (resolveProviderId(provider) !== "codex" || Number(status) !== 401) return false;
+  const reason = describeProviderError(errorText).toLowerCase();
+  return CODEX_PERMANENT_OAUTH_MARKERS.some((marker) => reason.includes(marker));
+}
+
+/**
+ * Detect Qoder account-wide quota exhaustion.
+ * Qoder delivers it as an HTTP-200 SSE payload whose first envelope carries
+ * statusCodeValue 403 and a body containing "code":"112"; the qoder executor
+ * converts that billing block into a plain 403 error before we get here.
+ * Unlike transient billing blocks (queue throttle code 10605 / pricingUrl
+ * nudges), code 112 does not recover on its own.
+ */
+function isQoderQuotaExhausted(status, errorText, provider) {
+  if (resolveProviderId(provider) !== "qoder" || Number(status) !== 403) return false;
+  return /"code"\s*:\s*"112"/.test(String(errorText || ""));
 }
 
 /**
@@ -25,46 +95,105 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
+// Providers this install can actually reach right now: one with an active
+// connection, or a free provider that needs no auth at all.
+//
+// The capacity adapter prepends its pool ahead of the model the user asked for,
+// because the adapter only fires when nothing requested satisfies a required
+// capability. A pool entry whose provider was never connected cannot satisfy
+// anything, and attempting it spent one fallback slot and logged
+// "No credentials for <provider>" against a request that had nothing to do with
+// it, which reads as the router authenticating somewhere it was not asked to
+// (#2555). Filter those out before the chain is built rather than after they
+// have failed.
+export async function getReachableProviders() {
+  const reachable = new Set(NO_AUTH_PROVIDER_IDS);
+  try {
+    for (const connection of await getProviderConnections()) {
+      if (connection?.isActive === false) continue;
+      if (connection?.provider) reachable.add(resolveProviderId(connection.provider));
+    }
+  } catch {
+    // A repo failure must not take routing down: report nothing reachable and
+    // let the normal per-attempt credential lookup produce the real error.
+  }
+  return reachable;
+}
+
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
-  let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
+  const strictPreferredConnection = Boolean(preferredConnectionId) && options?.strictPreferredConnection === true;
+  // Resolve aliases before queue acquisition so alias and canonical requests share one lock.
+  const providerId = resolveProviderId(provider);
+  const currentQueue = providerSelectionQueues.get(providerId) || Promise.resolve();
+  let releaseQueue;
+  const nextQueue = new Promise(resolve => { releaseQueue = resolve; });
+  providerSelectionQueues.set(providerId, nextQueue);
 
   try {
-    await currentMutex;
-
-    // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
-    const providerId = resolveProviderId(provider);
+    await currentQueue;
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
-    if (FREE_PROVIDERS[providerId]?.noAuth) {
+    if (isNoAuthProvider(providerId)) {
       const settings = await getSettings();
+      // A no-auth provider has no connection row to deactivate, so the operator
+      // switch is the only way to bench it. Refuse here rather than in the
+      // dashboard: this is the call every modality routes through, and the
+      // caller already treats null as "no account, fall through" (#2650).
+      if (isProviderDisabled(settings, providerId)) {
+        log.warn("AUTH", `${provider} is disabled`);
+        return null;
+      }
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
       let pickedId = override.proxyPoolId || null;
+      let pickedPool = null;
       if (strategy !== "none") {
         const allPools = await getProxyPools({ isActive: true });
-        const poolIds = allPools.filter(p => p.proxyUrl).map(p => p.id);
+        const availablePools = allPools.filter(p => p.proxyUrl);
+        const poolIds = availablePools.map(p => p.id);
         pickedId = pickProxyPoolId(poolIds, strategy, providerId);
+        pickedPool = availablePools.find((pool) => pool.id === pickedId) || null;
       }
-      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
+      const proxyData = {
+        proxyPoolId: pickedId || "",
+        ...(strategy === "none" && Object.prototype.hasOwnProperty.call(override, "strictProxy")
+          ? { strictProxy: override.strictProxy }
+          : {}),
+        ...(strategy !== "none" && pickedPool
+          ? { strictProxy: pickedPool.strictProxy === true }
+          : {}),
+      };
+      const resolvedProxy = await resolveConnectionProxyConfig(proxyData, {
+        persistPoolSnapshot: strategy === "none" && pickedId
+          ? (pair) => updateProviderStrategyProxyPoolSnapshotIfBound(providerId, pickedId, pair)
+          : undefined,
+      });
+      if (resolvedProxy.kind !== "usable") return null;
+      const proxyOptions = toConnectionProxyOptions(resolvedProxy);
       return {
         id: "noauth",
+        // Executors key their upstream session id on connectionId. Without it
+        // deriveSessionId() falls through to a fresh random id on every call, so
+        // each turn of one conversation reaches the provider as a new session and
+        // burns a free-tier slot. "noauth" is the sentinel markAccountUnavailable
+        // and clearAccountError already test for.
+        connectionId: "noauth",
         connectionName: "Public",
         isActive: true,
         accessToken: "public",
         providerSpecificData: {
-          connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
-          connectionProxyUrl: resolvedProxy.connectionProxyUrl,
-          connectionNoProxy: resolvedProxy.connectionNoProxy,
+          connectionProxyEnabled: proxyOptions.connectionProxyEnabled,
+          connectionProxyUrl: proxyOptions.connectionProxyUrl,
+          connectionNoProxy: proxyOptions.connectionNoProxy,
           connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
-          vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+          vercelRelayUrl: proxyOptions.vercelRelayUrl,
+          strictProxy: proxyOptions.strictProxy,
+          resolutionKind: proxyOptions.resolutionKind,
         },
       };
     }
@@ -77,56 +206,63 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Antigravity quota cache is lazy: only populated after that account returns 409/429.
-    const isAntigravity = providerId === "antigravity";
-    const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
-
-    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
+    // Filter out model-locked and excluded connections.
+    // ignoreModelLockConnId: a same-account retry must still reach the just-
+    // failed connection (its transient model-lock would otherwise force a
+    // switch), so skip the lock check for that one connection only.
+    const ignoreLockConn = options?.ignoreModelLockConnId || null;
     const availableConnections = connections.filter(c => {
+      if (strictPreferredConnection && c.id !== preferredConnectionId) return false;
       if (excludeSet.has(c.id)) return false;
+      if (c.id === ignoreLockConn) return true;
       if (isModelLockActive(c, model)) return false;
-      // Antigravity: skip if live quota exhausted for this model
-      if (isAntigravity && model && antigravityQuotaCache) {
-        const quota = antigravityQuotaCache.get(c.id)?.[model];
-        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
-          const account = c.id?.slice(0, 8) || "unknown";
-          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
-          return false;
-        }
-      }
       return true;
     });
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
+    // Filter out accounts paused due to low remaining quota (safety buffer).
+    // evaluateQuota is fail-open: a missing/erroring quota read never pauses an
+    // account, so this only drops accounts we can actually confirm are below threshold.
+    const quotaChecked = await Promise.all(
+      availableConnections.map(async (c) => {
+        const q = await evaluateQuota(c);
+        if (q.paused) {
+          log.info("AUTH", `${provider} | ${c.id?.slice(0, 8)} skipped: quota paused (window below per-window threshold)`);
+          return null;
+        }
+        return c;
+      })
+    );
+    const routedConnections = quotaChecked.filter(Boolean);
+
+    log.debug("AUTH", `${provider} | available: ${routedConnections.length}/${connections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
       if (excluded || locked) {
-        const lockUntil = getEarliestModelLockUntil(c);
+        const lockUntil = getEarliestModelLockUntil(c, model);
         log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
       }
     });
 
-    if (availableConnections.length === 0) {
-      // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
-      if (isAntigravity && model && antigravityQuotaCache) {
-        connections.forEach((c) => {
-          const resetAt = antigravityQuotaCache.get(c.id)?.[model]?.resetAt;
-          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
-        });
-      }
-      const earliest = expiries.sort()[0] || null;
-      if (earliest) {
-        const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+    if (routedConnections.length === 0) {
+      // Find earliest lock expiry across all connections for retry timing
+      const lockCandidates = strictPreferredConnection
+        ? connections.filter((connection) => connection.id === preferredConnectionId)
+        : connections;
+      const lockedPairs = lockCandidates
+        .map((connection) => ({ connection, failure: getActiveModelFailure(connection, model) }))
+        .filter((entry) => entry.failure);
+      const selected = lockedPairs.sort((a, b) => a.failure.until.localeCompare(b.failure.until))[0];
+      if (selected) {
+        const { failure } = selected;
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(failure.until)}) | lastError=${failure.message?.slice(0, 50) || "none"}`);
         return {
           allRateLimited: true,
-          retryAfter: earliest,
-          retryAfterHuman: formatRetryAfter(earliest),
-          lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          retryAfter: failure.until,
+          retryAfterHuman: formatRetryAfter(failure.until),
+          lastError: failure.message,
+          lastErrorCode: failure.status,
+          clientErrorStatus: failure.clientErrorStatus,
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
@@ -141,7 +277,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     let connection;
     // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
-      connection = availableConnections.find((c) => c.id === preferredConnectionId);
+      connection = routedConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
@@ -152,7 +288,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
+      const byRecency = [...routedConnections].sort((a, b) => {
         if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
         if (!a.lastUsedAt) return 1;
         if (!b.lastUsedAt) return -1;
@@ -172,7 +308,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       } else {
         // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        const sortedByOldest = [...routedConnections].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
@@ -189,10 +325,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      connection = routedConnections[0];
     }
 
-    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const connectionProxyData = connection.providerSpecificData || {};
+    const expectedPoolId = connectionProxyData.proxyPoolId;
+    const resolvedProxy = await resolveConnectionProxyConfig(connectionProxyData, {
+      persistPoolSnapshot: expectedPoolId
+        ? (pair) => updateConnectionProxyPoolSnapshotIfBound(connection.id, expectedPoolId, pair)
+        : undefined,
+    });
+    if (resolvedProxy.kind !== "usable") return null;
+    const proxyOptions = toConnectionProxyOptions(resolvedProxy);
 
     return {
       authType: connection.authType,
@@ -206,13 +350,16 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       projectId: connection.projectId,
       connectionName: connection.displayName || connection.name || connection.email || connection.id,
       copilotToken: connection.providerSpecificData?.copilotToken,
+      defaultModel: typeof connection.defaultModel === "string" ? connection.defaultModel.trim() || null : null,
       providerSpecificData: {
         ...(connection.providerSpecificData || {}),
-        connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
-        connectionProxyUrl: resolvedProxy.connectionProxyUrl,
-        connectionNoProxy: resolvedProxy.connectionNoProxy,
+        connectionProxyEnabled: proxyOptions.connectionProxyEnabled,
+        connectionProxyUrl: proxyOptions.connectionProxyUrl,
+        connectionNoProxy: proxyOptions.connectionNoProxy,
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
-        vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        vercelRelayUrl: proxyOptions.vercelRelayUrl,
+        strictProxy: proxyOptions.strictProxy,
+        resolutionKind: proxyOptions.resolutionKind,
       },
       connectionId: connection.id,
       // Include current status for optimization check
@@ -222,7 +369,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       _connection: connection
     };
   } finally {
-    if (resolveMutex) resolveMutex();
+    releaseQueue();
+    if (providerSelectionQueues.get(providerId) === nextQueue) {
+      providerSelectionQueues.delete(providerId);
+    }
   }
 }
 
@@ -236,16 +386,104 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
+/**
+ * Human-readable reason for the connection's `lastError`.
+ *
+ * A non-string error used to collapse to the bare string "Provider error", which
+ * is what an operator then sees in the dashboard and in the console line below —
+ * no status, no code, nothing to act on. A failed `fetch` is exactly that case:
+ * Node reports `TypeError: fetch failed` and puts the useful part
+ * (ECONNREFUSED, ENOTFOUND, ETIMEDOUT) on `error.cause.code`.
+ *
+ * Only message-shaped fields and error codes are read. The error object is never
+ * serialized wholesale, so a request body or header that happens to be attached
+ * to it cannot leak into the stored reason.
+ */
+export function describeProviderError(errorText) {
+  // Clipped far enough out that the upstream reason survives. At 100 chars the cut
+  // landed mid-word inside "Upstream request failed: …", so the only diagnostic
+  // that mattered was discarded before it reached either the client or the logs.
+  const clamp = (value) => String(value).replace(/\s+/g, " ").trim().slice(0, ACCOUNT_ERROR_MESSAGE_MAX_CHARS);
+
+  if (typeof errorText === "string") return clamp(errorText);
+  if (!errorText || typeof errorText !== "object") return "Provider error";
+
+  const code = typeof errorText.code === "string" ? errorText.code
+    : typeof errorText.cause?.code === "string" ? errorText.cause.code
+      : null;
+
+  if (errorText instanceof Error) {
+    const message = errorText.message ? clamp(errorText.message) : errorText.name || "Provider error";
+    return code && !message.includes(code) ? clamp(`${message} (${code})`) : message;
+  }
+
+  const candidates = [
+    errorText.error?.message,
+    errorText.message,
+    typeof errorText.error === "string" ? errorText.error : null,
+    errorText.detail,
+    errorText.reason,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return code && !candidate.includes(code) ? clamp(`${candidate} (${code})`) : clamp(candidate);
+    }
+  }
+
+  return code ? clamp(`Provider error (${code})`) : "Provider error";
+}
+
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, failureMetadata = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
+  if (isCodexPermanentOAuthFailure(status, errorText, provider)) {
+    const reason = describeProviderError(errorText);
+    await updateProviderConnection(connectionId, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: reason,
+      errorCode: 401,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} requires Codex reauthorization [401]`);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
+  // Qoder code 112 is an account-wide quota signal. A timed lock alone would
+  // keep retrying a dead account after the cooldown, so deactivate the
+  // connection (what an operator would do manually) and let selection move to
+  // the next Qoder account or the next combo fallback model.
+  if (isQoderQuotaExhausted(status, errorText, provider)) {
+    const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Qoder quota exhausted (code 112)";
+    await updateProviderConnection(connectionId, {
+      isActive: false,
+      testStatus: "unavailable",
+      lastError: reason,
+      errorCode: 403,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} disabled: Qoder quota exhausted [403/code 112]`);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
 
-  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
+  // A request error belongs to the caller, so reset metadata must not turn it
+  // into a persisted account lock or a replay on another account.
+  const fallbackResult = checkFallbackError(status, errorText, backoffLevel);
+  if (!fallbackResult.shouldFallback) return fallbackResult;
+
+  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff.
+  // GitHub's monthly exhaustion is a real month-long window and stays uncapped;
+  // everything else is bounded by this provider's ceiling (#2895).
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (githubResetAtMs) {
     shouldFallback = true;
@@ -253,21 +491,35 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    cooldownMs = resolveProviderId(provider) === "antigravity"
-      ? resetsAtMs - Date.now()
-      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    cooldownMs = Math.min(resetsAtMs - Date.now(), retryDelayCapMs(provider));
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, newBackoffLevel } = fallbackResult);
+    // Only the backoff schedule, which is what a rate limit earns. A 401/403/404
+    // lock is about the credential rather than a window, and shortening it would
+    // just retry a dead key every minute.
+    if (newBackoffLevel) cooldownMs = Math.min(cooldownMs, retryDelayCapMs(provider));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
+  const reason = describeProviderError(errorText);
+  const lockModel = githubResetAtMs ? null : model;
+  const until = githubResetAtMs
+    ? new Date(githubResetAtMs).toISOString()
+    : new Date(Date.now() + cooldownMs).toISOString();
+  const lockUpdate = buildModelLockUpdateAt(lockModel, until);
+  const failureUpdate = buildModelFailureUpdate(lockModel, {
+    status,
+    message: reason,
+    until,
+    resetsAt: resetsAtMs ? new Date(resetsAtMs).toISOString() : null,
+    clientErrorStatus: failureMetadata?.clientErrorStatus ?? null,
+    unknownModelVerified: failureMetadata?.unknownModelVerified === true,
+  });
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
+    ...failureUpdate,
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
@@ -300,18 +552,29 @@ export async function clearAccountError(connectionId, currentConnection, model =
   const conn = currentConnection._connection || currentConnection;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
+  const allFailureKeys = Object.keys(conn).filter(k => k.startsWith("modelFailure_"));
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
+  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0 && allFailureKeys.length === 0) return;
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
-    if (model && k === `modelLock_${model}`) return true; // succeeded model
-    if (model && k === "modelLock___all") return true;    // account-level lock
+    if (model && k === getModelLockKey(model)) return true; // succeeded model
+    if (model && k === getModelLockKey(null)) return true;  // account-level lock
     const expiry = conn[k];
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+  const failureKeysToClear = new Set(keysToClear.map((key) =>
+    getModelFailureKey(key.slice("modelLock_".length) || null)
+  ));
+  if (model && Object.hasOwn(conn, getModelFailureKey(model))) {
+    failureKeysToClear.add(getModelFailureKey(model));
+  }
+  if (model && Object.hasOwn(conn, getModelFailureKey(null))) {
+    failureKeysToClear.add(getModelFailureKey(null));
+  }
+
+  if (keysToClear.length === 0 && failureKeysToClear.size === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {
@@ -321,6 +584,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
   });
 
   const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
+  for (const key of failureKeysToClear) clearObj[key] = null;
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {
@@ -340,19 +604,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
  * Extract API key from request headers
  */
 export function extractApiKey(request) {
-  // Check Authorization header first
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
-  }
-
-  // Check Anthropic x-api-key header
-  const xApiKey = request.headers.get("x-api-key");
-  if (xApiKey) {
-    return xApiKey;
-  }
-
-  return null;
+  return collectClientApiKeyCandidates(request)[0] || null;
 }
 
 /**

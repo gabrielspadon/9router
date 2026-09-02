@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "path";
 import os from "os";
 
-const APP_NAME = "9router";
+const APP_NAME = "tokenproxy";
 
 function defaultDir() {
   if (process.platform === "win32") {
@@ -23,7 +23,8 @@ export function getDataDir() {
   }
 
   try {
-    fs.mkdirSync(configured, { recursive: true });
+    // 0o700: this directory holds the credential DB and the secret files.
+    fs.mkdirSync(configured, { recursive: true, mode: 0o700 });
     return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {

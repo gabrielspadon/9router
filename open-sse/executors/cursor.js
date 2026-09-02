@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
+import { Buffer } from "node:buffer";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { FETCH_CONNECT_TIMEOUT_MS, HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
   encodeField,
@@ -14,26 +15,37 @@ import { estimateUsage } from "../utils/usageTracking.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { proxyAwareFetch, resolveEffectiveProxyRoute } from "../utils/proxyFetch.js";
+import { connectHttp2 as defaultConnectHttp2 } from "../utils/http2Connect.js";
+import {
+  createExecutorResponseHeaderTimeout,
+  isConnectTimeoutError,
+} from "../utils/responseHeaderTimeout.js";
 import zlib from "zlib";
 import crypto from "crypto";
+import * as http2 from "node:http2";
 
-// Detect cloud environment
+// Detect cloud environment. No longer gates the http2 load (see below); kept
+// because it is the only place this file states what a non-Node target looks
+// like, and removing it would delete that knowledge rather than any behaviour.
 const isCloudEnv = () => {
   if (typeof caches !== "undefined" && typeof caches === "object") return true;
   if (typeof EdgeRuntime !== "undefined") return true;
   return false;
 };
 
-// Lazy import http2 (only in Node.js environment)
-let http2 = null;
-if (!isCloudEnv()) {
-  try {
-    http2 = await import("http2");
-  } catch {
-    // http2 not available
-  }
-}
+// http2 is imported statically. The lazy form existed to keep node:http2 out of
+// a cloud/edge bundle, but line 19 already pulls in ../utils/http2Connect.js,
+// which imports node:http2 statically itself — so the guard has not kept it out
+// of the graph for as long as that import has existed.
+//
+// It was briefly loaded through createRequire to avoid the top-level await that
+// `await import()` needs when this ESM module is transpiled to CJS. A STATIC
+// import needs no await either, and http2Connect.js has been doing exactly that
+// all along, so the interop goal is met without the require: a createRequire
+// resolution happens outside the test runner's module registry, which silently
+// bypassed the suite's http2 mock and left 10 assertions in
+// cursor-connect-timeout.test.js unable to observe anything.
 
 const COMPRESS_FLAG = {
   NONE: 0x00,
@@ -44,7 +56,12 @@ const COMPRESS_FLAG = {
 
 const AGENT_RUN_PATH = "/agent.v1.AgentService/Run";
 const PROTOBUF_LEN = 2;
-const PROTOBUF_VARINT = 0;
+
+function agentConnectionClosedError() {
+  return Object.assign(new Error("Cursor AgentService closed before response headers"), {
+    code: "http2_connection_closed",
+  });
+}
 
 function concatBuffers(...parts) {
   const length = parts.reduce((total, part) => total + part.length, 0);
@@ -59,7 +76,6 @@ function concatBuffers(...parts) {
 
 const agentString = (field, value) => encodeField(field, PROTOBUF_LEN, value);
 const agentMessage = (field, value) => encodeField(field, PROTOBUF_LEN, value);
-const agentBool = (field, value) => encodeField(field, PROTOBUF_VARINT, value ? 1 : 0);
 
 function textFromContent(content) {
   if (typeof content === "string") return content;
@@ -95,7 +111,14 @@ function encodeHistoryMessage(message) {
   return agentMessage(1, agentMessage(1, agentMessage(1, text)));
 }
 
-function buildAgentRunFrame(messages, model) {
+export function resolveCursorAgentModel(model) {
+  const value = String(model || "");
+  return /^claude-fable-/i.test(value) && value.endsWith("-fast")
+    ? value.slice(0, -"-fast".length)
+    : value;
+}
+
+export function buildAgentRunFrame(messages, model) {
   const system = messages
     .filter((message) => message?.role === "system")
     .map((message) => textFromContent(message.content))
@@ -123,7 +146,7 @@ function buildAgentRunFrame(messages, model) {
     ...(conversationHistory ? [agentMessage(7, conversationHistory)] : []),
   );
   const conversationAction = agentMessage(1, userAction);
-  const requestedModel = concatBuffers(agentString(1, model), agentBool(7, true));
+  const requestedModel = agentMessage(1, agentString(1, resolveCursorAgentModel(model)));
   const runRequest = concatBuffers(
     // An empty ConversationStateStructure starts a fresh local agent session.
     agentMessage(1, new Uint8Array()),
@@ -158,7 +181,7 @@ function decodeAgentFrames(buffer, onFrame) {
 }
 
 function createRequestContextResponse() {
-  // AgentService asks every run for client context. 9router has no IDE file
+  // AgentService asks every run for client context. tokenproxy has no IDE file
   // context, so acknowledge with an empty RequestContext.
   const requestContextSuccess = agentMessage(1, new Uint8Array());
   const requestContextResult = agentMessage(1, requestContextSuccess);
@@ -171,17 +194,43 @@ const debugLog = (...args) => {
   if (CURSOR_STREAM_DEBUG) console.log(...args);
 };
 
+// Composer sends its visible answer inside the thinking field, after a
+// </think> marker, instead of as text. Cursor's "default" entry is Auto
+// (Server Picks) and the server routinely picks Composer for it, so keying the
+// decode on the requested NAME alone dropped the whole reply and the client saw
+// an empty response (#1077). Including "default" is fail-closed: a pick that is
+// not Composer sends no </think>, so nothing extra is ever surfaced.
 function isComposerModel(model) {
   const modelId = String(model || "").split("/").pop();
-  return /^composer(?:-|$)/i.test(modelId);
+  return /^composer(?:-|$)/i.test(modelId) || modelId === "default";
 }
+
+// Composer prefixes its visible answer with a `<｜final｜>` sentinel, so the
+// </think> split alone handed the raw token to the client ahead of every
+// Composer answer (#1316).
+const COMPOSER_FINAL_SENTINEL = "<｜final｜>";
 
 function visibleComposerContentFromThinking(thinking) {
   if (!thinking) return "";
   const endTag = "</think>";
   const endIdx = thinking.lastIndexOf(endTag);
   if (endIdx < 0) return "";
-  return thinking.slice(endIdx + endTag.length).trimStart();
+  const visible = thinking.slice(endIdx + endTag.length).trimStart();
+  return visible.startsWith(COMPOSER_FINAL_SENTINEL)
+    ? visible.slice(COMPOSER_FINAL_SENTINEL.length).trimStart()
+    : visible;
+}
+
+// Frames split the sentinel mid-token, so a tail that could still complete it
+// has to wait for the next frame. Buffering on a bare "<" would stall every
+// comparison and tag an answer contains, so only a tail that is itself a
+// sentinel prefix is held; the caller flushes it once the stream ends (#1316).
+function emittableComposerContent(visible) {
+  const maxHold = Math.min(visible.length, COMPOSER_FINAL_SENTINEL.length - 1);
+  for (let n = maxHold; n > 0; n--) {
+    if (COMPOSER_FINAL_SENTINEL.startsWith(visible.slice(-n))) return visible.slice(0, -n);
+  }
+  return visible;
 }
 
 function decompressPayload(payload, flags) {
@@ -275,8 +324,9 @@ function createErrorResponse(jsonError) {
 }
 
 export class CursorExecutor extends BaseExecutor {
-  constructor() {
+  constructor({ connectHttp2 = defaultConnectHttp2 } = {}) {
     super("cursor", PROVIDERS.cursor);
+    this.connectHttp2 = connectHttp2;
   }
 
   buildUrl() {
@@ -301,19 +351,41 @@ export class CursorExecutor extends BaseExecutor {
     const messages = body.messages || [];
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
-    // Detect Claude Code UA to force Agent mode (issue #643)
+    // Force Agent mode, or Cursor answers "Switch to Agent mode to apply all
+    // changes" and the flow stops.
+    //
+    // This was a Claude Code user-agent allowlist (issue #643), which meant every
+    // other agentic client hit the same wall and needed its own UA added —
+    // opencode reported exactly that (#1008). The client's NAME was only ever a
+    // proxy for the real signal: a request carrying tools is agentic by
+    // definition. Both are checked, so this can only widen and no client that
+    // worked before stops working.
     const ua = credentials?.rawHeaders?.["user-agent"] || "";
-    const forceAgentMode = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
+    const agenticUA = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
+    const forceAgentMode = agenticUA || tools.length > 0;
     return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
   }
 
-  async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body,
-      signal
-    }, proxyOptions);
+  async makeFetchRequest(url, headers, body, signal, proxyOptions = null, connectTimeout = null) {
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
+    let response;
+    try {
+      response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body,
+        signal: deadline.signal,
+      }, proxyOptions);
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
 
     return {
       status: response.status,
@@ -322,62 +394,88 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  makeHttp2Request(url, headers, body, signal) {
+  makeHttp2Request(url, headers, body, signal, connectTimeout = null) {
     if (!http2) {
       throw new Error("http2 module not available");
+    }
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason || new DOMException("Request aborted", "AbortError"));
     }
 
     const HTTP2_TIMEOUT_MS = 60000; // 60s max — prevent hung sessions
 
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
-      const client = http2.connect(`https://${urlObj.host}`);
+      const deadline = createExecutorResponseHeaderTimeout({
+        connectTimeout,
+        registryTimeout: this.config?.timeoutMs,
+        envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+        signal,
+      });
       const chunks = [];
       let responseHeaders = {};
       let settled = false;
+      let client;
+      let req;
+      let hangTimeout;
+
+      const onHeaderAbort = () => finish(reject)(deadline.classify(deadline.signal.reason));
+      const onCallerAbort = () => finish(reject)(signal.reason || new DOMException("Request aborted", "AbortError"));
 
       // Ensure client is always closed on settle
       const finish = (fn) => (...args) => {
         if (settled) return;
         settled = true;
+        deadline.clear();
         clearTimeout(hangTimeout);
-        client.close();
+        deadline.signal.removeEventListener("abort", onHeaderAbort);
+        signal?.removeEventListener("abort", onCallerAbort);
+        try { req?.destroy(); } catch {}
+        try { client?.close(); } catch {}
         fn(...args);
       };
 
-      // Hard timeout: close session if server never responds
-      const hangTimeout = setTimeout(finish(() => {
-        reject(new Error("HTTP/2 request timed out"));
-      }), HTTP2_TIMEOUT_MS);
+      try {
+        client = http2.connect(`https://${urlObj.host}`);
 
-      client.on("error", finish(reject));
+        // Hard timeout: close session if server never responds
+        hangTimeout = setTimeout(finish(() => {
+          reject(new Error("HTTP/2 request timed out"));
+        }), HTTP2_TIMEOUT_MS);
 
-      const req = client.request({
-        ":method": "POST",
-        ":path": urlObj.pathname,
-        ":authority": urlObj.host,
-        ":scheme": "https",
-        ...headers
-      });
+        client.on("error", finish(reject));
 
-      req.on("response", (hdrs) => { responseHeaders = hdrs; });
-      req.on("data", (chunk) => { chunks.push(chunk); });
-      req.on("end", finish(() => {
-        resolve({
-          status: responseHeaders[":status"],
-          headers: responseHeaders,
-          body: Buffer.concat(chunks)
+        req = client.request({
+          ":method": "POST",
+          ":path": urlObj.pathname,
+          ":authority": urlObj.host,
+          ":scheme": "https",
+          ...headers
         });
-      }));
-      req.on("error", finish(reject));
 
-      if (signal) {
-        const onAbort = finish(() => reject(new Error("Request aborted")));
-        signal.addEventListener("abort", onAbort, { once: true });
+        deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
+        signal?.addEventListener("abort", onCallerAbort, { once: true });
+
+        req.on("response", (hdrs) => {
+          responseHeaders = hdrs;
+          deadline.clear();
+          deadline.signal.removeEventListener("abort", onHeaderAbort);
+        });
+        req.on("data", (chunk) => { chunks.push(chunk); });
+        req.on("end", finish(() => {
+          resolve({
+            status: responseHeaders[":status"],
+            headers: responseHeaders,
+            body: Buffer.concat(chunks)
+          });
+        }));
+        req.on("error", finish(reject));
+
+        req.write(body);
+        req.end();
+      } catch (error) {
+        finish(reject)(error);
       }
-
-      req.write(body);
-      req.end();
     });
   }
 
@@ -385,18 +483,32 @@ export class CursorExecutor extends BaseExecutor {
    * AgentService (agent.api5.cursor.sh) is HTTP/2-only. Node's fetch/undici speaks
    * HTTP/1.1 and fails with HTTPParserError on the h2 preface — use http2 duplex.
    */
-  openAgentHttp2Stream(url, headers, signal) {
-    if (!http2) {
-      throw new Error("HTTP/2 is required for Cursor AgentService (endpoint is h2-only)");
+  async openAgentHttp2Stream(url, headers, signal, proxyOptions = null, connectTimeout = null) {
+    if (signal?.aborted) {
+      throw signal.reason || new DOMException("Request aborted", "AbortError");
     }
 
     const urlObj = new URL(url);
-    const client = http2.connect(`https://${urlObj.host}`);
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
+    const route = resolveEffectiveProxyRoute(url, proxyOptions || {});
     const chunkQueue = [];
     let waiting = null;
     let ended = false;
     let streamError = null;
+    let lease = null;
+    let client = null;
     let req = null;
+    let closed = false;
+    let headersSettled = false;
+    let resolveHeaders;
+    let rejectHeaders;
+    let onHeaderAbort;
+    let onCallerAbort;
 
     const wake = (result) => {
       if (!waiting) return;
@@ -405,57 +517,87 @@ export class CursorExecutor extends BaseExecutor {
       resolve(result);
     };
 
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      deadline.clear();
+      if (onHeaderAbort) deadline.signal.removeEventListener("abort", onHeaderAbort);
+      if (onCallerAbort) signal?.removeEventListener("abort", onCallerAbort);
+      try { req?.destroy(); } catch {}
+      try { lease?.close(); } catch {}
+    };
+
     const fail = (error) => {
       if (streamError) return;
       streamError = error;
       ended = true;
+      if (!headersSettled) {
+        headersSettled = true;
+        rejectHeaders(error);
+      }
       wake(null);
+      close();
     };
 
-    const close = () => {
-      try { req?.destroy(); } catch {}
-      try { client.close(); } catch {}
-    };
-
-    client.on("error", fail);
-
-    req = client.request({
-      ":method": "POST",
-      ":path": urlObj.pathname,
-      ":authority": urlObj.host,
-      ":scheme": "https",
-      ...headers,
-    });
-
-    req.on("error", fail);
-    req.on("data", (chunk) => {
-      if (waiting) wake({ value: chunk, done: false });
-      else chunkQueue.push(chunk);
-    });
-    req.on("end", () => {
-      ended = true;
-      wake({ value: undefined, done: true });
-    });
-
-    if (signal) {
-      const onAbort = () => {
-        fail(new Error("Request aborted"));
-        close();
-      };
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    }
+    onHeaderAbort = () => fail(deadline.classify(deadline.signal.reason));
+    onCallerAbort = () => fail(signal.reason || new DOMException("Request aborted", "AbortError"));
 
     const responseHeaders = new Promise((resolve, reject) => {
-      const onEarlyError = (error) => reject(error);
-      client.once("error", onEarlyError);
-      req.once("error", onEarlyError);
-      req.once("response", (hdrs) => {
-        client.off("error", onEarlyError);
-        req.off("error", onEarlyError);
-        resolve(hdrs);
-      });
+      resolveHeaders = resolve;
+      rejectHeaders = reject;
     });
+
+    try {
+      lease = await this.connectHttp2(url, { route, signal: deadline.signal });
+      if (!lease?.session || typeof lease.close !== "function") {
+        throw new Error("Cursor AgentService adapter did not return a SessionLease");
+      }
+      if (deadline.signal.aborted) {
+        throw deadline.classify(deadline.signal.reason);
+      }
+      client = lease.session;
+      client.on("error", fail);
+
+      req = client.request({
+        ":method": "POST",
+        ":path": urlObj.pathname,
+        ":authority": urlObj.host,
+        ":scheme": "https",
+        ...headers,
+      });
+
+      req.on("error", fail);
+      req.on("response", (hdrs) => {
+        if (headersSettled) return;
+        headersSettled = true;
+        deadline.clear();
+        deadline.signal.removeEventListener("abort", onHeaderAbort);
+        resolveHeaders(hdrs);
+      });
+      req.on("data", (chunk) => {
+        if (waiting) wake({ value: chunk, done: false });
+        else chunkQueue.push(chunk);
+      });
+      req.on("end", () => {
+        if (closed || ended) return;
+        if (!headersSettled) {
+          fail(agentConnectionClosedError());
+          return;
+        }
+        ended = true;
+        wake({ value: undefined, done: true });
+        close();
+      });
+      req.once("close", () => {
+        if (!closed && !ended) fail(agentConnectionClosedError());
+      });
+
+      deadline.signal.addEventListener("abort", onHeaderAbort, { once: true });
+      signal?.addEventListener("abort", onCallerAbort, { once: true });
+    } catch (error) {
+      close();
+      throw deadline.classify(error);
+    }
 
     return {
       responseHeaders,
@@ -479,22 +621,46 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async executeAgent({ model, body, stream, credentials, signal }) {
+  async executeAgent({ model, body, stream, credentials, signal, proxyOptions = null, connectTimeout = null }) {
     const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
     if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
 
     const url = `${agentEndpoint}${AGENT_RUN_PATH}`;
     const headers = this.buildHeaders(credentials);
     const requestController = new AbortController();
-    if (signal?.addEventListener) {
-      signal.addEventListener("abort", () => requestController.abort(signal.reason), { once: true });
+    const onParentAbort = () => requestController.abort(signal.reason);
+    let parentAbortAttached = false;
+    const removeParentAbort = () => {
+      if (!parentAbortAttached) return;
+      parentAbortAttached = false;
+      signal.removeEventListener("abort", onParentAbort);
+    };
+    if (signal?.aborted) {
+      requestController.abort(signal.reason);
+    } else if (signal?.addEventListener) {
+      parentAbortAttached = true;
+      signal.addEventListener("abort", onParentAbort, { once: true });
     }
 
     let session;
     try {
-      session = this.openAgentHttp2Stream(url, headers, requestController.signal);
+      session = await this.openAgentHttp2Stream(
+        url,
+        headers,
+        requestController.signal,
+        proxyOptions,
+        connectTimeout,
+      );
+      const closeSession = session.close.bind(session);
+      session.close = () => {
+        removeParentAbort();
+        closeSession();
+      };
       session.write(buildAgentRunFrame(body.messages || [], model));
     } catch (error) {
+      session?.close();
+      removeParentAbort();
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
 
@@ -503,6 +669,7 @@ export class CursorExecutor extends BaseExecutor {
       responseHeaders = await session.responseHeaders;
     } catch (error) {
       session.close();
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
 
@@ -515,7 +682,10 @@ export class CursorExecutor extends BaseExecutor {
           if (done) break;
           errorText += Buffer.from(value).toString("utf8");
         }
-      } catch {}
+      } catch (error) {
+        session.close();
+        if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
+      }
       session.close();
       return {
         response: new Response(JSON.stringify({
@@ -567,14 +737,14 @@ export class CursorExecutor extends BaseExecutor {
             }
 
             // AgentService requests IDE context before producing a response.
-            // Return an empty context; 9router is not coupled to an editor.
+            // Return an empty context; tokenproxy is not coupled to an editor.
             if (serverMessage.has(2)) {
               const execRequest = decodeMessage(serverMessage.get(2)[0].value);
               if (execRequest.has(10)) {
                 session.write(createRequestContextResponse());
               } else {
                 // Every other ExecServerMessage variant is an editor-backed tool
-                // (shell, read, write, …) that 9router cannot service. Fail the
+                // (shell, read, write, …) that tokenproxy cannot service. Fail the
                 // turn rather than narrating protocol state as assistant text.
                 debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
                 finished = true;
@@ -592,11 +762,9 @@ export class CursorExecutor extends BaseExecutor {
 
     if (stream === false) {
       let content = "";
-      let reasoning = "";
       let agentError = null;
       await consume((event) => {
         if (event.type === "text") content += event.value;
-        else if (event.type === "thinking") reasoning += event.value;
         else if (event.type === "error") agentError = event.value;
       });
       if (agentError) {
@@ -617,7 +785,7 @@ export class CursorExecutor extends BaseExecutor {
           object: "chat.completion",
           created,
           model,
-          choices: [{ index: 0, message: { role: "assistant", content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}) }, finish_reason: "stop" }],
+          choices: [{ index: 0, message: { role: "assistant", content: content || null }, finish_reason: "stop" }],
           usage: estimateUsage(body, content.length, FORMATS.OPENAI),
         }), { headers: { "Content-Type": "application/json" } }),
         url,
@@ -633,8 +801,6 @@ export class CursorExecutor extends BaseExecutor {
         consume((event) => {
           if (event.type === "text") {
             controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: event.value } })));
-          } else if (event.type === "thinking") {
-            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { reasoning_content: event.value } })));
           } else if (event.type === "error") {
             // An SSE error frame, not a content delta: a protocol failure must not
             // be rendered to the user as the assistant's reply, and downstream
@@ -663,11 +829,12 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     if (isAgentTextRequest(body)) {
       try {
-        return await this.executeAgent({ model, body, stream, credentials, signal });
+        return await this.executeAgent({ model, body, stream, credentials, signal, proxyOptions, connectTimeout });
       } catch (error) {
+        if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
         return {
           response: new Response(JSON.stringify({
             error: { message: error.message, type: "connection_error", code: "" },
@@ -686,8 +853,8 @@ export class CursorExecutor extends BaseExecutor {
     try {
       const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true || !!proxyOptions?.vercelRelayUrl;
       const response = (http2 && !shouldForceFetch)
-        ? await this.makeHttp2Request(url, headers, transformedBody, signal)
-        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
+        ? await this.makeHttp2Request(url, headers, transformedBody, signal, connectTimeout)
+        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions, connectTimeout);
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";
@@ -704,12 +871,27 @@ export class CursorExecutor extends BaseExecutor {
         return { response: errorResponse, url, headers, transformedBody: body };
       }
 
+      if (!response.body || response.body.length === 0) {
+        const errorResponse = new Response(JSON.stringify({
+          error: {
+            message: "Cursor returned an empty response body",
+            type: "upstream_error",
+            code: "missing_response_body",
+          },
+        }), {
+          status: HTTP_STATUS.BAD_GATEWAY,
+          headers: { "Content-Type": "application/json" },
+        });
+        return { response: errorResponse, url, headers, transformedBody: body };
+      }
+
       const transformedResponse = stream !== false
         ? this.transformProtobufToSSE(response.body, model, body)
         : this.transformProtobufToJSON(response.body, model, body);
 
       return { response: transformedResponse, url, headers, transformedBody: body };
     } catch (error) {
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
       const errorResponse = new Response(JSON.stringify({
         error: {
           message: error.message,
@@ -891,6 +1073,19 @@ export class CursorExecutor extends BaseExecutor {
     const finalizedIds = new Set();
     const emittedToolCallIds = new Set();
     let frameCount = 0;
+    const emitComposerContent = (visible) => {
+      if (visible.length <= emittedComposerThinkingContentLength) return;
+      const deltaContent = visible.slice(emittedComposerThinkingContentLength);
+      emittedComposerThinkingContentLength = visible.length;
+      totalContent += deltaContent;
+      chunks.push(chatChunkSse({
+        id: responseId, created, model,
+        delta:
+          chunks.length === 0 && toolCalls.length === 0
+            ? { role: "assistant", content: deltaContent }
+            : { content: deltaContent }
+      }));
+    };
 
     debugLog(`[CURSOR BUFFER SSE] Total length: ${buffer.length} bytes`);
 
@@ -1018,19 +1213,9 @@ export class CursorExecutor extends BaseExecutor {
 
       if (isComposerModel(model) && result.thinking) {
         totalThinking += result.thinking;
-        const visibleContent = visibleComposerContentFromThinking(totalThinking);
-        if (visibleContent.length > emittedComposerThinkingContentLength) {
-          const deltaContent = visibleContent.slice(emittedComposerThinkingContentLength);
-          emittedComposerThinkingContentLength = visibleContent.length;
-          totalContent += deltaContent;
-          chunks.push(chatChunkSse({
-            id: responseId, created, model,
-            delta:
-              chunks.length === 0 && toolCalls.length === 0
-                ? { role: "assistant", content: deltaContent }
-                : { content: deltaContent }
-          }));
-        }
+        emitComposerContent(
+          emittableComposerContent(visibleComposerContentFromThinking(totalThinking))
+        );
       }
     }
 
@@ -1073,6 +1258,12 @@ export class CursorExecutor extends BaseExecutor {
           }));
         }
       }
+    }
+
+    // A tail held back as a possible sentinel prefix is ordinary content once
+    // the stream is over, so flush it rather than swallowing it (#1316).
+    if (isComposerModel(model)) {
+      emitComposerContent(visibleComposerContentFromThinking(totalThinking));
     }
 
     if (chunks.length === 0 && toolCalls.length === 0) {

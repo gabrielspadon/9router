@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { registerShutdownFlusher } from "../../shutdown.js";
 
 let SQL = null;
 
@@ -22,8 +23,16 @@ export async function createSqlJsAdapter(filePath) {
   const SAVE_DEBOUNCE_MS = 100;
 
   function persist() {
-    const data = db.export();
-    fs.writeFileSync(filePath, Buffer.from(data));
+    const data = Buffer.from(db.export());
+    const tmp = filePath + ".tmp";
+    const fd = fs.openSync(tmp, "w");
+    try {
+      fs.writeFileSync(fd, data);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, filePath); // atomic on POSIX; no torn file on crash
     dirty = false;
   }
 
@@ -33,13 +42,18 @@ export async function createSqlJsAdapter(filePath) {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       if (dirty) {
-        try { persist(); } catch (e) { console.error("[sqljs] save failed:", e); }
+        try {
+          persist();
+        } catch (e) {
+          console.error("[sqljs] save failed:", e);
+        }
       }
     }, SAVE_DEBOUNCE_MS);
   }
 
   function paramsObj(params) {
-    if (!params || (Array.isArray(params) && params.length === 0)) return undefined;
+    if (!params || (Array.isArray(params) && params.length === 0))
+      return undefined;
     return params;
   }
 
@@ -49,7 +63,9 @@ export async function createSqlJsAdapter(filePath) {
       stmt.bind(paramsObj(params));
       stmt.step();
       const changes = db.getRowsModified();
-      const lastInsertRowid = db.exec("SELECT last_insert_rowid() as id")[0]?.values?.[0]?.[0] ?? null;
+      const lastInsertRowid =
+        db.exec("SELECT last_insert_rowid() as id")[0]?.values?.[0]?.[0] ??
+        null;
       scheduleSave();
       return { changes, lastInsertRowid };
     } finally {
@@ -94,7 +110,10 @@ export async function createSqlJsAdapter(filePath) {
       scheduleSave();
       return result;
     } catch (e) {
-      try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
+      try {
+        db.exec(`ROLLBACK TO ${sp}`);
+        db.exec(`RELEASE ${sp}`);
+      } catch {}
       throw e;
     }
   }
@@ -105,11 +124,13 @@ export async function createSqlJsAdapter(filePath) {
     db.close();
   }
 
-  // Flush on shutdown
-  const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  const flush = () => {
+    if (dirty)
+      try {
+        persist();
+      } catch {}
+  };
+  registerShutdownFlusher(flush, 100);
 
   return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
 }

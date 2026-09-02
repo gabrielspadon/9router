@@ -3,17 +3,28 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { shutdownProcess } from "@/lib/shutdown.js";
 
 const KILL_TIMEOUT_MS = 5000;
 const PROCESS_WAIT_MS = 1500;
+
+// An install the user pinned deliberately has to be able to stay pinned: the
+// npm `latest` of the published package is not authoritative for it, and
+// without a way to say so a rollback is undone by the next start (#1563).
+// Both the banner (/api/version) and the installer (/api/version/update) read
+// this, so the opt-out cannot be honoured by one and ignored by the other.
+export function isUpdateDisabled() {
+  const flag = process.env.TOKENPROXY_NO_UPDATE;
+  return !!flag && flag !== "0" && flag !== "false";
+}
 
 // Kill MITM server by PID file (MITM may run as admin/sudo)
 function killMitmByPidFile() {
   try {
     const mitmPidFile = path.join(
       process.platform === "win32"
-        ? path.join(process.env.APPDATA || "", "9router")
-        : path.join(os.homedir(), ".9router"),
+        ? path.join(process.env.APPDATA || "", "tokenproxy")
+        : path.join(os.homedir(), ".tokenproxy"),
       "mitm",
       ".mitm.pid"
     );
@@ -37,7 +48,7 @@ function killMitmByPidFile() {
   } catch { /* best effort */ }
 }
 
-// Collect PIDs of all 9router-related processes (excluding current)
+// Collect PIDs of all tokenproxy-related processes (excluding current)
 function collectAppPids() {
   const pids = [];
   const platform = process.platform;
@@ -49,8 +60,8 @@ function collectAppPids() {
       const lines = output.split("\n").slice(1).filter(l => l.trim());
       lines.forEach(line => {
         const lower = line.toLowerCase();
-        // Match anything running from 9router install dir or wrapper cli.js
-        const isAppProcess = lower.includes("9router") ||
+        // Match anything running from tokenproxy install dir or wrapper cli.js
+        const isAppProcess = lower.includes("tokenproxy") ||
           lower.includes("next-server") ||
           lower.includes("\\bin\\app\\") ||
           lower.includes("/bin/app/") ||
@@ -77,7 +88,7 @@ function collectAppPids() {
     try {
       const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
       output.split("\n").forEach(line => {
-        const isAppProcess = line.includes("9router") ||
+        const isAppProcess = line.includes("tokenproxy") ||
           line.includes("next-server") ||
           line.includes("cloudflared") ||
           line.includes("/bin/app/") ||
@@ -99,9 +110,9 @@ function collectAppPids() {
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "tokenproxy");
   }
-  return path.join(os.homedir(), ".9router");
+  return path.join(os.homedir(), ".tokenproxy");
 }
 
 function resolveBundledUpdaterPath() {
@@ -156,12 +167,24 @@ export async function killAppProcesses() {
   }
 }
 
-// Resolve npx/9router binary to relaunch after update (cross-platform)
+// Resolve the command that relaunches the launcher after an update.
+//
+// Preferring the launcher's OWN path is the point: after `npm i -g` the file at
+// that path IS the new version, so relaunching it is both the same install and
+// the updated one. A package runner resolves by name instead, and on a machine
+// with more than one install location it can start the copy that was NOT
+// updated, which reports success and then offers the same update again (#2186).
+//
+// The fallback keeps working where the launcher did not hand its path down, but
+// with the flag that forbids fetching: without it a runner may download a
+// version nobody installed, which is a worse failure than not relaunching.
 function resolveRelaunchCommand() {
   const isWin = process.platform === "win32";
-  // Prefer `npx 9router` — works regardless of global bin path changes after npm i -g
+  const own = process.env.TOKENPROXY_CLI_PATH;
+  if (own && fs.existsSync(own)) return { cmd: process.execPath, args: [own] };
+
   const npx = isWin ? "npx.cmd" : "npx";
-  return { cmd: npx, args: [UPDATER_CONFIG.npmPackageName] };
+  return { cmd: npx, args: ["--no", UPDATER_CONFIG.npmPackageName] };
 }
 
 // Spawn detached headless updater (Node process) then exit current server
@@ -189,7 +212,12 @@ export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName)
       UPDATER_WAIT_MIN_MS: String(UPDATER_CONFIG.waitForExitMinMs),
       UPDATER_WAIT_MAX_MS: String(UPDATER_CONFIG.waitForExitMaxMs),
       UPDATER_WAIT_CHECK_MS: String(UPDATER_CONFIG.waitForExitCheckMs),
-      UPDATER_APP_PORT: String(UPDATER_CONFIG.appPort),
+      // The live port, not the compile-time default. The updater polls this to
+      // know the old server exited before it installs, and opens the dashboard
+      // on it after the relaunch; on an install serving any other port both
+      // read the wrong one (#2575). Same precedence the internal loopback
+      // callers already use.
+      UPDATER_APP_PORT: String(process.env.PORT || UPDATER_CONFIG.appPort),
       UPDATER_RELAUNCH: "1",
       UPDATER_RELAUNCH_CMD: relaunch.cmd,
       UPDATER_RELAUNCH_ARGS: JSON.stringify(relaunchArgs),

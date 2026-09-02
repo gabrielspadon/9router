@@ -1,11 +1,22 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import {
+  CONNECT_TIMEOUT_DEFAULT_MS,
+  isValidConnectTimeoutMs,
+} from "../../../../open-sse/config/connectTimeout.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
-const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
+const DEFAULT_HEADROOM_URL =
+  process.env.HEADROOM_URL || "http://localhost:8787";
+
+// Same window parseHeadroomTimeoutMs() accepts for HEADROOM_TIMEOUT_MS, so the
+// dashboard and the env var cannot disagree about what a usable timeout is.
+const isValidHeadroomTimeoutMs = (value) =>
+  Number.isInteger(value) && value > 0 && value < 600000;
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
+  analyticsEnabled: false,
   tunnelEnabled: false,
   tunnelUrl: "",
   tunnelProvider: "cloudflare",
@@ -13,10 +24,16 @@ const DEFAULT_SETTINGS = {
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
+  // Operator kill switch for the no-auth free providers. They have no
+  // connection row to deactivate, so without this there was no way to take one
+  // out of rotation at all (#2650). Provider id -> true; absent means enabled.
+  disabledProviders: {},
+  connectTimeoutMs: CONNECT_TIMEOUT_DEFAULT_MS,
   quotaVisibility: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
+  exposeComboOnly: false,
   capacityAdapter: {
     vision: { enabled: true, roundRobin: false, models: [] },
     pdf: { enabled: false, roundRobin: false, models: [] },
@@ -34,7 +51,7 @@ const DEFAULT_SETTINGS = {
   oidcScopes: "openid profile email",
   oidcLoginLabel: "Sign in with OIDC",
   samlEntryPoint: "",
-  samlIssuer: "urn:9router:sp",
+  samlIssuer: "urn:tokenproxy:sp",
   samlCert: "",
   samlLoginLabel: "Sign in with SAML SSO",
   samlAttributeEmail: "email",
@@ -50,10 +67,19 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  // Privacy filter (#2728): pseudonymise emails and the terms below in the
+  // outbound body, restored before the client sees the answer. Off by
+  // default — it walks every request, so it costs nothing until asked for.
+  privacyFilterEnabled: false,
+  privacyFilterTerms: [],
   headroomEnabled: false,
   headroomUrl: DEFAULT_HEADROOM_URL,
   headroomCompressUserMessages: false,
-  headroomTimeoutMs: 3000,
+  // null means "not configured": chat.js then falls back to HEADROOM_TIMEOUT_MS,
+  // and headroom.js to its own default after that. A concrete default here would
+  // shadow the env var for every operator who already sets it.
+  headroomTimeoutMs: null,
+  headroomLossless: false,
   cavemanEnabled: false,
   cavemanLevel: "full",
   ponytailEnabled: false,
@@ -62,12 +88,69 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  memoryToolPruningEnabled: true,
+  memoryMaxToolTurnsKeepFull: 2,
+  memoryMaxHistoricalToolChars: 800,
+  memoryMediaPruningEnabled: true,
+  memoryCompactionEnabled: false,
+  memoryCompactionThresholdTokens: 32000,
+  memoryRecentTurnsToKeep: 8,
+  memoryHandoffEnabled: false,
+  freeModelSync: { enabled: false, intervalHours: 4, autoComboIds: [] },
+  // Outbound webhook notifications (#3141). Endpoints are operator-supplied
+  // URLs; delivery lives in src/lib/notifications/webhooks.js and is
+  // strictly fail-open, so nothing here can affect a routed request.
+  notifications: {
+    enabled: false,
+    endpoints: [],
+    errorRate: { threshold: 0.5, windowSeconds: 300, minSamples: 20 },
+  },
+  // Claude compat layer (see src/lib/claudeCompat.js): suffixMode controls
+  // when [1m] is appended to rewritten /v1/models ids.
+  claudeCompat: {
+    enabled: true,
+    suffixMode: "auto",
+    keywords: [],
+  },
+  // Default-model mapping written to ~/.claude/settings.json env by the
+  // endpoint page's one-click button (see /api/claude-compat/write-claude-settings).
+  claudeDefaultModels: {
+    sonnet: { model: "", name: "", oneM: false },
+    opus: { model: "", name: "", oneM: false },
+    fable: { model: "", name: "", oneM: false },
+    haiku: { model: "", name: "", oneM: false },
+    subagent: { model: "", oneM: false },
+  },
+  // User contextWindow overrides, keyed by model id or glob pattern (e.g.
+  // "glm-5.3" or "glm-5*"). Consumed by open-sse/providers/capabilities.js
+  // via setContextWindowOverrides(); managed on /dashboard/model-context.
+  contextWindowOverrides: {},
+  toolDisclosureEnabled: false,
+  toolDisclosureFilterEnabled: false,
+  toolDisclosureMaxTools: 20,
+  toolDisclosureExcludeServers: [],
+  toolDisclosureExcludeTools: [],
 };
 
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
+}
+
+function deleteClearedProxyPoolSnapshots(providerStrategies) {
+  if (!providerStrategies || typeof providerStrategies !== "object" || Array.isArray(providerStrategies)) {
+    return providerStrategies;
+  }
+  return Object.fromEntries(Object.entries(providerStrategies).map(([providerId, values]) => {
+    if (!values || typeof values !== "object" || Array.isArray(values) || values.proxyPoolId !== null) {
+      return [providerId, values];
+    }
+    const normalized = { ...values };
+    delete normalized.proxyPoolId;
+    delete normalized.strictProxy;
+    return [providerId, normalized];
+  }));
 }
 
 // Merge raw settings with defaults; backward-compat for missing keys
@@ -86,6 +169,28 @@ export function mergeWithDefaults(raw) {
       }
     }
   }
+  if (!isValidConnectTimeoutMs(merged.connectTimeoutMs)) {
+    merged.connectTimeoutMs = CONNECT_TIMEOUT_DEFAULT_MS;
+  }
+  // Back to unset, not to a number: AbortSignal.timeout coerces a bad value to 0
+  // and aborts instantly, which disables compression silently.
+  if (merged.headroomTimeoutMs !== null && !isValidHeadroomTimeoutMs(merged.headroomTimeoutMs)) {
+    merged.headroomTimeoutMs = null;
+  }
+  const providerStrategies = { ...(merged.providerStrategies || {}) };
+  for (const [providerId, rawOverride] of Object.entries(providerStrategies)) {
+    if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+      delete providerStrategies[providerId];
+      continue;
+    }
+    const override = { ...rawOverride };
+    if (Object.prototype.hasOwnProperty.call(override, "connectTimeoutMs")
+        && !isValidConnectTimeoutMs(override.connectTimeoutMs)) {
+      delete override.connectTimeoutMs;
+    }
+    providerStrategies[providerId] = override;
+  }
+  merged.providerStrategies = providerStrategies;
   return merged;
 }
 
@@ -101,13 +206,104 @@ export async function updateSettings(updates) {
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
+    // Nested config objects arrive as partial PATCHes from the dashboard;
+    // shallow top-level spread would replace them wholesale and drop
+    // sibling keys (e.g. { claudeCompat: { keywords } } losing enabled).
+    // Seed from defaults first so even the FIRST patch merges correctly
+    // (raw current may not have the key yet).
+    const seeded = mergeWithDefaults(current);
+    const mergedCurrent = { ...current };
+    // claudeCompat arrives as a partial PATCH (e.g. only { keywords }) and
+    // needs merging to keep sibling keys like enabled. contextWindowOverrides
+    // is deliberately excluded: the model-context API sends the WHOLE map
+    // (delete removes a key), and merging would resurrect deleted keys.
+    for (const key of ["claudeCompat", "notifications"]) {
+      if (
+        updates[key] &&
+        typeof updates[key] === "object" &&
+        seeded[key] &&
+        typeof seeded[key] === "object"
+      ) {
+        updates = { ...updates, [key]: { ...seeded[key], ...updates[key] } };
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "providerStrategies")) {
+      updates = {
+        ...updates,
+        providerStrategies: deleteClearedProxyPoolSnapshots(updates.providerStrategies),
+      };
+    }
+    next = { ...mergedCurrent, ...updates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
     );
   });
   return mergeWithDefaults(next);
+}
+
+export async function updateProviderStrategy(providerId, values) {
+  const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
+  if (dangerousKeys.has(providerId) || Object.keys(values).some((key) => dangerousKeys.has(key))) {
+    throw new TypeError("Invalid provider strategy key");
+  }
+  const db = await getAdapter();
+  let next;
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const strategies = { ...(current.providerStrategies || {}) };
+    const provider = { ...(strategies[providerId] || {}) };
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null) delete provider[key];
+      else provider[key] = value;
+    }
+    if (Object.keys(provider).length === 0) delete strategies[providerId];
+    else strategies[providerId] = provider;
+    next = { ...current, providerStrategies: strategies };
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(next)],
+    );
+  });
+  return mergeWithDefaults(next);
+}
+
+// Conditional ownership prevents a migration writer from overwriting a newer
+// no-auth strategy selection that raced with its read.
+export async function updateProviderStrategyProxyPoolSnapshotIfBound(providerId, expectedPoolId, pair) {
+  const dangerousKeys = new Set(["__proto__", "prototype", "constructor"]);
+  if (dangerousKeys.has(providerId)) {
+    throw new TypeError("Invalid provider strategy key");
+  }
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const strategies = { ...(current.providerStrategies || {}) };
+    const strategy = strategies[providerId];
+    if (
+      !strategy
+      || typeof strategy !== "object"
+      || Array.isArray(strategy)
+      || strategy.proxyPoolId !== expectedPoolId
+    ) {
+      return;
+    }
+    const updatedStrategy = {
+      ...strategy,
+      proxyPoolId: pair.proxyPoolId,
+      strictProxy: pair.strictProxy === true,
+    };
+    strategies[providerId] = updatedStrategy;
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson({ ...current, providerStrategies: strategies })],
+    );
+    result = updatedStrategy;
+  });
+  return result;
 }
 
 export async function isCloudEnabled() {

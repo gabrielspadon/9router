@@ -185,6 +185,17 @@ describe("MimoFreeExecutor", () => {
     expect(h["Accept"]).toBe("text/event-stream");
   });
 
+  it("uses connectionId when present and does not leak session affinity between credentials", () => {
+    const h1 = exec.buildHeaders({ connectionId: "conn-123" }, true);
+    const h2 = exec.buildHeaders({ connectionId: "conn-456" }, true);
+    expect(h1["x-session-affinity"]).toBe("conn-123");
+    expect(h2["x-session-affinity"]).toBe("conn-456");
+
+    const h3 = exec.buildHeaders({}, true);
+    const h4 = exec.buildHeaders({}, true);
+    expect(h3["x-session-affinity"]).not.toBe(h4["x-session-affinity"]);
+  });
+
   it("transformRequest injects the system marker", () => {
     const out = exec.transformRequest("mimo-auto", { messages: [{ role: "user", content: "hi" }] });
     expect(out.messages[0].content).toContain(MIMO_SYSTEM_MARKER);
@@ -235,8 +246,15 @@ describe("MiMo Free provider registration", () => {
     expect(PROVIDERS.mmf?.noAuth).toBe(true);
   });
 
-  it("exposes only mimo-auto (the sole free-channel model)", () => {
-    expect(PROVIDER_MODELS.mmf.map((m) => m.id)).toEqual(["mimo-auto"]);
+  it("advertises no static model, because the free channel is gone", () => {
+    // This asserted ["mimo-auto"] when the channel still answered. Xiaomi ended
+    // it, and the endpoint now returns 403 "Illegal access" directly and 400
+    // "Unsupported model" through the gateway (#3035), so listing it only put a
+    // permanently-rejected id into pickers and combos where it spends a
+    // fallback slot. Both duplicate entries, mmf.js and mimo-free.js, are empty
+    // and must stay in agreement; the fetcher and passthroughModels still give
+    // a revived channel and a hand-typed id their way back.
+    expect(PROVIDER_MODELS.mmf.map((m) => m.id)).toEqual([]);
   });
 
   it("maps the mimo-free alias to mmf", () => {

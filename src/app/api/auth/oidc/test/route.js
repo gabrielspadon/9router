@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
-import { fetchOidcDiscovery, getPublicOrigin, probeOidcClientSecret } from "@/lib/auth/oidc";
+import { fetchOidcDiscovery, getPublicOrigin, normalizeScopes, probeOidcClientSecret } from "@/lib/auth/oidc";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 async function canAccessTestRoute() {
@@ -24,7 +24,10 @@ export async function POST(request) {
 
     const issuerUrl = String(body.issuerUrl || settings.oidcIssuerUrl || "").trim();
     const clientId = String(body.clientId || settings.oidcClientId || "").trim();
-    const scopes = String(body.scopes || settings.oidcScopes || "openid profile email").trim() || "openid profile email";
+    // Report the scope the authorization request will actually carry, openid
+    // re-added and all, so the Test button cannot echo a scope string that
+    // would silently produce no id_token (#3642).
+    const scopes = normalizeScopes(String(body.scopes || settings.oidcScopes || ""));
     const clientSecret = String(
       Object.prototype.hasOwnProperty.call(body, "clientSecret")
         ? body.clientSecret

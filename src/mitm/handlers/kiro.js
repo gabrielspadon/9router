@@ -183,7 +183,7 @@ function withInitialFrame(state, frames) {
 /**
  * Safely stringify a tool-call input value.
  * OpenAI expects `function.arguments` to be a JSON string, never an object.
- * If 9router's Anthropic→OpenAI conversion passes the input as a pre-parsed object,
+ * If tokenproxy's Anthropic→OpenAI conversion passes the input as a pre-parsed object,
  * this prevents the "" + object → "[object Object]" corruption.
  */
 function safeArgsString(value) {
@@ -200,24 +200,59 @@ function safeArgsString(value) {
  *   - toolResults only    → one { role:"tool", tool_call_id, content } per result
  *   - both                → tool messages first, then the user text message
  */
+// Kiro carries images as { format, source: { bytes } }; OpenAI wants a data URI
+// in an image_url block. Written out here rather than imported from
+// open-sse/translator/concerns/image.js because this handler is CommonJS and
+// that module is ESM.
+function kiroImageToOpenAI(img) {
+  const bytes = img?.source?.bytes;
+  if (typeof bytes !== "string" || !bytes) return null;
+  const format = typeof img.format === "string" && img.format ? img.format : "png";
+  const mime = format.includes("/") ? format : `image/${format}`;
+  return { type: "image_url", image_url: { url: `data:${mime};base64,${bytes}` } };
+}
+
 function convertUserInputMessage(uim) {
   const out = [];
   const toolResults = uim.userInputMessageContext?.toolResults || [];
+  // The Kiro IDE puts pasted and vision images here, and this converter read
+  // only `content`, so every image died before the request was forwarded and
+  // the model answered about a picture it never saw (#2521).
+  const images = [];
+  for (const img of Array.isArray(uim.images) ? uim.images : []) {
+    const block = kiroImageToOpenAI(img);
+    if (block) images.push(block);
+  }
 
   // Emit one "tool" message per tool result (OpenAI multi-tool format)
   for (const tr of toolResults) {
-    const text = (tr.content || []).map(c => c.text || "").join("\n");
+    const parts = [];
+    for (const c of tr.content || []) {
+      if (typeof c?.text === "string") { parts.push(c.text); continue; }
+      // A tool that returns an image (MCP read_media_file, a screenshot tool)
+      // was mapped to "" here too. An OpenAI tool message takes a string, so
+      // the image travels on the user turn below, which is where a vision
+      // model reads it from, and the tool text keeps a marker in its place.
+      const block = c?.type === "image_url" ? c : kiroImageToOpenAI(c);
+      if (block) { images.push(block); parts.push("[Image returned by tool]"); }
+    }
     out.push({
       role: "tool",
       tool_call_id: tr.toolUseId || "",
-      content: text,
+      content: parts.join("\n"),
     });
   }
 
-  // Emit user text only if it exists alongside OR when there are no tool results
+  // Emit user text only if it exists alongside OR when there are no tool results.
+  // An image with no text still needs a turn to travel on.
   const text = (uim.content || "").trim();
-  if (text || toolResults.length === 0) {
-    out.push({ role: "user", content: text });
+  if (text || toolResults.length === 0 || images.length > 0) {
+    out.push({
+      role: "user",
+      content: images.length > 0
+        ? [...(text ? [{ type: "text", text }] : []), ...images]
+        : text,
+    });
   }
 
   return out;
@@ -341,6 +376,7 @@ function convertOpenAIToKiro(chunk, state) {
       const thinking = state.thinkBuf;
       state.thinkBuf = "";
       return withInitialFrame(state, buildEventStreamFrame("reasoningContentEvent", {
+        text: thinking,
         content: thinking,
         modelId: state.modelId || "kiro-unknown"
       }));
@@ -395,6 +431,7 @@ function convertOpenAIToKiro(chunk, state) {
   // Handle explicit reasoning_content (type-specific thinking channel)
   if (delta.reasoning_content) {
     frames.push(buildEventStreamFrame("reasoningContentEvent", {
+      text: delta.reasoning_content,
       content: delta.reasoning_content,
       modelId
     }));
@@ -406,6 +443,7 @@ function convertOpenAIToKiro(chunk, state) {
 
     if (thinking) {
       frames.push(buildEventStreamFrame("reasoningContentEvent", {
+        text: thinking,
         content: thinking,
         modelId
       }));
@@ -428,7 +466,7 @@ function convertOpenAIToKiro(chunk, state) {
   }
 
   if (frames.length === 0) {
-    // اولین چانک ممکنه فقط role/empty باشه — initial رو همون‌جا بفرست
+    // The first chunk may carry only role/empty, so send the initial frame here.
     if (!state.initialSent) return withInitialFrame(state, null);
     return null;
   }
@@ -475,7 +513,7 @@ function emitFinish(state) {
  * Intercept Kiro IDE CodeWhisperer request and convert to EventStream response:
  *   1. Parse CodeWhisperer JSON body (reject binary EventStream formats)
  *   2. Convert CodeWhisperer format to OpenAI messages[] format
- *   3. Forward to 9router /v1/chat/completions (OpenAI SSE)
+ *   3. Forward to tokenproxy /v1/chat/completions (OpenAI SSE)
  *   4. Convert OpenAI SSE response → AWS EventStream binary frames
  *   5. Stream EventStream frames back to Kiro IDE
  * 
@@ -511,7 +549,7 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       ...(tools.length > 0 && { tools, tool_choice: "auto" }),
     };
 
-    // 3: Forward to 9router
+    // 3: Forward to tokenproxy
     const routerRes = await fetchRouter(openaiBody, "/v1/chat/completions", req.headers);
 
     // 4 + 5: Re-encode response as AWS EventStream binary using standard pipeline

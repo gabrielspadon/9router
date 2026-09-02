@@ -10,8 +10,8 @@ import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const APP_PORT = UPDATER_CONFIG.appPort;
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
-const CLI_TOKEN_SALT = "9r-cli-auth";
+const CLI_TOKEN_HEADER = "x-tp-cli-token";
+const CLI_TOKEN_SALT = "tp-cli-auth";
 const LOCAL_MCP_PREFIX = `http://localhost:${APP_PORT}/api/mcp/`;
 
 let cachedCliToken = null;
@@ -49,6 +49,20 @@ const SECURITY_RELAX = {
 
 // Tools auto-allow per server via toolPolicy["*"] = "allow" semantics.
 // 3p schema requires explicit tool names; we mark "*" via operonSkipMcpApprovals instead.
+
+// The applied config file belongs to Claude Desktop, not to us: it is the profile
+// the app writes its own state into. Only these keys are ours, so an Apply merges
+// them over what is already there and a reset removes exactly them. Replacing the
+// object wholesale deleted every key Cowork owned, which is how a tool the runtime
+// still advertises stopped being dispatchable (#940).
+const MANAGED_KEYS = [
+  ...Object.keys(SECURITY_RELAX),
+  "inferenceProvider",
+  "inferenceGatewayBaseUrl",
+  "inferenceGatewayApiKey",
+  "inferenceModels",
+  "managedMcpServers",
+];
 
 const getCandidateRoots = () => {
   if (os.platform() === "darwin") {
@@ -258,7 +272,7 @@ export async function GET() {
       ? config.inferenceModels.map((m) => (typeof m === "string" ? m : m?.name)).filter(Boolean)
       : [];
     const managedMcp = Array.isArray(config?.managedMcpServers) ? config.managedMcpServers : [];
-    const has9Router = !!(config?.inferenceProvider === PROVIDER && baseUrl);
+    const hasTokenProxy = !!(config?.inferenceProvider === PROVIDER && baseUrl);
 
     // Active local plugins = managedMcp entries whose URL points at our inline bridge.
     const stdioNames = new Set(LOCAL_STDIO_PLUGINS.map((p) => p.name));
@@ -274,7 +288,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       config,
-      has9Router,
+      hasTokenProxy,
       configPath,
       cowork: {
         appliedId,
@@ -335,13 +349,17 @@ export async function POST(request) {
     const configPath = path.join(getWriteConfigDir(), `${meta.appliedId}.json`);
 
     const newConfig = {
+      ...((await readJson(configPath)) || {}),
       ...SECURITY_RELAX,
       inferenceProvider: PROVIDER,
       inferenceGatewayBaseUrl: baseUrl,
       inferenceGatewayApiKey: apiKey,
       inferenceModels: modelsArray.map((name) => ({ name })),
     };
+    // Ours to set is ours to clear: merging alone would leave a stale server list
+    // behind once the user switches every plugin off.
     if (managedMcpServers.length > 0) newConfig.managedMcpServers = managedMcpServers;
+    else delete newConfig.managedMcpServers;
 
     await fs.writeFile(configPath, JSON.stringify(newConfig, null, 2));
 
@@ -375,7 +393,12 @@ export async function DELETE() {
       return NextResponse.json({ success: true, message: "No active config to reset" });
     }
     const configPath = path.join(await getConfigDir(), `${meta.appliedId}.json`);
-    try { await fs.writeFile(configPath, JSON.stringify({}, null, 2)); }
+    // Reset drops our keys and leaves the rest of Cowork's profile intact (#940).
+    try {
+      const remaining = (await readJson(configPath)) || {};
+      for (const key of MANAGED_KEYS) delete remaining[key];
+      await fs.writeFile(configPath, JSON.stringify(remaining, null, 2));
+    }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     try { await writeSkipApprovals([]); } catch { /* ignore */ }
     try { await cleanup1pLegacy(); } catch { /* ignore */ }

@@ -1,4 +1,9 @@
-import { describe, it, before } from "node:test";
+// Runner note: these assertions use node:assert, which throws on failure and so
+// works unchanged inside vitest. Only the harness import moves. Taken from the
+// built-in test module they were collected but never counted: vitest reported
+// "No test suite found" and the file sat in the known-fail baseline asserting
+// nothing, while the project and CI run vitest only.
+import { describe, it, beforeAll } from "vitest";
 import assert from "node:assert/strict";
 
 // Load the registry entry once for the suite so a load failure is reported
@@ -7,7 +12,7 @@ import assert from "node:assert/strict";
 let kimchiEntry;
 
 describe("kimchi registry entry", () => {
-  before(async () => {
+  beforeAll(async () => {
     kimchiEntry = (await import("../../open-sse/providers/registry/kimchi.js")).default;
   });
 
@@ -113,7 +118,7 @@ function mapKimchiMetadata(raw) {
 }
 
 describe("kimchiModels", () => {
-  it("maps Kimchi metadata entries to 9router model shape", () => {
+  it("maps Kimchi metadata entries to tokenproxy model shape", () => {
     const raw = [{
       slug: "glm-5.2-fp8",
       display_name: "GLM 5.2",

@@ -32,10 +32,10 @@ if (cleanupInterval.unref) cleanupInterval.unref();
  * Get or create a session ID for the given connection.
  *
  * The binary generates a session ID once at startup: `rs() + Date.now()`.
- * Since 9router is long-running, we simulate this "per-launch" behavior by
+ * Since tokenproxy is long-running, we simulate this "per-launch" behavior by
  * storing a generated ID in memory for each connection.
  *
- * - If 9router restarts, the ID changes (matching binary restart behavior).
+ * - If tokenproxy restarts, the ID changes (matching binary restart behavior).
  * - Within a running instance, the ID is stable for that connection.
  * - This enables prompt caching while using the EXACT random logic of the binary.
  *
@@ -50,10 +50,17 @@ export function deriveSessionId(connectionId) {
     const existing = runtimeSessionStore.get(connectionId);
     if (existing) {
         existing.lastUsed = Date.now();
+        // Re-insert so Map iteration order tracks use, not first insert. The
+        // eviction below takes the first key, and without this it would take the
+        // oldest connection — which for a long-running instance is the busiest
+        // one, whose session id is exactly what must stay stable.
+        runtimeSessionStore.delete(connectionId);
+        runtimeSessionStore.set(connectionId, existing);
         return existing.sessionId;
     }
 
-    // Evict oldest entry if store exceeds max size (safety cap between cleanup cycles)
+    // Evict least-recently-used entry if store exceeds max size (safety cap
+    // between cleanup cycles)
     const MAX_SESSIONS = 1000;
     if (runtimeSessionStore.size >= MAX_SESSIONS) {
       const oldest = runtimeSessionStore.keys().next().value;
@@ -187,6 +194,10 @@ function assistantTextSessionId(scope, body) {
     const existing = assistantSessionStore.get(hash);
     if (existing) {
         existing.lastUsed = Date.now();
+        // Same reason as deriveSessionId: keep Map order in use order so the
+        // eviction below drops the least-recently-used conversation.
+        assistantSessionStore.delete(hash);
+        assistantSessionStore.set(hash, existing);
         return existing.sessionId;
     }
     if (assistantSessionStore.size >= MAX_ASSISTANT_SESSIONS) {

@@ -1,0 +1,74 @@
+{
+  "receiptVersion": "1",
+  "recordedAt": "2026-09-02T15:09:22+00:00",
+  "product": "TokenProxy",
+  "productVersion": "0.1.0",
+  "repositoryPath": "/home/spadon/Codebases/tokenproxy",
+  "defaultBranch": "main",
+  "brandContract": {
+    "path": "tracking/tokenproxy-brand-contract.json",
+    "contractVersion": "1",
+    "sha256": "46cfd740a72faaaa7118f7103361b311758eadacc0ce65a61bc21393256aadcc"
+  },
+  "legacy_pattern": "9[ _-]?router|n9router|9R-(PRs|Issues|Design)",
+  "legacy_pattern_flags": "-Ei",
+  "payloadManifest": {
+    "path": "tracking/tokenproxy-cutover-payload.sha256",
+    "files": 2365,
+    "sha256": "ef48c182d8d6a7421ee8590814052738f09288ae6c4295cbe5842dba74746b83",
+    "excludes": [
+      "tracking/"
+    ],
+    "selfVerify": "sha256sum -c --quiet tracking/tokenproxy-cutover-payload.sha256"
+  },
+  "surfaces": {
+    "verifier": ".unlazy-receipts/verify-identity-surfaces.sh",
+    "result": "ALL_SURFACES_RENAMED",
+    "covered": [
+      "source tree",
+      "packages and executables",
+      "configuration and state",
+      "API-owned metadata",
+      "front-facing UI",
+      "documentation",
+      "automation and release",
+      "legal and provenance"
+    ],
+    "visualInspection": {
+      "why": "identity rendered as pixels is invisible to a byte-level scan",
+      "assetsInspected": [
+        "cli/src/cli/tray/icon.ico",
+        "cli/src/cli/tray/icon.png",
+        "public/favicon.svg",
+        "public/icons/icon-192.svg",
+        "public/icons/icon-512.svg",
+        "src/app/favicon.ico"
+      ],
+      "assetsRemoved": [
+        "images/tokenproxy.png",
+        "images/fusion-combo-ui.png"
+      ],
+      "removalReason": "both rendered the predecessor name and version as pixels"
+    }
+  },
+  "residualScan": {
+    "script": ".unlazy-receipts/residual-scan.sh",
+    "residualCount": 0
+  },
+  "predecessor": {
+    "compatibility": "none",
+    "stateImport": "forbidden",
+    "historyImport": "none",
+    "updateRemote": "none",
+    "role": "read-only evidence, not rewritten, deleted, or merged"
+  },
+  "productionUntouched": {
+    "port": 20128,
+    "note": "never deployed or restarted during preparation"
+  },
+  "isolatedTestService": {
+    "port": 20129,
+    "status": "foreign-owned",
+    "note": "listener belongs to another lane; not killed, not reused"
+  }
+}

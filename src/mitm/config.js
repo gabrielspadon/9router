@@ -17,6 +17,7 @@ const TARGET_HOSTS = [
   "daily-cloudcode-pa.googleapis.com",
   "cloudcode-pa.googleapis.com",
   "api.individual.githubcopilot.com",
+  "proxy.individual.githubcopilot.com",
   "q.us-east-1.amazonaws.com",
   "codewhisperer.us-east-1.amazonaws.com",
   "runtime.us-east-1.kiro.dev",
@@ -82,7 +83,7 @@ const MODEL_PATTERNS = {
 // Models that must NEVER be re-routed — always passthrough to the real upstream, even when
 // the tool's other models are mapped. Antigravity's tab-autocomplete (`tab_jump_flash_lite_preview`,
 // `tab_flash_lite_preview`, requestType tab/tab_jump) is latency-critical inline completion; routing
-// it through 9Router to an external chat model makes typing laggy and burns provider quota per
+// it through TokenProxy to an external chat model makes typing laggy and burns provider quota per
 // keystroke. Without this guard the broad `flash` pattern in MODEL_PATTERNS hijacks them onto the
 // flash-agent slot. Verified via MITM dump capture of streamGenerateContent (see AI_JOURNAL).
 const MODEL_NO_MAP = {
@@ -100,7 +101,7 @@ const LOG_BLACKLIST_URL_PARTS = [
 
 function getToolForHost(host) {
   const h = (host || "").split(":")[0];
-  if (h === "api.individual.githubcopilot.com") return "copilot";
+  if (h === "api.individual.githubcopilot.com" || h === "proxy.individual.githubcopilot.com") return "copilot";
   if (h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
   if (h === "q.us-east-1.amazonaws.com" || h === "codewhisperer.us-east-1.amazonaws.com" || h === "runtime.us-east-1.kiro.dev") return "kiro";
   if (h === "api2.cursor.sh") return "cursor";

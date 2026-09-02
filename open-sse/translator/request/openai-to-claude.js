@@ -3,10 +3,13 @@ import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
-import { parseDataUri } from "../concerns/image.js";
+import { parseDataUri, extractAiSdkImageUrl } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
+import { extractReasoningText } from "../concerns/reasoning.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { applyAssistantPrefillPolicy } from "../concerns/assistantPrefillPolicy.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -123,9 +126,9 @@ export function openaiToClaudeRequest(model, body, stream) {
 \`\`\`json
 ${schemaJson}
 \`\`\`
-Respond ONLY with the JSON object, no other text.`);
+Respond ONLY with the JSON object, no other text and no markdown code fences.`);
     } else if (responseFormat.type === "json_object") {
-      systemParts.push("You must respond with valid JSON. Respond ONLY with a JSON object, no other text.");
+      systemParts.push("You must respond with valid JSON. Respond ONLY with a JSON object, no other text and no markdown code fences.");
     }
   }
 
@@ -194,6 +197,20 @@ Respond ONLY with the JSON object, no other text.`);
     result._toolNameMap = toolNameMap;
   }
 
+  // A Responses-format client reaches a Claude upstream through the OpenAI
+  // pivot, and openaiResponsesToOpenAIRequest left the only record of what its
+  // tool declarations meant on that intermediate body: which names were
+  // freeform `custom` tools, and which flattened `namespace__tool` name came
+  // from which declared namespace. This function builds a fresh body, so both
+  // were dropped here and chatCore read undefined. The response conversion then
+  // has nothing to resolve against and hands the client back a plain
+  // function_call under the flattened name — a Codex CLI sees its freeform
+  // apply_patch as a function it cannot invoke (#1707) and its MCP tools under
+  // a namespaced name it cannot dispatch (#1534). Carrying them costs nothing:
+  // chatCore strips both before the body goes upstream.
+  if (body._customToolNames) result._customToolNames = body._customToolNames;
+  if (body._responsesToolNameMap) result._responsesToolNameMap = body._responsesToolNameMap;
+
   return result;
 }
 
@@ -239,6 +256,18 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
           }
         } else if (part.type === OPENAI_BLOCK.IMAGE && part.source) {
           blocks.push({ type: CLAUDE_BLOCK.IMAGE, source: part.source });
+        } else if (extractAiSdkImageUrl(part)) {
+          // AI SDK format: { type: "image", image: "data:..." } (#1330)
+          const url = extractAiSdkImageUrl(part);
+          const parsed = parseDataUri(url);
+          if (parsed) {
+            blocks.push({
+              type: CLAUDE_BLOCK.IMAGE,
+              source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
+            });
+          } else if (url.startsWith("http://") || url.startsWith("https://")) {
+            blocks.push({ type: CLAUDE_BLOCK.IMAGE, source: { type: "url", url } });
+          }
         } else if (part.type === OPENAI_BLOCK.FILE && part.file) {
           // OpenAI file block -> Claude document (PDF only; Claude rejects other mimes).
           const fileData = part.file.file_data;
@@ -253,6 +282,22 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    // OpenAI carries assistant reasoning on the message rather than as a content
+    // block, so without this the thinking of every prior turn is lost crossing
+    // back to Claude (#2400). Claude requires thinking to lead the turn, hence
+    // the push before the content loop. The signature is the fork's canonical
+    // one; formats/claude.js drops a thinking block whose signature the target
+    // model rejects, so nothing unverified reaches the wire.
+    const carriedReasoning = extractReasoningText(msg);
+    const alreadyHasThinking = Array.isArray(msg.content)
+      && msg.content.some((p) => p?.type === CLAUDE_BLOCK.THINKING);
+    if (carriedReasoning && !alreadyHasThinking) {
+      blocks.push({
+        type: CLAUDE_BLOCK.THINKING,
+        thinking: carriedReasoning,
+        signature: DEFAULT_THINKING_CLAUDE_SIGNATURE,
+      });
+    }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
@@ -371,6 +416,14 @@ function openaiToClaudeRequestForAntigravity(model, body, stream) {
       return { ...msg, content: updatedContent };
     });
   }
+
+  // Vertex AI's Claude endpoint has no assistant prefill and rejects a
+  // conversation ending on an assistant turn. This route targets
+  // FORMATS.ANTIGRAVITY, so prepareClaudeRequest — where every other Claude
+  // target picks up this policy — never runs for it (#2321). No headers: the
+  // preserve escape hatch has nothing to preserve on an endpoint that cannot
+  // continue a prefill at all.
+  applyAssistantPrefillPolicy(result);
 
   return result;
 }

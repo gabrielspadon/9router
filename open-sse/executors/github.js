@@ -1,13 +1,14 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { FETCH_CONNECT_TIMEOUT_MS, HTTP_STATUS } from "../config/runtimeConfig.js";
 import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import { initState, translateRequest, translateResponse } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { createExecutorResponseHeaderTimeout } from "../utils/responseHeaderTimeout.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
@@ -87,7 +88,24 @@ export class GithubExecutor extends BaseExecutor {
       return msg;
     });
 
+    // GitHub Copilot's /chat/completions rejects a conversation that ends with an
+    // assistant message ("does not support assistant message prefill. The conversation
+    // must end with a user message."). Anthropic clients such as Claude Desktop send a
+    // trailing assistant turn as a prefill seed, which the Anthropic API honors but
+    // Copilot does not — drop it so the request is accepted.
+    sanitized.messages = this.dropTrailingAssistantPrefill(sanitized.messages);
+
     return sanitized;
+  }
+
+  // Remove trailing assistant message(s). Copilot's chat endpoint can't honor prefill
+  // and 400s unless the conversation ends with a user/tool message. Never empties the
+  // array. No-op when the conversation already ends with a non-assistant message.
+  dropTrailingAssistantPrefill(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return messages;
+    let end = messages.length;
+    while (end > 1 && messages[end - 1]?.role === "assistant") end--;
+    return end === messages.length ? messages : messages.slice(0, end);
   }
 
   // Newer OpenAI models (gpt-5+, o1, o3, o4) require max_completion_tokens instead of max_tokens
@@ -156,15 +174,23 @@ export class GithubExecutor extends BaseExecutor {
 
       if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
-        this.knownCodexModels.add(model);
-        return this.executeWithResponsesEndpoint(options);
+        // Cache the /responses route only once that endpoint has actually served
+        // the model. "The requested model is not supported" is also Copilot's
+        // generic rejection for a model the account or integrator cannot use at
+        // all, so caching on the ATTEMPT pinned every later request for that model
+        // to /responses, where it failed again — #3477 shows gpt-5.2 and
+        // grok-code-fast-1 (neither responses-only) escalated after one such 400,
+        // for the lifetime of the process.
+        const responsesResult = await this.executeWithResponsesEndpoint(options);
+        if (responsesResult.response.ok) this.knownCodexModels.add(model);
+        return responsesResult;
       }
     }
 
     return result;
   }
 
-  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
 
@@ -172,12 +198,25 @@ export class GithubExecutor extends BaseExecutor {
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(transformedBody),
-      signal
-    }, proxyOptions);
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
+    let response;
+    try {
+      response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(transformedBody),
+        signal: deadline.signal,
+      }, proxyOptions);
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };
@@ -249,7 +288,7 @@ export class GithubExecutor extends BaseExecutor {
   // see the note in execute() above), so we translate to Anthropic-native ourselves.
   // This is what makes prepareClaudeRequest() (translator/formats/claude.js) inject
   // cache_control — /chat/completions never gets there, so it never sees cache tokens.
-  async executeWithMessagesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async executeWithMessagesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeout = null }) {
     const url = this.config.messagesUrl;
     const headers = this.buildHeaders(credentials, stream);
 
@@ -267,12 +306,25 @@ export class GithubExecutor extends BaseExecutor {
 
     log?.debug("GITHUB", "Sending translated request to /v1/messages");
 
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(transformedBody),
-      signal
-    }, proxyOptions);
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
+    let response;
+    try {
+      response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(transformedBody),
+        signal: deadline.signal,
+      }, proxyOptions);
+    } catch (error) {
+      throw deadline.classify(error);
+    } finally {
+      deadline.clear();
+    }
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };

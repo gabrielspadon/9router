@@ -37,7 +37,7 @@ export default function Pagination({
   return (
     <div
       className={cn(
-        "flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2",
+        "metric flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2",
         className
       )}
     >
@@ -56,11 +56,12 @@ export default function Pagination({
           <div className="flex items-center gap-2">
             <span className="text-sm text-text-muted">Rows:</span>
             <select
+              aria-label="Rows per page"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className={cn(
-                "h-9 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
-                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "focus-ring min-h-11 min-w-11 rounded-lg border border-border bg-surface",
+                "text-sm text-text-main",
                 "cursor-pointer"
               )}
               style={{ colorScheme: 'auto' }}
@@ -77,13 +78,14 @@ export default function Pagination({
         {totalPages > 1 && (
           <div className="flex items-center gap-1">
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => onPageChange(currentPage - 1)}
               disabled={currentPage === 1}
               className="w-9 px-0"
+              aria-label="Previous page"
             >
-              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              <span aria-hidden="true" className="material-symbols-outlined dir-icon text-[18px]">chevron_left</span>
             </Button>
 
             {pageNumbers[0] > 1 && (
@@ -134,13 +136,14 @@ export default function Pagination({
             )}
 
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => onPageChange(currentPage + 1)}
               disabled={currentPage === totalPages}
               className="w-9 px-0"
+              aria-label="Next page"
             >
-              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              <span aria-hidden="true" className="material-symbols-outlined dir-icon text-[18px]">chevron_right</span>
             </Button>
           </div>
         )}

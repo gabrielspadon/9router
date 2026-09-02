@@ -6,11 +6,12 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 function buildAuthHeaders(cfg, token) {
   if (!token) return {};
   switch (cfg.authHeader) {
-    case "bearer":     return { "Authorization": `Bearer ${token}` };
-    case "token":      return { "Authorization": `Token ${token}` };
-    case "x-api-key":  return { "x-api-key": token };
-    case "key":        return { "Authorization": `Key ${token}` };
-    default:           return { "Authorization": `Bearer ${token}` };
+    case "bearer":        return { "Authorization": `Bearer ${token}` };
+    case "token":         return { "Authorization": `Token ${token}` };
+    case "authorization": return { "Authorization": token };
+    case "x-api-key":     return { "x-api-key": token };
+    case "key":           return { "Authorization": `Key ${token}` };
+    default:              return { "Authorization": `Bearer ${token}` };
   }
 }
 
@@ -55,7 +56,7 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
 }
 
 // AssemblyAI: upload → submit → poll (max 120s)
-async function transcribeAssemblyAI(cfg, file, model, token) {
+async function transcribeAssemblyAI(cfg, file, model, token, formData) {
   const auth = buildAuthHeaders(cfg, token);
   const buf = await file.arrayBuffer();
   const up = await fetch("https://api.assemblyai.com/v2/upload", {
@@ -64,10 +65,15 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
   if (!up.ok) return upstreamError(up);
   const { upload_url } = await up.json();
 
+  const payload = { audio_url: upload_url, speech_models: [model] };
+  const lang = formData.get("language");
+  if (typeof lang === "string" && lang.trim()) payload.language_code = lang.trim();
+  else payload.language_detection = true;
+
   const sub = await fetch(cfg.baseUrl, {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_url: upload_url, speech_models: [model], language_detection: true }),
+    body: JSON.stringify(payload),
   });
   if (!sub.ok) return upstreamError(sub);
   const { id } = await sub.json();
@@ -145,6 +151,18 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
     const v = formData.get(k);
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
+  // timestamp_granularities is a REPEATED multipart field ("word" and "segment"
+  // are commonly sent together), so it needs getAll rather than get, and the
+  // bracketed spelling is what OpenAI's own clients send. It was in neither the
+  // loop above nor anywhere else, so word-level timestamps were unreachable
+  // through the gateway however the client asked (#1034). Prefer the bracketed
+  // form when both arrive, so a client sending both does not get duplicates.
+  const granularities = formData.getAll("timestamp_granularities[]").length
+    ? formData.getAll("timestamp_granularities[]")
+    : formData.getAll("timestamp_granularities");
+  for (const g of granularities) {
+    if (g !== null && g !== undefined && g !== "") fd.append("timestamp_granularities[]", g);
+  }
   const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
   if (!res.ok) return upstreamError(res);
   const ct = res.headers.get("content-type") || "application/json";
@@ -189,7 +207,7 @@ export async function handleSttCore({ provider, model, formData, credentials, st
   try {
     switch (cfg.format) {
       case "deepgram":        return await transcribeDeepgram(cfg, file, model, token, formData);
-      case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token);
+      case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token, formData);
       case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
       case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
       case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData);

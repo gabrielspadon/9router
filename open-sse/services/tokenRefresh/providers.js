@@ -1,7 +1,49 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { proxyAwareFetch as unboundedProxyFetch } from "../../utils/proxyFetch.js";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../../config/runtimeConfig.js";
+import { assertValidAwsRegion } from "../../config/awsRegions.js";
+
+// Proxy options for a refresh call, in the same shape jsonProxyCore.js:36-44
+// builds for a chat request. A connection pinned to a proxy must stay pinned
+// for its token refreshes too: refreshing over the host's own egress tells the
+// provider the real address of a router the user deliberately put behind a
+// proxy, and no amount of care on the chat path hides that. Mirrored rather
+// than imported because the builder is a local function in a handler module;
+// a shared helper on proxyFetch is the right eventual home for all three.
+export function refreshProxyOptions(credentials) {
+  const data = credentials?.providerSpecificData;
+  if (!data) return null;
+  return {
+    connectionProxyEnabled: data.connectionProxyEnabled === true,
+    connectionProxyUrl: data.connectionProxyUrl || "",
+    connectionNoProxy: data.connectionNoProxy || "",
+    vercelRelayUrl: data.vercelRelayUrl || "",
+    strictProxy: data.strictProxy === true,
+  };
+}
+
 import { dedupRefresh } from "./dedup.js";
+
+// A refresh runs inline on the chat request that triggered it, so an upstream
+// that returns response headers and then goes silent held that request open for
+// as long as the socket stayed up (#1450). Nothing underneath bounds it:
+// proxyFetch.js sets `bodyTimeout: 0` on the shared proxy dispatcher, which
+// undici documents as "disable it entirely", and that dispatcher also carries
+// chat streams, so it must stay disabled. Bounding it here instead covers every
+// refresh below at once, including any added later, and leaves non-refresh
+// traffic alone. The deadline is the connection probe's, the closest comparable
+// upstream call; a caller passing its own signal still wins. A timeout throws an
+// AbortError, which each path's existing catch already treats as a failed
+// refresh, so callers see no new failure shape.
+function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  return unboundedProxyFetch(
+    url,
+    { signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS), ...options },
+    proxyOptions,
+  );
+}
+
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
@@ -107,7 +149,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       Accept: "application/json",
       ...(profile.extraHeaders ? (profile.extraHeaders(credentials, config) || {}) : {}),
     };
-    const response = await fetch(url, { method: "POST", headers, body });
+    const response = await proxyAwareFetch(url, { method: "POST", headers, body }, refreshProxyOptions(credentials));
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -147,53 +189,6 @@ export async function refreshKimiToken(refreshToken, credentials, log) {
   return refreshAccessToken("kimi", refreshToken, credentials, log);
 }
 
-export async function refreshClineToken(refreshToken, log) {
-  if (!refreshToken) return null;
-
-  return dedupRefresh("cline", refreshToken, async () => {
-    try {
-      const response = await fetch(PROVIDERS.cline?.refreshUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          refreshToken,
-          grantType: "refresh_token",
-          clientType: "extension",
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        log?.error?.("TOKEN_REFRESH", "Failed to refresh Cline token", {
-          status: response.status,
-          error: errorText,
-        });
-        return null;
-      }
-
-      const body = await response.json();
-      const tokens = body?.data || body;
-      if (!tokens?.accessToken) return null;
-
-      const expiresIn = tokens.expiresAt
-        ? Math.max(1, Math.floor((new Date(tokens.expiresAt).getTime() - Date.now()) / 1000))
-        : (tokens.expiresIn || tokens.expires_in || 3600);
-
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken || refreshToken,
-        expiresIn,
-      };
-    } catch (error) {
-      log?.error?.("TOKEN_REFRESH", `Error refreshing Cline token: ${error.message}`);
-      return null;
-    }
-  }, log);
-}
-
 // Claude OAuth: JSON body, client_id only. Delegate to refreshAccessToken("claude", ...).
 export async function refreshClaudeOAuthToken(refreshToken, log) {
   return refreshAccessToken("claude", refreshToken, {}, log);
@@ -203,7 +198,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
   if (!refreshToken) return null;
   return dedupRefresh(`google:${clientId}`, refreshToken, async () => {
   try {
-    const response = await fetch(OAUTH_ENDPOINTS.google.token, {
+    const response = await proxyAwareFetch(OAUTH_ENDPOINTS.google.token, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -245,7 +240,9 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   const description = parsed?.error_description || parsed?.message || errorText || "";
   const combined = `${code} ${description}`.toLowerCase();
   const permanent = [
-    "refresh_token_expired",
+    // PR #1821: OpenAI answers a dead refresh token with 401
+    // {error:{code:"token_expired"}}; the marker also covers refresh_token_expired.
+    "token_expired",
     "refresh_token_reused",
     "refresh_token_invalidated",
     "invalid_grant",
@@ -258,7 +255,7 @@ export async function refreshCodexToken(refreshToken, log) {
   if (!refreshToken) return null;
   return dedupRefresh("codex", refreshToken, async () => {
     try {
-      const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.openai.token, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -376,9 +373,21 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
   if (clientId && clientSecret) {
     const isIDC = authMethod === "idc";
-    const endpoint = isIDC && region
-      ? `https://oidc.${region}.amazonaws.com/token`
-      : "https://oidc.us-east-1.amazonaws.com/token";
+    // The body below carries clientSecret and refreshToken, so a persisted
+    // region that is not a region re-hosts both with no user action. The
+    // executor, the model catalog and the connection test already pin this;
+    // this unattended path was the one that did not (#3497). A stored region
+    // that fails the guard is a tampered or corrupt record, so refuse rather
+    // than quietly refreshing against us-east-1 as if none had been set.
+    let endpoint = "https://oidc.us-east-1.amazonaws.com/token";
+    if (isIDC && region) {
+      try {
+        endpoint = `https://oidc.${assertValidAwsRegion(region)}.amazonaws.com/token`;
+      } catch {
+        log?.warn?.("TOKEN_REFRESH", "Refusing Kiro IDC refresh: invalid stored region");
+        return null;
+      }
+    }
 
     const response = await proxyAwareFetch(endpoint, {
       method: "POST",
@@ -469,7 +478,7 @@ export async function refreshCopilotToken(githubAccessToken, log) {
   if (!githubAccessToken) return null;
   return dedupRefresh("copilot", githubAccessToken, async () => {
   try {
-    const response = await fetch(PROVIDER_OAUTH["github"]?.copilotTokenUrl, {
+    const response = await proxyAwareFetch(PROVIDER_OAUTH["github"]?.copilotTokenUrl, {
       headers: {
         "Authorization": `token ${githubAccessToken}`,
         "User-Agent": GITHUB_COPILOT.USER_AGENT,
@@ -512,105 +521,154 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 // CodeBuddy (Tencent) refresh — POST /v2/plugin/auth/token/refresh with the
 // refresh token carried in the X-Refresh-Token header (not a form body),
 // matching the official CodeBuddy CLI. Response: { code: 0, data: <token> }.
+// Cline's refresh endpoint takes a JSON body, not the form-encoded
+// grant_type/refresh_token/client_id the generic path sends, and answers the
+// generic shape with a 400. It also expects the access token to carry a
+// `workos:` prefix. The executor knew all this; the background refresh map did
+// not, so a scheduled refresh failed silently while an on-request one worked.
+// One implementation, both callers.
+export async function refreshClineToken(refreshToken, proxyOptions = null, log = null) {
+  if (!refreshToken) return null;
+  try {
+    const response = await proxyAwareFetch(PROVIDERS.cline.refreshUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ refreshToken, grantType: "refresh_token", clientType: "extension" }),
+    }, proxyOptions);
+    if (!response.ok) {
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Cline token", { status: response.status });
+      return null;
+    }
+    const payload = await response.json();
+    const data = payload?.data || payload;
+    const expiresAtIso = data?.expiresAt;
+    const expiresIn = expiresAtIso
+      ? Math.max(1, Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000))
+      : undefined;
+    let accessToken = data?.accessToken;
+    if (accessToken && !accessToken.startsWith("workos:")) accessToken = `workos:${accessToken}`;
+    return { accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
+  } catch (error) {
+    log?.error?.("TOKEN_REFRESH", "Error refreshing Cline token", { error: error.message });
+    return null;
+  }
+}
+
 export async function refreshCodebuddyToken(refreshToken, log) {
   if (!refreshToken) return null;
   return dedupRefresh("codebuddy-cn", refreshToken, async () => {
-    const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
-    const response = await fetch(oauth.refreshUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": oauth.userAgent,
-        "X-Requested-With": "XMLHttpRequest",
-        "X-Domain": "copilot.tencent.com",
-        "X-Refresh-Token": refreshToken,
-        "X-Auth-Refresh-Source": "plugin",
-        "X-Product": "SaaS",
-      },
-      body: "{}",
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh CodeBuddy token", {
-        status: response.status,
-        error: errorText,
+    try {
+      const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
+      const response = await proxyAwareFetch(oauth.refreshUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": oauth.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "copilot.tencent.com",
+          "X-Refresh-Token": refreshToken,
+          "X-Auth-Refresh-Source": "plugin",
+          "X-Product": "SaaS",
+        },
+        body: "{}",
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh CodeBuddy token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.code !== 0 || !data.data?.accessToken) {
+        log?.error?.("TOKEN_REFRESH", "CodeBuddy token refresh returned no token", {
+          code: data.code,
+          msg: data.msg,
+        });
+        return null;
+      }
+
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed CodeBuddy token", {
+        hasNewAccessToken: !!data.data.accessToken,
+        hasNewRefreshToken: !!data.data.refreshToken,
+        expiresIn: data.data.expiresIn,
+      });
+
+      return {
+        accessToken: data.data.accessToken,
+        refreshToken: data.data.refreshToken || refreshToken,
+        expiresIn: data.data.expiresIn,
+      };
+    } catch (error) {
+      // Every other exit here returns null and lets the caller decide, so a
+      // thrown transport error must not be the one that escapes: it surfaced
+      // as an unhandled 500 on the request path instead of a refresh failure.
+      log?.error?.("TOKEN_REFRESH", "Error refreshing CodeBuddy token", { error: error.message });
       return null;
     }
-
-    const data = await response.json();
-    if (data.code !== 0 || !data.data?.accessToken) {
-      log?.error?.("TOKEN_REFRESH", "CodeBuddy token refresh returned no token", {
-        code: data.code,
-        msg: data.msg,
-      });
-      return null;
-    }
-
-    log?.info?.("TOKEN_REFRESH", "Successfully refreshed CodeBuddy token", {
-      hasNewAccessToken: !!data.data.accessToken,
-      hasNewRefreshToken: !!data.data.refreshToken,
-      expiresIn: data.data.expiresIn,
-    });
-
-    return {
-      accessToken: data.data.accessToken,
-      refreshToken: data.data.refreshToken || refreshToken,
-      expiresIn: data.data.expiresIn,
-    };
   }, log);
 }
 
 export async function refreshCodebuddyIntlToken(refreshToken, log) {
   if (!refreshToken) return null;
   return dedupRefresh("codebuddy-intl", refreshToken, async () => {
-    const oauth = PROVIDER_OAUTH["codebuddy-intl"] || {};
-    const response = await fetch(oauth.refreshUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": oauth.userAgent,
-        "X-Requested-With": "XMLHttpRequest",
-        "X-Domain": "www.codebuddy.ai",
-        "X-Refresh-Token": refreshToken,
-        "X-Auth-Refresh-Source": "plugin",
-        "X-Product": "SaaS",
-      },
-      body: "{}",
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh CodeBuddy intl token", {
-        status: response.status,
-        error: errorText,
+    try {
+      const oauth = PROVIDER_OAUTH["codebuddy-intl"] || {};
+      const response = await proxyAwareFetch(oauth.refreshUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": oauth.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "www.codebuddy.ai",
+          "X-Refresh-Token": refreshToken,
+          "X-Auth-Refresh-Source": "plugin",
+          "X-Product": "SaaS",
+        },
+        body: "{}",
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh CodeBuddy intl token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.code !== 0 || !data.data?.accessToken) {
+        log?.error?.("TOKEN_REFRESH", "CodeBuddy intl token refresh returned no token", {
+          code: data.code,
+          msg: data.msg,
+        });
+        return null;
+      }
+
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed CodeBuddy intl token", {
+        hasNewAccessToken: !!data.data.accessToken,
+        hasNewRefreshToken: !!data.data.refreshToken,
+        expiresIn: data.data.expiresIn,
+      });
+
+      return {
+        accessToken: data.data.accessToken,
+        refreshToken: data.data.refreshToken || refreshToken,
+        expiresIn: data.data.expiresIn,
+      };
+    } catch (error) {
+      // Every other exit here returns null and lets the caller decide, so a
+      // thrown transport error must not be the one that escapes: it surfaced
+      // as an unhandled 500 on the request path instead of a refresh failure.
+      log?.error?.("TOKEN_REFRESH", "Error refreshing CodeBuddy International token", { error: error.message });
       return null;
     }
-
-    const data = await response.json();
-    if (data.code !== 0 || !data.data?.accessToken) {
-      log?.error?.("TOKEN_REFRESH", "CodeBuddy intl token refresh returned no token", {
-        code: data.code,
-        msg: data.msg,
-      });
-      return null;
-    }
-
-    log?.info?.("TOKEN_REFRESH", "Successfully refreshed CodeBuddy intl token", {
-      hasNewAccessToken: !!data.data.accessToken,
-      hasNewRefreshToken: !!data.data.refreshToken,
-      expiresIn: data.data.expiresIn,
-    });
-
-    return {
-      accessToken: data.data.accessToken,
-      refreshToken: data.data.refreshToken || refreshToken,
-      expiresIn: data.data.expiresIn,
-    };
   }, log);
 }
 
@@ -627,7 +685,7 @@ export async function refreshTraeToken(refreshToken, credentials, log) {
 
   return dedupRefresh("trae", refreshToken, async () => {
     try {
-      const response = await fetch(url, {
+      const response = await proxyAwareFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -640,7 +698,7 @@ export async function refreshTraeToken(refreshToken, credentials, log) {
           ClientSecret: oauth.clientSecret || "-",
           UserID: "",
         }),
-      });
+      }, refreshProxyOptions(credentials));
 
       if (!response.ok) {
         const errorText = await response.text();

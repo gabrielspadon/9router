@@ -59,15 +59,19 @@ export async function POST(request) {
         throw new Error("Item is not an object");
       }
 
-      // Strip server-controlled fields
+      // Strip server-controlled fields. authType is the exception: an account
+      // pasted from chatgpt.com has no refresh token, and coercing it to "oauth"
+      // produced a row the refresher would keep failing on, so an exported
+      // access_token account re-imports as one (#1590).
       const {
         id: _id,
         provider: _provider,
-        authType: _authType,
+        authType: rawAuthType,
         createdAt: _createdAt,
         updatedAt: _updatedAt,
         ...item
       } = raw;
+      const authType = rawAuthType === "access_token" ? "access_token" : "oauth";
 
       if (!item.accessToken || typeof item.accessToken !== "string") {
         throw new Error("Missing accessToken");
@@ -105,7 +109,7 @@ export async function POST(request) {
 
       const created = await createProviderConnection({
         provider: "codex",
-        authType: "oauth",
+        authType,
         ...item,
       });
 

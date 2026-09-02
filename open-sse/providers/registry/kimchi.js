@@ -13,14 +13,15 @@ export default {
       signupUrl: "https://app.kimchi.dev",
     },
   },
-  category: "freeTier",
-  authModes: ["oauth", "apikey"],
+  category: "oauth",
+  authModes: ["oauth"],
   hasOAuth: true,
   transport: {
     baseUrl: "https://llm.kimchi.dev/openai/v1/chat/completions",
     format: "openai",
+    // Registry imports stay network-inert; KimchiExecutor refreshes this per request.
     headers: {
-      "User-Agent": "kimchi/0.1.50",
+      "User-Agent": "kimchi/0.1.01",
     },
     auth: {
       combined: true,

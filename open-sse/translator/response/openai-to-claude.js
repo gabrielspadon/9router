@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK, OPENAI_FINISH } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 
@@ -46,6 +46,34 @@ function isValidPdfPagesArg(filePath, pages) {
     /^\d+(?:-\d+)?$/.test(pages);
 }
 
+// Open the Claude tool_use block for one index. The name travels in
+// content_block_start and cannot be revised once emitted, which is why the
+// caller waits until it actually knows it.
+function openToolBlock(state, results, idx, id, name) {
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  const toolBlockIndex = state.nextBlockIndex++;
+  state.toolCalls.set(idx, { id, name: name || "", blockIndex: toolBlockIndex });
+
+  // Strip prefix from tool name for response
+  let toolName = name || "";
+  if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+    toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+  }
+
+  results.push({
+    type: "content_block_start",
+    index: toolBlockIndex,
+    content_block: {
+      type: CLAUDE_BLOCK.TOOL_USE,
+      id,
+      name: toolName,
+      input: {}
+    }
+  });
+}
+
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -67,9 +95,67 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// stream.js flushes with a null chunk when the upstream ends. Tool arguments are
+// buffered per index and emitted only by the finish_reason branch below, so a
+// stream that closes without one — an upstream that sends `[DONE]` with no
+// finish chunk, or a connection that drops — left every buffered byte in the map
+// and the tool_use block open. The client keeps a tool call whose input never
+// arrived and was never closed, which is the "cut off ... never closed" shape of
+// #3416. The flush is the last point at which the block can still be closed, so
+// drain it here rather than dropping it.
+function drainToolBlocksAtFlush(state) {
+  if (state?.claudeTerminalEmitted) return null;
+  if (!state?.toolCalls?.size && !state?.toolPending?.size) return null;
+  state.claudeTerminalEmitted = true;
+
+  const results = [];
+  // A call whose name never arrived still has to reach the client, the same
+  // salvage the finish_reason branch makes. Drained first so the loop below
+  // sees the block it opens.
+  if (state.toolPending?.size) {
+    for (const [idx, pending] of state.toolPending) {
+      if (pending.id) openToolBlock(state, results, idx, pending.id, pending.name);
+    }
+    state.toolPending.clear();
+  }
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  for (const [idx, toolInfo] of state.toolCalls) {
+    const buffered = state.toolArgBuffers?.get(idx);
+    if (buffered) {
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: { type: "input_json_delta", partial_json: sanitizeToolArgs(toolInfo.name, buffered) }
+      });
+    }
+    results.push({ type: "content_block_stop", index: toolInfo.blockIndex });
+  }
+  state.toolArgBuffers?.clear();
+
+  // Closing the blocks is not closing the MESSAGE. An Anthropic client treats
+  // the turn as still generating until `message_stop`, and this stream has no
+  // finish_reason chunk left to produce one. `data: [DONE]` is not in the
+  // Anthropic wire protocol and stream.js deliberately withholds it from a
+  // Claude client, so without a terminal here the client waits until its own
+  // timeout with the tool call it can never dispatch — the "blocked by tool
+  // calls" shape of #1490.
+  state.finishReason = OPENAI_FINISH.TOOL_CALLS;
+  results.push({
+    type: "message_delta",
+    delta: { stop_reason: convertFinishReason(OPENAI_FINISH.TOOL_CALLS) },
+    usage: state.usage || { input_tokens: 0, output_tokens: 0 }
+  });
+  results.push({ type: "message_stop" });
+
+  return results;
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk) return drainToolBlocksAtFlush(state);
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -107,6 +193,31 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
     // No need to add separately as Claude expects total output_tokens
+  }
+
+  // Every branch below opens or extends a content block, and the client's
+  // message is already closed once `message_stop` went out. A provider that
+  // keeps sending after its finish_reason chunk — a trailing content frame, a
+  // repeated terminal — otherwise produced a `content_block_delta` with no open
+  // message, which the Anthropic client reports as "Received
+  // content_block_delta without a current message" and then abandons the whole
+  // turn (#1733). Placed after the usage block above, which is the one thing a
+  // trailing frame legitimately carries and is still worth absorbing.
+  if (state.claudeTerminalEmitted) {
+    // Report a late tool-argument fragment before dropping the chunk. Nothing
+    // here can deliver it: its tool_use block is already stopped, so the client
+    // keeps a truncated argument string that does not parse, which is the "cut
+    // off mid-string and never closed" shape of #3416. The silent drop is what
+    // made it undiagnosable, so the drop stays and the silence does not.
+    for (const tc of chunk.choices?.[0]?.delta?.tool_calls || []) {
+      if (typeof tc?.function?.arguments !== "string" || !tc.function.arguments) continue;
+      console.warn(
+        `[Translator] tool argument fragment arrived after the stream terminal `
+        + `(tool index ${tc.index ?? 0}, ${tc.function.arguments.length} bytes) — the client's `
+        + `copy of this tool call is truncated`
+      );
+    }
+    return null;
   }
 
   // First chunk - ALWAYS send message_start first
@@ -184,47 +295,69 @@ export function openaiToClaudeResponse(chunk, state) {
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
 
-      // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
-      if (tc.id && !state.toolCalls.has(idx)) {
-        stopThinkingBlock(state, results);
-        stopTextBlock(state, results);
+      // GLM/fireworks repeats id+null-name on every arg chunk, so the block
+      // opens once per idx. It waits for the NAME as well as the id: a provider
+      // may split them across chunks, and opening on the id alone froze
+      // `name: ""` into content_block_start, which cannot be revised, leaving
+      // the client a tool call it has no way to dispatch.
+      if (!state.toolCalls.has(idx)) {
+        if (!state.toolPending) state.toolPending = new Map();
+        const pending = state.toolPending.get(idx) || {};
+        if (tc.id) pending.id = tc.id;
+        const incomingName = tc.function?.name;
+        if (typeof incomingName === "string" && incomingName) pending.name = incomingName;
+        state.toolPending.set(idx, pending);
 
-        const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
-
-        // Strip prefix from tool name for response
-        let toolName = tc.function?.name || "";
-        if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
-          toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+        if (pending.id && pending.name) {
+          openToolBlock(state, results, idx, pending.id, pending.name);
+          state.toolPending.delete(idx);
         }
-
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
-            name: toolName,
-            input: {}
-          }
-        });
       }
 
       if (tc.function?.arguments) {
-        const toolInfo = state.toolCalls.get(idx);
-        if (toolInfo) {
-          // Buffer args instead of streaming — sanitize at finish to fix bad params
-          if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
-        }
+        // Buffer args instead of streaming — sanitize at finish to fix bad params.
+        // Buffered by index rather than gated on the block existing: a provider
+        // that sends an argument fragment before the chunk carrying the tool id
+        // would otherwise have that fragment silently dropped, and the client
+        // receives a tool input that is missing its opening bytes and does not
+        // parse. The block that opens later reads the same buffer by index.
+        if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
+        // Not every provider streams argument DELTAS. Some OpenAI-compatible
+        // upstreams restate the whole accumulated string in every chunk, and a
+        // blind append then yields `{...}{...}` in the one input_json_delta,
+        // which no Anthropic client can parse ("Invalid tool parameters"). The
+        // upstream status is 200, so nothing locks the model or fails over and
+        // the turn is lost silently (#2869). A chunk that carries the buffer as
+        // its own prefix is a restatement, not a fragment: replace it.
+        const prevArgs = state.toolArgBuffers.get(idx) || "";
+        state.toolArgBuffers.set(
+          idx,
+          tc.function.arguments.startsWith(prevArgs) ? tc.function.arguments : prevArgs + tc.function.arguments
+        );
       }
     }
   }
 
   // Finish
   if (choice.finish_reason) {
+    // Once only. A provider that repeats finish_reason on a trailing usage chunk
+    // otherwise re-emits the whole terminal set — including the buffered tool
+    // arguments — and the client concatenates the two input_json_delta payloads
+    // into `{...}{...}`, which is not parseable JSON.
+    if (state.claudeTerminalEmitted) return results.length > 0 ? results : null;
+    state.claudeTerminalEmitted = true;
+
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
+
+    // A call whose name never arrived still has to reach the client: the model
+    // asked for it, and dropping it silently is worse than an empty name.
+    if (state.toolPending?.size) {
+      for (const [idx, pending] of state.toolPending) {
+        if (pending.id) openToolBlock(state, results, idx, pending.id, pending.name);
+      }
+      state.toolPending.clear();
+    }
 
     for (const [idx, toolInfo] of state.toolCalls) {
       // Emit buffered + sanitized args as single delta before stop
@@ -242,6 +375,7 @@ export function openaiToClaudeResponse(chunk, state) {
         index: toolInfo.blockIndex
       });
     }
+    state.toolArgBuffers?.clear();
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;

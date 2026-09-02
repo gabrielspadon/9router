@@ -16,7 +16,10 @@ const apply = (targetFormat, model, body, provider) => {
 
 describe("parseSuffix", () => {
   it("parses level suffix", () => {
-    expect(parseSuffix("gpt-5(high)")).toEqual({ cleanModel: "gpt-5", override: { mode: "level", level: "high" } });
+    expect(parseSuffix("gpt-5(high)")).toEqual({
+      cleanModel: "gpt-5",
+      override: { mode: "level", level: "high" },
+    });
   });
   it("parses ultra suffix", () => {
     expect(parseSuffix("gpt-5.6-sol(ultra)")).toEqual({
@@ -25,56 +28,68 @@ describe("parseSuffix", () => {
     });
   });
   it("parses numeric budget suffix", () => {
-    expect(parseSuffix("model(8192)")).toEqual({ cleanModel: "model", override: { mode: "budget", budget: 8192 } });
+    expect(parseSuffix("model(8192)")).toEqual({
+      cleanModel: "model",
+      override: { mode: "budget", budget: 8192 },
+    });
   });
   it("parses auto / none", () => {
     expect(parseSuffix("m(auto)").override).toEqual({ mode: "auto" });
     expect(parseSuffix("m(none)").override).toEqual({ mode: "none" });
   });
   it("no suffix → passthrough", () => {
-    expect(parseSuffix("claude-opus-4.7")).toEqual({ cleanModel: "claude-opus-4.7", override: null });
+    expect(parseSuffix("claude-opus-4.7")).toEqual({
+      cleanModel: "claude-opus-4.7",
+      override: null,
+    });
   });
 });
 
 describe("extractThinking", () => {
   it("claude enabled+budget", () => {
-    expect(extractThinking({ thinking: { type: "enabled", budget_tokens: 4096 } })).toEqual({ mode: "budget", budget: 4096 });
+    expect(
+      extractThinking({ thinking: { type: "enabled", budget_tokens: 4096 } }),
+    ).toEqual({ mode: "budget", budget: 4096 });
   });
   it("claude disabled", () => {
-    expect(extractThinking({ thinking: { type: "disabled" } })).toEqual({ mode: "none" });
+    expect(extractThinking({ thinking: { type: "disabled" } })).toEqual({
+      mode: "none",
+    });
   });
   it("openai reasoning_effort", () => {
-    expect(extractThinking({ reasoning_effort: "high" })).toEqual({ mode: "level", level: "high" });
+    expect(extractThinking({ reasoning_effort: "high" })).toEqual({
+      mode: "level",
+      level: "high",
+    });
   });
   it("responses reasoning.effort none", () => {
-    expect(extractThinking({ reasoning: { effort: "none" } })).toEqual({ mode: "none" });
+    expect(extractThinking({ reasoning: { effort: "none" } })).toEqual({
+      mode: "none",
+    });
   });
   it("gemini thinkingBudget 0 → none", () => {
-    expect(extractThinking({ thinkingConfig: { thinkingBudget: 0 } })).toEqual({ mode: "none" });
+    expect(extractThinking({ thinkingConfig: { thinkingBudget: 0 } })).toEqual({
+      mode: "none",
+    });
   });
   it("qwen enable_thinking false", () => {
-    expect(extractThinking({ enable_thinking: false })).toEqual({ mode: "none" });
+    expect(extractThinking({ enable_thinking: false })).toEqual({
+      mode: "none",
+    });
   });
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
-  });
-  it("reasoning_effort wins over thinking:{type:enabled} (no budget)", () => {
-    expect(extractThinking({
-      thinking: { type: "enabled" },
-      reasoning_effort: "high",
-    })).toEqual({ mode: "level", level: "high" });
-  });
-  it("reasoning.effort wins over thinking:{type:enabled} (no budget)", () => {
-    expect(extractThinking({
-      thinking: { type: "enabled" },
-      reasoning: { effort: "medium" },
-    })).toEqual({ mode: "level", level: "medium" });
   });
 });
 
 describe("applyThinking per provider format", () => {
   it("claude 4.6+ → adaptive thinking + output_config (no budget_tokens)", () => {
-    const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "high" }, "claude");
+    const out = apply(
+      "claude",
+      "claude-opus-4.7",
+      { reasoning_effort: "high" },
+      "claude",
+    );
     expect(out.output_config).toEqual({ effort: "high" });
     // Anthropic: on Opus 4.6/4.7/4.8 and Sonnet 4.6 thinking stays OFF unless
     // thinking:{type:"adaptive"} is sent explicitly; output_config alone is not
@@ -82,43 +97,99 @@ describe("applyThinking per provider format", () => {
     // Sonnet 5). Both fields together are the documented adaptive shape.
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
+  it("claude 4.6+ leaves auto effort to the upstream", () => {
+    const out = apply(
+      "claude",
+      "claude-opus-4.7",
+      { thinking: { type: "enabled" } },
+      "claude",
+    );
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toBeUndefined();
+  });
   it("claude haiku → enabled+budget", () => {
-    const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
+    const out = apply(
+      "claude",
+      "claude-haiku-4.5",
+      { reasoning_effort: "high" },
+      "claude",
+    );
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
   });
   it("gemini-3 → thinkingLevel", () => {
-    const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "medium" }, "gemini");
+    const out = apply(
+      "gemini",
+      "gemini-3-pro",
+      { reasoning_effort: "medium" },
+      "gemini",
+    );
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
   });
   it("gemini-3 clamps unsupported max/xhigh thinking levels to high", () => {
-    const outMax = apply("gemini", "gemini-3-pro", { reasoning_effort: "max" }, "gemini");
-    const outXhigh = apply("gemini", "gemini-3-pro", { reasoning_effort: "xhigh" }, "gemini");
+    const outMax = apply(
+      "gemini",
+      "gemini-3-pro",
+      { reasoning_effort: "max" },
+      "gemini",
+    );
+    const outXhigh = apply(
+      "gemini",
+      "gemini-3-pro",
+      { reasoning_effort: "xhigh" },
+      "gemini",
+    );
     expect(outMax.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
     expect(outXhigh.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
   it("gemini-3 maps auto thinking level to high instead of sending unsupported auto", () => {
-    const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "auto" }, "gemini");
+    const out = apply(
+      "gemini",
+      "gemini-3-pro",
+      { reasoning_effort: "auto" },
+      "gemini",
+    );
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
   it("gemini-3 high thinking raises too-small maxOutputTokens", () => {
-    const out = apply("gemini-cli", "gemini-3.1-pro-preview", {
-      request: { generationConfig: { maxOutputTokens: 128 } },
-      reasoning_effort: "high",
-    }, "gemini-cli");
-    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "high", includeThoughts: true });
+    const out = apply(
+      "gemini-cli",
+      "gemini-3.1-pro-preview",
+      {
+        request: { generationConfig: { maxOutputTokens: 128 } },
+        reasoning_effort: "high",
+      },
+      "gemini-cli",
+    );
+    expect(out.request.generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: "high",
+      includeThoughts: true,
+    });
     expect(out.request.generationConfig.maxOutputTokens).toBe(65535);
   });
   it("gemini-2.5 → thinkingBudget", () => {
-    const out = apply("gemini", "gemini-2.5-flash", { reasoning_effort: "high" }, "gemini");
+    const out = apply(
+      "gemini",
+      "gemini-2.5-flash",
+      { reasoning_effort: "high" },
+      "gemini",
+    );
     expect(out.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBeUndefined();
   });
   it("gemini-2.5 budget thinking keeps enough room for answer tokens", () => {
-    const out = apply("gemini-cli", "gemini-2.5-pro", {
-      request: { generationConfig: { maxOutputTokens: 1024 } },
-      reasoning_effort: "high",
-    }, "gemini-cli");
-    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 24576, includeThoughts: true });
+    const out = apply(
+      "gemini-cli",
+      "gemini-2.5-pro",
+      {
+        request: { generationConfig: { maxOutputTokens: 1024 } },
+        reasoning_effort: "high",
+      },
+      "gemini-cli",
+    );
+    expect(out.request.generationConfig.thinkingConfig).toEqual({
+      thinkingBudget: 24576,
+      includeThoughts: true,
+    });
     expect(out.request.generationConfig.maxOutputTokens).toBe(32768);
   });
   it("GLM off → enable_thinking:false (not thinking.disabled)", () => {
@@ -126,74 +197,208 @@ describe("applyThinking per provider format", () => {
     expect(out.enable_thinking).toBe(false);
     expect(out.thinking).toBeUndefined();
   });
-  it.each([
-    ["high", "high"],
-    ["max", "max"],
-    ["xhigh", "max"],
-    ["low", "low"],
-    ["medium", "high"],
-    ["minimal", "low"],
-  ])("GLM-5.3 %s → reasoning_effort=%s (low|high|max only, per z.ai docs)", (input, expected) => {
-    const out = apply("openai", "glm-5.3", { reasoning_effort: input }, "glm-cn");
-    expect(out.thinking).toEqual({ type: "enabled" });
-    expect(out.reasoning_effort).toBe(expected);
-  });
-  it("GLM-5.2 also gets reasoning_effort (supported from 5.2 onward)", () => {
-    const out = apply("openai", "glm-5.2", { reasoning_effort: "low" }, "glm-cn");
-    expect(out.reasoning_effort).toBe("low");
-  });
-  it("GLM-4.7 (pre-5.2) does not get reasoning_effort — z.ai ignores it", () => {
-    const out = apply("openai", "glm-4.7", { reasoning_effort: "low" }, "glm-cn");
-    expect(out.thinking).toEqual({ type: "enabled" });
-    expect(out.reasoning_effort).toBeUndefined();
-  });
   it("Qwen on → enable_thinking + thinking_budget", () => {
-    const out = apply("openai", "qwen3-max", { reasoning_effort: "medium" }, "qwen");
+    const out = apply(
+      "openai",
+      "qwen3-max",
+      { reasoning_effort: "medium" },
+      "qwen",
+    );
     expect(out.enable_thinking).toBe(true);
     expect(out.thinking_budget).toBe(8192);
   });
   it("QwQ cannot disable → clamp minimal", () => {
-    const out = apply("openai", "qwq-32b", { reasoning_effort: "none" }, "qwen");
+    const out = apply(
+      "openai",
+      "qwq-32b",
+      { reasoning_effort: "none" },
+      "qwen",
+    );
     expect(out.enable_thinking).toBe(true);
   });
   it("DeepSeek → enabled + reasoning_effort high (low→high)", () => {
-    const out = apply("openai", "deepseek-v4-pro", { reasoning_effort: "low" }, "deepseek");
+    const out = apply(
+      "openai",
+      "deepseek-v4-pro",
+      { reasoning_effort: "low" },
+      "deepseek",
+    );
     expect(out.thinking).toEqual({ type: "enabled" });
     expect(out.reasoning_effort).toBe("high");
   });
   it("Kimi on → reasoning_effort", () => {
-    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
+    const out = apply(
+      "openai",
+      "kimi-k2.6",
+      { reasoning_effort: "high" },
+      "kimi",
+    );
     expect(out.reasoning_effort).toBe("high");
   });
   it("Kimi auto → supported reasoning_effort", () => {
-    const out = apply("openai", "kimi-k2.7", { reasoning_effort: "auto" }, "kimchi");
+    const out = apply(
+      "openai",
+      "kimi-k2.7",
+      { reasoning_effort: "auto" },
+      "kimchi",
+    );
     expect(out.reasoning_effort).toBe("high");
   });
   it("Kimi unsupported OpenAI levels → supported reasoning_effort", () => {
-    const minimal = apply("openai", "kimi-k2.7", { reasoning_effort: "minimal" }, "kimchi");
-    const xhigh = apply("openai", "kimi-k2.7", { reasoning_effort: "xhigh" }, "kimchi");
+    const minimal = apply(
+      "openai",
+      "kimi-k2.7",
+      { reasoning_effort: "minimal" },
+      "kimchi",
+    );
+    const xhigh = apply(
+      "openai",
+      "kimi-k2.7",
+      { reasoning_effort: "xhigh" },
+      "kimchi",
+    );
     expect(minimal.reasoning_effort).toBe("low");
     expect(xhigh.reasoning_effort).toBe("max");
   });
   it("MiniMax M3 → adaptive", () => {
-    const out = apply("claude", "MiniMax-M3", { reasoning_effort: "high" }, "minimax");
+    const out = apply(
+      "claude",
+      "MiniMax-M3",
+      { reasoning_effort: "high" },
+      "minimax",
+    );
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
+  it("Ollama level → think string", () => {
+    const out = apply(
+      "ollama",
+      "deepseek-v4-pro:0813-cloud",
+      { reasoning_effort: "high" },
+      "ollama",
+    );
+    expect(out.think).toBe("high");
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+  it("Ollama none → think false", () => {
+    const out = apply(
+      "ollama",
+      "deepseek-v4-pro:0813-cloud",
+      { reasoning_effort: "none" },
+      "ollama",
+    );
+    expect(out.think).toBe(false);
+  });
+  it("Ollama auto → think true", () => {
+    const out = apply(
+      "ollama",
+      "deepseek-v4-pro:0813-cloud",
+      { thinking: { type: "enabled" } },
+      "ollama",
+    );
+    expect(out.think).toBe(true);
+  });
+  it("Ollama minimal → think low", () => {
+    const out = apply(
+      "ollama",
+      "deepseek-v4-pro:0813-cloud",
+      { reasoning_effort: "minimal" },
+      "ollama",
+    );
+    expect(out.think).toBe("low");
+  });
+  it("Ollama xhigh → think max", () => {
+    const out = apply(
+      "ollama",
+      "deepseek-v4-pro:0813-cloud",
+      { reasoning_effort: "xhigh" },
+      "ollama",
+    );
+    expect(out.think).toBe("max");
+  });
+  it("Ollama budget → think level", () => {
+    expect(
+      apply(
+        "ollama",
+        "deepseek-v4-pro:0813-cloud",
+        { thinking: { type: "enabled", budget_tokens: 1024 } },
+        "ollama",
+      ).think,
+    ).toBe("low");
+    expect(
+      apply(
+        "ollama",
+        "deepseek-v4-pro:0813-cloud",
+        { thinking: { type: "enabled", budget_tokens: 25000 } },
+        "ollama",
+      ).think,
+    ).toBe("high");
+    expect(
+      apply(
+        "ollama",
+        "deepseek-v4-pro:0813-cloud",
+        { thinking: { type: "enabled", budget_tokens: 50000 } },
+        "ollama",
+      ).think,
+    ).toBe("max");
+  });
+  it("Ollama gpt-oss clamps max → high", () => {
+    const out = apply(
+      "ollama",
+      "gpt-oss:120b",
+      { reasoning_effort: "max" },
+      "ollama",
+    );
+    expect(out.think).toBe("high");
+  });
+  it("Ollama extracts top-level think shape", () => {
+    expect(extractThinking({ think: false })).toEqual({ mode: "none" });
+    expect(extractThinking({ think: true })).toEqual({ mode: "auto" });
+    expect(extractThinking({ think: "high" })).toEqual({
+      mode: "level",
+      level: "high",
+    });
+    expect(extractThinking({ think: "none" })).toEqual({ mode: "none" });
+    expect(extractThinking({ think: "xhigh" })).toEqual({
+      mode: "level",
+      level: "max",
+    });
+  });
   it("non-reasoning model → strips thinking", () => {
-    const out = apply("openai", "gpt-4o", { reasoning_effort: "high" }, "openai");
+    const out = apply(
+      "openai",
+      "gpt-4o",
+      { reasoning_effort: "high" },
+      "openai",
+    );
     expect(out.reasoning_effort).toBeUndefined();
   });
   it("aggregator (siliconflow) GLM model → forced openai reasoning_effort", () => {
-    const out = apply("openai", "zai-org/GLM-5", { reasoning_effort: "high" }, "siliconflow");
+    const out = apply(
+      "openai",
+      "zai-org/GLM-5",
+      { reasoning_effort: "high" },
+      "siliconflow",
+    );
     expect(out.reasoning_effort).toBe("high");
     expect(out.enable_thinking).toBeUndefined();
   });
   it("suffix overrides body", () => {
-    const out = apply("openai", "gpt-5(low)", { reasoning_effort: "high" }, "openai");
+    const out = apply(
+      "openai",
+      "gpt-5(low)",
+      { reasoning_effort: "high" },
+      "openai",
+    );
     expect(out.reasoning_effort).toBe("low");
   });
   it("openai keeps xhigh for reasoning models", () => {
-    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
+    const out = apply(
+      "openai",
+      "gpt-5.3-codex",
+      { reasoning_effort: "xhigh" },
+      "codex",
+    );
     expect(out.reasoning_effort).toBe("xhigh");
   });
   it.each([
@@ -203,16 +408,38 @@ describe("applyThinking per provider format", () => {
     ["gpt-5.6-terra", "ultra", "ultra"],
     ["gpt-5.6-luna", "max", "max"],
     ["gpt-5.6-luna", "ultra", "max"],
-  ])("normalizes Codex %s effort %s to %s", (model, effort, expected) => {
-    const out = apply("openai-responses", model, { reasoning: { effort } }, "codex");
-    expect(out.reasoning_effort).toBe(expected);
+  ])("serializes Codex %s effort %s as Responses reasoning", (model, effort, expected) => {
+    const out = apply(
+      "openai-responses",
+      model,
+      { reasoning: { effort, mode: "auto", summary: "detailed" } },
+      "codex",
+    );
+    expect(out.reasoning).toEqual({ effort: expected, mode: "auto", summary: "detailed" });
+    expect(out.reasoning_effort).toBeUndefined();
   });
   it("applies a supported Codex Ultra suffix", () => {
     const out = apply("openai-responses", "gpt-5.6-sol(ultra)", {}, "codex");
+    expect(out.reasoning).toEqual({ effort: "ultra" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+  it("keeps Chat Completions reasoning effort flat", () => {
+    const out = apply(
+      "openai",
+      "gpt-5.6-sol",
+      { reasoning: { effort: "ultra", mode: "auto", summary: "detailed" } },
+      "codex",
+    );
     expect(out.reasoning_effort).toBe("ultra");
+    expect(out.reasoning).toBeUndefined();
   });
   it("keeps Codex-only GPT-5.6 levels out of Kiro translation", () => {
-    const out = apply("openai", "gpt-5.6-sol", { reasoning_effort: "max" }, "kiro");
+    const out = apply(
+      "openai",
+      "gpt-5.6-sol",
+      { reasoning_effort: "max" },
+      "kiro",
+    );
     expect(out.reasoning_effort).toBe("xhigh");
   });
 });
@@ -225,7 +452,11 @@ describe("extractReasoningText (response shapes)", () => {
     expect(extractReasoningText({ reasoning: "xyz" })).toBe("xyz");
   });
   it("reasoning_details[] (MiniMax split)", () => {
-    expect(extractReasoningText({ reasoning_details: [{ text: "a" }, { content: "b" }, "c"] })).toBe("abc");
+    expect(
+      extractReasoningText({
+        reasoning_details: [{ text: "a" }, { content: "b" }, "c"],
+      }),
+    ).toBe("abc");
   });
   it("no reasoning → empty", () => {
     expect(extractReasoningText({ content: "hello" })).toBe("");

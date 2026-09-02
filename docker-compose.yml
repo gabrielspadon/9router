@@ -1,12 +1,12 @@
 services:
-  9router:
-    image: decolua/9router:latest
-    container_name: 9router
+  tokenproxy:
+    image: tokenproxy:latest
+    container_name: tokenproxy
     restart: always
     ports:
-      - "20128:20128"
+      - "127.0.0.1:20128:20128"
     volumes:
-      - 9router-data:/app/data
+      - tokenproxy-data:/app/data
     env_file:
       - .env
     environment:
@@ -22,9 +22,12 @@ services:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
     restart: always
+    # Loopback only, matching the tokenproxy port above. tokenproxy reaches Headroom
+    # over the compose network at http://headroom:8787, so this mapping exists
+    # for host-side debugging and must not be a LAN-reachable compression proxy.
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
 
 volumes:
-  9router-data:
-    name: 9router-data
+  tokenproxy-data:
+    name: tokenproxy-data

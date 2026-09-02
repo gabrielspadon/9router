@@ -11,20 +11,21 @@
  * repairs partial parallel calls, and flattens compacted structured references
  * that can no longer be represented safely.
  *
- * It also handles the 9router-synthetic `-agentic` / `-thinking` suffixes and
+ * It also handles the tokenproxy-synthetic `-agentic` / `-thinking` suffixes and
  * the `<thinking_mode>enabled</thinking_mode>` reasoning trigger, matching
  * buildKiroPayload.
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
+import { splitToolResultMedia } from "../concerns/image.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
   resolveKiroModelIntent,
   applyKiroThinkingOverride,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
-  KIRO_AGENTIC_SYSTEM_PROMPT,
+  getKiroAgenticSystemPrompt,
   resolveDefaultProfileArn,
   buildKiroAdditionalModelRequestFieldsForModel,
   usesKiroNativeGptEffort,
@@ -53,7 +54,8 @@ function convertClaudeMessagesToKiro(messages, model) {
 
   const flushPending = () => {
     if (currentRole === ROLE.USER) {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      const hasContext = pendingToolResults.length > 0 || pendingImages.length > 0;
+      const content = pendingUserContent.join("\n\n").trim() || (hasContext ? "" : "continue");
       const userMsg = { userInputMessage: { content, modelId: model } };
 
       if (pendingImages.length > 0) {
@@ -93,18 +95,14 @@ function convertClaudeMessagesToKiro(messages, model) {
             const format = mediaType.split("/")[1] || mediaType;
             pendingImages.push({ format, source: { bytes: block.source.data } });
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
-            let resultContent = "";
-            if (typeof block.content === "string") {
-              resultContent = block.content;
-            } else if (Array.isArray(block.content)) {
-              resultContent =
-                block.content
-                  .filter((c) => c.type === CLAUDE_BLOCK.TEXT)
-                  .map((c) => c.text)
-                  .join("\n") || JSON.stringify(block.content);
-            } else if (block.content) {
-              resultContent = JSON.stringify(block.content);
-            }
+            // Images inside a tool result were filtered out, and an
+            // image-only result then fell through to JSON.stringify, which
+            // shipped the whole base64 payload as tool text: the tokens were
+            // spent and the model still could not see the picture. Hoist them
+            // into the images channel instead (#2521).
+            const { text: resultContent, images: resultImages } =
+              splitToolResultMedia(block.content);
+            if (resultImages.length > 0) pendingImages.push(...resultImages);
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
               status: block.is_error ? "error" : "success",
@@ -231,6 +229,11 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
 
   const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
+  const toolNameMap = new Map(
+    [...nameMap]
+      .filter(([originalName, normalizedName]) => originalName !== normalizedName)
+      .map(([originalName, normalizedName]) => [normalizedName, originalName]),
+  );
   const { history, currentMessage } = convertClaudeMessagesToKiro(messages, upstreamModel);
 
   // api_key / idc / external_idp must never use the shared default ARN (belongs
@@ -250,7 +253,10 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   if (thinkingBudget !== null && !usesNativeGptEffort) {
     systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
-  if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  if (agentic) {
+    const agenticPrompt = getKiroAgenticSystemPrompt();
+    if (agenticPrompt) systemPromptParts.push(agenticPrompt);
+  }
   const systemInstruction = extractClaudeSystemText(body.system);
   if (systemInstruction) systemPromptParts.push(systemInstruction);
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
@@ -327,7 +333,13 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   };
 
   if (profileArn) payload.profileArn = profileArn;
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  // No top-level systemPrompt. generateAssistantResponse has no such field in
+  // its schema and answers a request carrying it with
+  // 400 {"reason":"REQUEST_BODY_INVALID"} whatever the value is. Nothing is
+  // lost by dropping it: contentPrefix above already prefixes the same text
+  // onto the session-start user message, so the model still receives it, and
+  // the variable is still handed to applyKiroSessionReplay so the session
+  // cache key stays stable across turns.
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
@@ -344,6 +356,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     value: upstreamModel,
     enumerable: false,
   });
+  if (toolNameMap.size > 0) payload._toolNameMap = toolNameMap;
 
   return payload;
 }

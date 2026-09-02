@@ -13,9 +13,12 @@ const COLORS = {
 async function getEndpoint(port) {
   const result = await api.getTunnelStatus();
   const tunnelEnabled = result.success && result.data?.enabled === true;
-  const publicUrl = result.success ? result.data?.publicUrl : "";
-  
-  const endpoint = tunnelEnabled && publicUrl ? `${publicUrl}/v1` : `http://localhost:${port}/v1`;
+  // The short link is withheld while the relay does not serve it (#1365), and
+  // the direct tunnel URL is still the reachable one then -- falling straight
+  // back to localhost would hand out an address nobody outside can use.
+  const remoteUrl = result.success ? result.data?.publicUrl || result.data?.tunnelUrl : "";
+
+  const endpoint = tunnelEnabled && remoteUrl ? `${remoteUrl}/v1` : `http://localhost:${port}/v1`;
   return { endpoint, tunnelEnabled };
 }
 

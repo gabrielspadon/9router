@@ -1,10 +1,10 @@
+import { createPrivateKey } from "node:crypto";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import {
   refreshXaiToken,
   refreshAccessToken,
   refreshKimiToken,
-  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshCodexToken,
@@ -12,6 +12,8 @@ import {
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
+  refreshClineToken,
+  refreshProxyOptions,
   refreshCodebuddyToken,
   refreshCodebuddyIntlToken,
   refreshTraeToken,
@@ -24,7 +26,6 @@ import {
 export {
   refreshAccessToken,
   refreshKimiToken,
-  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshCodexToken,
@@ -41,6 +42,7 @@ export {
 };
 
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+export const MAX_CONNECTION_REFRESH_LEAD_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function isUnrecoverableRefreshError(result) {
   return (
@@ -53,11 +55,41 @@ export function isUnrecoverableRefreshError(result) {
   );
 }
 
-export function getRefreshLeadMs(provider) {
+export function getRefreshLeadMs(provider, providerSpecificData = null) {
+  const override = providerSpecificData?.refreshLeadMs;
+  if (
+    typeof override === "number" &&
+    Number.isFinite(override) &&
+    override > 0 &&
+    override <= MAX_CONNECTION_REFRESH_LEAD_MS
+  ) {
+    return override;
+  }
   if (REFRESH_LEAD_MS[provider]) return REFRESH_LEAD_MS[provider];
   // Legacy id after kimi-coding → kimi merge
   if (provider === "kimi-coding" && REFRESH_LEAD_MS.kimi) return REFRESH_LEAD_MS.kimi;
   return TOKEN_EXPIRY_BUFFER_MS;
+}
+
+function parseExpiryMs(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "number") return value < 1e12 ? value * 1000 : value;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function getEffectiveRefreshLeadMs(provider, credentials, nowMs = Date.now()) {
+  const leadMs = getRefreshLeadMs(provider, credentials?.providerSpecificData);
+  const expiresAtMs = parseExpiryMs(credentials?.expiresAt ?? credentials?.tokenExpiresAt);
+  const lastRefreshMs = parseExpiryMs(
+    credentials?.lastRefreshAt ?? credentials?.lastRefresh ?? credentials?.providerSpecificData?.lastRefreshAt
+  );
+  const lifetimeMs = expiresAtMs !== null && lastRefreshMs !== null ? expiresAtMs - lastRefreshMs : null;
+
+  if (Number.isFinite(lifetimeMs) && lifetimeMs > 0 && leadMs >= lifetimeMs) {
+    return Math.floor(lifetimeMs / 2);
+  }
+  return leadMs;
 }
 
 export function parseVertexSaJson(apiKey) {
@@ -74,6 +106,27 @@ export function parseVertexSaJson(apiKey) {
 }
 
 // Cache Vertex tokens keyed by service account email { token, expiresAt }
+
+// Validate that private_key is an RSA-2048+ PEM jose can sign RS256 with.
+// Returns null on success, or a user-facing error message.
+export function validateVertexSaKey(saJson) {
+  if (!saJson?.private_key) return "Vertex: service account JSON missing private_key";
+  let key;
+  try {
+    key = createPrivateKey(saJson.private_key.replace(/\\n/g, "\n"));
+  } catch {
+    return "Vertex: service account private_key is not a valid PEM key";
+  }
+  if (key.asymmetricKeyType !== "rsa") {
+    return `Vertex: service account private_key must be RSA (got ${key.asymmetricKeyType})`;
+  }
+  const bits = key.asymmetricKeyDetails?.modulusLength || 0;
+  if (bits < 2048) {
+    return `Vertex: service account private_key must be RSA-2048 or larger (RS256), got ${bits} bits`;
+  }
+  return null;
+}
+
 const vertexTokenCache = new Map();
 
 export async function refreshVertexToken(saJson, log) {
@@ -85,6 +138,11 @@ export async function refreshVertexToken(saJson, log) {
   }
 
   try {
+    const keyError = validateVertexSaKey(saJson);
+    if (keyError) {
+      log?.error?.("TOKEN_REFRESH", keyError);
+      return null;
+    }
     const { SignJWT, importPKCS8 } = await import("jose");
     log?.debug?.("TOKEN_REFRESH", `Vertex minting token for ${saJson.client_email}`);
     const privateKey = await importPKCS8(saJson.private_key.replace(/\\n/g, "\n"), "RS256");
@@ -144,10 +202,15 @@ const REFRESH_HANDLERS = {
   // Grok CLI shares xAI OAuth client + token endpoint (device-code tokens refresh the same way)
   "grok-cli": (c, log) => refreshXaiToken(c.refreshToken, log),
   gcli: (c, log) => refreshXaiToken(c.refreshToken, log),
+  // Cline and ClinePass share one refresh contract: executors/default.js:368-369
+  // routes both to it, and clinepass's registry points at the same api.cline.bot
+  // refresh URL. Absent from this map they fell through to the generic
+  // form-encoded refresh, which that endpoint answers with a 400.
+  cline: (c, log) => refreshClineToken(c.refreshToken, refreshProxyOptions(c), log),
+  clinepass: (c, log) => refreshClineToken(c.refreshToken, refreshProxyOptions(c), log),
   "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
   "codebuddy-intl": (c, log) => refreshCodebuddyIntlToken(c.refreshToken, log),
   trae: (c, log) => refreshTraeToken(c.refreshToken, c, log),
-  cline: (c, log) => refreshClineToken(c.refreshToken, log),
   zed: () => refreshZedToken(),
   windsurf: (c, log) => refreshWindsurfToken(c, log),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
@@ -177,10 +240,26 @@ async function _getAccessTokenInternal(provider, credentials, log) {
   return handler(credentials, log);
 }
 
+export function mergeRefreshedProviderSpecificData(existing, refreshed) {
+  if (!existing || typeof existing !== "object") return refreshed;
+  if (!refreshed || typeof refreshed !== "object") return existing;
+  return { ...existing, ...refreshed };
+}
+
 export async function refreshTokenByProvider(provider, credentials, log) {
   if (!credentials.refreshToken) return null;
   const handler = REFRESH_HANDLERS[provider];
-  return handler ? handler(credentials, log) : refreshAccessToken(provider, credentials.refreshToken, credentials, log);
+  const refreshed = await (handler
+    ? handler(credentials, log)
+    : refreshAccessToken(provider, credentials.refreshToken, credentials, log));
+  if (!refreshed || typeof refreshed !== "object" || !refreshed.providerSpecificData) return refreshed;
+  return {
+    ...refreshed,
+    providerSpecificData: mergeRefreshedProviderSpecificData(
+      credentials.providerSpecificData,
+      refreshed.providerSpecificData,
+    ),
+  };
 }
 
 export function formatProviderCredentials(provider, credentials, log) {

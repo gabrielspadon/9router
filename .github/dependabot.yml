@@ -1,2 +1,69 @@
+# Three package.json files exist in this repository and each gets an npm entry
+# below. Verified with:
+#   fd -H -t f '^package\.json$' -E node_modules -E .next .
+#     ./package.json          tokenproxy-app    the dashboard and gateway
+#     ./cli/package.json      tokenproxy        the npm launcher, versioned apart
+#     ./tests/package.json    tokenproxy-tests  the vitest suite, its own package
+#
+# No lockfile is committed anywhere (package-lock.json is in .gitignore), so
+# Dependabot updates the ranges in package.json rather than a resolved tree.
+#
+# Groups keep three npm ecosystems from producing one pull request per dependency
+# per week. Majors stay ungrouped so a breaking bump arrives on its own and can
+# be judged on its own.
 version: 2
-updates: []
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      app-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: "/cli"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(cli-deps)"
+      prefix-development: "chore(cli-deps-dev)"
+    groups:
+      cli-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: "/tests"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(test-deps)"
+      prefix-development: "chore(test-deps-dev)"
+    groups:
+      test-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Action versions in .github/workflows/*.yml.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions:
+        patterns: ["*"]

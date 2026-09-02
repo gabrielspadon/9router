@@ -24,7 +24,13 @@ export async function POST(request, { params }) {
 
     let models = getProviderModels(alias);
 
-    const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
+    // Self-call the port this request actually arrived on. Reconstructing it from
+    // process.env.PORT breaks whenever the server was started without PORT in its
+    // environment: the fallback is the 20128 default and every ping is refused (#1874).
+    const requestPort = (() => {
+      try { return new URL(request.url).port; } catch { return ""; }
+    })();
+    const baseUrl = `http://127.0.0.1:${requestPort || process.env.PORT || UPDATER_CONFIG.appPort}`;
 
     // Compatible providers: fetch live model list
     if (isCompatible && models.length === 0) {

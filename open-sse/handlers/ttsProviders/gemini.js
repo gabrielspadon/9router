@@ -69,8 +69,18 @@ export default {
       body: JSON.stringify({
         contents: [{ parts: [{ text: buildPrompt(text, opts.language) }] }],
         generationConfig: {
+          // Caller-supplied generation settings first, so this vendor's own
+          // controls survive the normalized shape (#2036). The three below are
+          // applied AFTER and therefore cannot be overridden from a request:
+          // the audio modality is what makes this a speech call at all, the
+          // voice comes from the model id the router resolved, and letting a
+          // request change either would route somewhere nobody asked for.
+          ...(opts.providerOptions?.generationConfig || {}),
           responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceId } } },
+          speechConfig: {
+            ...(opts.providerOptions?.generationConfig?.speechConfig || {}),
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceId } },
+          },
         },
       }),
     });

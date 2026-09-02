@@ -32,7 +32,10 @@ const useThemeStore = create(
   )
 );
 
-// Apply theme to document
+// Apply theme to document. This store owns the theme at runtime, but it only runs
+// after hydration, so the pre-paint script in src/app/layout.js reads the same
+// persisted key (THEME_CONFIG.storageKey) to set .dark before first paint.
+// Changing the key or the persisted shape means changing both in one commit.
 function applyTheme(theme) {
   if (typeof window === "undefined") return;
 

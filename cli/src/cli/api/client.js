@@ -13,9 +13,9 @@ const DEFAULT_CONFIG = {
   protocol: "http:",
 };
 
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
-const CLI_TOKEN_SALT = "9r-cli-auth";
-const APP_NAME = "9router";
+const CLI_TOKEN_HEADER = "x-tp-cli-token";
+const CLI_TOKEN_SALT = "tp-cli-auth";
+const APP_NAME = "tokenproxy";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
@@ -112,27 +112,44 @@ function makeRequest(method, path, body = null) {
       });
 
       res.on("end", () => {
+        let parsed = null;
+        let parseError = null;
         try {
-          const parsed = data ? JSON.parse(data) : {};
-          
-          // Check if response indicates error
-          if (res.statusCode >= 400 || parsed.error) {
-            resolve({
-              success: false,
-              error: parsed.error || `HTTP ${res.statusCode}`,
-              statusCode: res.statusCode,
-            });
-          } else {
-            resolve({
-              success: true,
-              data: parsed,
-              statusCode: res.statusCode,
-            });
-          }
+          parsed = data ? JSON.parse(data) : {};
         } catch (err) {
+          parseError = err;
+        }
+
+        // A body that is not JSON is almost always an error page rather than a
+        // malformed success: a Next.js 500 answers with the text "Internal
+        // Server Error". Reporting the JSON parser's complaint about its first
+        // character hid both the status and the message, so the CLI said
+        // "Unexpected token 'I'" where it could have said HTTP 500 (#1696).
+        if (parseError) {
+          const snippet = String(data).replace(/\s+/g, " ").trim().slice(0, 200);
           resolve({
             success: false,
-            error: `Failed to parse response: ${err.message}`,
+            error:
+              res.statusCode >= 400
+                ? `HTTP ${res.statusCode}${snippet ? `: ${snippet}` : ""}`
+                : `Failed to parse response: ${parseError.message}`,
+            statusCode: res.statusCode,
+          });
+          return;
+        }
+
+        // Check if response indicates error
+        if (res.statusCode >= 400 || parsed.error) {
+          resolve({
+            success: false,
+            error: parsed.error || `HTTP ${res.statusCode}`,
+            statusCode: res.statusCode,
+          });
+        } else {
+          resolve({
+            success: true,
+            data: parsed,
+            statusCode: res.statusCode,
           });
         }
       });
@@ -364,7 +381,7 @@ async function deleteCombo(id) {
 /**
  * Get CLI tool settings
  * @param {string} tool - Tool name: claude | codex | droid | openclaw
- * @returns {Promise<Object>} { success, data: { installed, has9Router, ... } }
+ * @returns {Promise<Object>} { success, data: { installed, hasTokenProxy, ... } }
  */
 async function getCliToolSettings(tool) {
   return makeRequest("GET", `/api/cli-tools/${tool}-settings`);

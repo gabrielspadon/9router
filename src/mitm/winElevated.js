@@ -1,15 +1,17 @@
-const { exec, execSync } = require("child_process");
+const { execFile, execSync } = require("child_process");
 
 const IS_WIN = process.platform === "win32";
 
 /**
  * Detect if current Windows process has admin rights (no UAC popup needed).
- * Uses `net session` which only succeeds when elevated.
+ * Uses `fltmc`, which only succeeds when elevated. `net session` was the older
+ * probe and was replaced because it fails on hosts where the Server service is
+ * stopped, reporting a normal account as unelevated.
  */
 function isAdmin() {
   if (IS_WIN) {
     try {
-      execSync("net session >nul 2>&1", { windowsHide: true, stdio: "ignore" });
+      execSync("fltmc", { windowsHide: true, stdio: "ignore" });
       return true;
     } catch {
       return false;
@@ -23,6 +25,20 @@ function isAdmin() {
  */
 function quotePs(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function runEncodedPowerShell(encoded) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+      { windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(stderr || error.message));
+        else resolve(stdout);
+      }
+    );
+  });
 }
 
 /**
@@ -39,16 +55,7 @@ function runElevatedPowerShell(script) {
 
   // If already admin, run directly — zero popup
   if (isAdmin()) {
-    return new Promise((resolve, reject) => {
-      exec(
-        `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
-        { windowsHide: true },
-        (error, stdout, stderr) => {
-          if (error) reject(new Error(stderr || error.message));
-          else resolve(stdout);
-        }
-      );
-    });
+    return runEncodedPowerShell(encoded);
   }
 
   // Not admin — wrap with Start-Process -Verb RunAs (UAC popup)
@@ -60,21 +67,13 @@ function runElevatedPowerShell(script) {
     if ($proc.ExitCode -ne 0) { throw "Elevated command exited with code $($proc.ExitCode)" }
   `;
 
-  return new Promise((resolve, reject) => {
-    exec(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ${quotePs(wrapper)}`,
-      { windowsHide: true },
-      (error, stdout, stderr) => {
-        if (error) {
-          const msg = stderr || error.message;
-          if (msg.includes("canceled by the user") || msg.includes("operation was canceled")) {
-            reject(new Error("User canceled UAC prompt"));
-          } else {
-            reject(new Error(msg));
-          }
-        } else resolve(stdout);
-      }
-    );
+  const wrapperEncoded = Buffer.from(wrapper, "utf16le").toString("base64");
+  return runEncodedPowerShell(wrapperEncoded).catch((error) => {
+    const msg = error.message;
+    if (msg.includes("canceled by the user") || msg.includes("operation was canceled")) {
+      throw new Error("User canceled UAC prompt");
+    }
+    throw error;
   });
 }
 

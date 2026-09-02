@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProxyPool, getProviderConnections, getProxyPools } from "@/models";
+import { createProxyPool, deleteProxyPool, getProviderConnections, getProxyPools } from "@/models";
 
 function toBoolean(value) {
   if (value === "true") return true;
@@ -7,7 +7,7 @@ function toBoolean(value) {
   return undefined;
 }
 
-const VALID_PROXY_TYPES = ["http", "vercel", "cloudflare", "deno"];
+const VALID_PROXY_TYPES = ["http", "vercel", "cloudflare"];
 
 function normalizeProxyPoolInput(body = {}) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -89,5 +89,47 @@ export async function POST(request) {
   } catch (error) {
     console.log("Error creating proxy pool:", error);
     return NextResponse.json({ error: "Failed to create proxy pool" }, { status: 500 });
+  }
+}
+
+// DELETE /api/proxy-pools  body: { ids: [...] }
+// Cleaning up after a bulk import or a failed test round meant one request per
+// proxy, and the report's own case is a pool where many are disabled at once
+// (#3400). A pool still bound to a connection is refused for the same reason the
+// single delete refuses it, and refusing one member must not abandon the rest,
+// so the result is per id rather than a single verdict.
+export async function DELETE(request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((v) => typeof v === "string" && v) : [];
+    if (!ids.length) {
+      return NextResponse.json({ error: "ids[] required" }, { status: 400 });
+    }
+
+    // Read the connections ONCE rather than per id: the binding check is the
+    // same question for every one of them.
+    const connections = await getProviderConnections();
+    const usageMap = buildUsageMap(connections);
+
+    const results = [];
+    for (const id of ids) {
+      const boundConnectionCount = usageMap.get(id) || 0;
+      if (boundConnectionCount > 0) {
+        results.push({ id, deleted: false, error: "Proxy pool is currently in use", boundConnectionCount });
+        continue;
+      }
+      try {
+        await deleteProxyPool(id);
+        results.push({ id, deleted: true });
+      } catch (error) {
+        results.push({ id, deleted: false, error: String(error?.message || error) });
+      }
+    }
+
+    const deleted = results.filter((r) => r.deleted).length;
+    return NextResponse.json({ success: deleted === results.length, deleted, results });
+  } catch (error) {
+    console.log("Error deleting proxy pools:", error);
+    return NextResponse.json({ error: "Failed to delete proxy pools" }, { status: 500 });
   }
 }

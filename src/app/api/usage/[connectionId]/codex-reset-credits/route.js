@@ -2,11 +2,21 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById } from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "open-sse/services/usage.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "../route.js";
 
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
+
+function snapshotOwner(connection) {
+  const data = connection.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
 
 function isAuthExpiredResult(result) {
   const values = [result?.message, result?.code, result?.raw?.detail, result?.raw?.error]
@@ -63,14 +73,18 @@ async function getCodexConnection(connectionId) {
     return { response: Response.json({ error: "Codex reset credits require an OAuth or access-token connection." }, { status: 400 }) };
   }
 
-  const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-  const proxyOptions = {
-    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
-    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: false,
-  };
+  const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData, snapshotOwner(connection));
+  if (proxyConfig?.kind === "required-unavailable") {
+    return {
+      response: Response.json({
+        error: "Required proxy is unavailable",
+        code: "required_proxy_unavailable",
+      }, { status: 503 }),
+    };
+  }
+  const proxyOptions = proxyConfig?.kind === "usable"
+    ? toConnectionProxyOptions(proxyConfig)
+    : { ...(proxyConfig || {}), strictProxy: proxyConfig?.strictProxy === true };
 
   return { connection, isOAuth, proxyOptions };
 }

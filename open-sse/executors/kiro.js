@@ -3,8 +3,10 @@ import { PROVIDERS } from "../config/providers.js";
 import {
   KIRO_CODEWHISPERER_TARGET,
   KIRO_ENDPOINT_FALLBACK_STATUSES,
+  KIRO_UNSUPPORTED_THINKING_FIELDS,
   resolveKiroModel,
 } from "../config/kiroConstants.js";
+import { assertValidAwsRegion } from "../config/awsRegions.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
@@ -54,6 +56,15 @@ const CHINESE_RESULT_CLAUSE = /(?:[。！？]\s*\S|(?:版本|狀態|回應|結�
 const USER_WAIT = /(?:請(?:你|先)|你(?:先|需要|可以|提供|確認|批准|允許)|等待(?:你|使用者)|等你|核准|同意|授權|\b(?:after|when|once)\s+you\b|\byour\s+(?:approval|confirmation|permission|input)\b|\bwait(?:ing)?\s+for\s+you\b|\bplease\s+(?:approve|confirm|provide|send)\b)/iu;
 const COMPLETED_FINAL = /(?:已(?:經)?完成|完成(?:了|驗證|確認)|修復完成|確認無誤|驗證(?:完成|通過)|測試(?:均)?通過|結論|總結|\b(?:done|completed|fixed|verified|confirmed|passed|in conclusion|summary)\b|\b(?:is|are) complete\b)/iu;
 const RESULT_EVIDENCE = /(?:顯示|發現|因此|成功|失敗|正常|無錯誤|沒有錯誤|\b(?:found|shows?|showed|because|therefore|succeeded|failed|healthy|green|no errors?)\b)/iu;
+
+function resolveKiroAwsRegion(rawRegion) {
+  const region = typeof rawRegion === "string"
+    ? rawRegion.trim()
+    : rawRegion == null
+      ? "us-east-1"
+      : "";
+  return assertValidAwsRegion(region || "us-east-1");
+}
 
 function crc32(bytes) {
   let crc = 0xffffffff;
@@ -130,8 +141,14 @@ async function readResponsePrefix(response, signal, maxBytes, timeoutMs) {
 function appendRepairInstruction(body, kind) {
   const repaired = structuredClone(body || {});
   const instruction = REPAIR_INSTRUCTIONS[kind] || "Retry the previous incomplete Kiro response.";
-  repaired.systemPrompt = repaired.systemPrompt
-    ? `${repaired.systemPrompt}\n\n${instruction}`
+  // The retry goes back to generateAssistantResponse, which rejects a
+  // top-level systemPrompt outright, so the instruction rides on the current
+  // user message the same way the system prompt itself does. A body with no
+  // current message is one this executor cannot repair, and it retries plain.
+  const current = repaired.conversationState?.currentMessage?.userInputMessage;
+  if (!current) return repaired;
+  current.content = current.content
+    ? `${current.content}\n\n${instruction}`
     : instruction;
   return repaired;
 }
@@ -289,7 +306,7 @@ export class KiroExecutor extends BaseExecutor {
       authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
     if (!isCodeWhispererSurface) return baseUrls;
 
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    const region = resolveKiroAwsRegion(credentials?.providerSpecificData?.region);
     const regionalize = (u) =>
       region && region !== "us-east-1" && u.includes("amazonaws.com")
         ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
@@ -322,6 +339,21 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Last gate before generateAssistantResponse. translator/index.js skips the
+    // generic thinking normalizer for Kiro only when the CLIENT spoke OpenAI
+    // Chat or Claude, so a Responses (Codex), Gemini or Ollama client falls
+    // through it and the normalizer stamps a top-level `thinking` /
+    // `reasoning_effort` onto the finished conversationState payload. Kiro
+    // answers that with 400 {"reason":"REQUEST_BODY_INVALID"} (#3641, and the
+    // same class as #2716). The Kiro request translators already carry thinking
+    // intent by the two routes the schema does define, so the stray members are
+    // dropped here rather than in one caller: every path to this upstream,
+    // including the integrity-gate retry, is transformed through here exactly
+    // once. Deleting in place keeps the non-enumerable _kiroUpstreamModel tag
+    // and leaves the nested additionalModelRequestFields.output_config alone.
+    if (body && typeof body === "object") {
+      for (const field of KIRO_UNSUPPORTED_THINKING_FIELDS) delete body[field];
+    }
     return body;
   }
 
@@ -379,7 +411,8 @@ export class KiroExecutor extends BaseExecutor {
             maxBytes,
             ttftTimeoutMs,
             stallTimeoutMs,
-            repairEnabled
+            repairEnabled,
+            toolNameMap: args.toolNameMap,
           });
           if (abortController.signal.aborted) throw makeAbortError(abortController.signal.reason);
           controller.enqueue(bytes);
@@ -524,6 +557,7 @@ export class KiroExecutor extends BaseExecutor {
     let diagnostics;
     const transformed = this.transformEventStreamToSSE(rawResponse, model, {
       maxToolBytes: Math.max(1, Math.floor(options.maxBytes / 2)),
+      toolNameMap: options.toolNameMap,
       onTerminalState: (value) => {
         diagnostics = value;
       }
@@ -743,7 +777,7 @@ export class KiroExecutor extends BaseExecutor {
             index,
             id: tool.id,
             type: "function",
-            function: { name: tool.name, arguments: "" }
+            function: { name: options.toolNameMap?.get(tool.name) || tool.name, arguments: "" }
           }]
         });
         const serializedInput = JSON.stringify(input);

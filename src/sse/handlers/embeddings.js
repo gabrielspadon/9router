@@ -2,17 +2,21 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo } from "../services/model.js";
+import { isInternalModelTestAuthorized } from "@/lib/auth/internalCliToken";
+import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { recordApiKeyDevice } from "@/sse/services/apiKeyDevices.js";
+import { refuseDisallowedModel } from "@/sse/services/modelAccess.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -44,7 +48,9 @@ export async function handleEmbeddings(request) {
   log.request("POST", `${url.pathname} | ${modelStr}`);
 
   // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  const resolvedApiKey = await resolveClientApiKey(request, isValidApiKey);
+  const presentedApiKey = resolvedApiKey.apiKey;
+  const apiKey = resolvedApiKey.valid ? presentedApiKey : null;
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {
@@ -54,15 +60,16 @@ export async function handleEmbeddings(request) {
   // Enforce API key if enabled in settings
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+    const authorized = await isInternalModelTestAuthorized(request, apiKey, isValidApiKey);
+    if (!authorized) {
+      const message = presentedApiKey ? "Invalid API key" : "Missing API key";
+      log.warn("AUTH", `${message} (requireApiKey=true)`);
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, message);
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+    // Count the distinct clients on this key, so a leaked or shared key is
+    // visible as more than a bigger bill (#930). Only a VALIDATED key is
+    // recorded: counting unchecked strings would let anyone grow the map.
+    recordApiKeyDevice(apiKey, request);
   }
 
   if (!modelStr) {
@@ -70,12 +77,45 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  // The key's model allowlist (#1154) was only ever enforced in rerank, so
+  // every other modality could reach a barred model with the same key
+  // (#448, #2833).
+  const barred = await refuseDisallowedModel(apiKey, modelStr, log);
+  if (barred) return barred;
+
   if (!body.input) {
     log.warn("EMBEDDINGS", "Missing input");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
   }
 
-  const modelInfo = await getModelInfo(modelStr);
+  // Combo expansion (#1379): getModelInfo answers { provider: null } for a bare
+  // combo name, which is the same signal handleChat keys off. Members then run
+  // one at a time through the single-model path below, with the shared
+  // fallback/round-robin strategy on top.
+  const resolved = await getModelInfo(modelStr);
+  if (!resolved.provider) {
+    const comboModels = await getComboModels(modelStr);
+    if (comboModels) {
+      const comboStrategy = settings.comboStrategies?.[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
+      const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+      log.info("EMBEDDINGS", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      return handleComboChat({
+        body,
+        models: comboModels,
+        handleSingleModel: (b, m) => handleSingleModelEmbeddings(b, m, apiKey, url.pathname),
+        log,
+        comboName: modelStr,
+        comboStrategy,
+        comboStickyLimit,
+      });
+    }
+  }
+
+  return handleSingleModelEmbeddings(body, modelStr, apiKey, url.pathname, resolved);
+}
+
+async function handleSingleModelEmbeddings(body, modelStr, apiKey, endpoint, resolved = null) {
+  const modelInfo = resolved || await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("EMBEDDINGS", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -100,8 +140,8 @@ export async function handleEmbeddings(request) {
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         log.warn("EMBEDDINGS", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -116,10 +156,13 @@ export async function handleEmbeddings(request) {
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const effectiveModel = !modelStr.includes("/") && credentials.defaultModel
+      ? credentials.defaultModel
+      : model;
 
     const result = await handleEmbeddingsCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
+      body: { ...body, model: `${provider}/${effectiveModel}` },
+      modelInfo: { provider, model: effectiveModel },
       credentials: refreshedCredentials,
       log,
       onCredentialsRefreshed: async (newCreds) => {
@@ -142,7 +185,7 @@ export async function handleEmbeddings(request) {
           model,
           connectionId: credentials.connectionId,
           apiKey,
-          endpoint: url.pathname,
+          endpoint,
           tokens: usage,
           status: "success",
         }).catch(() => {});

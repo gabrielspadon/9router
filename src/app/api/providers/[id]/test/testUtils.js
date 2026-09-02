@@ -1,13 +1,28 @@
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import {
+  getProviderConnectionById,
+  updateProviderConnection,
+} from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
+import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import {
+  resolveOllamaLocalHost,
+  resolveXiaomiTokenplanModelsUrl,
+  isXiaomiTokenplanTestResponseValid,
+  PROVIDERS,
+} from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
+import { credentialAuthMode } from "open-sse/services/provider.js";
+import {
+  createNousApiKeyProbe,
+  getNousApiKeyValidationError,
+  isNousApiKeyAccepted,
+} from "open-sse/services/nous.js";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -18,6 +33,22 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { FETCH_CONNECT_TIMEOUT_MS, PROBE_MAX_TOKENS } from "open-sse/config/runtimeConfig.js";
+import { assertValidAwsRegion } from "open-sse/config/awsRegions.js";
+
+// A "Check" that accepts 404 reports a working connection for a model the upstream
+// does not serve. The account is created, the first real request 404s, and the
+// account is model-locked for an hour with nothing having warned the user (#2032).
+// 400 and 429 still confirm the credential — the request reached the account and
+// was understood. 404 does not: either the model or the base URL is wrong, and
+// both are the user's to fix before the connection is usable.
+const CREDENTIAL_REJECTED_STATUSES = new Set([401, 403, 404]);
+function credentialConfirmedByStatus(status) {
+  return !CREDENTIAL_REJECTED_STATUSES.has(status);
+}
+
+
+const HUGGINGFACE_WHOAMI_URL = "https://huggingface.co/api/whoami-v2";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -53,7 +84,7 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
+    extraHeaders: { "User-Agent": "TokenProxy", "Accept": "application/vnd.github+json" },
   },
   iflow: {
     // iFlow getUserInfo requires accessToken as query param, not header
@@ -157,13 +188,13 @@ export function classifyOAuthProbeResult(res, config, bodyText = "") {
   return { valid: true, error: null, soft: false };
 }
 
-async function probeClineAccessToken(accessToken) {
-  const res = await fetch("https://api.cline.bot/api/v1/users/me", {
+async function probeClineAccessToken(accessToken, effectiveProxy = null) {
+  const res = await fetchWithConnectionProxy("https://api.cline.bot/api/v1/users/me", {
     method: "GET",
     headers: buildClineHeaders(accessToken, {
       Accept: "application/json",
     }),
-  });
+  }, effectiveProxy);
 
   return res;
 }
@@ -215,7 +246,7 @@ async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProx
   };
 }
 
-async function refreshOAuthToken(connection) {
+async function refreshOAuthToken(connection, effectiveProxy = null) {
   const provider = connection.provider;
   const refreshToken = connection.refreshToken;
   if (!refreshToken) return null;
@@ -223,7 +254,7 @@ async function refreshOAuthToken(connection) {
   try {
     if (provider === "gemini-cli" || provider === "antigravity") {
       const config = provider === "gemini-cli" ? GEMINI_CONFIG : ANTIGRAVITY_CONFIG;
-      const response = await fetch("https://oauth2.googleapis.com/token", {
+      const response = await fetchWithConnectionProxy("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -232,7 +263,7 @@ async function refreshOAuthToken(connection) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
-      });
+      }, effectiveProxy);
       if (!response.ok) return null;
       const data = await response.json();
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
@@ -243,7 +274,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "claude") {
-      const response = await fetch(CLAUDE_CONFIG.tokenUrl, {
+      const response = await fetchWithConnectionProxy(CLAUDE_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({
@@ -251,7 +282,7 @@ async function refreshOAuthToken(connection) {
           refresh_token: refreshToken,
           client_id: CLAUDE_CONFIG.clientId,
         }),
-      });
+      }, effectiveProxy);
       if (!response.ok) return null;
       const data = await response.json();
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
@@ -263,28 +294,34 @@ async function refreshOAuthToken(connection) {
       const clientSecret = psd.clientSecret || connection.clientSecret;
       const region = psd.region || connection.region;
       if (clientId && clientSecret) {
-        const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
-        const response = await fetch(endpoint, {
+        // A saved or imported region is interpolated into the host this POSTs the
+        // client secret and refresh token to, so a value like "evil.example.com/"
+        // re-hosts the token endpoint. Validate before any egress, the same way the
+        // executor and the catalog already do (#3497); throwing lands in the catch
+        // below and the test reports a failed refresh with nothing sent. Only this
+        // branch reads the region — the social refresh below is left alone.
+        const endpoint = `https://oidc.${assertValidAwsRegion(region || "us-east-1")}.amazonaws.com/token`;
+        const response = await fetchWithConnectionProxy(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, clientSecret, refreshToken, grantType: "refresh_token" }),
-        });
+        }, effectiveProxy);
         if (!response.ok) return null;
         const data = await response.json();
         return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
       }
-      const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
+      const response = await fetchWithConnectionProxy(KIRO_CONFIG.socialRefreshUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
         body: JSON.stringify({ refreshToken }),
-      });
+      }, effectiveProxy);
       if (!response.ok) return null;
       const data = await response.json();
       return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
     }
 
     if (provider === "cline") {
-      const response = await fetch(CLINE_CONFIG.refreshUrl, {
+      const response = await fetchWithConnectionProxy(CLINE_CONFIG.refreshUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
@@ -292,7 +329,7 @@ async function refreshOAuthToken(connection) {
           grantType: "refresh_token",
           clientType: "extension",
         }),
-      });
+      }, effectiveProxy);
       if (!response.ok) return null;
       const payload = await response.json();
       const data = payload?.data || payload;
@@ -333,7 +370,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   const tokenExpired = isTokenExpired(connection);
   if (config.refreshable && tokenExpired && connection.refreshToken) {
-    const tokens = await refreshOAuthToken(connection);
+    const tokens = await refreshOAuthToken(connection, effectiveProxy);
     if (tokens) {
       accessToken = tokens.accessToken;
       refreshed = true;
@@ -354,7 +391,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
 
     if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
+      const tokens = await refreshOAuthToken(connection, effectiveProxy);
       if (tokens?.accessToken) {
         const retry = await probeCloudCodeAssistAccess(connection, tokens.accessToken, effectiveProxy);
         if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
@@ -368,7 +405,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   if (connection.provider === "cline") {
     const tryProbe = async (token) => {
-      const res = await probeClineAccessToken(token);
+      const res = await probeClineAccessToken(token, effectiveProxy);
       if (res.ok) return { valid: true, error: null, refreshed, newTokens };
       if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
       if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
@@ -380,7 +417,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       return initial;
     }
 
-    const tokens = await refreshOAuthToken(connection);
+    const tokens = await refreshOAuthToken(connection, effectiveProxy);
     if (!tokens?.accessToken) {
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
@@ -396,7 +433,11 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     const headers = config.noAuth
       ? { ...config.extraHeaders }
       : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
-    const fetchOpts = { method: config.method, headers };
+    // Without a signal a hung probe blocks the sequential test queue for as
+    // long as the socket stays open, so one unreachable provider stalls every
+    // connection behind it. The other probes in this file already bound
+    // themselves with the same constant; this one was the outlier (#1449).
+    const fetchOpts = { method: config.method, headers, signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS) };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
     const bodyText = !res.ok ? await res.text().catch(() => "") : "";
@@ -414,13 +455,13 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     }
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
+      const tokens = await refreshOAuthToken(connection, effectiveProxy);
       if (tokens) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
           : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
-        const retryOpts = { method: config.method, headers: retryHeaders };
+        const retryOpts = { method: config.method, headers: retryHeaders, signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS) };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
         const retryBody = !retryRes.ok ? await retryRes.text().catch(() => "") : "";
@@ -434,6 +475,20 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
             newTokens: tokens,
           };
         }
+
+        // The refresh succeeded and rotated the token, so the old refresh token
+        // is already spent upstream. Dropping the new one here strands the
+        // connection for good, and running a connection test must never be what
+        // does that. Report why the retry actually failed rather than blaming a
+        // token that was just renewed successfully: persistence below keys on
+        // refreshed && newTokens, not on valid, so the rotation is saved either
+        // way.
+        return {
+          valid: false,
+          error: retryClassified.error || "Token refreshed, but the account rejected the request",
+          refreshed: true,
+          newTokens: tokens,
+        };
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
@@ -444,31 +499,64 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
   }
 }
 
+// Connection tests run one behind the other, and neither this helper nor
+// proxyAwareFetch imposed a deadline of its own, so a provider that accepts the
+// socket and never answers stalled every connection queued behind it (#1450).
+// Defaulting the signal here bounds every probe at once, including the ones
+// that pass no options at all; a caller with its own deadline still wins.
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
-  // Add a 15-second timeout to prevent connection testing from hanging indefinitely
-  // and exhausting the browser/Node.js connection pools.
-  if (!options.signal) {
-    options.signal = AbortSignal.timeout(15000);
-  }
-
-  // Vercel relay: forward via relay URL
-  if (effectiveProxy?.vercelRelayUrl) {
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-    return proxyAwareFetch(url, options, {
-      vercelRelayUrl: effectiveProxy.vercelRelayUrl,
-    });
-  }
-
-  if (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl) {
-    return fetch(url, options);
-  }
-
   const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-  return proxyAwareFetch(url, options, {
-    connectionProxyEnabled: true,
-    connectionProxyUrl: effectiveProxy.connectionProxyUrl,
-    connectionNoProxy: effectiveProxy.connectionNoProxy || "",
-  });
+  return proxyAwareFetch(
+    url,
+    { signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS), ...options },
+    effectiveProxy,
+  );
+}
+
+async function testHuggingFaceToken(apiKey, effectiveProxy) {
+  try {
+    const res = await fetchWithConnectionProxy(HUGGINGFACE_WHOAMI_URL, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS),
+    }, effectiveProxy);
+    if (res.ok) return { valid: true, error: null };
+    if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+  } catch { /* Return a safe inconclusive result below. */ }
+
+  return { valid: false, error: "Unable to verify API key" };
+}
+
+async function testOpenAIModelsApiKey(provider, apiKey, effectiveProxy) {
+  const validateUrl = PROVIDERS[provider]?.validateUrl;
+  if (!validateUrl) return { valid: false, error: "Unable to verify API key" };
+
+  try {
+    const res = await fetchWithConnectionProxy(validateUrl, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS),
+    }, effectiveProxy);
+    if (res.ok) return { valid: true, error: null };
+    if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+  } catch { /* Return a safe inconclusive result below. */ }
+
+  return { valid: false, error: "Unable to verify API key" };
+}
+
+async function testGitlawbOpenGatewayToken(apiKey, effectiveProxy) {
+  const creditsUrl = PROVIDERS["gitlawb-opengateway"]?.validateUrl;
+  if (!creditsUrl) return { valid: false, error: "Unable to verify API key" };
+
+  try {
+    const res = await fetchWithConnectionProxy(creditsUrl, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS),
+    }, effectiveProxy);
+    if (res.ok) return { valid: true, error: null };
+    if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+  } catch { /* Return a safe inconclusive result below. */ }
+
+  return { valid: false, error: "Unable to verify API key" };
 }
 
 async function testApiKeyConnection(connection, effectiveProxy = null) {
@@ -476,10 +564,30 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
     try {
-      const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, {
+      const base = modelsBase.replace(/\/$/, "");
+      const res = await fetchWithConnectionProxy(`${base}/models`, {
         headers: { "Authorization": `Bearer ${connection.apiKey}` },
       }, effectiveProxy);
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      if (res.ok) return { valid: true, error: null };
+      // A gateway that serves no /models answers 404 or 405 there while working
+      // perfectly on /chat/completions, and condemning it on the listing alone
+      // reported every hand-added endpoint as a bad key (#994). Only an auth
+      // status is definitive from the listing; anything else re-probes the
+      // endpoint the connection actually uses, where 404 still fails (#2032).
+      if (res.status === 401 || res.status === 403) {
+        return { valid: false, error: "Invalid API key" };
+      }
+      const chatRes = await fetchWithConnectionProxy(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: connection.defaultModel || "test",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: PROBE_MAX_TOKENS,
+        }),
+      }, effectiveProxy);
+      const valid = credentialConfirmedByStatus(chatRes.status);
+      return { valid, error: valid ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
     }
@@ -503,12 +611,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         },
         body: JSON.stringify({
           model,
-          max_tokens: 1,
+          max_tokens: PROBE_MAX_TOKENS,
           messages: [{ role: "user", content: "test" }],
         }),
       }, effectiveProxy);
       // 400/529 still confirms key accepted; only 401/403 = bad key
-      const valid = res.status !== 401 && res.status !== 403;
+      const valid = credentialConfirmedByStatus(res.status);
       return { valid, error: valid ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
@@ -525,9 +633,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(url, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
+          body: JSON.stringify({ model: getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: PROBE_MAX_TOKENS }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403 && res.status !== 404;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API token or Account ID" };
       }
       case "azure": {
@@ -540,9 +648,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         if (psd.organization) headers["OpenAI-Organization"] = psd.organization;
         const res = await fetchWithConnectionProxy(url, {
           method: "POST", headers,
-          body: JSON.stringify({ messages: [{ role: "user", content: "test" }], max_completion_tokens: 1 }),
+          body: JSON.stringify({ messages: [{ role: "user", content: "test" }], max_completion_tokens: PROBE_MAX_TOKENS }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key or Azure configuration" };
       }
       case "openai": {
@@ -557,7 +665,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -570,22 +678,46 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "nous": {
+        // /models is public on Nous; a minimal chat request is required to
+        // distinguish an accepted Portal key from an arbitrary Bearer value.
+        const probe = createNousApiKeyProbe(connection.apiKey);
+        const res = await fetchWithConnectionProxy(probe.url, {
+          ...probe.options,
+          signal: AbortSignal.timeout(8000),
+        }, effectiveProxy);
+        const valid = isNousApiKeyAccepted(res.status);
+        return {
+          valid,
+          error: valid ? null : getNousApiKeyValidationError(res.status),
+        };
+      }
+      case "huggingface": {
+        return await testHuggingFaceToken(connection.apiKey, effectiveProxy);
+      }
+      case "sumopod":
+      case "x5lab": {
+        return await testOpenAIModelsApiKey(connection.provider, connection.apiKey, effectiveProxy);
+      }
+      case "gitlawb-opengateway": {
+        return await testGitlawbOpenGatewayToken(connection.apiKey, effectiveProxy);
+      }
       case "glm": {
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: "glm-4.7", max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "glm-cn": {
         const res = await fetchWithConnectionProxy("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: "glm-4.7", max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "minimax":
@@ -594,18 +726,27 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(endpoints[connection.provider], {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "minimax-m2", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: "minimax-m2", max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "kimi": {
-        const res = await fetchWithConnectionProxy("https://api.kimi.com/coding/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "kimi-latest", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        // api.kimi.com/coding is the SUBSCRIPTION product and answers a platform API
+        // key with 401 however valid it is, so probing it for every credential
+        // reported working keys as invalid (#3190). Routing already scopes the host
+        // to the credential through kimi.js `authModes` (#2881); the validator reads
+        // the same mode so the two cannot disagree.
+        const res = credentialAuthMode(connection) === "apikey"
+          ? await fetchWithConnectionProxy("https://api.moonshot.ai/v1/users/me/balance", {
+              headers: { Authorization: `Bearer ${connection.apiKey}` },
+            }, effectiveProxy)
+          : await fetchWithConnectionProxy("https://api.kimi.com/coding/v1/messages", {
+              method: "POST",
+              headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+              body: JSON.stringify({ model: "kimi-latest", max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
+            }, effectiveProxy);
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "alicode":
@@ -620,9 +761,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(aliBaseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "volcengine-ark":
@@ -630,9 +771,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: PROBE_MAX_TOKENS, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "deepseek": {
@@ -671,6 +812,18 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.cerebras.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "novita": {
+        const res = await fetchWithConnectionProxy("https://api.novita.ai/openai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "sensenova": {
+        const res = await fetchWithConnectionProxy(PROVIDERS.sensenova.validateUrl, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+          signal: AbortSignal.timeout(FETCH_CONNECT_TIMEOUT_MS),
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
       case "cohere": {
         const res = await fetchWithConnectionProxy("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -688,12 +841,16 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama": {
-        const res = await fetch("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama-local": {
+        // Both Ollama probes called the global fetch, so they skipped the
+        // connection proxy as well as the deadline every other case gets
+        // (#1450). A loopback host still resolves to a direct route inside
+        // proxyAwareFetch, so nothing is tunnelled that was not before.
         const host = resolveOllamaLocalHost(connection);
-        const res = await fetch(`${host}/api/tags`);
+        const res = await fetchWithConnectionProxy(`${host}/api/tags`, {}, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : `Ollama not reachable at ${host}` };
       }
       case "deepgram": {
@@ -710,7 +867,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "fal-ai": {
         const res = await fetchWithConnectionProxy("https://api.fal.ai/v1/models?limit=1", { headers: { Authorization: `Key ${connection.apiKey}` } }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "chutes": {
@@ -732,7 +889,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           },
           body: JSON.stringify({ temporary: true, modelName: "grok-4", message: "ping", fileAttachments: [], imageAttachments: [], disableSearch: false, enableImageGeneration: false, sendFinalMetadata: true }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid SSO cookie" };
       }
       case "perplexity-web": {
@@ -751,21 +908,28 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       case "opencode-go": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
-          body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
+        // Probing with a chat completion billed the user for every click on "test
+        // connection" (#3250). The usage endpoint getOpencodeGoUsage already reads
+        // is free and proves the credential just as well; a 200 reporting zero
+        // remaining is a valid key out of quota, which only the 401/403/404 rule
+        // below gets right.
+        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/usage", {
+          headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        const valid = credentialConfirmedByStatus(res.status);
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "xiaomi-mimo":
       case "xiaomi-tokenplan": {
-        const baseUrls = { "xiaomi-mimo": "https://api.xiaomimimo.com/v1", "xiaomi-tokenplan": "https://token-plan-sgp.xiaomimimo.com/v1" };
-        const res = await fetchWithConnectionProxy(`${baseUrls[connection.provider]}/models`, {
+        const isTokenPlan = connection.provider === "xiaomi-tokenplan";
+        const modelsUrl = isTokenPlan
+          ? resolveXiaomiTokenplanModelsUrl(connection)
+          : "https://api.xiaomimimo.com/v1/models";
+        const res = await fetchWithConnectionProxy(modelsUrl, {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+        const valid = isTokenPlan ? isXiaomiTokenplanTestResponseValid(res) : res.ok;
+        return { valid, error: valid ? null : "Invalid API key" };
       }
       case "blackbox": {
         const baseUrl = PROVIDERS["blackbox"]?.baseUrl?.replace(/\/chat\/completions$/, "") || "https://api.blackbox.ai/v1";
@@ -794,7 +958,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         );
         return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
       }
-case "llm7": {
+      case "tokenrouter": {
+        const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.tokenrouter.com/v1";
+        const res = await fetchWithConnectionProxy(`${baseUrl.replace(/\/$/, "")}/models`, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      }
+      case "llm7": {
         const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";
         const res = await fetchWithConnectionProxy(`${baseUrl.replace(/\/$/, "")}/models`, {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
@@ -830,7 +1001,25 @@ export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
-  const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  const proxyData = connection.providerSpecificData || {};
+  const proxyConfig = await resolveConnectionProxyConfig(proxyData, {
+    persistPoolSnapshot: proxyData.proxyPoolId && typeof localDb.updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => localDb.updateConnectionProxyPoolSnapshotIfBound(connection.id, proxyData.proxyPoolId, pair)
+      : undefined,
+  });
+  if (proxyConfig?.kind === "required-unavailable") {
+    return {
+      valid: false,
+      error: "Required proxy is unavailable",
+      code: "required_proxy_unavailable",
+      status: 503,
+      latencyMs: 0,
+      testedAt: new Date().toISOString(),
+    };
+  }
+  const effectiveProxy = proxyConfig?.kind === "usable"
+    ? toConnectionProxyOptions(proxyConfig)
+    : proxyConfig || {};
 
   if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });

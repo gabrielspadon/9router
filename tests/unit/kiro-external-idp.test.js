@@ -110,6 +110,36 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     );
   });
 
+  it("rejects an imported external IdP region that could alter an AWS hostname", async () => {
+    const { normalizeKiroExternalIdpAuth } = await import("../../src/lib/oauth/kiroExternalIdp.js");
+
+    expect(() => normalizeKiroExternalIdpAuth({
+      access_token: makeJwt({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+      refresh_token: "1.AcY-refresh-token",
+      client_id: TEST_CLIENT_ID,
+      token_endpoint: "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token",
+      profile_arn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/ABC",
+      region: "us-east-1.evil.example/#",
+      scopes: TEST_SCOPE,
+    })).toThrow("Invalid region");
+  });
+
+  it("fails closed before URL construction for a legacy unsafe external IdP region", async () => {
+    const { KiroExecutor } = await import("../../open-sse/executors/kiro.js");
+    const executor = new KiroExecutor();
+    const credentials = {
+      accessToken: "microsoft-access-token",
+      providerSpecificData: {
+        authMethod: "external_idp",
+        region: "us-east-1.evil.example/#",
+      },
+    };
+
+    expect(() => executor.buildUrl("claude-sonnet-4.5", true, 0, credentials)).toThrow(
+      "Invalid region"
+    );
+  });
+
   it("sends TokenType for external_idp Kiro usage probes", async () => {
     const calls = [];
     vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({
@@ -176,7 +206,7 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
       expired: new Date(Date.now() + 3600_000).toISOString(),
     };
 
-    const response = await POST(new Request("https://9router.local/api/oauth/kiro/import-cli-proxy", {
+    const response = await POST(new Request("https://tokenproxy.local/api/oauth/kiro/import-cli-proxy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cliProxyAuth }),

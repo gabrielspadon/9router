@@ -1,7 +1,7 @@
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
 // Dual auth (same pattern as xai): OAuth = Kimi Code subscription (device code),
-// API key = platform.moonshot / api.kimi.com. Transport is shared.
+// API key = the Moonshot/Kimi platform. The two are NOT the same endpoint.
 // CLIProxyAPI parity: client_id, auth.kimi.com device+token, X-Msh-* headers, device_id.
 export default {
   id: "kimi",
@@ -24,6 +24,10 @@ export default {
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {
+    // K3/K3-256k non-streaming waits for full inference (~20s+); streaming
+    // returns first token in 2-4s. Non-streaming clients still receive JSON —
+    // chatCore converts SSE back to JSON (handleForcedSSEToJson).
+    forceStream: true,
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
     urlSuffix: "?beta=true",
@@ -39,6 +43,13 @@ export default {
     },
   },
   // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  //
+  // api.kimi.com/coding is the Kimi Code SUBSCRIPTION product and accepts only the
+  // subscription's own OAuth token, so a platform API key sent there comes back 401
+  // however valid it is (#2881). The entries carrying `authModes: ["apikey"]` move
+  // key-authenticated traffic onto the general platform API instead; the unscoped
+  // pair below stays the OAuth path and every other credential kind's default, so
+  // the working subscription route is untouched.
   transports: [
     {
       format: "openai",
@@ -51,6 +62,20 @@ export default {
       urlSuffix: "?beta=true",
       headers: { ...CLAUDE_API_HEADERS },
       auth: { combined: true, header: "x-api-key", scheme: "raw", hooks: ["kimiHeaders"] },
+    },
+    // X-Msh-* device identity is Kimi Code CLI's, not the platform's — no hook here.
+    {
+      format: "openai",
+      authModes: ["apikey"],
+      baseUrl: "https://api.moonshot.ai/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      authModes: ["apikey"],
+      baseUrl: "https://api.moonshot.ai/anthropic/v1/messages",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "x-api-key", scheme: "raw" },
     },
   ],
   models: [

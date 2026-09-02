@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, EmptyState, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, ComboTestModal, ChannelList, Channel, FlowStrip } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { filterActiveConnections } from "@/shared/utils/connectionStatus";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -48,13 +49,20 @@ export default function CombosPage() {
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateFreeModal, setShowCreateFreeModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
+  const [freeSyncCfg, setFreeSyncCfg] = useState({ enabled: false, intervalHours: 4, autoComboIds: [] });
+  const [freeMemberIds, setFreeMemberIds] = useState([]);
   const { getCaps } = useModelCaps();
+  const [testingCombo, setTestingCombo] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const [importing, setImporting] = useState(false);
+  const [showStrategies, setShowStrategies] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -62,21 +70,41 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes, settingsRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes, freeSyncRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
+        fetch("/api/models/free-sync"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
+      const freeSyncData = freeSyncRes.ok ? await freeSyncRes.json() : null;
+
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
-      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
+      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !MEDIA_PROVIDER_KINDS.some(({ id }) => id === c.kind)));
       if (providersRes.ok) {
-        setActiveProviders(providersData.connections || []);
+        setActiveProviders(filterActiveConnections(providersData.connections));
       }
       setComboStrategies(settingsData.comboStrategies || {});
+      if (settingsData.freeModelSync && typeof settingsData.freeModelSync === "object") {
+        setFreeSyncCfg({
+          enabled: false,
+          intervalHours: 4,
+          autoComboIds: [],
+          ...settingsData.freeModelSync,
+          autoComboIds: Array.isArray(settingsData.freeModelSync.autoComboIds) ? settingsData.freeModelSync.autoComboIds : [],
+        });
+      }
+      if (freeSyncData) {
+        // Same ordering the server-side sync uses: targets order x catalog order.
+        const byProvider = freeSyncData.providers || {};
+        const ordered = [];
+        for (const t of freeSyncData.targets || []) {
+          for (const id of byProvider[t.id]?.ids || []) ordered.push(`${t.alias}/${id}`);
+        }
+        setFreeMemberIds(ordered);
+      }
       const rawAdapter = settingsData.capacityAdapter || {};
       const normalized = {};
       for (const cap of CAPACITY_ADAPTER_CAPS) {
@@ -103,7 +131,28 @@ export default function CombosPage() {
     }
   };
 
-  const handleCreate = async (data) => {
+  // Attach/detach a combo from the free-model auto-sync membership list.
+  const syncAutoComboSetting = async (comboId, keepInSync) => {
+    const current = Array.isArray(freeSyncCfg.autoComboIds) ? freeSyncCfg.autoComboIds : [];
+    const exists = current.includes(comboId);
+    if (keepInSync === exists) return;
+    const next = {
+      ...freeSyncCfg,
+      autoComboIds: keepInSync ? [...current, comboId] : current.filter((id) => id !== comboId),
+    };
+    setFreeSyncCfg(next);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freeModelSync: next }),
+      });
+    } catch (error) {
+      console.log("Error updating freeModelSync settings:", error);
+    }
+  };
+
+  const handleCreate = async (data, keepInSync = false) => {
     try {
       const res = await fetch("/api/combos", {
         method: "POST",
@@ -111,8 +160,11 @@ export default function CombosPage() {
         body: JSON.stringify(data),
       });
       if (res.ok) {
+        const created = await res.json().catch(() => null);
         await fetchData();
         setShowCreateModal(false);
+        setShowCreateFreeModal(false);
+        if (created?.id) await syncAutoComboSetting(created.id, keepInSync);
       } else {
         const err = await res.json();
         alert(err.error || "Failed to create combo");
@@ -122,7 +174,7 @@ export default function CombosPage() {
     }
   };
 
-  const handleUpdate = async (id, data) => {
+  const handleUpdate = async (id, data, keepInSync = false) => {
     try {
       const res = await fetch(`/api/combos/${id}`, {
         method: "PUT",
@@ -132,6 +184,7 @@ export default function CombosPage() {
       if (res.ok) {
         await fetchData();
         setEditingCombo(null);
+        await syncAutoComboSetting(id, keepInSync);
       } else {
         const err = await res.json();
         alert(err.error || "Failed to update combo");
@@ -184,9 +237,68 @@ export default function CombosPage() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const res = await fetch("/api/combos/export");
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "combos-export.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.log("Error exporting combos:", error);
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      setConfirmState({
+        title: "Import Combos",
+        message: `This will replace all ${combos.length} existing combo(s) with ${data.combos?.length || 0} combo(s) from this file. Are you sure?`,
+        onConfirm: async () => {
+          setConfirmState(null);
+          setImporting(true);
+          try {
+            const res = await fetch("/api/combos/import", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: text,
+            });
+            if (res.ok) {
+              await fetchData();
+            } else {
+              const err = await res.json();
+              alert(err.error || "Failed to import combos");
+            }
+          } catch (err) {
+            console.log("Error importing combos:", err);
+            alert("Failed to import combos");
+          } finally {
+            setImporting(false);
+          }
+        },
+      });
+    } catch (error) {
+      console.log("Error reading import file:", error);
+      alert("Invalid JSON file");
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-5.5">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -194,38 +306,65 @@ export default function CombosPage() {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-text-muted mt-1">
+    <div className="flex min-w-0 flex-col gap-5.5">
+      {/* Header. The strategy definitions are reference material, not the thing
+          the operator came for, so they sit behind a disclosure and the combo
+          list is what the route opens on. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-sm text-text-muted">
             Group models under one name, then pick a strategy per combo:
           </p>
-          <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
-            <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
-            <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
-            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
-          </ul>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={showStrategies ? "expand_less" : "help"}
+            aria-expanded={showStrategies}
+            aria-controls="combo-strategies"
+            onClick={() => setShowStrategies(!showStrategies)}
+          >
+            Routing Strategy
+          </Button>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
-        </Button>
+        <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:shrink-0">
+          <Button
+            icon="auto_awesome"
+            variant="outline"
+            disabled={freeMemberIds.length === 0}
+            title={freeMemberIds.length === 0 ? "No free models discovered yet - enable auto-fetch on the Providers page first" : `Create a combo from ${freeMemberIds.length} discovered free models`}
+            onClick={() => setShowCreateFreeModal(true)}
+            className="w-full sm:w-auto"
+          >
+            Free Combo
+          </Button>
+          <Button variant="secondary" size="sm" iconRight="download" onClick={handleExport} className="w-full sm:w-auto">
+            Export
+          </Button>
+          <Button variant="secondary" size="sm" iconRight="upload" loading={importing} onClick={() => fileInputRef.current?.click()} className="w-full sm:w-auto">
+            Import
+          </Button>
+          <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
+            Create Combo
+          </Button>
+          <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportFile} className="focus-ring hidden" />
+        </div>
       </div>
 
-      {/* Combos List */}
+      {showStrategies && (
+        <ul id="combo-strategies" className="flex flex-col gap-1 text-sm text-text-muted">
+          <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
+          <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
+          <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
+        </ul>
+      )}
+
+      {/* Combos List. The header already carries Create Combo, so the empty
+          state states the condition and leaves the action where it lives. */}
       {combos.length === 0 ? (
-        <Card>
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">layers</span>
-            </div>
-            <p className="text-text-main font-medium mb-1">No combos yet</p>
-            <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
-            <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
-              Create Combo
-            </Button>
-          </div>
-        </Card>
+        <EmptyState
+          title="No combos yet"
+          description="Create model combos with fallback support"
+        />
       ) : (
         <div className="flex flex-col gap-4">
           {combos.map((combo) => (
@@ -236,8 +375,10 @@ export default function CombosPage() {
               activeProviders={activeProviders}
               copied={copied}
               onCopy={copy}
+              isAutoManaged={(freeSyncCfg.autoComboIds || []).includes(combo.id)}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              onTest={() => setTestingCombo(combo)}
               strategy={comboStrategies[combo.name] || {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
             />
@@ -253,6 +394,16 @@ export default function CombosPage() {
         getCaps={getCaps}
       />
 
+      {/* Combo Test Modal */}
+      {testingCombo && (
+        <ComboTestModal
+          isOpen={!!testingCombo}
+          combo={testingCombo}
+          onClose={() => setTestingCombo(null)}
+          strategy={comboStrategies[testingCombo.name] || {}}
+        />
+      )}
+
       {/* Create Modal - Use key to force remount and reset state */}
       {showCreateModal && (
         <ComboFormModal
@@ -260,7 +411,22 @@ export default function CombosPage() {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSave={handleCreate}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
+        />
+      )}
+
+      {/* Free Combo Modal - prefilled from the free-model sync catalogs */}
+      {showCreateFreeModal && (
+        <ComboFormModal
+          key="create-free"
+          isOpen={showCreateFreeModal}
+          combo={{ name: "Free-All", models: [...freeMemberIds] }}
+          onClose={() => setShowCreateFreeModal(false)}
+          onSave={handleCreate}
+          onTestDraft={(draft) => setTestingCombo(draft)}
+          activeProviders={activeProviders}
+          showKeepInSync
         />
       )}
 
@@ -270,8 +436,11 @@ export default function CombosPage() {
           isOpen={!!editingCombo}
           combo={editingCombo}
           onClose={() => setEditingCombo(null)}
-          onSave={(data) => handleUpdate(editingCombo.id, data)}
+          onSave={(data, keepInSync) => handleUpdate(editingCombo.id, data, keepInSync)}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
+          showKeepInSync
+          initialKeepInSync={(freeSyncCfg.autoComboIds || []).includes(editingCombo.id)}
         />
       )}
 
@@ -294,7 +463,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, onSetStrategy, isAutoManaged = false }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -304,46 +473,77 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
     <Card padding="sm" className="group">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
+          <div className="size-8 rounded-lg bg-brand-soft flex items-center justify-center shrink-0">
+            <span aria-hidden="true" className="material-symbols-outlined text-brand text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              {combo.models.length === 0 ? (
-                <span className="text-xs text-text-muted italic">No models</span>
-              ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={getCaps?.(model)} />
-                  </code>
-                ))
-              )}
-              {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+            <div className="flex items-center gap-1.5">
+              <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+              {isAutoManaged && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded bg-brand-soft px-1.5 py-1 text-xs font-medium text-brand"
+                  title="Members are replaced automatically whenever the free-model sync runs"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[12px]">autorenew</span>
+                  auto-free
+                </span>
               )}
             </div>
+            {/* The patch bay, direction.md signature element 3. A combo's model
+                list IS its fallback order, and a wrapped row of chips described
+                that order in prose ("tries models in order") instead of showing
+                it. Drawn as numbered channels the sequence is the presentation:
+                channel 1 is tried first, and the number is the address someone
+                quotes when reporting which hop failed. `ChannelList` is the
+                shared primitive the gallery already documents. */}
+            {combo.models.length === 0 ? (
+              <p className="mt-1 text-xs text-text-muted italic">No models</p>
+            ) : (
+              <div className="mt-1.5 max-w-md">
+                <FlowStrip
+                  junction={STRATEGY_OPTIONS.find((o) => o.value === current)?.label || current}
+                  channels={combo.models.length}
+                  className="mb-1"
+                />
+                <ChannelList>
+                  {combo.models.slice(0, 3).map((model, index) => (
+                    <Channel
+                      key={index}
+                      index={index + 1}
+                      state={index === 0 ? "live" : "standby"}
+                      title={model}
+                      status={<CapacityBadges caps={getCaps?.(model)} />}
+                    />
+                  ))}
+                  {combo.models.length > 3 ? (
+                    <p className="px-3 py-1.5 font-mono text-[10.5px] text-text-muted">
+                      +{combo.models.length - 3} more
+                    </p>
+                  ) : null}
+                </ChannelList>
+              </div>
+            )}
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-text-muted">Judge</span>
+                <span className="text-xs font-medium text-text-muted">Judge</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
-                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
+                  className="focus-ring inline-flex max-w-full items-center gap-1 rounded border border-dashed border-brand-line px-1.5 py-1 font-mono text-xs text-brand hover:border-brand hover:bg-brand-soft transition-colors duration-150"
                   title="Pick the model that fuses panel answers"
                 >
-                  <span className="material-symbols-outlined text-[13px]">gavel</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[13px]">gavel</span>
                   <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
                 </button>
                 {judge && (
-                  <button
+                  <Button
+                    variant="bare" size="icon-sm"
                     onClick={() => onSetStrategy({ judgeModel: "" })}
-                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    className="text-text-muted hover:text-danger hover:bg-danger-soft"
                     title="Reset judge to Auto"
                   >
-                    <span className="material-symbols-outlined text-[13px]">close</span>
-                  </button>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[13px]">close</span>
+                  </Button>
                 )}
               </div>
             )}
@@ -362,32 +562,40 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={(e) => { e.stopPropagation(); onTest(combo); }}
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-brand transition-colors duration-150 hover:bg-brand-soft"
+              title="Test Run Combo"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">play_circle</span>
+              <span className="text-xs leading-tight font-medium">Test</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-brand"
               title="Copy combo name"
             >
-              <span className="material-symbols-outlined text-[18px]">
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
               </span>
-              <span className="text-[10px] leading-tight">Copy</span>
+              <span className="text-xs leading-tight">Copy</span>
             </button>
             <button
               onClick={onEdit}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-brand"
               title="Edit"
             >
-              <span className="material-symbols-outlined text-[18px]">edit</span>
-              <span className="text-[10px] leading-tight">Edit</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
+              <span className="text-xs leading-tight">Edit</span>
             </button>
             <button
               onClick={onDelete}
-              className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10"
+              className="focus-ring flex flex-col items-center rounded px-2 py-1 text-danger transition-colors duration-150 hover:bg-danger-soft"
               title="Delete"
             >
-              <span className="material-symbols-outlined text-[18px]">delete</span>
-              <span className="text-[10px] leading-tight">Delete</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
+              <span className="text-xs leading-tight">Delete</span>
             </button>
           </div>
         </div>
@@ -415,13 +623,9 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm font-medium">Vision Adapter</p>
-          <p className="text-xs text-text-muted mt-0.5">
+          <p className="text-xs text-text-muted mt-1">
             Your model can&apos;t read image/audio? Auto-switches to a model in the pool below.
           </p>
-          <ul className="mt-1.5 text-[11px] text-text-muted flex flex-col gap-0.5">
-            <li><span className="font-medium text-text-main">Vision</span> — images (png, jpg, webp, …)</li>
-            <li><span className="font-medium text-text-main">Audio</span> — audio input</li>
-          </ul>
         </div>
       </div>
       <div className="flex flex-col gap-4">
@@ -468,19 +672,19 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
     <Card padding="sm" className={`group ${!enabled ? "opacity-50" : ""}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/* Master toggle + icon + label + chips */}
-        <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:items-center">
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
           <Toggle
             checked={enabled}
             onChange={(v) => patch({ enabled: v })}
-            aria-label={`Enable ${cap.label} adapter`}
+            ariaLabel={`Enable ${cap.label} adapter`}
           />
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-primary text-[18px]">{cap.icon}</span>
+          <div className="size-8 rounded-lg bg-brand-soft flex items-center justify-center shrink-0">
+            <span aria-hidden="true" className="material-symbols-outlined text-brand text-[18px]">{cap.icon}</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <code className="font-mono text-sm font-medium">{cap.label}</code>
-              <span className="text-[10px] text-text-muted">— {cap.desc}</span>
+              <span className="text-xs text-text-muted">— {cap.desc}</span>
             </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {models.length === 0 ? (
@@ -489,24 +693,24 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                 models.slice(0, 3).map((model, index) => (
                   <code
                     key={`${model}-${index}`}
-                    className="group/chip inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5"
+                    className="group/chip inline-flex items-center gap-1 rounded bg-surface-2 px-1.5 py-1 font-mono text-xs text-text-muted"
                   >
                     <span>{model}</span>
                     <CapacityBadges caps={getCaps?.(model)} />
-                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} className={`leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title={`Move ${model} earlier`} aria-label={`Move ${model} earlier`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === 0 ? "text-text-muted" : "text-text-muted hover:text-brand"}`}>
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_upward</span>
                     </button>
-                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} className={`leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+                    <button onClick={() => handleMove(index, 1)} disabled={index === models.length - 1} title={`Move ${model} later`} aria-label={`Move ${model} later`} className={`focus-ring leading-none opacity-0 group-hover/chip:opacity-100 ${index === models.length - 1 ? "text-text-muted" : "text-text-muted hover:text-brand"}`}>
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">arrow_downward</span>
                     </button>
-                    <button onClick={() => handleRemove(index)} className="leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-red-500">
-                      <span className="material-symbols-outlined text-[12px]">close</span>
+                    <button onClick={() => handleRemove(index)} title={`Remove ${model}`} aria-label={`Remove ${model}`} className="focus-ring leading-none opacity-0 group-hover/chip:opacity-100 text-text-muted hover:text-danger">
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">close</span>
                     </button>
                   </code>
                 ))
               )}
               {models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{models.length - 3} more</span>
+                <span className="text-xs text-text-muted">+{models.length - 3} more</span>
               )}
             </div>
           </div>
@@ -519,7 +723,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
               checked={roundRobin}
               onChange={(v) => patch({ roundRobin: v })}
               disabled={!enabled}
-              aria-label={`Round-robin ${cap.label} adapter`}
+              ariaLabel={`Round-robin ${cap.label} adapter`}
             />
             <span>Round</span>
           </label>
@@ -578,14 +782,14 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-surface-2 hover:bg-surface-2 transition-colors duration-150 ${isDragging ? "ring-1 ring-brand-line" : ""}`}
     >
       {/* Drag handle */}
       <button
         {...attributes}
         {...listeners}
         type="button"
-        className="cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-primary active:cursor-grabbing shrink-0"
+        className="focus-ring cursor-grab touch-none p-1 rounded text-text-muted hover:text-brand active:cursor-grabbing shrink-0"
         title="Drag to reorder"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -595,8 +799,17 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </svg>
       </button>
 
-      {/* Index badge */}
-      <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+      {/* The channel number, drawn the way `ChannelList` draws it: a bordered
+          mono address rather than a soft grey ordinal. This row IS the patch
+          bay, so the position has to read as the fallback order it sets, and
+          as the stable address someone quotes when reporting a problem. */}
+      <span
+        aria-hidden="true"
+        className="flex h-[22px] w-[22px] shrink-0 items-center justify-center border border-border font-mono text-[11px] tabular-nums text-text-muted"
+      >
+        {index + 1}
+      </span>
+      <span className="sr-only">Channel {index + 1}, </span>
 
       {/* Inline editable model value */}
       {editing ? (
@@ -606,11 +819,11 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={handleKeyDown}
-          className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20"
+          className="focus-ring min-w-0 flex-1 rounded border border-brand bg-surface px-1.5 py-1 font-mono text-xs text-text-main"
         />
       ) : (
         <div
-          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-1 font-mono text-xs text-text-main hover:bg-surface-2"
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
@@ -619,38 +832,41 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
       )}
 
       {/* Priority arrows */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          variant="bare" size="icon-sm"
           onClick={onMoveUp}
           disabled={isFirst}
-          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          className={isFirst ? "text-text-muted cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
           title="Move up"
         >
-          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-        </button>
-        <button
+          <span aria-hidden="true" className="material-symbols-outlined text-[12px]">arrow_upward</span>
+        </Button>
+        <Button
+          variant="bare" size="icon-sm"
           onClick={onMoveDown}
           disabled={isLast}
-          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          className={isLast ? "text-text-muted cursor-not-allowed" : "text-text-muted hover:text-brand hover:bg-surface-2"}
           title="Move down"
         >
-          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-        </button>
+          <span aria-hidden="true" className="material-symbols-outlined text-[12px]">arrow_downward</span>
+        </Button>
       </div>
 
       {/* Remove */}
-      <button
+      <Button
+        variant="bare" size="icon-sm"
         onClick={onRemove}
-        className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+        className="hover:bg-danger-soft text-text-muted hover:text-danger"
         title="Remove"
       >
-        <span className="material-symbols-outlined text-[12px]">close</span>
-      </button>
+        <span aria-hidden="true" className="material-symbols-outlined text-[12px]">close</span>
+      </Button>
     </div>
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activeProviders, kindFilter = null, showKeepInSync = false, initialKeepInSync = false }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -658,6 +874,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [keepInSync, setKeepInSync] = useState(initialKeepInSync);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -744,8 +961,11 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
-    setSaving(false);
+    try {
+      await onSave({ name: name.trim(), models }, keepInSync);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isEdit = !!combo;
@@ -767,7 +987,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               placeholder="my-combo"
               error={nameError}
             />
-            <p className="text-[10px] text-text-muted mt-0.5">
+            <p className="text-xs text-text-muted mt-1">
               Only letters, numbers, -, _ and . allowed
             </p>
           </div>
@@ -777,8 +997,8 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <label className="text-sm font-medium mb-1.5 block">Models</label>
 
             {models.length === 0 ? (
-              <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
-                <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
+              <div className="text-center py-4 border border-dashed border-border rounded-lg bg-surface-2">
+                <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
@@ -811,15 +1031,40 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             {/* Add Model button */}
             <button
               onClick={() => setShowModelSelect(true)}
-              className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+              className="focus-ring w-full mt-2 py-2 border border-dashed border-border rounded-lg text-xs text-brand font-medium hover:text-brand hover:border-brand-line transition-colors duration-150 flex items-center justify-center gap-1"
             >
-              <span className="material-symbols-outlined text-[16px]">add</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>
           </div>
 
+          {/* Keep in sync (free-model combos) */}
+          {showKeepInSync && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Auto-update members</p>
+                <p className="text-xs text-text-muted">
+                  Replace this combo&apos;s models whenever the free-model sync runs
+                </p>
+              </div>
+              <Toggle checked={keepInSync} onChange={setKeepInSync} ariaLabel="Auto-update members from the free-model sync" />
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">
+            {onTestDraft && models.length > 0 && (
+              <Button
+                type="button"
+                onClick={() => onTestDraft({ id: combo?.id, name: name || "Draft Combo", models, kind: kindFilter || "llm" })}
+                variant="outline"
+                fullWidth
+                size="sm"
+                icon="play_circle"
+              >
+                Test Run
+              </Button>
+            )}
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">
               Cancel
             </Button>

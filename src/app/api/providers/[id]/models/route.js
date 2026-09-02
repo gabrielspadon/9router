@@ -2,29 +2,149 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import {
+  isRequiredProxyUnavailableError,
+  resolveConnectionProxyConfig,
+  toConnectionProxyOptions,
+} from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { discoverDevinModels } from "open-sse/services/devinModels.js";
+import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
+import { updateConnectionProxyPoolSnapshotIfBound } from "@/lib/localDb";
+// Shared with /v1/models so both views describe the same authenticated catalog (#2654).
+import {
+  OPENAI_MODELS_URL,
+  buildOAuthResolver,
+  codexModelsResolver,
+  parseOpenAIStyleModels,
+} from "./liveCatalog.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
-// The /codex/models endpoint gates each entry by minimal_client_version against this
-// value, and codex CLI's own manifest (openai/codex codex-rs/models-manager/models.json)
-// already requires 0.144.0 for its newest models, so a stale client_version here comes
-// back 200 with those entries quietly missing instead of erroring.
-const CODEX_CLIENT_VERSION = "0.144.6";
-const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
+const CATALOG_TIMEOUT_CODES = new Set([
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
 
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
+const CATALOG_TRANSPORT_UNAVAILABLE_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+]);
+
+const catalogErrorCode = (error) => error?.cause?.code || error?.code;
+
+const isCatalogTimeout = (error) =>
+  CATALOG_TIMEOUT_CODES.has(catalogErrorCode(error)) ||
+  error?.name === "AbortError" ||
+  error?.name === "TimeoutError";
+
+const isCatalogTransportUnavailable = (error) =>
+  CATALOG_TRANSPORT_UNAVAILABLE_CODES.has(catalogErrorCode(error));
+
+const catalogFailureResponse = ({ status, error, state, retryable, message, action }) =>
+  NextResponse.json({
+    error,
+    catalog: {
+      state,
+      code: `provider_catalog_${state}`,
+      retryable,
+      message,
+      action,
+    },
+  }, { status });
+
+const hasExpiredCredential = (connection) => {
+  const rawExpiresAt = connection?.expiresAt;
+  const expiresAt = typeof rawExpiresAt === "number"
+    ? rawExpiresAt * (rawExpiresAt < 1e12 ? 1000 : 1)
+    : Date.parse(rawExpiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
 };
+
+const catalogHttpFailureResponse = (connection, status, error = `Failed to fetch models: ${status}`) => {
+  if (status === 401 && hasExpiredCredential(connection)) {
+    return catalogFailureResponse({
+      status,
+      error,
+      state: "credential_expired",
+      retryable: false,
+      message: "The provider model catalog credential has expired.",
+      action: "Reconnect the provider, then retry the import.",
+    });
+  }
+
+  const failures = {
+    401: {
+      state: "unauthorized",
+      retryable: false,
+      message: "The provider rejected the model catalog credentials.",
+      action: "Update the connection credentials, then retry the import.",
+    },
+    404: {
+      state: "not_found",
+      retryable: false,
+      message: "The configured provider endpoint does not expose a model catalog.",
+      action: "Check the connection endpoint or add models manually.",
+    },
+    429: {
+      state: "rate_limited",
+      retryable: true,
+      message: "The provider rate-limited the model catalog request.",
+      action: "Wait for the provider rate limit to reset, then retry the import.",
+    },
+  };
+  const failure = failures[status] || {
+    state: "unavailable",
+    retryable: status >= 500,
+    message: "The provider model catalog request failed.",
+    action: status >= 500
+      ? "Check the provider status, then retry the import."
+      : "Check the connection settings or add models manually.",
+  };
+
+  return catalogFailureResponse({ status, error, ...failure });
+};
+
+const catalogTransportFailureResponse = (error) => {
+  if (isCatalogTimeout(error)) {
+    return catalogFailureResponse({
+      status: 504,
+      error: "Provider model catalog timed out",
+      state: "timeout",
+      retryable: true,
+      message: "The provider model catalog request timed out.",
+      action: "Check the provider endpoint, then retry the import.",
+    });
+  }
+
+  return catalogFailureResponse({
+    status: 503,
+    error: "Could not reach the provider model catalog",
+    state: "unavailable",
+    retryable: true,
+    message: "Could not reach the provider model catalog. Check the connection endpoint, then refresh models.",
+    action: "Check the connection endpoint, then retry the import.",
+  });
+};
+
+function cursorSnapshotOwner(connection) {
+  const data = connection?.providerSpecificData || {};
+  return {
+    persistPoolSnapshot: data.proxyPoolId && typeof updateConnectionProxyPoolSnapshotIfBound === "function"
+      ? (pair) => updateConnectionProxyPoolSnapshotIfBound(connection.id, data.proxyPoolId, pair)
+      : undefined,
+  };
+}
 
 const parseGeminiCliModels = (data) => {
   if (Array.isArray(data?.models)) {
@@ -49,27 +169,6 @@ const parseGeminiCliModels = (data) => {
   return [];
 };
 
-const appendCodexReviewModels = (models) => models.flatMap((model) => {
-  const id = model?.id || model?.slug || model?.model || model?.name;
-  if (!id) return [];
-  const name = model?.display_name || model?.displayName || model?.name || id;
-  const normalized = { ...model, id, name };
-  const isChatModel = (model?.type || "llm") !== "image" && !id.toLowerCase().includes("embed");
-  if (!isChatModel || id.endsWith("-review")) return [normalized];
-  return [
-    normalized,
-    {
-      ...normalized,
-      id: `${id}-review`,
-      name: `${name} Review`,
-      upstreamModelId: id,
-      quotaFamily: "review",
-    },
-  ];
-});
-
-const parseCodexModels = (data) => appendCodexReviewModels(parseOpenAIStyleModels(data));
-
 const createOpenAIModelsConfig = (url) => ({
   url,
   method: "GET",
@@ -79,6 +178,15 @@ const createOpenAIModelsConfig = (url) => ({
   parseResponse: parseOpenAIStyleModels
 });
 
+const normalizeRoutedNousModels = (data) => normalizeNousModels(data).map((model) => ({
+  ...model,
+  // Live upstream IDs include a vendor namespace (for example,
+  // nousresearch/hermes-4-70b). Prefix the owning tokenproxy provider so Basic
+  // Chat does not parse that namespace as the provider itself.
+  id: `nous/${model.id}`,
+  upstreamModelId: model.id,
+}));
+
 const getStaticProviderModels = (providerId) =>
   getModelsByProviderId(providerId).map((model) => ({
     ...model,
@@ -86,43 +194,11 @@ const getStaticProviderModels = (providerId) =>
     name: model.name || model.id,
   }));
 
-// Generic custom resolver for OAuth providers that need refresh-on-401 + token persist.
-// Receives a `fetchFn(token)` and returns parsed models or throws.
-const buildOAuthResolver = ({ refreshFn, fetchFn, parseFn, errorLabel }) => async (connection) => {
-  const { accessToken, refreshToken } = connection;
-  if (!accessToken) {
-    return { error: "No valid token found", status: 401 };
-  }
-  let warning;
-  try {
-    let response = await fetchFn(accessToken, connection);
-    if (!response.ok && (response.status === 401 || response.status === 403) && refreshToken) {
-      const refreshed = await refreshFn(connection);
-      if (refreshed?.accessToken) {
-        await updateProviderCredentials(connection.id, {
-          accessToken: refreshed.accessToken,
-          refreshToken: refreshed.refreshToken || refreshToken,
-          expiresIn: refreshed.expiresIn,
-        });
-        connection.accessToken = refreshed.accessToken;
-        if (refreshed.refreshToken) connection.refreshToken = refreshed.refreshToken;
-        response = await fetchFn(refreshed.accessToken, connection);
-      }
-    }
-    if (response.ok) {
-      const data = await response.json();
-      const models = parseFn(data);
-      if (models.length > 0) return { models };
-    } else {
-      const errorText = await response.text();
-      warning = `${errorLabel}: ${response.status} ${errorText}`;
-      console.log(`${errorLabel} (falling back to static):`, errorText);
-    }
-  } catch (error) {
-    warning = `${errorLabel}: ${error.message}`;
-    console.log(`${errorLabel} (falling back to static):`, error.message);
-  }
-  return { models: [], warning };
+const parseSenseNovaModels = (data) => {
+  const chatModelIds = new Set(
+    getModelsByProviderId("sensenova").map((model) => model.id),
+  );
+  return parseOpenAIStyleModels(data).filter((model) => chatModelIds.has(model?.id));
 };
 
 // Provider models endpoints configuration
@@ -144,22 +220,7 @@ const PROVIDER_MODELS_CONFIG = {
     authQuery: "key", // Use query param for API key
     parseResponse: (data) => data.models || []
   },
-  codex: {
-    customResolver: buildOAuthResolver({
-      refreshFn: (conn) => refreshCodexToken(conn.refreshToken),
-      fetchFn: (token) => fetch(CODEX_MODELS_URL, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "originator": "codex_cli_rs"
-        }
-      }),
-      parseFn: parseCodexModels,
-      errorLabel: "Failed to fetch Codex models"
-    })
-  },
+  codex: { customResolver: codexModelsResolver },
   antigravity: {
     url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
     method: "POST",
@@ -196,7 +257,7 @@ const PROVIDER_MODELS_CONFIG = {
         }));
     }
   },
-  openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
+  openai: createOpenAIModelsConfig(OPENAI_MODELS_URL),
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
@@ -235,6 +296,10 @@ const PROVIDER_MODELS_CONFIG = {
   },
   "volcengine-ark": createOpenAIModelsConfig("https://ark.cn-beijing.volces.com/api/coding/v3/models"),
   byteplus: createOpenAIModelsConfig("https://ark.ap-southeast.bytepluses.com/api/coding/v3/models"),
+  sensenova: {
+    ...createOpenAIModelsConfig("https://token.sensenova.cn/v1/models"),
+    parseResponse: parseSenseNovaModels,
+  },
 
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
@@ -244,10 +309,15 @@ const PROVIDER_MODELS_CONFIG = {
   perplexity: createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
   "perplexity-agent": createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
   together: createOpenAIModelsConfig("https://api.together.xyz/v1/models"),
+  nous: {
+    ...createOpenAIModelsConfig(NOUS_MODELS_URL),
+    parseResponse: normalizeRoutedNousModels,
+  },
   fireworks: createOpenAIModelsConfig("https://api.fireworks.ai/inference/v1/models"),
   cerebras: createOpenAIModelsConfig("https://api.cerebras.ai/v1/models"),
   cohere: createOpenAIModelsConfig("https://api.cohere.ai/v1/models"),
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
+  novita: createOpenAIModelsConfig("https://api.novita.ai/openai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.com/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
   ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
@@ -273,12 +343,34 @@ const PROVIDER_MODELS_CONFIG = {
       };
     }
   },
+  devin: {
+    customResolver: async (connection) => {
+      try {
+        const models = await discoverDevinModels(connection.accessToken);
+        if (models.length) return { models };
+        return {
+          models: getStaticProviderModels("devin"),
+          warning: "Devin returned no enabled models; using the static catalog.",
+        };
+      } catch (error) {
+        return {
+          models: getStaticProviderModels("devin"),
+          warning: `Failed to fetch Devin models: ${error.message}`,
+        };
+      }
+    },
+  },
   cursor: {
     customResolver: async (connection) => {
+      const proxyConfig = await resolveConnectionProxyConfig(
+        connection.providerSpecificData || {},
+        cursorSnapshotOwner(connection),
+      );
+      const proxyOptions = toConnectionProxyOptions(proxyConfig);
       const result = await resolveCursorModels({
         accessToken: connection.accessToken,
         providerSpecificData: connection.providerSpecificData || {},
-      }, { forceRefresh: true, log: console });
+      }, { forceRefresh: true, log: console, proxyOptions });
       if (result?.models?.length) return { models: result.models };
       return {
         models: getStaticProviderModels("cursor"),
@@ -426,8 +518,6 @@ const PROVIDER_MODELS_CONFIG = {
         headers: { "Content-Type": "application/json" }
       });
       if (!response.ok) {
-        const errorText = await response.text();
-        console.log("Error fetching models from ollama-local:", errorText);
         return { error: `Failed to fetch models: ${response.status}`, status: response.status };
       }
       const data = await response.json();
@@ -463,12 +553,7 @@ export async function GET(request, { params }) {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, errorText);
-        return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
-          { status: response.status }
-        );
+        return catalogHttpFailureResponse(connection, response.status);
       }
 
       const data = await response.json();
@@ -504,12 +589,7 @@ export async function GET(request, { params }) {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, errorText);
-        return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
-          { status: response.status }
-        );
+        return catalogHttpFailureResponse(connection, response.status);
       }
 
       const data = await response.json();
@@ -524,17 +604,21 @@ export async function GET(request, { params }) {
 
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
-      return NextResponse.json(
-        { error: `Provider ${connection.provider} does not support models listing` },
-        { status: 400 }
-      );
+      return catalogFailureResponse({
+        status: 400,
+        error: `Provider ${connection.provider} does not support models listing`,
+        state: "unsupported",
+        retryable: false,
+        message: "This provider does not support automatic model catalog listing.",
+        action: "Add models manually for this provider.",
+      });
     }
 
     // Config-driven custom resolver path (OAuth refresh, non-OpenAI shape, etc.)
     if (typeof config.customResolver === "function") {
       const result = await config.customResolver(connection);
       if (result.error) {
-        return NextResponse.json({ error: result.error }, { status: result.status || 500 });
+        return catalogHttpFailureResponse(connection, result.status || 500, result.error);
       }
       return NextResponse.json({
         provider: connection.provider,
@@ -547,7 +631,7 @@ export async function GET(request, { params }) {
     // Get auth token
     const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
     if (!token) {
-      return NextResponse.json({ error: "No valid token found" }, { status: 401 });
+      return catalogHttpFailureResponse(connection, 401, "No valid token found");
     }
 
     // Build request URL
@@ -575,12 +659,7 @@ export async function GET(request, { params }) {
     const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log(`Error fetching models from ${connection.provider}:`, errorText);
-      return NextResponse.json(
-        { error: `Failed to fetch models: ${response.status}` },
-        { status: response.status }
-      );
+      return catalogHttpFailureResponse(connection, response.status);
     }
 
     const data = await response.json();
@@ -592,6 +671,15 @@ export async function GET(request, { params }) {
       models
     });
   } catch (error) {
+    if (isRequiredProxyUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "Required proxy is unavailable", code: error.code },
+        { status: error.status },
+      );
+    }
+    if (isCatalogTimeout(error) || isCatalogTransportUnavailable(error)) {
+      return catalogTransportFailureResponse(error);
+    }
     console.log("Error fetching provider models:", error);
     return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
   }

@@ -53,10 +53,14 @@ export default function Modal({
 
       {/* Modal content */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === "string" ? title : undefined}
         className={cn(
           "relative w-full bg-surface",
-          "border border-border-subtle",
-          "rounded-[14px] shadow-[var(--shadow-elev)]",
+          "border border-border",
+          // An overlay is the one surface allowed a second elevation step.
+          "rounded-[var(--radius-brand-lg)] shadow-elev",
           "fade-in",
           sizes[size],
           className
@@ -64,23 +68,27 @@ export default function Modal({
       >
         {/* Header */}
         {(title || showTrafficLights) && (
-          <div className="flex items-center justify-between p-2 border-b border-border-subtle">
+          <div className="flex items-center justify-between p-2 border-b border-border">
             <div className="flex items-center">
               {/* Traffic lights — desktop only */}
               {showTrafficLights && (
-                <div className="hidden md:flex items-center gap-2 mr-4 ml-2">
+                <div className="hidden md:flex items-center gap-2 me-4 ms-2">
                   <Tooltip text="Close" position="top" color="#FF5F56">
                     <button
                       onClick={onClose}
                       aria-label="Close"
                       title="Close"
-                      className="w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center group/dot"
+                      className="focus-ring w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center group/dot"
                     >
-                      <span className="text-[9px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">✕</span>
+                      {/* Decorative glyph inside the traffic-light dot, not
+                          body text: the button is named "Close" above and the
+                          glyph is a hover affordance drawn to fit a 16px dot.
+                          The 12.5px body floor governs text a person reads. */}
+                      <span aria-hidden="true" className="font-mono text-[10.5px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">✕</span>
                     </button>
                   </Tooltip>
-                  <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
-                  <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
+                  <div aria-hidden="true" className="w-4 h-4 rounded-full bg-surface-3 cursor-not-allowed" />
+                  <div aria-hidden="true" className="w-4 h-4 rounded-full bg-surface-3 cursor-not-allowed" />
                 </div>
               )}
               {title && (
@@ -88,22 +96,23 @@ export default function Modal({
               )}
             </div>
             {/* X button — mobile only */}
-            <button
+            <Button
+              variant="ghost" size="icon"
               onClick={onClose}
               aria-label="Close"
-              className="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+              className="md:hidden"
             >
-              <span className="material-symbols-outlined text-[20px]">close</span>
-            </button>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
+            </Button>
           </div>
         )}
 
         {/* Body */}
-        <div className="p-6 max-h-[calc(85vh-100px)] overflow-y-auto custom-scrollbar">{children}</div>
+        <div className="p-5.5 max-h-[calc(85vh-100px)] overflow-y-auto custom-scrollbar">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-border-subtle">
+          <div className="flex items-center justify-end gap-3 p-5.5 border-t border-border">
             {footer}
           </div>
         )}
@@ -140,7 +149,7 @@ export function ConfirmModal({
         </>
       }
     >
-      <p className="text-text-muted">{message}</p>
+      <p className="text-sm text-text-muted">{message}</p>
     </Modal>
   );
 }

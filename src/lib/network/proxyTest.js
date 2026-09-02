@@ -1,7 +1,13 @@
-import { ProxyAgent, fetch as undiciFetch } from "undici";
+import { fetch as undiciFetch } from "undici";
+import { createProxyDispatcher } from "open-sse/utils/proxyFetch.js";
+
+import { fetchPublicUrl, findBlockedError } from "@/shared/utils/ssrfGuard.js";
 
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
+const RELAY_TIMEOUT_MS = 30000;
+const RELAY_PROBE_TARGET = "https://api.ipify.org";
+const RELAY_PROBE_PATH = "/?format=json";
 
 function getErrorMessage(err) {
   if (!err) return "Unknown error";
@@ -25,6 +31,63 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+/**
+ * Probe a vercel/cloudflare relay pool entry.
+ *
+ * The relay URL is fetched DIRECTLY by this server, so it is guarded with
+ * `fetchPublicUrl`: `assertPublicUrl` rejects literal internal targets before any
+ * socket opens, and the public-only connector rejects a hostname that resolves or
+ * redirects to one. A relay is always a public serverless deployment, so nothing
+ * legitimate is lost. `testProxyUrl` below is deliberately NOT guarded: there the
+ * URL is a proxy the operator dials THROUGH, and a proxy on the LAN or on loopback
+ * is a normal configuration rather than a forged request.
+ */
+export async function testRelayUrl({ relayUrl } = {}) {
+  const normalizedRelayUrl = normalizeString(relayUrl);
+  if (!normalizedRelayUrl) {
+    return { ok: false, status: 400, error: "Blocked relay URL: missing host. A relay pool must point at a public URL." };
+  }
+
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
+
+  try {
+    const res = await fetchPublicUrl(normalizedRelayUrl, {
+      method: "GET",
+      headers: {
+        "x-relay-target": RELAY_PROBE_TARGET,
+        "x-relay-path": RELAY_PROBE_PATH,
+      },
+      signal: controller.signal,
+    });
+
+    return {
+      ok: res.ok,
+      status: res.status,
+      statusText: res.statusText,
+      elapsedMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    const blocked = findBlockedError(err);
+    if (blocked) {
+      return {
+        ok: false,
+        status: 400,
+        error: `${blocked.message}. A relay pool must point at a public URL.`,
+      };
+    }
+
+    return {
+      ok: false,
+      status: 500,
+      error: err?.name === "AbortError" ? "Relay test timed out" : getErrorMessage(err),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
   const normalizedProxyUrl = normalizeString(proxyUrl);
   if (!normalizedProxyUrl) {
@@ -42,7 +105,10 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
 
   try {
     try {
-      dispatcher = new ProxyAgent({ uri: normalizedProxyUrl });
+      // A socks URL needs a socks connector, not a CONNECT proxy: building a
+      // ProxyAgent for one rejected the scheme outright, so a working socks5
+      // proxy was reported as invalid on the settings screen (#2053).
+      dispatcher = await createProxyDispatcher(normalizedProxyUrl);
     } catch (err) {
       return {
         ok: false,
@@ -61,7 +127,7 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
         dispatcher,
         signal: controller.signal,
         headers: {
-          "User-Agent": "9Router",
+          "User-Agent": "TokenProxy",
         },
       });
 

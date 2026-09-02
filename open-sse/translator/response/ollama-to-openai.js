@@ -31,11 +31,18 @@ export function ollamaToOpenAIResponse(chunk, state) {
 
   const { id, created, model } = state.ollama;
 
-  // Final chunk with done=true
+  // Final chunk with done=true. Ollama does not reserve this object for
+  // bookkeeping: it delivers the last content token in the same object that
+  // carries done:true. Reading the delta out of it first, and emitting that as
+  // its own chunk ahead of the terminal one, is what keeps the last token from
+  // being dropped. OpenAI clients read a two-chunk tail the same as any other.
   if (chunk.done) {
     const usage = extractUsage(chunk);
-    
-    // Determine finish_reason: map upstream done_reason, override to tool_calls if tools used
+    const trailing = buildDelta(chunk.message, state);
+
+    // Determine finish_reason: map upstream done_reason, override to tool_calls
+    // if tools were used. buildDelta runs first because a tool call arriving in
+    // this same final object has to set state.hadToolCalls before it is read.
     let finishReason = toOpenAIFinish(chunk.done_reason, "ollama");
     if (chunk.done_reason === OPENAI_FINISH.TOOL_CALLS || state.hadToolCalls) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
@@ -43,16 +50,30 @@ export function ollamaToOpenAIResponse(chunk, state) {
 
     const doneChunk = buildChunk({ id, created, model }, {}, finishReason);
     doneChunk.usage = usage;
-    return doneChunk;
+
+    if (!trailing) return doneChunk;
+    return [buildChunk({ id, created, model }, trailing, null), doneChunk];
   }
 
   // Content chunk
-  const message = chunk.message;
+  const delta = buildDelta(chunk.message, state);
+  if (!delta) return null;
+
+  return buildChunk({ id, created, model }, delta, null);
+}
+
+/**
+ * Build an OpenAI delta from an Ollama message, accumulating into state.
+ * Returns null when the message carries nothing worth emitting.
+ */
+function buildDelta(message, state) {
   if (!message) return null;
 
   const content = typeof message.content === "string" ? message.content : "";
   const thinking = typeof message.thinking === "string" ? message.thinking : "";
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : null;
+  const toolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0
+    ? message.tool_calls
+    : null;
 
   // Skip empty chunks
   if (!content && !thinking && !toolCalls) return null;
@@ -68,14 +89,14 @@ export function ollamaToOpenAIResponse(chunk, state) {
   const delta = {};
   if (content) delta.content = content;
   if (thinking) delta.reasoning_content = thinking;
-  
+
   // Convert Ollama tool_calls to OpenAI format
   if (toolCalls) {
     state.hadToolCalls = true;
     delta.tool_calls = convertToolCalls(toolCalls);
   }
 
-  return buildChunk({ id, created, model }, delta, null);
+  return delta;
 }
 
 /**

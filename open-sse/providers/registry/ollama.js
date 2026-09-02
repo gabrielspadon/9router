@@ -1,3 +1,5 @@
+import { CLAUDE_API_HEADERS } from "../shared.js";
+
 export default {
   id: "ollama",
   priority: 30,
@@ -21,7 +23,29 @@ export default {
     baseUrl: "https://ollama.com/api/chat",
     validateUrl: "https://ollama.com/api/tags",
     format: "ollama",
+    thinkingFormat: "ollama",
   },
+  // Multi-endpoint: pick the transport matching the client sourceFormat to skip
+  // translation. Ollama Cloud serves an Anthropic-compatible endpoint next to
+  // its native one, and without this entry a Claude client was translated down
+  // to /api/chat and lost what the native route carries (#2475). Auth stays
+  // bearer on both: the key gate sits in front of the router — an unknown path
+  // 404s while /v1/messages 401s — so it is Ollama's own API-key scheme, not
+  // Anthropic's x-api-key. The native transport is restated unchanged, so only
+  // a Claude-format client picks the new endpoint.
+  transports: [
+    {
+      format: "ollama",
+      baseUrl: "https://ollama.com/api/chat",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "claude",
+      baseUrl: "https://ollama.com/v1/messages",
+      headers: { ...CLAUDE_API_HEADERS },
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+  ],
   models: [
     { id: "gpt-oss:120b", name: "GPT OSS 120B" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },

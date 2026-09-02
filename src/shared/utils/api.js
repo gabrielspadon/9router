@@ -5,6 +5,7 @@
 const DEFAULT_HEADERS = {
   "Content-Type": "application/json",
 };
+const MAX_STRUCTURED_ERROR_LENGTH = 240;
 
 /**
  * Make a GET request
@@ -75,11 +76,37 @@ export async function del(url, options = {}) {
  * @param {Response} response - Fetch response
  * @returns {Promise<object>}
  */
-async function handleResponse(response) {
-  const data = await response.json();
+export async function parseResponseBody(response) {
+  const text = await response.text();
+  if (!text.trim()) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+function getStructuredErrorMessage(data) {
+  const message = typeof data?.error === "string" ? data.error.trim() : "";
+  if (!message || message.length > MAX_STRUCTURED_ERROR_LENGTH || /[<>]/.test(message)) return "";
+  return message;
+}
+
+export function getResponseErrorMessage(response, data, fallback = "Request failed") {
+  const structuredError = getStructuredErrorMessage(data);
+  if (structuredError) return structuredError;
+  const statusLabel = response?.status
+    ? `${response.status}${response.statusText ? ` ${response.statusText}` : ""}`
+    : "";
+  return statusLabel ? `${fallback} (${statusLabel})` : fallback;
+}
+
+export async function handleResponse(response) {
+  const data = await parseResponseBody(response);
 
   if (!response.ok) {
-    const error = new Error(data.error || "An error occurred");
+    const error = new Error(getResponseErrorMessage(response, data));
     error.status = response.status;
     error.data = data;
     throw error;
@@ -90,4 +117,3 @@ async function handleResponse(response) {
 
 const api = { get, post, put, del };
 export default api;
-

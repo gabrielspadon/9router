@@ -2,9 +2,9 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
@@ -14,6 +14,19 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { recordApiKeyDevice } from "@/sse/services/apiKeyDevices.js";
+import { refuseDisallowedModel } from "@/sse/services/modelAccess.js";
+
+function buildFetchProxyOptions(credentials) {
+  const data = credentials?.providerSpecificData;
+  return {
+    connectionProxyEnabled: data?.connectionProxyEnabled === true,
+    connectionProxyUrl: data?.connectionProxyUrl || "",
+    connectionNoProxy: data?.connectionNoProxy || "",
+    vercelRelayUrl: data?.vercelRelayUrl || "",
+    strictProxy: data?.strictProxy === true,
+  };
+}
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -40,7 +53,9 @@ export async function handleFetch(request) {
   log.request("POST", `${reqUrl.pathname} | ${providerInput}`);
 
   // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  const resolvedApiKey = await resolveClientApiKey(request, isValidApiKey);
+  const presentedApiKey = resolvedApiKey.apiKey;
+  const apiKey = resolvedApiKey.valid ? presentedApiKey : null;
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {
@@ -50,21 +65,31 @@ export async function handleFetch(request) {
   // Enforce API key if enabled in settings
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    if (!apiKey) {
+    if (!presentedApiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKey) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+    // Count the distinct clients on this key, so a leaked or shared key is
+    // visible as more than a bigger bill (#930). Only a VALIDATED key is
+    // recorded: counting unchecked strings would let anyone grow the map.
+    recordApiKeyDevice(apiKey, request);
   }
 
   if (!providerInput || typeof providerInput !== "string") {
     log.warn("FETCH", "Missing provider/model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
+
+  // The key's model allowlist (#1154) was only ever enforced in rerank, so
+  // every other modality could reach a barred target with the same key
+  // (#448, #2833). Here the provider IS the model, so the allowlist is
+  // checked against that same string.
+  const barred = await refuseDisallowedModel(apiKey, providerInput, log);
+  if (barred) return barred;
 
   if (!targetUrl || typeof targetUrl !== "string") {
     log.warn("FETCH", "Missing url");
@@ -143,6 +168,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       provider: resolvedProvider.id,
       providerConfig,
       credentials: null,
+      signal: request.signal,
+      proxyOptions: buildFetchProxyOptions(null),
       log
     });
     if (result.success) {
@@ -163,8 +190,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const errorMsg = credentials.lastError || "Unavailable";
+        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
         log.warn("FETCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
@@ -187,12 +214,19 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       provider: resolvedProvider.id,
       providerConfig,
       credentials: refreshedCredentials,
+      signal: request.signal,
+      proxyOptions: buildFetchProxyOptions(refreshedCredentials),
       log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
+          ...newCreds,
+          // Without the existing map, the merge at tokenRefresh.js:178 has
+          // nothing to merge onto and the refreshed data REPLACES what was
+          // stored, dropping the connection proxy fields auth.js inflates
+          // onto credentials (connectionProxyPoolId and friends). A refresh
+          // then silently unpins the account from its proxy pool (#884).
+          // chat.js already passed this; these three did not.
+          existingProviderSpecificData: credentials.providerSpecificData,
           testStatus: "active"
         });
       }

@@ -46,7 +46,11 @@ vi.mock("@/shared/constants/config", () => ({
   },
 }));
 
-vi.mock("open-sse/providers/shared.js", () => ({
+// Spread the real module: the scheduler reaches the provider registry now, and
+// the registry imports constants from here, so a mock that returns one key
+// fails the whole file with "No <name> export" rather than one assertion.
+vi.mock("open-sse/providers/shared.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   CLAUDE_CLI_SPOOF_HEADERS: { "anthropic-version": "2023-06-01" },
 }));
 
@@ -275,7 +279,12 @@ describe("quota auto-ping", () => {
     await runQuotaAutoPingTick(deps, state);
 
     expect(deps.getExecutor).not.toHaveBeenCalled();
-    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+    // It does not ping, but it no longer stays silent either: the exhausted
+    // window is recorded so selection skips the account instead of discovering
+    // it with a real 429 (#1125).
+    expect(deps.updateProviderConnection).toHaveBeenCalledWith("codex-1", {
+      rateLimitedUntil: "2026-01-01T17:01:00.000Z",
+    });
   });
 
   it("sends one tiny gpt-5.5 Codex request through the executor", async () => {

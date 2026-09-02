@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
-import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { decryptSecretJson, encryptSecretJson } from "../helpers/secretCol.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -12,7 +12,7 @@ const OPTIONAL_FIELDS = [
 
 function rowToConn(row) {
   if (!row) return null;
-  const extra = parseJson(row.data, {});
+  const extra = decryptSecretJson(row.data, {});
   return {
     ...extra,
     id: row.id,
@@ -37,7 +37,7 @@ function connToRow(c) {
     email: email ?? null,
     priority: priority ?? null,
     isActive: isActive === false ? 0 : 1,
-    data: stringifyJson(rest),
+    data: encryptSecretJson(rest),
     createdAt,
     updatedAt,
   };
@@ -67,6 +67,128 @@ function deriveConnectionName(data, fallbackName) {
   return fallbackName;
 }
 
+// A credential that has just been reissued makes every record of the old one's
+// failure wrong: the backoff, the rate-limit window and the per-model locks were
+// all written about a token that no longer exists.
+function clearReauthFailureState(conn) {
+  for (const field of [
+    "lastError",
+    "lastErrorAt",
+    "errorCode",
+    "backoffLevel",
+    "rateLimitedUntil",
+  ]) {
+    delete conn[field];
+  }
+  for (const field of Object.keys(conn)) {
+    if (field.startsWith("modelLock_") || field.startsWith("modelFailure_")) delete conn[field];
+  }
+  return conn;
+}
+
+function mergeCodexReauthorization(existing, data, now) {
+  return clearReauthFailureState({
+    ...existing,
+    ...data,
+    updatedAt: now,
+    isActive: true,
+    testStatus: "active",
+  });
+}
+
+// The fields that ARE the credential (#1851). Everything else on the row — the
+// id, the priority that fixes the account's place in the fallback order, the
+// name, defaultModel, tags, and the proxy binding inside providerSpecificData —
+// is exactly what re-authenticating currently destroys, so none of it is here.
+const CREDENTIAL_FIELDS = [
+  "accessToken", "refreshToken", "idToken", "apiKey",
+  "expiresAt", "expiresIn", "tokenType", "scope", "projectId", "lastRefreshAt",
+];
+
+// Proxy policy is written by /api/providers/[id] and by the pool snapshot writer,
+// never by a sign-in, so a re-auth must not carry these even if a caller sends them.
+const PROXY_BOUND_KEYS = [
+  "proxyPoolId", "strictProxy", "connectionProxyMode",
+  "connectionProxyEnabled", "connectionProxyUrl", "connectionNoProxy",
+];
+
+function trimmed(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Apply a freshly issued credential to a connection that already exists (#1851).
+ *
+ * Re-authenticating used to mean deleting the account and adding it again, which
+ * threw away its order, its proxy binding and its metadata. This writes the new
+ * credential onto the row that already holds all of that, so the only thing that
+ * changes is the credential.
+ *
+ * Refuses rather than writes when the target is missing, when it belongs to a
+ * different provider, when the payload carries no usable credential (a malformed
+ * or empty sign-in result must never blank a working one), or when the caller
+ * signed in as a visibly different account. That last one is overridable with
+ * `force`, because an account can legitimately change its email address.
+ *
+ * providerSpecificData is merged key by key, not replaced: a sign-in that reports
+ * only chatgptAccountId cannot be allowed to drop proxyPoolId.
+ *
+ * @returns {{ok: true, connection: object} | {ok: false, code: string}} — the code
+ * is one of not_found / provider_mismatch / empty_credential / identity_mismatch.
+ * No credential value ever reaches a code, a message or a log line.
+ */
+export async function reauthorizeProviderConnection(id, data = {}) {
+  const db = await getAdapter();
+  let outcome = { ok: false, code: "not_found" };
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!row) return;
+    const existing = rowToConn(row);
+
+    if (data.provider && data.provider !== existing.provider) {
+      outcome = { ok: false, code: "provider_mismatch" };
+      return;
+    }
+
+    const credentials = {};
+    for (const f of CREDENTIAL_FIELDS) {
+      if (data[f] !== undefined && data[f] !== null) credentials[f] = data[f];
+    }
+    if (!credentials.accessToken && !credentials.refreshToken && !credentials.apiKey) {
+      outcome = { ok: false, code: "empty_credential" };
+      return;
+    }
+
+    const incomingEmail = trimmed(data.email).toLowerCase();
+    const existingEmail = trimmed(existing.email).toLowerCase();
+    if (data.force !== true && incomingEmail && existingEmail && incomingEmail !== existingEmail) {
+      outcome = { ok: false, code: "identity_mismatch" };
+      return;
+    }
+
+    const incomingPsd = data.providerSpecificData && typeof data.providerSpecificData === "object"
+      && !Array.isArray(data.providerSpecificData) ? { ...data.providerSpecificData } : {};
+    for (const key of PROXY_BOUND_KEYS) delete incomingPsd[key];
+    const existingPsd = existing.providerSpecificData && typeof existing.providerSpecificData === "object"
+      && !Array.isArray(existing.providerSpecificData) ? existing.providerSpecificData : {};
+    const providerSpecificData = { ...existingPsd, ...incomingPsd };
+
+    const merged = clearReauthFailureState({
+      ...existing,
+      ...credentials,
+      ...(trimmed(data.authType) ? { authType: trimmed(data.authType) } : {}),
+      ...(incomingEmail ? { email: data.email } : {}),
+      ...(Object.keys(providerSpecificData).length ? { providerSpecificData } : {}),
+      isActive: true,
+      testStatus: "active",
+      updatedAt: new Date().toISOString(),
+    });
+    upsert(db, merged);
+    outcome = { ok: true, connection: merged };
+  });
+  return outcome;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -92,7 +214,16 @@ function reorderInTx(db, providerId) {
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
     if (pDiff !== 0) return pDiff;
-    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+    const tDiff = new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+    if (tDiff !== 0) return tDiff;
+    // Total order, or renumbering is not deterministic. Reordering the list in
+    // the dashboard writes adjacent rows in quick succession, so two of them
+    // routinely carry the SAME updatedAt to the millisecond; with only the two
+    // keys above, which one landed first decided the result, and dragging a row
+    // could leave the list in an order nobody chose (#1181). The id is the only
+    // value here that is unique and does not change, so it settles the tie the
+    // same way on every run without disturbing the recency preference above it.
+    return String(a.id).localeCompare(String(b.id));
   });
   list.forEach((c, i) => {
     db.run(`UPDATE providerConnections SET priority = ? WHERE id = ?`, [i + 1, c.id]);
@@ -142,12 +273,27 @@ export async function createProviderConnection(data) {
         return true;
       });
     } else if (data.authType === "apikey" && data.name) {
-      existing = all.find(c => c.authType === "apikey" && c.name === data.name);
+      // #917: matching on the name ALONE overwrote the first account whenever a
+      // second key arrived under the same one, and the name is routinely not
+      // something the operator chose — POST /api/providers falls back to the
+      // provider's display name when the form sends none, so every key added for
+      // that provider carried the same one. The write reported success and the
+      // list never grew, because there was still exactly one row.
+      //
+      // The credential is what makes two rows the same connection: re-saving the
+      // same key still updates in place, a different key is a different account.
+      // Empty matches empty, so a credential-less compatible endpoint (#1523)
+      // does not pile up a row per save.
+      const incomingKey = data.apiKey || "";
+      existing = all.find(c => c.authType === "apikey" && c.name === data.name
+        && (c.apiKey || "") === incomingKey);
     }
     // access_token: never dedup — user manages duplicates manually
 
     if (existing) {
-      const merged = { ...existing, ...data, updatedAt: now };
+      const merged = data.provider === "codex" && data.authType === "oauth" && data.accessToken
+        ? mergeCodexReauthorization(existing, data, now)
+        : { ...existing, ...data, updatedAt: now };
       upsert(db, merged);
       result = merged;
       return;
@@ -156,6 +302,27 @@ export async function createProviderConnection(data) {
     let connectionName = data.name || null;
     if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
       connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
+      // #1172: one Codex account can hold a subscription in several workspaces,
+      // and each workspace is its own grant. The dedup above already keeps them
+      // in separate rows — they differ by chatgptAccountId — but the derived
+      // name is only the email, so connection management showed two identically
+      // labelled rows with nothing to tell them apart. The workspace id is the
+      // one value that actually differs, so it is what disambiguates them.
+      const workspaceId = data.providerSpecificData?.chatgptAccountId;
+      if (workspaceId && all.some((c) => c.name === connectionName)) {
+        connectionName = `${connectionName} (${String(workspaceId).slice(-6)})`;
+      }
+    }
+    // The other half of #917. Two API keys saved under one name are two rows now
+    // instead of one overwritten row, but a list showing the same label twice
+    // does not tell the operator which row to edit or delete. Same intent as the
+    // workspace suffix above, applied where the collision comes from a form
+    // default rather than from a shared email. OAuth rows keep the name their
+    // caller chose (#1172) and are not renumbered here.
+    if (data.authType === "apikey" && connectionName && all.some((c) => c.name === connectionName)) {
+      let suffix = 2;
+      while (all.some((c) => c.name === `${connectionName} ${suffix}`)) suffix += 1;
+      connectionName = `${connectionName} ${suffix}`;
     }
     let connectionPriority = data.priority;
     if (!connectionPriority) {
@@ -200,6 +367,66 @@ export async function updateProviderConnection(id, data) {
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;
+  });
+  return result;
+}
+
+// Atomically merges a narrow connection patch with the current encrypted data.
+// This prevents an asynchronous caller from replacing provider-specific state
+// written by a concurrent proxy or credential update.
+export async function mergeProviderConnectionData(id, { name, providerSpecificData } = {}) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!row) return;
+    const existing = rowToConn(row);
+    const existingData = existing.providerSpecificData;
+    const patchData = providerSpecificData;
+    const merged = {
+      ...existing,
+      ...(name !== undefined ? { name } : {}),
+      providerSpecificData: {
+        ...(existingData && typeof existingData === "object" && !Array.isArray(existingData) ? existingData : {}),
+        ...(patchData && typeof patchData === "object" && !Array.isArray(patchData) ? patchData : {}),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    upsert(db, merged);
+    result = merged;
+  });
+  return result;
+}
+
+// Conditional ownership prevents a migration writer from overwriting a newer
+// user-selected pool that raced with its read.
+export async function updateConnectionProxyPoolSnapshotIfBound(id, expectedPoolId, pair) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!row) return;
+    const existing = rowToConn(row);
+    const providerSpecificData = existing.providerSpecificData;
+    if (
+      !providerSpecificData
+      || typeof providerSpecificData !== "object"
+      || Array.isArray(providerSpecificData)
+      || providerSpecificData.proxyPoolId !== expectedPoolId
+    ) {
+      return;
+    }
+    const updated = {
+      ...existing,
+      providerSpecificData: {
+        ...providerSpecificData,
+        proxyPoolId: pair.proxyPoolId,
+        strictProxy: pair.strictProxy === true,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    upsert(db, updated);
+    result = updated;
   });
   return result;
 }
@@ -258,4 +485,98 @@ export async function cleanupProviderConnections() {
     }
   });
   return cleaned;
+}
+
+// ─── System state (read-only) ────────────────────────────────────────────────
+// Backs the upstream counts of GET /api/system/state.
+//
+// The degraded signals (testStatus, errorCode, rateLimitedUntil) live inside the
+// encrypted `data` blob, so no SQL predicate can reach them and no index can
+// cover them. Everything below is therefore a full SCAN of providerConnections
+// — a table of tens of rows, sized by how many accounts the operator
+// configured, not by traffic.
+const DEGRADED_TEST_STATUS = new Set(["error", "expired", "unavailable"]);
+const MAX_DEGRADED_PROVIDERS = 12;
+
+// The same vocabulary the providers page already treats as unhealthy, plus the
+// fields src/sse/services/auth.js writes when an upstream rejects a request.
+export function isConnectionDegraded(conn, now = Date.now()) {
+  if (!conn) return false;
+  if (DEGRADED_TEST_STATUS.has(conn.testStatus)) return true;
+  if (conn.errorCode) return true;
+  const until = conn.rateLimitedUntil ? new Date(conn.rateLimitedUntil).getTime() : NaN;
+  return Number.isFinite(until) && until > now;
+}
+
+// Only stable state classes leave the repository. Account names, connection
+// IDs, error messages and upstream responses are credential-adjacent and do
+// not belong in a shell-level polling payload.
+function degradationCause(conn, now) {
+  const until = conn.rateLimitedUntil ? new Date(conn.rateLimitedUntil).getTime() : NaN;
+  const errorCode = Number(conn.errorCode);
+  if ((Number.isFinite(until) && until > now) || errorCode === 429) return "rate_limited";
+  if (conn.testStatus === "expired" || errorCode === 401 || errorCode === 403) {
+    return "authentication";
+  }
+  if (conn.testStatus === "unavailable") return "unavailable";
+  if (conn.testStatus === "error") return "connection_test";
+  return "upstream_error";
+}
+
+// `connected` counts enabled connections. `degraded` counts persisted failures
+// across every configured connection, including an auth failure that disabled
+// itself to protect routing. Hiding that row would erase the recovery signal.
+//
+// Deliberately NOT getProviderConnections(): that decrypts every row's `data`
+// blob, and decryptSecretJson re-derives its key through machineIdSync() on
+// every call (~2.8ms measured), so a 46-account install pays ~130ms to build 40
+// objects this count discards. The summary must decrypt disabled rows too,
+// because permanent auth failures deliberately persist after auto-disable.
+export async function getUpstreamHealthSummary(now = Date.now()) {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT provider, isActive, data FROM providerConnections`);
+
+  let degraded = 0;
+  let connected = 0;
+  const byProvider = new Map();
+  for (const row of rows) {
+    if (row.isActive === 1 || row.isActive === true) connected += 1;
+    const connection = decryptSecretJson(row.data, {});
+    if (!isConnectionDegraded(connection, now)) continue;
+    degraded += 1;
+    const provider = String(row.provider || "unknown");
+    const summary = byProvider.get(provider) || {
+      provider,
+      degradedConnections: 0,
+      likelyCauses: new Set(),
+    };
+    summary.degradedConnections += 1;
+    summary.likelyCauses.add(degradationCause(connection, now));
+    byProvider.set(provider, summary);
+  }
+
+  const degradedProviders = [...byProvider.values()]
+    .sort((a, b) => b.degradedConnections - a.degradedConnections || a.provider.localeCompare(b.provider))
+    .slice(0, MAX_DEGRADED_PROVIDERS)
+    .map(({ provider, degradedConnections, likelyCauses }) => ({
+      provider,
+      degradedConnections,
+      likelyCauses: [...likelyCauses].sort(),
+    }));
+
+  return {
+    total: rows.length,
+    connected,
+    degraded,
+    degradedProviders,
+    degradedProviderCount: byProvider.size,
+    degradedProvidersOmitted: Math.max(0, byProvider.size - degradedProviders.length),
+  };
+}
+
+// Kept for narrow consumers that only need counts. The system-state endpoint
+// uses the richer summary, so the encrypted rows are still scanned once.
+export async function getUpstreamHealthCounts(now = Date.now()) {
+  const { total, connected, degraded } = await getUpstreamHealthSummary(now);
+  return { total, connected, degraded };
 }

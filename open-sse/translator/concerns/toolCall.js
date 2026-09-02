@@ -21,9 +21,37 @@ function sanitizeToolId(id) {
   return sanitized.length > 0 ? sanitized : null;
 }
 
+// Resolve the id a tool result should carry.
+//
+// A missing id cannot be sanitized into existence, and Anthropic rejects the
+// whole request when one is absent ("tool_result.tool_use_id: Field required").
+// Pair it instead with the oldest tool call from the preceding assistant turn
+// that nothing has answered yet — that is the id upstream is expecting, and
+// OpenAI-format clients that drop tool_call_id on a turn are the reason this
+// path exists (#3362). Only if there is nothing to pair with do we generate an
+// id, which at least keeps the request well-formed.
+function resolveToolResultId(rawId, unanswered, makeFallbackId) {
+  const usable =
+    typeof rawId === "string" && rawId
+      ? (TOOL_ID_PATTERN.test(rawId) ? rawId : sanitizeToolId(rawId))
+      : null;
+
+  if (usable) {
+    const at = unanswered.indexOf(usable);
+    if (at >= 0) unanswered.splice(at, 1);
+    return usable;
+  }
+
+  return unanswered.shift() || makeFallbackId();
+}
+
 // Ensure all tool_calls have valid id field and arguments is string (some providers require it)
 export function ensureToolCallIds(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
+
+  // Tool call ids from the most recent assistant turn that no result has
+  // claimed yet, oldest first.
+  let unanswered = [];
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
@@ -38,20 +66,21 @@ export function ensureToolCallIds(body) {
         if (!tc.type) {
           tc.type = "function";
         }
-        // Ensure arguments is JSON string, not object
-        if (tc.function?.arguments && typeof tc.function.arguments !== "string") {
-          tc.function.arguments = JSON.stringify(tc.function.arguments);
+        // OpenAI-compatible history requires function.arguments to be a JSON
+        // string even when the tool takes no arguments. Some clients replay an
+        // empty call as missing/null/"", which strict upstreams reject.
+        if (tc.function && typeof tc.function === "object") {
+          if (tc.function.arguments == null || tc.function.arguments === "") {
+            tc.function.arguments = "{}";
+          } else if (typeof tc.function.arguments !== "string") {
+            tc.function.arguments = JSON.stringify(tc.function.arguments);
+          }
         }
       }
     }
 
-    // Validate tool_call_id in tool messages (role: "tool")
-    if (msg.role === "tool" && msg.tool_call_id && !TOOL_ID_PATTERN.test(msg.tool_call_id)) {
-      const sanitized = sanitizeToolId(msg.tool_call_id);
-      msg.tool_call_id = sanitized || generateToolCallId(i, 0);
-    }
-
-    // Also validate tool_use blocks in content (Claude format)
+    // Validate tool_use blocks in content (Claude format) before the ids are
+    // read back out below.
     if (Array.isArray(msg.content)) {
       for (let k = 0; k < msg.content.length; k++) {
         const block = msg.content[k];
@@ -59,10 +88,27 @@ export function ensureToolCallIds(body) {
           const sanitized = sanitizeToolId(block.id);
           block.id = sanitized || generateToolCallId(i, k, block.name);
         }
-        // Validate tool_use_id in tool_result blocks
-        if (block.type === "tool_result" && block.tool_use_id && !TOOL_ID_PATTERN.test(block.tool_use_id)) {
-          const sanitized = sanitizeToolId(block.tool_use_id);
-          block.tool_use_id = sanitized || generateToolCallId(i, k);
+      }
+    }
+
+    // An assistant turn opens a new set of tool calls waiting for results, and
+    // ends whatever the previous one left open.
+    if (msg.role === "assistant") {
+      unanswered = getToolCallIds(msg);
+      continue;
+    }
+
+    // Tool result, OpenAI shape (role: "tool")
+    if (msg.role === "tool") {
+      msg.tool_call_id = resolveToolResultId(msg.tool_call_id, unanswered, () => generateToolCallId(i, 0));
+    }
+
+    // Tool result, Claude shape (tool_result block in user content)
+    if (Array.isArray(msg.content)) {
+      for (let k = 0; k < msg.content.length; k++) {
+        const block = msg.content[k];
+        if (block.type === "tool_result") {
+          block.tool_use_id = resolveToolResultId(block.tool_use_id, unanswered, () => generateToolCallId(i, k));
         }
       }
     }
@@ -96,25 +142,35 @@ export function getToolCallIds(msg) {
   return ids;
 }
 
-// Check if user message has tool_result for given ids (OpenAI format: role=tool, Claude format: tool_result in content)
-export function hasToolResults(msg, toolCallIds) {
-  if (!msg || !toolCallIds.length) return false;
+// Which of the given tool_call ids this message answers. Returns the ids
+// rather than a boolean, because a turn with six calls answered by one result
+// is not answered, and a boolean cannot say so.
+export function toolResultIdsIn(msg, toolCallIds) {
+  if (!msg || !toolCallIds.length) return [];
 
   // OpenAI format: role = "tool" with tool_call_id
   if (msg.role === "tool" && msg.tool_call_id) {
-    return toolCallIds.includes(msg.tool_call_id);
+    return toolCallIds.includes(msg.tool_call_id) ? [msg.tool_call_id] : [];
   }
 
   // Claude format: tool_result blocks in user message content
   if (msg.role === "user" && Array.isArray(msg.content)) {
+    const found = [];
     for (const block of msg.content) {
-      if (block.type === "tool_result" && toolCallIds.includes(block.tool_use_id)) {
-        return true;
+      if (block?.type === "tool_result" && toolCallIds.includes(block.tool_use_id)) {
+        found.push(block.tool_use_id);
       }
     }
+    return found;
   }
 
-  return false;
+  return [];
+}
+
+// Check if a message answers ANY of the given ids. Kept for callers that only
+// need the weaker question; the repair below asks the stronger one.
+export function hasToolResults(msg, toolCallIds) {
+  return toolResultIdsIn(msg, toolCallIds).length > 0;
 }
 
 // Fix missing tool responses - insert empty tool_result if assistant has tool_use but next message has no tool_result
@@ -125,7 +181,6 @@ export function fixMissingToolResponses(body) {
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
-    const nextMsg = body.messages[i + 1];
 
     newMessages.push(msg);
 
@@ -133,16 +188,44 @@ export function fixMissingToolResponses(body) {
     const toolCallIds = getToolCallIds(msg);
     if (toolCallIds.length === 0) continue;
 
-    // Check if next message has tool_result
-    if (nextMsg && !hasToolResults(nextMsg, toolCallIds)) {
-      // Insert tool responses for each tool_call
-      for (const id of toolCallIds) {
-        // OpenAI format: role = "tool"
-        newMessages.push({
-          role: "tool",
-          tool_call_id: id,
-          content: ""
-        });
+    // Results for one turn commonly span several consecutive messages, one per
+    // call, so the whole run is scanned. Looking only at messages[i + 1] both
+    // missed answers that came later and, when the first answer was not
+    // adjacent, injected duplicates for calls that were already answered.
+    const answered = new Set();
+    for (let j = i + 1; j < body.messages.length; j++) {
+      const ids = toolResultIdsIn(body.messages[j], toolCallIds);
+      if (ids.length === 0) break;
+      for (const id of ids) answered.add(id);
+    }
+
+    // Every call needs its own answer. Stopping at the first match left an
+    // assistant turn with six calls and one result looking satisfied, and the
+    // upstream rejected the request for the five that were never answered.
+    const missing = toolCallIds.filter((id) => !answered.has(id));
+    if (missing.length === 0) continue;
+    if (answered.size === 0 && !body.messages[i + 1]) continue;
+
+    // Repair in the turn's own shape. Splicing an OpenAI role:"tool" message
+    // into a Claude body produced something formats/claude.js drops on the
+    // floor, leaving the tool_use as unanswered as before.
+    const usesClaudeBlocks = Array.isArray(msg.content)
+      && msg.content.some((block) => block?.type === "tool_use");
+
+    if (usesClaudeBlocks) {
+      const blocks = missing.map((id) => ({ type: "tool_result", tool_use_id: id, content: "" }));
+      // Claude wants the results of one turn in a single user message, so they
+      // join the existing one rather than opening a second user turn beside it.
+      const existing = body.messages[i + 1];
+      if (existing?.role === "user" && Array.isArray(existing.content)
+          && toolResultIdsIn(existing, toolCallIds).length > 0) {
+        existing.content.unshift(...blocks);
+      } else {
+        newMessages.push({ role: "user", content: blocks });
+      }
+    } else {
+      for (const id of missing) {
+        newMessages.push({ role: "tool", tool_call_id: id, content: "" });
       }
     }
   }
@@ -151,17 +234,149 @@ export function fixMissingToolResponses(body) {
   return body;
 }
 
-// Default `type: "custom"` on Claude-format tools that arrive without one.
-// Anthropic's Claude tool schema requires `type` to be explicitly set; strict gateways
-// (e.g., MiniMax Anthropic-compatible endpoint, error 2013) reject legacy payloads that
-// omit it with HTTP 400. Tools that already carry a truthy `type` (e.g., `computer_use`,
-// `bash`, `web_search_20250305`) are passed through untouched.
+
+// A tool result carries the id of the call it answers. History truncation and
+// context compaction routinely drop the assistant turn that asked, leaving the
+// answer behind, and a replayed history can carry the same answer twice. Every
+// upstream rejects both: OpenAI with "messages with role 'tool' must be a
+// response to a preceding message with 'tool_calls'", Anthropic with
+// "unexpected `tool_result` block(s)". Gemini is worse — openai-to-gemini.js
+// emits functionResponse only from the assistant's tool_calls, so an orphan is
+// dropped on the floor and the content is simply gone.
 //
-// Spread order matters: `{ ...tool, type: "custom" }` (spread first, override last)
-// ensures that falsy `type` values (null, undefined, "") in the original tool don't
-// overwrite the default. `{ type: "custom", ...tool }` would let `type: null` survive.
-export function defaultClaudeToolType(tools) {
-  if (!Array.isArray(tools)) return tools;
-  return tools.map(tool => tool?.type ? tool : { ...tool, type: "custom" });
+// Salvage rather than delete. What the tool returned is real context the model
+// still needs, so it becomes `[Tool result: ...]` text on a user turn, which
+// every target format can carry. Kiro already does this in its own shape
+// (concerns/kiroConversation.js), and this is the same contract for the
+// message-shaped formats.
+const SALVAGE_TEXT = "text";
+
+function toolResultText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part === "string" ? part : (part?.type === SALVAGE_TEXT ? part.text : "")))
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (content == null) return "";
+  return typeof content === "object" ? JSON.stringify(content) : String(content);
 }
 
+// An image-only result has nothing a user text turn can carry, so it is the one
+// case that is dropped rather than salvaged (#2122 owns the matched-image case).
+function salvageText(content) {
+  const text = toolResultText(content).trim();
+  return text ? `[Tool result: ${text}]` : "";
+}
+
+function asBlocks(content) {
+  if (Array.isArray(content)) return content;
+  const text = typeof content === "string" ? content : toolResultText(content);
+  return text ? [{ type: SALVAGE_TEXT, text }] : [];
+}
+
+// Two user turns in a row are rejected by Claude and collapsed by Gemini, so a
+// salvaged result merges into the user turn beside it instead of opening one.
+function mergeUserTurns(messages, salvaged) {
+  const out = [];
+  for (const msg of messages) {
+    const last = out[out.length - 1];
+    const joinable = last?.role === "user" && msg.role === "user"
+      && (salvaged.has(last) || salvaged.has(msg));
+    if (!joinable) {
+      out.push(msg);
+      continue;
+    }
+    if (typeof last.content === "string" && typeof msg.content === "string") {
+      last.content = last.content ? `${last.content}\n${msg.content}` : msg.content;
+    } else {
+      last.content = [...asBlocks(last.content), ...asBlocks(msg.content)];
+    }
+    if (salvaged.has(msg)) salvaged.add(last);
+  }
+  return out;
+}
+
+export function repairOrphanToolResults(body) {
+  if (!Array.isArray(body?.messages)) return body;
+
+  const callIds = new Set();
+  for (const msg of body.messages) {
+    for (const id of getToolCallIds(msg)) callIds.add(id);
+  }
+
+  const answered = new Set();
+  // First real answer wins; a repeat of the same id is a duplicate, which is as
+  // invalid as an orphan and is salvaged the same way.
+  const claim = (id) => {
+    if (!id || !callIds.has(id) || answered.has(id)) return false;
+    answered.add(id);
+    return true;
+  };
+
+  const salvaged = new Set();
+  const out = [];
+  let repaired = 0;
+
+  for (const msg of body.messages) {
+    // OpenAI shape: a whole message is the result.
+    if (msg.role === "tool") {
+      if (claim(msg.tool_call_id)) {
+        out.push(msg);
+        continue;
+      }
+      repaired++;
+      const text = salvageText(msg.content);
+      if (!text) continue;
+      const turn = { role: "user", content: text };
+      salvaged.add(turn);
+      out.push(turn);
+      continue;
+    }
+
+    // Claude shape: tool_result blocks inside a user turn, beside other content.
+    if (Array.isArray(msg.content) && msg.content.some((b) => b?.type === "tool_result")) {
+      const kept = [];
+      const rescued = [];
+      for (const block of msg.content) {
+        if (block?.type !== "tool_result") {
+          kept.push(block);
+          continue;
+        }
+        if (claim(block.tool_use_id)) {
+          kept.push(block);
+          continue;
+        }
+        repaired++;
+        const text = salvageText(block.content);
+        if (text) rescued.push({ type: SALVAGE_TEXT, text });
+      }
+      if (kept.length === 0 && rescued.length === 0) continue;
+      msg.content = [...kept, ...rescued];
+      if (rescued.length > 0) salvaged.add(msg);
+      out.push(msg);
+      continue;
+    }
+
+    out.push(msg);
+  }
+
+  if (repaired === 0) return body;
+
+  body.messages = mergeUserTurns(out, salvaged);
+  return body;
+}
+
+// Anthropic's tool schema requires an explicit `type`; strict gateways (MiniMax's
+// Anthropic-compatible endpoint, error 2013) reject a payload that omits it with
+// HTTP 400. Tools carrying a truthy type (computer_20250124, bash_20250124,
+// web_search_20250305, …) are returned by identity and never rewritten.
+//
+// Spread order is load-bearing: `{ ...tool, type: "custom" }` overrides a falsy
+// `type: null` the client sent, where `{ type: "custom", ...tool }` would let it
+// survive and 400 again.
+export function defaultClaudeToolType(tools) {
+  if (!Array.isArray(tools)) return tools;
+  return tools.map((tool) => (tool?.type ? tool : { ...tool, type: "custom" }));
+}

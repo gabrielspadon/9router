@@ -3,19 +3,22 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { QUOTA_AUTOPING_SETTINGS_KEYS } from "@/shared/constants/config";
 import {
   enableTunnel, enableTailscale,
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
   getTunnelService, getTailscaleService, setTunnelUnexpectedExitCallback,
-  killCloudflared, isCloudflaredRunning, ensureCloudflared,
+  killCloudflared, isCloudflaredRunning, ensureCloudflared, isTunnelReachable,
   isTailscaleRunning, isTailscaleRunningStrict, isDaemonAlive, startFunnel,
   checkInternet,
   RESTART_COOLDOWN_MS, NETWORK_SETTLE_MS,
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS, VIRTUAL_IFACE_REGEX,
+  UNREACHABLE_CHECKS_BEFORE_RESTART,
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { registerShutdownFlusher } from "@/lib/shutdown.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -58,10 +61,8 @@ export async function initializeApp() {
         try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
         try { killAllBridges(); } catch { /* best effort */ }
         killCloudflared();
-        process.exit();
       };
-      process.on("SIGINT", cleanup);
-      process.on("SIGTERM", cleanup);
+      registerShutdownFlusher(cleanup, -100);
       process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
       g.signalHandlersRegistered = true;
     }
@@ -118,10 +119,19 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  // Free-model auto-discovery (no-op unless settings.freeModelSync.enabled).
+  import("@/shared/services/freeModelSync.js")
+    .then(({ startFreeModelSync }) => startFreeModelSync())
+    .catch((e) => console.log("[FreeModelSync] scheduler start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {
-  return [settings?.claudeAutoPing, settings?.codexAutoPing]
+  // Derived from the auto-ping table rather than listed again: naming the
+  // providers here meant a newly configured one never started the scheduler at
+  // boot even with an account opted in (#2564).
+  return QUOTA_AUTOPING_SETTINGS_KEYS
+    .map((key) => settings?.[key])
     .some((config) => Object.values(config?.connections || {}).some(Boolean));
 }
 
@@ -143,7 +153,7 @@ async function autoStartMitm(settings) {
     const activeKey = keys.find(k => k.isActive !== false);
 
     console.log("[InitApp] MITM was enabled, auto-starting...");
-    await startMitm(activeKey?.key || "sk_9router", password);
+    await startMitm(activeKey?.key || "sk_tokenproxy", password);
     console.log("[InitApp] MITM auto-started");
     try {
       await restoreToolDNS(password);
@@ -173,9 +183,27 @@ async function safeRestartTunnel(reason) {
 
   const force = FORCE_RESTART_REASONS.test(reason);
 
-  // Process alive = trust cloudflared (self-reconnects via --retries 99, keeps same URL).
-  // Killing a live process on network change drops the tunnel and rotates the quick-tunnel URL.
-  if (isCloudflaredRunning()) return;
+  // A live process is trusted, but only while it is still SERVING. cloudflared
+  // self-reconnects via --retries 99 and keeps the same URL, and killing a live
+  // process on a network blip drops the tunnel and rotates the quick-tunnel URL,
+  // so a single failed probe must not trigger a restart. But trusting the PID
+  // alone left a cloudflared that was up and unreachable in that state forever
+  // (#3412), which is the failure this threshold exists to end.
+  if (isCloudflaredRunning()) {
+    if (await isTunnelReachable()) {
+      svc.unreachableChecks = 0;
+      return;
+    }
+    svc.unreachableChecks = (svc.unreachableChecks || 0) + 1;
+    if (svc.unreachableChecks < UNREACHABLE_CHECKS_BEFORE_RESTART) {
+      console.log(`[Tunnel] process alive but unreachable (${svc.unreachableChecks}/${UNREACHABLE_CHECKS_BEFORE_RESTART}) — waiting for it to reconnect`);
+      return;
+    }
+    console.log(`[Tunnel] process alive but unreachable ${svc.unreachableChecks} checks running — restarting`);
+    svc.unreachableChecks = 0;
+    // Fall through. enableTunnel re-probes both URLs and reuses the running
+    // tunnel if it turns out healthy, so a false positive costs one probe.
+  }
 
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
     console.log(`[Tunnel] degraded but cooldown active, skip (${reason})`);

@@ -33,9 +33,10 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  *   callbackPath, fixedPort, codeChallengeMethod, extraParams, refresh:{encoding,scope}, refreshLeadMs,
  *   userInfoUrl }.
  *
- * MediaConfig: { serviceKinds:[...], ttsConfig, sttConfig, embeddingConfig, imageConfig,
+ * MediaConfig: { serviceKinds:[...], ttsConfig, sttConfig, embeddingConfig, imageConfig, imageEditConfig,
  *   searchViaChat:{defaultModel,pricingUrl}, hiddenKinds } — each *Config: {baseUrl,authType,authHeader,
- *   format,defaultModel,models:[{id,name,dimensions?}]}.
+ *   format,defaultModel,models:[{id,name,dimensions?}]}. imageEditConfig additionally scopes edit
+ *   support to a `models` allowlist, since not every image model a provider lists supports editing.
  */
 
 // Shared transport defaults — provider only overrides fields that differ.

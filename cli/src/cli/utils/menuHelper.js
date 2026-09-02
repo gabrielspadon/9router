@@ -5,7 +5,8 @@ const { selectMenu } = require("./input");
  * @param {Object} config - Menu configuration
  * @param {string} config.title - Menu title
  * @param {string} config.headerContent - Optional header content
- * @param {Array<{label: string, action: Function}>} config.items - Menu items with actions
+ * @param {Array<{label: string, action: Function}>|Function} config.items - Menu items with
+ *   actions, or a function of the refreshed data returning them
  * @param {string} config.backLabel - Back button label (default: "← Back")
  * @param {number} config.defaultIndex - Default selected index (default: 0)
  * @param {Function} config.refresh - Optional refresh function to call after each action
@@ -34,10 +35,14 @@ async function showMenuWithBack(config) {
       }
     }
 
+    // `items` may be a function of the refreshed data, so a menu can generate
+    // an entry per item the server reports rather than hardcoding the list.
+    const resolvedItems = typeof items === "function" ? (items(refreshedData) || []) : items;
+
     // Build menu items with back at top
     const menuItems = [
       { label: backLabel, icon: "☆" },
-      ...items.map(item => ({
+      ...resolvedItems.map(item => ({
         label: typeof item.label === "function" ? item.label(refreshedData) : item.label,
         icon: "☆"
       }))
@@ -64,7 +69,7 @@ async function showMenuWithBack(config) {
 
     // Execute action for selected item
     const actionIndex = selected - 1;
-    const item = items[actionIndex];
+    const item = resolvedItems[actionIndex];
     
     if (item && item.action) {
       const shouldContinue = await item.action(refreshedData);

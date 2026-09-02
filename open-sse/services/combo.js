@@ -3,27 +3,76 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { peekStreamForContent } from "../utils/streamContent.js";
+import { estimateTokenCount } from "./memory/contextCompactor.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
+
+// A transient upstream failure carrying a short cooldown is the provider asking
+// to be tried again, not a reason to leave it. Bounded so one struggling member
+// cannot hold the whole chain: a few extra attempts, and only while the wait
+// itself is short (#337).
+const COMBO_RETRY_MAX_DELAY_MS = 10000;
+const COMBO_RETRY_MAX_ATTEMPTS = 2;
+
+// Server-side transients only. A 429 is a fact about the ACCOUNT rather than the
+// member, so retrying the same one just spends the same credential again --
+// account rotation and the next combo member are the right answers there.
+const COMBO_RETRY_STATUSES = new Set([502, 503, 504]);
+
+// Retry-After in seconds or as an HTTP-date. The provider's own number beats the
+// classifier's guess, and a long one is exactly what tells the combo to move on
+// instead of parking the request.
+function retryAfterDelayMs(response) {
+  const raw = response?.headers?.get?.("retry-after");
+  if (!raw) return null;
+  const secs = Number(raw);
+  if (Number.isFinite(secs)) return secs > 0 ? secs * 1000 : null;
+  const dateMs = Date.parse(raw);
+  return Number.isFinite(dateMs) && dateMs > Date.now() ? dateMs - Date.now() : null;
+}
 
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
 
 // Flatten tool turns into prose so panel models keep the context but can't loop
-// on tools: drop the request's tools, turn tool/function results into assistant
+// on tools: drop the request's tools, turn tool/function results into user
 // text, and inline assistant tool_calls names instead of the structured field.
+// Tool results become user turns (matching the claude-to-openai translator's
+// ROLE.TOOL -> USER mapping): a trailing assistant turn is rejected by Anthropic
+// as unsupported prefill on newer Claude models.
+// Input-modality blocks across the client formats this fork accepts. These carry
+// data no text summary can reconstruct, so a flatten must move them, never drop
+// them.
+const MEDIA_BLOCK_TYPES = new Set([
+  "image", "image_url", "input_image",
+  "audio", "audio_url", "input_audio",
+  "video", "video_url", "input_video",
+  "file", "document", "input_file",
+]);
+
+function isMediaBlock(block) {
+  return !!block && typeof block === "object" && MEDIA_BLOCK_TYPES.has(block.type);
+}
+
 function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
       if (msg.role === "tool" || msg.role === "function") {
-        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
+        const summary = `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]`;
+        // Same rule as the array branch below: a tool result carrying a
+        // screenshot must not lose it to the text summary.
+        const media = Array.isArray(msg.content) ? msg.content.filter(isMediaBlock) : [];
+        if (media.length === 0) return { role: "user", content: summary };
+        return { role: "user", content: [{ type: "text", text: summary }, ...media] };
       }
       if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
         const { tool_calls, ...rest } = msg;
@@ -38,10 +87,23 @@ function flattenToolHistory(messages) {
           const textParts = [];
           const toolNames = [];
           const toolResults = [];
+          // Media blocks sharing a message with a tool block must survive the
+          // flatten. Collapsing the whole array to a string dropped them, so a
+          // fusion panel could not see an image whenever it arrived alongside a
+          // tool_result — the normal shape in an agentic session, which is why
+          // the loss looked intermittent rather than total.
+          const mediaParts = [];
           for (const block of msg.content) {
             if (block.type === "text" && block.text) textParts.push(block.text);
-            if (block.type === "tool_use") toolNames.push(block.name || "tool");
-            if (block.type === "tool_result") toolResults.push(extractTextContent(block.content) || String(block.content ?? ""));
+            else if (block.type === "tool_use") toolNames.push(block.name || "tool");
+            else if (block.type === "tool_result") {
+              toolResults.push(extractTextContent(block.content) || String(block.content ?? ""));
+              // A tool_result may itself carry media (a screenshot from a browser
+              // tool). Its text is summarized above; carry the media through.
+              if (Array.isArray(block.content)) {
+                for (const inner of block.content) if (isMediaBlock(inner)) mediaParts.push(inner);
+              }
+            } else if (isMediaBlock(block)) mediaParts.push(block);
           }
           const { ...rest } = msg;
           let newContent = textParts.join("\n");
@@ -51,11 +113,37 @@ function flattenToolHistory(messages) {
           if (toolResults.length > 0) {
             newContent = `${newContent}${newContent ? "\n" : ""}${TOOL_RESULT_PREFIX}${toolResults.join("\n")}]`;
           }
-          return { ...rest, content: newContent };
+          // Keep a plain string when nothing but text survived, so the pure-text
+          // path is byte-identical to before.
+          if (mediaParts.length === 0) return { ...rest, content: newContent };
+          const blocks = newContent ? [{ type: "text", text: newContent }] : [];
+          return { ...rest, content: [...blocks, ...mediaParts] };
         }
       }
       return msg;
     });
+}
+
+const CONTINUE_TURN_TEXT = "Continue from where the previous assistant message left off.";
+
+// Roles that cannot end a synthesized panel request. Anthropic rejects a
+// trailing assistant turn ("assistant message prefill"), Gemini rejects a
+// trailing model turn ("Requests ending with a model turn are not supported"),
+// and several OpenAI-compatible upstreams require the last message to be a user
+// turn outright ("The last message must have role=user"), which a trailing
+// system turn also violates.
+const NON_TERMINAL_ROLES = new Set(["assistant", "model", "system", "developer"]);
+
+// Close any such trailing turn with a user turn, matching the shape of the array
+// it is appended to: Gemini-native turns carry `parts`, every other client format
+// carries `content`.
+function ensureTrailingUserTurn(messages) {
+  const last = messages[messages.length - 1];
+  if (!last || !NON_TERMINAL_ROLES.has(last.role)) return messages;
+  const turn = Array.isArray(last.parts)
+    ? { role: "user", parts: [{ text: CONTINUE_TURN_TEXT }] }
+    : { role: "user", content: CONTINUE_TURN_TEXT };
+  return [...messages, turn];
 }
 
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
@@ -77,6 +165,43 @@ export function reorderByCapabilities(models, required) {
   // Stable sort by tier (Array.prototype.sort is stable in modern engines).
   return models
     .map((m, i) => ({ m, i, t: tierOf(m) }))
+    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .map((x) => x.m);
+}
+
+// Estimate the size of the WHOLE request (not just the current turn -- unlike
+// detectRequiredCapabilities below, a context-window fit check needs the full
+// conversation, since that is what actually gets sent upstream) using the same
+// rough chars/token estimator the memory compactor already ships (#1089).
+function estimateRequestContextTokens(body) {
+  if (!body || typeof body !== "object") return 0;
+  const items = Array.isArray(body.messages) ? body.messages
+    : Array.isArray(body.input) ? body.input
+    : Array.isArray(body.contents) ? body.contents
+    : Array.isArray(body.request?.contents) ? body.request.contents
+    : null;
+  if (!items) return 0;
+  return estimateTokenCount(items);
+}
+
+// Tier combo/fallback models by whether their declared context window can
+// plausibly fit the estimated request size (#1089). Never drops a model: a
+// request too big for every candidate still needs one tried, and the existing
+// isContextOrModelLimitation fallback further down (triggered by the
+// provider's own "context_length"/"too many tokens" rejection) still catches
+// that failure and moves on, exactly as before this reorder existed. Stable,
+// so within a tier the incoming (round-robin / capability) order survives.
+export function reorderByContextFit(models, requiredTokens) {
+  if (!requiredTokens || requiredTokens <= 0 || !Array.isArray(models) || models.length <= 1) return models;
+  const fits = (m) => {
+    const slash = typeof m === "string" ? m.indexOf("/") : -1;
+    const provider = slash > 0 ? m.slice(0, slash) : "";
+    const model = slash > 0 ? m.slice(slash + 1) : m;
+    const { contextWindow } = getCapabilitiesForModel(provider, model);
+    return (contextWindow || 0) >= requiredTokens;
+  };
+  return models
+    .map((m, i) => ({ m, i, t: fits(m) ? 0 : 1 }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .map((x) => x.m);
 }
@@ -237,12 +362,278 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
 }
 
 /**
+ * Same order getRotatedModels would return, WITHOUT touching the rotation
+ * cursor. For diagnostics only (the combo Test button): getRotatedModels writes
+ * comboRotationState on every call, so asking it what the order IS also moves
+ * the order live traffic gets next. One combo tested = one cursor advance
+ * today; a batch test across every combo shifts every round-robin combo at
+ * once (#3404).
+ * @param {string[]} models - Array of model strings
+ * @param {string} comboName - Name of the combo
+ * @param {string} strategy - "fallback" or "round-robin"
+ * @returns {string[]} Rotated models array
+ */
+export function peekRotatedModels(models, comboName, strategy) {
+  if (!models || models.length <= 1 || strategy !== "round-robin") return models;
+  const state = comboRotationState.get(comboName || "__default__");
+  const index = typeof state === "number" ? state : (state?.index || 0);
+  return rotateModelsFromIndex(models, index % models.length);
+}
+
+function advanceRotationAfterSuccessfulFallback(models, comboName, strategy, servedModelIndex) {
+  if (!models || models.length <= 1 || strategy !== "round-robin") return;
+  if (!Number.isInteger(servedModelIndex) || servedModelIndex < 0 || servedModelIndex >= models.length) return;
+
+  comboRotationState.set(comboName || "__default__", {
+    index: (servedModelIndex + 1) % models.length,
+    consecutiveUseCount: 0,
+  });
+}
+
+function withComboTrackingHeaders(response, modelStr, body = response.body) {
+  const headers = new Headers(response.headers);
+  headers.set("x-tokenproxy-combo", "true");
+  if (modelStr) headers.set("x-tokenproxy-model", modelStr);
+  else headers.delete("x-tokenproxy-model");
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+// Apply a pre-computed model order to entries carrying { modelStr, originalIndex },
+// preserving each duplicate modelStr's own entries in original relative order.
+function reorderEntries(entries, reorderedModels) {
+  const entriesByModel = new Map();
+
+  for (const entry of entries) {
+    const matchingEntries = entriesByModel.get(entry.modelStr) || [];
+    matchingEntries.push(entry);
+    entriesByModel.set(entry.modelStr, matchingEntries);
+  }
+
+  return reorderedModels.map((modelStr) => entriesByModel.get(modelStr).shift());
+}
+
+function reorderModelEntriesByCapabilities(entries, required) {
+  const reorderedModels = reorderByCapabilities(entries.map(({ modelStr }) => modelStr), required);
+  return reorderEntries(entries, reorderedModels);
+}
+
+// (#1089) Same shape as reorderModelEntriesByCapabilities, keyed on context fit
+// instead of modality capabilities.
+function reorderEntriesByContextFit(entries, requiredTokens) {
+  const reorderedModels = reorderByContextFit(entries.map(({ modelStr }) => modelStr), requiredTokens);
+  return reorderEntries(entries, reorderedModels);
+}
+
+/**
  * Reset in-memory rotation state when combo/settings change
  * @param {string} [comboName] - Combo name to reset; omit to clear all
  */
 export function resetComboRotation(comboName) {
   if (comboName) comboRotationState.delete(comboName);
   else comboRotationState.clear();
+}
+
+// Token-saver flags a combo may override, keyed by the short name stored in the
+// combo bag and mapped to the parameter name handleChatCore takes. Anything not
+// listed here (privacy filter, tool disclosure, memory pruning) stays global.
+const COMBO_TOKEN_SAVER_KEYS = Object.freeze({
+  rtk: "rtkEnabled",
+  headroom: "headroomEnabled",
+  caveman: "cavemanEnabled",
+  ponytail: "ponytailEnabled",
+  pxpipe: "pxpipeEnabled",
+});
+
+// Read the override off the bag settings already keeps per combo
+// (settings.comboStrategies[name], which carries fallbackStrategy / judgeModel /
+// fusionTuning today), so storage needs no schema change and no migration.
+//
+// `chain` is the combo names being expanded, outermost first — the cycle-guard
+// Set the chat handler already threads through nested combos. The outermost
+// declaration wins: it is the name the client asked for and the one the operator
+// configured against, so a member combo cannot silently override the entry
+// point's choice.
+function findComboTokenSaverOverride(comboChain, settings) {
+  const bag = settings?.comboStrategies;
+  if (!bag || typeof bag !== "object" || Array.isArray(bag)) return null;
+  const names = typeof comboChain === "string"
+    ? [comboChain]
+    : comboChain && typeof comboChain[Symbol.iterator] === "function"
+      ? [...comboChain]
+      : [];
+  for (const name of names) {
+    // Combo names are user-supplied and "constructor" passes the name regex, so
+    // an inherited property must not read as a configured override.
+    if (typeof name !== "string" || !Object.prototype.hasOwnProperty.call(bag, name)) continue;
+    const entry = bag[name];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const tokenSaver = entry.tokenSaver;
+    // Shorthand: `tokenSaver: false` is the whole request in #2037's second form.
+    if (typeof tokenSaver === "boolean") return { enabled: tokenSaver };
+    if (tokenSaver && typeof tokenSaver === "object" && !Array.isArray(tokenSaver)) return tokenSaver;
+  }
+  return null;
+}
+
+/**
+ * Resolve the token-saver flags for one request (#2037, #2289).
+ *
+ * Token saving is beneficial for a coding combo and harmful for a translation
+ * or creative-writing one, and until now the flags were global, so enabling it
+ * for the first rewrote prompts for the second. A combo may now declare its own
+ * settings in settings.comboStrategies[<name>].tokenSaver:
+ *
+ *   { enabled?: boolean, rtk?: boolean, headroom?: boolean,
+ *     caveman?: boolean, ponytail?: boolean, pxpipe?: boolean }
+ *
+ * `enabled` is the same kind of master gate chatCore's own tokenSaverEnabled is:
+ * false forces every saver off for this combo, true (the default) leaves the
+ * individual flags to decide. A per-saver key overrides its global flag in
+ * either direction and outranks `enabled`.
+ *
+ * A combo that declares nothing returns the global flags unchanged, so an
+ * install that never configures one behaves exactly as it does today.
+ *
+ * @param {Set<string>|string[]|string|null} comboChain - combo names, outermost first
+ * @param {Object} settings - the global settings object
+ * @returns {{rtkEnabled: boolean, headroomEnabled: boolean, cavemanEnabled: boolean, ponytailEnabled: boolean, pxpipeEnabled: boolean}}
+ */
+export function resolveComboTokenSaver(comboChain, settings) {
+  const flags = Object.values(COMBO_TOKEN_SAVER_KEYS);
+  const resolved = {};
+  for (const flag of flags) resolved[flag] = !!settings?.[flag];
+
+  const override = findComboTokenSaverOverride(comboChain, settings);
+  if (!override) return resolved;
+
+  if (override.enabled === false) for (const flag of flags) resolved[flag] = false;
+  for (const [key, flag] of Object.entries(COMBO_TOKEN_SAVER_KEYS)) {
+    if (typeof override[key] === "boolean") resolved[flag] = override[key];
+  }
+  return resolved;
+}
+
+/**
+ * Resolve the account a combo pins one of its members to (#1477).
+ *
+ * Not every account of a provider is equivalent: a user may hold a paid
+ * subscription and a free one, and a combo built to try the free tier first
+ * cannot express that when account selection is provider-wide. A combo may now
+ * name a connection per member in the same settings bag as its other
+ * per-combo choices:
+ *
+ *   settings.comboStrategies[<combo>].memberConnections = { "<provider/model>": "<connectionId>" }
+ *
+ * The pin is STRICT by design. A user who names an account has chosen it, so
+ * falling back to a different one silently would spend the wrong subscription;
+ * when that account is unavailable the member fails and the combo advances to
+ * the next member, which is what a combo is for.
+ *
+ * Returns null when nothing is pinned, so a request outside a combo and a combo
+ * that names no account both behave exactly as they do today.
+ *
+ * @param {Set<string>|string[]|string|null} comboChain - combo names, outermost first
+ * @param {string} modelStr - the member being attempted, as stored in the combo
+ * @param {Object} settings - the global settings object
+ * @returns {string|null} the connection id to pin, or null
+ */
+export function resolveComboMemberConnection(comboChain, modelStr, settings) {
+  if (typeof modelStr !== "string" || !modelStr) return null;
+  const bag = settings?.comboStrategies;
+  if (!bag || typeof bag !== "object" || Array.isArray(bag)) return null;
+  const names = typeof comboChain === "string"
+    ? [comboChain]
+    : comboChain && typeof comboChain[Symbol.iterator] === "function"
+      ? [...comboChain]
+      : [];
+  for (const name of names) {
+    // Same guard as the token-saver lookup: a combo name is user-supplied and
+    // an inherited property must not read as a configured pin.
+    if (typeof name !== "string" || !Object.prototype.hasOwnProperty.call(bag, name)) continue;
+    const entry = bag[name];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const map = entry.memberConnections;
+    if (!map || typeof map !== "object" || Array.isArray(map)) continue;
+    if (!Object.prototype.hasOwnProperty.call(map, modelStr)) continue;
+    const id = map[modelStr];
+    if (typeof id === "string" && id) return id;
+  }
+  return null;
+}
+
+function normalizeCombosData(combosData) {
+  return Array.isArray(combosData) ? combosData : (combosData?.combos || []);
+}
+
+function buildComboMap(combosData) {
+  return new Map(
+    normalizeCombosData(combosData)
+      .filter((combo) => typeof combo?.name === "string" && combo.name)
+      .map((combo) => [combo.name, combo]),
+  );
+}
+
+function resolveComboReference(modelStr, comboMap) {
+  if (typeof modelStr !== "string") return null;
+  const direct = comboMap.get(modelStr);
+  if (direct) return direct;
+  const baseName = modelStr.includes("/") ? modelStr.split("/").pop() : null;
+  return baseName ? comboMap.get(baseName) || null : null;
+}
+
+export function findComboCycle(combosData, startName = null) {
+  const comboMap = buildComboMap(combosData);
+  const visited = new Set();
+
+  const visit = (name, path) => {
+    const existingIndex = path.indexOf(name);
+    if (existingIndex !== -1) return [...path.slice(existingIndex), name];
+    if (visited.has(name)) return null;
+
+    const combo = comboMap.get(name);
+    if (!combo) return null;
+
+    const nextPath = [...path, name];
+    for (const model of Array.isArray(combo.models) ? combo.models : []) {
+      const nextCombo = resolveComboReference(model, comboMap);
+      if (!nextCombo) continue;
+      const cycle = visit(nextCombo.name, nextPath);
+      if (cycle) return cycle;
+    }
+
+    visited.add(name);
+    return null;
+  };
+
+  if (startName) return visit(startName, []);
+  for (const name of comboMap.keys()) {
+    const cycle = visit(name, []);
+    if (cycle) return cycle;
+  }
+  return null;
+}
+
+export function validateComboAcyclic({ name, models = [], combosData = [], currentId = null } = {}) {
+  const comboName = typeof name === "string" ? name : "";
+  if (!comboName) return { valid: false, error: "Combo name is required" };
+
+  const candidate = {
+    id: currentId || "__pending_combo__",
+    name: comboName,
+    models: Array.isArray(models) ? models : [],
+  };
+  const nextCombos = normalizeCombosData(combosData)
+    .filter((combo) => combo && combo.id !== currentId && combo.name !== comboName)
+    .concat(candidate);
+  const cycle = findComboCycle(nextCombos, comboName);
+
+  return cycle
+    ? { valid: false, error: `Combo circular dependency detected: ${cycle.join(" -> ")}` }
+    : { valid: true, error: null };
 }
 
 /**
@@ -252,13 +643,10 @@ export function resetComboRotation(comboName) {
  * @returns {string[]|null} Array of models or null if not a combo
  */
 export function getComboModelsFromData(modelStr, combosData) {
-  // Don't check if it's in provider/model format
-  if (modelStr.includes("/")) return null;
-  
-  // Handle both array and object formats
-  const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
-  const combo = combos.find(c => c.name === modelStr);
+  // Resolve combo by full name first, then by basename (part after the last
+  // slash) so client configs like `provider/combo-name` still hit the combo
+  // instead of forwarding the raw string to the upstream provider.
+  const combo = resolveComboReference(modelStr, buildComboMap(combosData));
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }
@@ -277,17 +665,56 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
+// Each attempt gets its own copy of the request body.
+//
+// The translators mutate what they are handed — prepareClaudeRequest rewrites
+// msg.content in place, stamps cache_control onto blocks and de-prefixes a
+// model sitting on a tool, and the Kiro and Gemini paths do the same kind of
+// thing — because for a single request the body is theirs to consume. A combo
+// hands the SAME object to every model in turn, so provider two received a
+// history already rewritten to suit provider one, and a chain that works model
+// by model fails as a combo (#3619). chat.js only spreads the top level, which
+// leaves messages, tools and system shared.
+//
+// Fusion is the sharper case: its panel runs concurrently on one body, so the
+// mutations interleave.
+//
+// Fails open. A body that cannot be cloned is passed through as before rather
+// than failing the request, since the sharing bug is worse than the clone but
+// not worse than a 500.
+function bodyForAttempt(body) {
+  try {
+    return structuredClone(body);
+  } catch {
+    return body;
+  }
+}
+
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
   // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  let rotatedModels = getRotatedModels(
+    models.map((modelStr, originalIndex) => ({ modelStr, originalIndex })),
+    comboName,
+    comboStrategy,
+    comboStickyLimit,
+  );
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
+    // Context-aware rotation runs first so it only breaks ties within a
+    // capability tier (stable sort) -- a hard modality requirement (vision/pdf/
+    // ...) still wins over context fit, matching how reorderByCapabilities
+    // itself prioritizes hard over soft (#1089).
+    const requiredContextTokens = estimateRequestContextTokens(body);
+    if (requiredContextTokens > 0) {
+      rotatedModels = reorderEntriesByContextFit(rotatedModels, requiredContextTokens);
+    }
+
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
-      const reordered = reorderByCapabilities(rotatedModels, required);
-      if (reordered[0] !== rotatedModels[0]) {
-        log.info("COMBO", `auto-switch for [${[...required].join(",")}] → ${reordered[0]}`);
+      const reordered = reorderModelEntriesByCapabilities(rotatedModels, required);
+      if (reordered[0].modelStr !== rotatedModels[0].modelStr) {
+        log.info("COMBO", `auto-switch for [${[...required].join(",")}] → ${reordered[0].modelStr}`);
       }
       rotatedModels = reordered;
     }
@@ -296,19 +723,50 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  const retryAttempts = new Map();
 
   for (let i = 0; i < rotatedModels.length; i++) {
-    const modelStr = rotatedModels[i];
+    const { modelStr, originalIndex } = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await handleSingleModel(bodyForAttempt(body), modelStr);
       
-      // Success (2xx) - return response
+      // Success (2xx) — but a 200 is not proof of a usable answer. A provider can
+      // open an SSE stream, send nothing but keepalives and close cleanly; that
+      // must fall through to the next model rather than be handed to the client.
       if (result.ok) {
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        const { hasContent, body: replayBody, upstreamError } = await peekStreamForContent(result);
+        if (hasContent) {
+          log.info("COMBO", `Model ${modelStr} succeeded`);
+          if (i > 0) {
+            advanceRotationAfterSuccessfulFallback(models, comboName, comboStrategy, originalIndex);
+          }
+          return withComboTrackingHeaders(result, modelStr, replayBody || result.body);
+        }
+
+        // The peek already refuses to treat an in-content upstream error as a
+        // usable answer, so fallback fired either way. What did not survive was
+        // WHY: a qoder `[qoder error 429: ...]` frame and a genuinely silent
+        // stream both reported "empty stream", so a combo that exhausted every
+        // member answered 503 with no trace of the rate limit that caused it
+        // (#1996).
+        if (upstreamError) {
+          lastError = upstreamError.reason;
+          if (!lastStatus) lastStatus = upstreamError.status || 502;
+          log.warn("COMBO", `Model ${modelStr} returned an upstream error as content, trying next: ${upstreamError.reason}`);
+          continue;
+        }
+
+        lastError = "provider returned an empty stream";
+        if (!lastStatus) lastStatus = 503;
+        log.warn("COMBO", `Model ${modelStr} returned an empty stream, trying next`);
+        continue;
       }
+
+      // A caller abort is terminal, not a model result. Preserve its exact
+      // response so outer abort handling cannot mistake it for a served combo.
+      if (result.status === 499) return result;
 
       // Extract error info from response
       let errorText = result.statusText || "";
@@ -331,21 +789,57 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
+      // Check if should fallback to next model. Model-specific context length / max_tokens
+      // limits must not abort the combo — allow fallback to models with larger context.
+      const lowerErr = errorText.toLowerCase();
+      // A model the provider does not serve belongs here too. checkFallbackError
+      // marks model_not_found `pass: true` so the ACCOUNT is not locked for a
+      // user-side model name (#2032), which is right for account rotation and
+      // wrong for a combo: trying the next MODEL is the entire purpose of one.
+      // Without this the combo aborted on the first member with a bad id and
+      // never reached the working ones (#1946).
+      //
+      // Matched on the structured code and the exact phrase only. A bare
+      // "does not exist" is deliberately not matched, for the same reason #2032
+      // refused it: it is generic enough to turn a real account failure into a
+      // silent walk through every member.
+      const isContextOrModelLimitation = lowerErr.includes("max_tokens") ||
+        lowerErr.includes("context_length") ||
+        lowerErr.includes("context length") ||
+        lowerErr.includes("prompt is too long") ||
+        lowerErr.includes("too many tokens") ||
+        lowerErr.includes("exceeds the limit") ||
+        lowerErr.includes("not supported") ||
+        lowerErr.includes("model_not_found") ||
+        lowerErr.includes("model not found");
+
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      if (!shouldFallback && !isContextOrModelLimitation) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
+        return withComboTrackingHeaders(result, modelStr);
       }
 
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
+      // Waiting out the cooldown and then advancing anyway spent the delay and
+      // still left the member, so a chain whose first entry was briefly
+      // overloaded fell onto one that may have no credentials at all (#337).
+      // Retry the SAME member while the wait is short and the budget holds; a
+      // long Retry-After or a spent budget falls through as before.
+      //
+      // Only on a delay the provider actually stated: checkFallbackError answers
+      // TRANSIENT_COOLDOWN_MS for anything it could not classify, and that is a
+      // placeholder, not retry info. Sleeping on it would park the chain for
+      // seconds per member on the strength of a guess.
+      const classifiedDelayMs = cooldownMs === TRANSIENT_COOLDOWN_MS ? null : cooldownMs;
+      const retryDelayMs = retryAfterDelayMs(result) ?? classifiedDelayMs;
+      const attempts = retryAttempts.get(i) || 0;
+      if (COMBO_RETRY_STATUSES.has(result.status) && attempts < COMBO_RETRY_MAX_ATTEMPTS &&
+          retryDelayMs !== null && retryDelayMs > 0 && retryDelayMs <= COMBO_RETRY_MAX_DELAY_MS) {
+        retryAttempts.set(i, attempts + 1);
+        log.info("COMBO", `Model ${modelStr} transient ${result.status}, retry ${attempts + 1}/${COMBO_RETRY_MAX_ATTEMPTS} in ${retryDelayMs}ms`);
+        await new Promise(r => setTimeout(r, retryDelayMs));
+        i--;
+        continue;
       }
 
       // Fallback to next model
@@ -371,13 +865,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
     log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
-    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+    return withComboTrackingHeaders(unavailableResponse(status, msg, earliestRetryAfter, retryHuman));
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
   return new Response(
     JSON.stringify({ error: { message: msg } }),
-    { status, headers: { "Content-Type": "application/json" } }
+    { status, headers: { "Content-Type": "application/json", "x-tokenproxy-combo": "true" } }
   );
 }
 
@@ -387,7 +881,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
  * Panel responses are already translated to the client format by chatCore, so the
  * leaf content→string step reuses the translator's own extractTextContent.
  */
-function extractPanelText(json) {
+export function extractPanelText(json) {
   if (!json || typeof json !== "object") return "";
 
   // OpenAI chat completion
@@ -572,13 +1066,20 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
-    panelBody.messages = flattenToolHistory(panelBody.messages);
+    panelBody.messages = ensureTrailingUserTurn(flattenToolHistory(panelBody.messages));
   } else if (Array.isArray(panelBody.input)) {
-    panelBody.input = flattenToolHistory(panelBody.input);
+    panelBody.input = ensureTrailingUserTurn(flattenToolHistory(panelBody.input));
+  } else if (Array.isArray(panelBody.contents)) {
+    // Gemini-native clients carry the turns on `contents`, which neither branch
+    // above reaches, so a trailing model turn survived into every panel call.
+    // flattenToolHistory is a no-op on this shape (parts, not content), but it
+    // stays in the chain so a future tool-flattening rule applies here too.
+    panelBody.contents = ensureTrailingUserTurn(flattenToolHistory(panelBody.contents));
   }
 
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
+  const calls = panel.map((m) =>
+    withTimeout(handleSingleModel(bodyForAttempt(panelBody), m, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 

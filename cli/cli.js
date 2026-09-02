@@ -7,6 +7,21 @@ const https = require("https");
 const net = require("net");
 const os = require("os");
 
+// #974: in tray mode this process is the resident one — it owns the tray icon
+// and it is the only thing that restarts the server after a crash. It already
+// answered uncaughtException by logging and carrying on (inside startServer
+// below), but left unhandledRejection to Node's default, which terminates the
+// process. Two sibling failures with opposite outcomes, and the fatal one wrote
+// its only notice to a stream `nohup tokenproxy -t > /dev/null 2>&1 &` throws away,
+// so the launcher simply vanished. Supervising is this process's whole job; a
+// stray rejection is not a reason to stop doing it.
+//
+// Registered here rather than beside its sibling because the startup chain at
+// the bottom of this file runs before startServer() installs that one.
+process.on("unhandledRejection", (reason) => {
+  console.error("[tokenproxy] unhandled rejection in the launcher:", reason?.stack || reason);
+});
+
 // Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
 function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
   const deadline = Date.now() + timeoutMs;
@@ -64,10 +79,12 @@ function createSpinner(text) {
 
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
+const { resolveHeapFlags } = require("./hooks/nodeFlags");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { cleanupMitmHostsFile } = require("./hooks/cleanupMitmHosts");
 const args = process.argv.slice(2);
 
-// Subcommands (`9router xai video …`) run against an already-running gateway
+// Subcommands (`tokenproxy xai video …`) run against an already-running gateway
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
 if (args[0] === "xai" && args[1] === "video") {
   const { run } = require("./src/cli/commands/xaiVideo");
@@ -80,9 +97,9 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
-// Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
-// so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
-// better-sqlite3 is optional. Logs to stderr only on failure.
+// Verify SQLite runtime deps. Missing sql.js may be repaired because it is the
+// required fallback; optional better-sqlite3 installation is postinstall-only so
+// ordinary startup never blocks on npm/node-gyp.
 try { ensureSqliteRuntime({ silent: true }); } catch {}
 
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
@@ -110,9 +127,9 @@ function getDisplayHost() {
   return host === DEFAULT_HOST ? "localhost" : host;
 }
 const MAX_PORT_ATTEMPTS = 10;
-// Identifiers for killAllAppProcesses - only kill 9router specifically
+// Identifiers for killAllAppProcesses - only kill tokenproxy specifically
 const PROCESS_IDENTIFIERS = [
-  '9router'  // Only package name - avoid killing other apps
+  'tokenproxy'  // Only package name - avoid killing other apps
 ];
 
 // Parse arguments
@@ -154,6 +171,7 @@ Options:
   -v, --version       Show version
 
 Commands:
+  stop                Stop a running gateway on this port and exit
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)
@@ -163,6 +181,25 @@ Commands:
     console.log(pkg.version);
     process.exit(0);
   }
+}
+
+// `tokenproxy stop` shuts down a gateway this launcher started and exits. The
+// in-menu update path already used these two primitives; without a subcommand a
+// service manager or a script had no supported way to stop what `tokenproxy`
+// started, leaving `pkill` as the only option (#967). Placed after argument
+// parsing so `--port` is honoured.
+if (args[0] === "stop") {
+  killAllAppProcesses(port)
+    .then(() => killProcessOnPort(port))
+    .then(() => {
+      console.log(`tokenproxy stopped (port ${port}).`);
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
 }
 
 // Auto-relaunch after update: detached process has no TTY → fallback to tray
@@ -188,8 +225,8 @@ function compareVersions(a, b) {
 // Get app data dir (matches app/src/lib/dataDir.js convention)
 function getAppDataDir() {
   return process.platform === "win32"
-    ? path.join(process.env.APPDATA || "", "9router")
-    : path.join(os.homedir(), ".9router");
+    ? path.join(process.env.APPDATA || "", "tokenproxy")
+    : path.join(os.homedir(), ".tokenproxy");
 }
 
 // Kill PID from file (best-effort, removes file after)
@@ -246,7 +283,7 @@ function killCloudflaredByAppPort(appPort) {
   return pids;
 }
 
-// Kill all 9router processes
+// Kill all tokenproxy processes
 function killAllAppProcesses(appPort) {
   return new Promise((resolve) => {
     try {
@@ -254,7 +291,11 @@ function killAllAppProcesses(appPort) {
       // killing them doesn't free the app port, so don't block the critical path.
       // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
       setImmediate(() => {
+        try { cleanupMitmHostsFile(); } catch {}
         try { killProxyByPidFile(); } catch {}
+        // Kill Headroom proxy by PID file — detached process that outlives the main server.
+        // Must stop before npm rename; it holds a handle on the app/ directory on Windows (#2265).
+        try { killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid")); } catch {}
         try { killTunnelByPidFile(); } catch {}
         try { killCloudflaredByAppPort(appPort); } catch {}
       });
@@ -273,11 +314,11 @@ function killAllAppProcesses(appPort) {
           });
           const lines = output.split("\n").slice(1).filter(l => l.trim());
           lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
+            // Whitelist: real node process running tokenproxy/cli.js, or next-server.
+            // Avoids killing editors/grep/strace/cursor that just have "tokenproxy" in cmdline.
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
+              (cmd.includes("node") && cmd.includes("tokenproxy") && (cmd.includes("cli.js") || cmd.includes("\\tokenproxy") || cmd.includes("/tokenproxy")))
               || cmd.includes("next-server");
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
@@ -299,11 +340,11 @@ function killAllAppProcesses(appPort) {
           const lines = output.split('\n');
 
           lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
+            // Whitelist: real node process running tokenproxy/cli.js, or next-server.
+            // Avoids killing grep/strace/editors/cursor that incidentally match "tokenproxy".
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
+              (cmd.includes("node") && cmd.includes("tokenproxy") && (cmd.includes("cli.js") || cmd.includes("/tokenproxy")))
               || cmd.includes("next-server");
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
@@ -458,7 +499,10 @@ function isRestrictedEnvironment() {
 // Check if new version available, return latest version or null
 function checkForUpdate() {
   return new Promise((resolve) => {
-    if (skipUpdate) {
+    // TOKENPROXY_NO_UPDATE is the persistent opt-out a pinned install needs;
+    // --skip-update is per-start and is also set by our own relaunches (#1563).
+    const noUpdate = process.env.TOKENPROXY_NO_UPDATE;
+    if (skipUpdate || (noUpdate && noUpdate !== "0" && noUpdate !== "false")) {
       resolve(null);
       return;
     }
@@ -542,7 +586,14 @@ if (!fs.existsSync(serverPath)) {
 const updatePromise = checkForUpdate();
 killAllAppProcesses(port)
   .then(() => killProcessOnPort(port))
-  .then(() => startServer(updatePromise));
+  .then(() => startServer(updatePromise))
+  // Terminal, unlike the strays the handler above absorbs: a failure here means
+  // there is no server to supervise, and swallowing it would leave a live
+  // launcher with nothing behind it (#974).
+  .catch((err) => {
+    console.error(`[tokenproxy] failed to start: ${err?.message || err}`);
+    process.exit(1);
+  });
 
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
@@ -608,27 +659,64 @@ function startServer(updatePromise) {
 
   const CRASH_LOG_LINES = 50;
   let crashLog = [];
+  function pushCrashLog(data) {
+    crashLog.push(...data.toString().split("\n").filter(Boolean));
+    if (crashLog.length > CRASH_LOG_LINES) crashLog = crashLog.slice(-CRASH_LOG_LINES);
+  }
 
   function spawnServer() {
     serverStartTime = Date.now();
     crashLog = [];
-    const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
+    const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", ...resolveHeapFlags(process.env), serverPath], {
       cwd: standaloneDir,
-      stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
+      // Never let the child inherit this process's handles. Handing it an
+      // interactive Windows console handle
+      // makes it spin at 100% of a core and stop serving requests entirely
+      // (#3562), and the reporter's matrix shows a file or pipe handle is fine,
+      // so the console handle itself is the trigger. Piping and RELAYING keeps
+      // --log working while the child only ever writes to a pipe.
+      //
+      // The pipe must always be drained or it fills and the server freezes
+      // instead (#2447), so stdout is piped only alongside a handler that reads
+      // it. "ignore" without --log threw the boot output away, leaving a slow or
+      // failing start with nothing to look at (#1753); it is now kept in the
+      // same crash tail stderr already fills.
+      stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       windowsHide: true,
       env: {
         ...buildEnvWithRuntime(process.env),
         PORT: port.toString(),
-        HOSTNAME: host
+        HOSTNAME: host,
+        // The dashboard's update banner compares the npm `latest` of THIS
+        // package against a local version. It was reading the bundled
+        // tokenproxy-app version, which is released independently, so the two
+        // sides of the comparison were different packages (#1012). Hand the
+        // launcher's own version down so the comparison is like for like.
+        TOKENPROXY_CLI_VERSION: pkg.version,
+        // And its own path, so the updater relaunches THIS install rather than
+        // whatever a package runner resolves. On a machine with more than one
+        // install location the update landed in one and the relaunch opened the
+        // other, so it reported success and then offered the same update again
+        // (#2186).
+        TOKENPROXY_CLI_PATH: __filename
       }
     });
-    if (!showLog && child.stderr) {
-      child.stderr.on("data", (data) => {
-        const lines = data.toString().split("\n").filter(Boolean);
-        crashLog.push(...lines);
-        if (crashLog.length > CRASH_LOG_LINES) crashLog = crashLog.slice(-CRASH_LOG_LINES);
+    if (child.stdout) {
+      child.stdout.on("data", (data) => {
+        if (showLog) { try { process.stdout.write(data); } catch { } }
+        pushCrashLog(data);
       });
+      child.stdout.on("error", () => { });
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (data) => {
+        // Relay when asked, and keep the tail either way: a crash while --log is
+        // on used to leave no captured context at all.
+        if (showLog) { try { process.stderr.write(data); } catch { } }
+        pushCrashLog(data);
+      });
+      child.stderr.on("error", () => { });
     }
     return child;
   }
@@ -641,6 +729,10 @@ function startServer(updatePromise) {
     if (isCleaningUp) return;
     isCleaningUp = true;
     try {
+      // Parent CLI must clean hosts — Next.js child is SIGKILL'd below and
+      // never runs initializeApp's removeAllDNSEntriesSync().
+      cleanupMitmHostsFile();
+
       // Kill tray if running
       try {
         const { killTray } = require("./src/cli/tray/tray");
@@ -648,14 +740,23 @@ function startServer(updatePromise) {
       } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
+      // Kill Headroom proxy (detached process, holds handle on app/ on Windows)
+      killByPidFile(path.join(getAppDataDir(), "headroom", "proxy.pid"));
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
+      // Graceful stop so Next.js can flush DB / run its own cleanup
+      if (server?.pid) {
+        try { process.kill(server.pid, "SIGTERM"); } catch (e) { }
+        sleepSync(400);
+      }
       // Kill server process directly
-      if (server.pid) {
-        process.kill(server.pid, "SIGKILL");
+      if (server?.pid) {
+        try { process.kill(server.pid, "SIGKILL"); } catch (e) { }
       }
       // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+      if (server?.pid) {
+        try { process.kill(-server.pid, "SIGKILL"); } catch (e) { }
+      }
     } catch (e) { }
   }
 
@@ -731,6 +832,18 @@ function startServer(updatePromise) {
     // Start tray icon alongside TUI
     initTrayIcon();
 
+    // Under a service manager (systemd, launchd, a container) stdin is not a
+    // TTY. The menu loop below blocks on a prompt nothing can answer, so the
+    // unit never reaches a steady state and the gateway looks hung even though
+    // the server behind it is already serving (#1191). Stay up and quiet
+    // instead; the tray started above is still the interactive surface for a
+    // detached desktop launch.
+    if (!process.stdin.isTTY) {
+      console.log(`\nTokenProxy is running at ${url}`);
+      console.log("   No TTY detected, so the interactive menu is disabled.\n");
+      return;
+    }
+
     try {
       while (true) {
         const choice = await showInterfaceMenu(latestVersion);
@@ -761,10 +874,13 @@ function startServer(updatePromise) {
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
 
-          // Enable auto startup on OS boot
+          // Enable auto startup only before the user has made an autostart choice.
+          // This used to call enableAutoStart unconditionally, so every
+          // Hide-to-Tray silently re-enabled a setting the user had explicitly
+          // disabled from the tray menu (#3628).
           try {
-            const { enableAutoStart } = require("./src/cli/tray/autostart");
-            enableAutoStart(__filename);
+            const { ensureAutoStart } = require("./src/cli/tray/autostart");
+            ensureAutoStart(__filename);
           } catch (e) { }
 
           if (process.platform === "darwin") {
@@ -773,8 +889,19 @@ function startServer(updatePromise) {
             process.removeAllListeners("SIGHUP");
             process.on("SIGHUP", () => {});
 
+            // This process is now the only thing serving the tray/gateway, so
+            // it must also survive whatever ends the terminal session, not
+            // just SIGHUP. Without this, closing a session/process manager
+            // that sends SIGTERM (the global handler registered above) still
+            // killed the "backgrounded" server -- the exact false-background
+            // state reported in #1284. Quitting from here on is via the tray
+            // icon's Quit item (a direct cleanup() call, not a signal), same
+            // as the Windows/Linux detached process below.
+            process.removeAllListeners("SIGTERM");
+            process.on("SIGTERM", () => {});
+
             console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
+            console.log(`🔔 TokenProxy is running in tray (PID: ${process.pid})`);
             console.log(`   Server: http://${displayHost}:${port}`);
             console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
@@ -793,10 +920,16 @@ function startServer(updatePromise) {
           });
           bgProcess.unref();
 
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
+          console.log(`🔔 TokenProxy is now running in background (PID: ${bgProcess.pid})`);
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
+          // Mark the shutdown BEFORE killing the server. cleanup() SIGKILLs it,
+          // and the server "close" handler restarts unless this flag is set, so
+          // without it the handoff spawned a replacement next-server that then
+          // raced the backgrounded process for the port and orphaned itself.
+          // The "exit" branch below already did this; the hide path did not.
+          isShuttingDown = true;
           // cleanup() kills server so bgProcess can claim the port fresh
           cleanup();
           process.exit(0);
@@ -836,15 +969,10 @@ function startServer(updatePromise) {
     if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
 
     if (restartCount >= MAX_RESTARTS) {
-      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
-      try {
-        const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
-        if (fs.existsSync(dbPath)) {
-          const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-          if (db.settings) db.settings.mitmEnabled = false;
-          fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-        }
-      } catch { /* best effort */ }
+      // The crash loop is what the restart cap is for. MITM used to be turned
+      // off here by rewriting a JSON settings file, which the SQLite store does
+      // not read, so the write did nothing but leave a stray file behind.
+      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Restarting once more...`);
       restartCount = 0;
       server = spawnServer();
       attachServerEvents();

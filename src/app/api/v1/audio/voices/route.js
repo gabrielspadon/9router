@@ -1,10 +1,17 @@
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
+
+// Same salt the other internal self-calls use (see api/models/test/ping.js).
+const CLI_TOKEN_SALT = "tp-cli-auth";
 
 // Provider → internal voices API. Edge/local-device share the generic endpoint.
 const PROVIDER_API = {
   elevenlabs: (origin) => `${origin}/api/media-providers/tts/elevenlabs/voices`,
   deepgram: (origin) => `${origin}/api/media-providers/tts/deepgram/voices`,
   inworld: (origin) => `${origin}/api/media-providers/tts/inworld/voices`,
+  minimax: (origin) => `${origin}/api/media-providers/tts/minimax/voices`,
+  "minimax-cn": (origin) => `${origin}/api/media-providers/tts/minimax/voices?provider=minimax-cn`,
   "edge-tts": (origin) => `${origin}/api/media-providers/tts/voices?provider=edge-tts`,
   "local-device": (origin) => `${origin}/api/media-providers/tts/voices?provider=local-device`,
 };
@@ -19,7 +26,7 @@ export async function OPTIONS() {
 // Returns OpenAI-style list with each voice's full model id ready for /v1/audio/speech
 export async function GET(request) {
   try {
-    const { searchParams, origin } = new URL(request.url);
+    const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider");
     const lang = searchParams.get("lang");
 
@@ -30,9 +37,20 @@ export async function GET(request) {
       );
     }
 
-    const baseUrl = PROVIDER_API[provider](origin);
+    // Self-call over loopback rather than the request's own origin: `origin` is derived
+    // from the Host header, so a forged one would aim this server-side fetch at an
+    // attacker-chosen host. Same shape the other internal self-calls already use.
+    const baseUrl = PROVIDER_API[provider](`http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`);
     const url = lang ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lang=${encodeURIComponent(lang)}` : baseUrl;
-    const res = await fetch(url, { cache: "no-store" });
+    // /api/media-providers is behind the dashboard deny-by-default, and a
+    // server-side self-call carries no session cookie — so this 401'd whenever
+    // requireLogin was on, which is exactly when the endpoint is expected to
+    // work (#1551). Present the same machine-derived CLI token every other
+    // internal self-call uses.
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "x-tp-cli-token": await getConsistentMachineId(CLI_TOKEN_SALT) },
+    });
     const data = await res.json();
     if (!res.ok || data.error) {
       return Response.json(

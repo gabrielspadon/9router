@@ -12,12 +12,12 @@ import {
   applyKiroThinkingOverride,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
-  KIRO_AGENTIC_SYSTEM_PROMPT,
+  getKiroAgenticSystemPrompt,
   resolveDefaultProfileArn,
   buildKiroAdditionalModelRequestFieldsForModel,
   usesKiroNativeGptEffort
 } from "../../config/kiroConstants.js";
-import { parseDataUri } from "../concerns/image.js";
+import { parseDataUri, splitToolResultMedia, extractAiSdkImageUrl } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import {
@@ -51,7 +51,8 @@ function convertMessages(messages, model) {
 
   const flushPending = () => {
     if (currentRole === "user") {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      const hasContext = pendingToolResults.length > 0 || pendingImages.length > 0;
+      const content = pendingUserContent.join("\n\n").trim() || (hasContext ? "" : "continue");
       const userMsg = {
         userInputMessage: {
           content: content,
@@ -124,12 +125,23 @@ function convertMessages(messages, model) {
               // Kiro only supports base64 — fallback to URL text
               textParts.push(`[Image: ${url}]`);
             }
-          } else if (c.type === CLAUDE_BLOCK.IMAGE) {
+          } else if (c.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64" && c.source?.data) {
             // Claude format: source.type = "base64", source.media_type, source.data
-            if (c.source?.type === "base64" && c.source?.data) {
-              const mediaType = c.source.media_type || DEFAULT_IMAGE_MIME;
-              const format = mediaType.split("/")[1] || mediaType;
-              pendingImages.push({ format, source: { bytes: c.source.data } });
+            const mediaType = c.source.media_type || DEFAULT_IMAGE_MIME;
+            const format = mediaType.split("/")[1] || mediaType;
+            pendingImages.push({ format, source: { bytes: c.source.data } });
+          } else {
+            // AI SDK format: { type: "image", image: "data:..." } (#1330)
+            const aiSdkUrl = extractAiSdkImageUrl(c);
+            if (aiSdkUrl) {
+              const parsed = parseDataUri(aiSdkUrl);
+              if (parsed) {
+                const format = parsed.mimeType.split("/")[1] || parsed.mimeType;
+                pendingImages.push({ format, source: { bytes: parsed.base64 } });
+              } else if (aiSdkUrl.startsWith("http://") || aiSdkUrl.startsWith("https://")) {
+                // Kiro only supports base64 — fallback to URL text
+                textParts.push(`[Image: ${aiSdkUrl}]`);
+              }
             }
           }
         }
@@ -139,9 +151,11 @@ function convertMessages(messages, model) {
         const toolResultBlocks = msg.content.filter(c => c.type === CLAUDE_BLOCK.TOOL_RESULT);
         if (toolResultBlocks.length > 0) {
           toolResultBlocks.forEach(block => {
-            const text = Array.isArray(block.content)
-              ? block.content.map(c => c.text || "").join("\n")
-              : (typeof block.content === "string" ? block.content : "");
+            // A tool that returns an image had those parts mapped to "" here.
+            // Hoist them into the same images channel a pasted attachment uses
+            // so the model actually receives them (#2521).
+            const { text, images } = splitToolResultMedia(block.content);
+            if (images.length > 0) pendingImages.push(...images);
 
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
@@ -291,7 +305,7 @@ function convertMessages(messages, model) {
 /**
  * Build Kiro payload from OpenAI format
  *
- * Two 9router-specific behaviours implemented here:
+ * Two tokenproxy-specific behaviours implemented here:
  *
  * 1. `-agentic` model suffix. Synthetic variant — same upstream model, but we
  *    inject a chunked-write system prompt to keep large file writes under
@@ -318,6 +332,11 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
 
   const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
+  const toolNameMap = new Map(
+    [...nameMap]
+      .filter(([originalName, normalizedName]) => originalName !== normalizedName)
+      .map(([originalName, normalizedName]) => [normalizedName, originalName]),
+  );
   const { history, currentMessage } = convertMessages(messages, upstreamModel);
 
   // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
@@ -348,7 +367,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
   if (agentic) {
-    systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+    const agenticPrompt = getKiroAgenticSystemPrompt();
+    if (agenticPrompt) systemPromptParts.push(agenticPrompt);
   }
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
   const currentTimeContext = `[Context: Current time is ${timestamp}]`;
@@ -420,7 +440,13 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   if (profileArn) {
     payload.profileArn = profileArn;
   }
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  // No top-level systemPrompt. generateAssistantResponse has no such field in
+  // its schema and answers a request carrying it with
+  // 400 {"reason":"REQUEST_BODY_INVALID"} whatever the value is. Nothing is
+  // lost by dropping it: contentPrefix above already prefixes the same text
+  // onto the session-start user message, so the model still receives it, and
+  // the variable is still handed to applyKiroSessionReplay so the session
+  // cache key stays stable across turns.
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
@@ -437,6 +463,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     value: upstreamModel,
     enumerable: false
   });
+  if (toolNameMap.size > 0) payload._toolNameMap = toolNameMap;
 
   return payload;
 }

@@ -8,7 +8,7 @@ let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-mig-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenproxy-mig-"));
   process.env.DATA_DIR = tempDir;
   // Reset global singleton so each test gets fresh adapter pointed at tempDir
   delete global._dbAdapter;
@@ -60,27 +60,83 @@ describe("Schema migrations", () => {
     expect(JSON.parse(settings.data)).toEqual({ foo: "bar" });
   });
 
-  it("fresh DB + legacy db.json → imports data automatically", async () => {
-    // Simulate user upgrading: place legacy JSON in DATA_DIR before first boot
-    const legacy = {
-      settings: { foo: "legacy-value" },
-      apiKeys: [{ id: "k1", key: "abc", name: "test", createdAt: new Date().toISOString() }],
-      modelAliases: { "gpt-4": "gpt-4-turbo" },
+  it("predecessor state sitting beside the namespace is neither read nor changed", async () => {
+    // TokenProxy starts from a fresh install. A predecessor product's state
+    // files are not an upgrade path: they are somebody else's data that happens
+    // to share a home directory, and touching them at all is the defect.
+    const predecessor = {
+      "db.json": JSON.stringify({
+        settings: { foo: "predecessor-value" },
+        apiKeys: [{ id: "k1", key: "abc", name: "test", createdAt: new Date().toISOString() }],
+        modelAliases: { "gpt-4": "gpt-4-turbo" },
+      }),
+      "usage.json": JSON.stringify({ history: [{ provider: "p", model: "m" }], totalRequestsLifetime: 7 }),
+      "disabledModels.json": JSON.stringify({ disabled: { openai: ["gpt-4"] } }),
+      "request-details.json": JSON.stringify({ records: [{ id: "r1", timestamp: new Date().toISOString() }] }),
     };
-    fs.writeFileSync(path.join(tempDir, "db.json"), JSON.stringify(legacy));
+    for (const [name, body] of Object.entries(predecessor)) {
+      fs.writeFileSync(path.join(tempDir, name), body);
+    }
+    const before = Object.keys(predecessor).map((name) => {
+      const full = path.join(tempDir, name);
+      return { name, body: fs.readFileSync(full, "utf-8"), mtimeMs: fs.statSync(full).mtimeMs };
+    });
 
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
 
-    const settings = db.get(`SELECT data FROM settings WHERE id=1`);
-    expect(JSON.parse(settings.data)).toEqual({ foo: "legacy-value" });
+    // Nothing was read: a clean install starts empty on every table the
+    // predecessor files carry rows for.
+    expect(db.get(`SELECT data FROM settings WHERE id=1`)).toBeFalsy();
+    expect(db.all(`SELECT * FROM apiKeys`)).toHaveLength(0);
+    expect(db.all(`SELECT * FROM kv`)).toHaveLength(0);
+    expect(db.all(`SELECT * FROM usageHistory`)).toHaveLength(0);
+    expect(db.all(`SELECT * FROM requestDetails`)).toHaveLength(0);
+    expect(db.get(`SELECT value FROM _meta WHERE key='totalRequestsLifetime'`)).toBeFalsy();
+    expect(db.get(`SELECT value FROM _meta WHERE key='migratedAt'`)).toBeFalsy();
 
-    const keys = db.all(`SELECT * FROM apiKeys`);
-    expect(keys).toHaveLength(1);
-    expect(keys[0].key).toBe("abc");
+    // Nothing was changed: same bytes, same mtime, and no marker or copy left
+    // anywhere under the new namespace.
+    for (const file of before) {
+      const full = path.join(tempDir, file.name);
+      expect(fs.readFileSync(full, "utf-8")).toBe(file.body);
+      expect(fs.statSync(full).mtimeMs).toBe(file.mtimeMs);
+    }
+    const dbDir = path.join(tempDir, "db");
+    expect(fs.existsSync(path.join(dbDir, ".migrated-from-json"))).toBe(false);
+    const backupsDir = path.join(dbDir, "backups");
+    const backups = fs.existsSync(backupsDir) ? fs.readdirSync(backupsDir) : [];
+    expect(backups).toHaveLength(0);
+  });
 
-    const aliases = db.all(`SELECT * FROM kv WHERE scope='modelAliases'`);
-    expect(aliases).toHaveLength(1);
+  it("a foreign predecessor state directory is outside the search path entirely", async () => {
+    // The predecessor kept its state in its own dot-directory. TokenProxy
+    // resolves DATA_DIR and nothing else, so a sibling directory is invisible
+    // whether or not it holds a database.
+    const foreign = path.join(path.dirname(tempDir), `${path.basename(tempDir)}-predecessor`);
+    fs.mkdirSync(path.join(foreign, "db"), { recursive: true });
+    const foreignDb = path.join(foreign, "db", "data.sqlite");
+    fs.writeFileSync(foreignDb, "not a real database");
+    fs.writeFileSync(path.join(foreign, "db.json"), JSON.stringify({ settings: { foo: "foreign" } }));
+    const foreignBefore = fs.readdirSync(foreign).sort();
+
+    try {
+      const { getAdapter } = await import("@/lib/db/driver.js");
+      const db = await getAdapter();
+      expect(db.all(`SELECT * FROM apiKeys`)).toHaveLength(0);
+      expect(db.get(`SELECT data FROM settings WHERE id=1`)).toBeFalsy();
+
+      expect(fs.readdirSync(foreign).sort()).toEqual(foreignBefore);
+      expect(fs.readFileSync(foreignDb, "utf-8")).toBe("not a real database");
+
+      // Every path the app resolves lives under DATA_DIR.
+      const { DATA_FILE, DB_DIR, BACKUPS_DIR } = await import("@/lib/db/paths.js");
+      for (const resolved of [DATA_FILE, DB_DIR, BACKUPS_DIR]) {
+        expect(resolved.startsWith(tempDir + path.sep)).toBe(true);
+      }
+    } finally {
+      fs.rmSync(foreign, { recursive: true, force: true });
+    }
   });
 
   it("auto-sync re-creates missing index when DB lacks it", async () => {

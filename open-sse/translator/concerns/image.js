@@ -12,6 +12,76 @@ export function parseDataUri(url) {
   return m ? { mimeType: m[1], base64: m[2] } : null;
 }
 
+// The Vercel AI SDK sends multimodal image parts as
+// { type: "image", image: "data:...;base64,..." } (or a plain http(s) URL),
+// distinct from OpenAI's { type: "image_url", image_url: { url } } and from the
+// Claude-shaped passthrough block { type: "image", source: { type: "base64", ... } }
+// some clients already send under the same "image" type. Every OpenAI-input
+// translator that only read image_url.url silently dropped this shape, so an
+// image an OpenAI-compatible client sent never reached a vision-capable
+// provider (#1330). Returns the raw url/data-uri string, or null if `part`
+// isn't this shape.
+export function extractAiSdkImageUrl(part) {
+  if (part?.type !== "image" || part.source) return null;
+  return typeof part.image === "string" && part.image ? part.image : null;
+}
+
+// Kiro's tool result carries text and nothing else: its content is [{ text }].
+// A tool that returns an image (an MCP read_media_file, a screenshot tool) had
+// its image parts mapped to "" by every Kiro translator, so the model answered
+// about a picture it was never shown, and in the Claude translator an
+// image-only result fell through to JSON.stringify and shipped the whole base64
+// payload as tool text — costing the tokens without delivering the image (#2521).
+//
+// Kiro does have a vision channel, userInputMessage.images, which the direct
+// attachment path already fills. Split a tool result into the text Kiro can
+// carry and the images to hoist into that channel, leaving a marker behind so
+// the turn still reads as having produced something.
+export function splitToolResultMedia(content) {
+  if (typeof content === "string") return { text: content, images: [] };
+  if (!Array.isArray(content)) {
+    return { text: content ? JSON.stringify(content) : "", images: [] };
+  }
+
+  const textParts = [];
+  const images = [];
+  for (const part of content) {
+    // Claude shape: { type: "image", source: { type: "base64", media_type, data } }
+    if (part?.type === "image" && part.source?.type === "base64" && part.source?.data) {
+      const mediaType = part.source.media_type || "image/png";
+      images.push({ format: mediaType.split("/")[1] || mediaType, source: { bytes: part.source.data } });
+      textParts.push("[Image returned by tool]");
+      continue;
+    }
+    // OpenAI shape: { type: "image_url", image_url: { url: "data:...;base64,..." } }
+    if (part?.type === "image_url") {
+      const parsed = parseDataUri(part.image_url?.url || "");
+      if (parsed) {
+        images.push({
+          format: parsed.mimeType.split("/")[1] || parsed.mimeType,
+          source: { bytes: parsed.base64 },
+        });
+        textParts.push("[Image returned by tool]");
+      } else if (typeof part.image_url?.url === "string" && part.image_url.url) {
+        // Kiro takes base64 only, so a remote URL stays as text rather than
+        // being fetched here: that would be an outbound request on a translation
+        // path, and image.js already gates those behind an SSRF check elsewhere.
+        textParts.push(`[Image: ${part.image_url.url}]`);
+      }
+      continue;
+    }
+    if (typeof part?.text === "string") {
+      textParts.push(part.text);
+      continue;
+    }
+    // Anything else keeps its old behaviour of being serialised, EXCEPT that a
+    // part carrying base64 image data is never stringified into the text.
+    if (part !== undefined && part !== null) textParts.push(JSON.stringify(part));
+  }
+
+  return { text: textParts.join("\n"), images };
+}
+
 import { lookup } from "node:dns/promises";
 import { Agent } from "undici";
 import { MAX_IMAGE_BYTES, FETCH_TIMEOUT_MS, IMAGE_SIGNATURES, BLOCKED_HOSTS } from "../../config/mediaConfig.js";

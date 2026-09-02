@@ -1,5 +1,10 @@
-import { machineIdSync } from "node-machine-id";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
+
+const runtimeRequire = typeof require === "function"
+  ? require
+  : createRequire(import.meta.url);
+const { machineIdSync } = runtimeRequire("node-machine-id");
 
 let cachedRawId = null;
 

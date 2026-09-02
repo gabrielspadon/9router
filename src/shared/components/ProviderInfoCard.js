@@ -43,14 +43,14 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
             href={signupUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+            className="text-xs text-brand hover:underline inline-flex items-center gap-1"
           >
-            <span className="material-symbols-outlined text-sm">open_in_new</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">open_in_new</span>
             Get API Key
           </a>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5.5 gap-y-2">
         {rows.map((r) => (
           <div key={r.key} className="flex items-center gap-3 min-w-0">
             <span className="text-xs text-text-muted w-28 shrink-0">{r.label}</span>
@@ -59,7 +59,7 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
                 href={r.raw}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`text-sm text-primary hover:underline truncate ${r.mono ? "font-mono" : ""}`}
+                className={`text-sm text-brand hover:underline truncate ${r.mono ? "font-mono" : ""}`}
               >
                 {r.value}
               </a>
@@ -72,7 +72,7 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
         ))}
         {noticeText && (
           <div className="flex items-start gap-3 min-w-0 sm:col-span-2">
-            <span className="text-xs text-text-muted w-28 shrink-0 mt-0.5">Notice</span>
+            <span className="text-xs text-text-muted w-28 shrink-0 mt-1">Notice</span>
             <span className="text-sm text-text-main leading-relaxed">{noticeText}</span>
           </div>
         )}

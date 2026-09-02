@@ -6,12 +6,61 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { normalizeResponsesInput } from "../formats/responsesApi.js";
+import { normalizeResponsesInput, normalizeToolParameters } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { extractAiSdkImageUrl } from "../concerns/image.js";
 
 // Responses API enforces max 64 chars on call_id (#393)
 const MAX_CALL_ID_LEN = 64;
 const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
+
+function reserveResponsesToolName(map, preferredName, metadata) {
+  let safeName = preferredName;
+  let collision = 1;
+  while (map.has(safeName)) {
+    const existing = map.get(safeName);
+    if (existing.name === metadata.name
+        && existing.namespace === metadata.namespace
+        && existing.custom === metadata.custom) {
+      return safeName;
+    }
+    safeName = `${preferredName}__9r${collision++}`;
+  }
+  map.set(safeName, metadata);
+  return safeName;
+}
+
+function safeResponsesToolName(map, name, namespace = null, custom = false) {
+  const preferredName = (namespace ? `${namespace}__${name}` : name).replace(/\./g, "__");
+  return reserveResponsesToolName(map, preferredName, { name, namespace, custom });
+}
+
+function declaredResponsesToolName(map, name, namespace = null) {
+  if (!map?.size || typeof name !== "string" || name.length === 0) return name;
+  for (const [safeName, metadata] of map) {
+    if (metadata.name === name && metadata.namespace === (namespace || null)) return safeName;
+  }
+  if (!namespace) {
+    const matches = [...map.entries()]
+      .filter(([, metadata]) => metadata.namespace && metadata.name === name);
+    if (matches.length === 1) return matches[0][0];
+  }
+  return name;
+}
+
+function toChatToolChoice(choice, responsesToolNameMap) {
+  if (!choice || typeof choice !== "object" || Array.isArray(choice)) return choice;
+  const name = choice.function?.name ?? choice.name;
+  const namespace = choice.function?.namespace ?? choice.namespace ?? null;
+  if ((choice.type === "function" || choice.type === "custom" || choice.type === "tool")
+      && typeof name === "string" && name.trim() !== "") {
+    return {
+      type: OPENAI_BLOCK.FUNCTION,
+      function: { name: declaredResponsesToolName(responsesToolNameMap, name, namespace) },
+    };
+  }
+  return choice;
+}
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -32,11 +81,93 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingToolResults = [];
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
-  const additionalTools = [];
   const customToolNames = new Set();
+  const responsesToolNameMap = new Map();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
+
+  const additionalTools = inputItems.flatMap((item) => {
+    const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
+    return itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS && Array.isArray(item.tools)
+      ? item.tools
+      : [];
+  });
+  const responseTools = [
+    ...(Array.isArray(body.tools) ? body.tools : []),
+    ...additionalTools,
+  ];
+  if (responseTools.length > 0) {
+    result.tools = responseTools.flatMap((tool) => {
+      if (!tool || typeof tool !== "object") return [];
+
+      const toFunction = ({ name, description, parameters, strict, custom = false, namespace = null, format = null }) => {
+        if (typeof name !== "string" || name.trim() === "") return null;
+        const safeName = safeResponsesToolName(responsesToolNameMap, name, namespace, custom);
+        if (custom) customToolNames.add(safeName);
+        const formatHint = custom
+          ? [format?.syntax, format?.definition].filter(Boolean).join("\n")
+          : "";
+        return {
+          type: OPENAI_BLOCK.FUNCTION,
+          function: {
+            name: safeName,
+            description: [String(description || ""), formatHint].filter(Boolean).join("\n\n"),
+            parameters: custom
+              ? {
+                  type: "object",
+                  properties: {
+                    input: {
+                      type: "string",
+                      description: "Raw freeform input for this custom tool"
+                    }
+                  },
+                  required: ["input"],
+                  additionalProperties: false
+                }
+              : normalizeToolParameters(parameters),
+            ...(strict !== undefined ? { strict } : {}),
+          }
+        };
+      };
+
+      const flatten = (candidate, namespaces = [], depth = 0) => {
+        if (!candidate || typeof candidate !== "object" || depth > 8) return [];
+        if (candidate.type === RESPONSES_ITEM.TOOL_NAMESPACE) {
+          const nextNamespaces = typeof candidate.name === "string" && candidate.name.trim() !== ""
+            ? [...namespaces, candidate.name]
+            : namespaces;
+          return Array.isArray(candidate.tools)
+            ? candidate.tools.flatMap((child) => flatten(child, nextNamespaces, depth + 1))
+            : [];
+        }
+
+        // Already in Chat Completions format. Clone the declaration while
+        // preserving its caller-owned input object and applying the namespace path.
+        const fn = candidate.function;
+        const converted = toFunction(fn
+          ? {
+              name: fn.name,
+              description: fn.description,
+              parameters: fn.parameters,
+              strict: fn.strict,
+              namespace: namespaces.length > 0 ? namespaces.join(".") : null,
+            }
+          : {
+              name: candidate.name,
+              description: candidate.description,
+              parameters: candidate.parameters,
+              strict: candidate.strict,
+              custom: candidate.type === "custom",
+              namespace: namespaces.length > 0 ? namespaces.join(".") : null,
+              format: candidate.format,
+            });
+        return converted ? [converted] : [];
+      };
+
+      return flatten(tool);
+    });
+  }
 
   // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
   const extractReasoningText = (item) => {
@@ -89,7 +220,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           return c;
         })
         : item.content;
-      const msg = { role: item.role, content };
+      // "developer" is a Responses-API instruction role. Every chat-completions
+      // target should see "system" instead: filterToOpenAIFormat normalises it,
+      // but only when the target format is literally FORMATS.OPENAI, so a
+      // chat-completions-shaped target with its own format value (kimi, step,
+      // zai, qwen, ollama) received the role verbatim and dropped or ignored the
+      // instruction message. That is the reported "system prompt ignored"
+      // (#1028, #1038). Normalising at the source covers every target; for the
+      // openai target it is a no-op the filter would have done anyway.
+      const msg = { role: item.role === ROLE.DEVELOPER ? ROLE.SYSTEM : item.role, content };
       // Attach buffered reasoning to assistant turn (required by xiaomi-mimo + store=false continuity)
       if (item.role === ROLE.ASSISTANT) attachPendingReasoning(msg);
       else {
@@ -110,7 +249,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const toolName = declaredResponsesToolName(responsesToolNameMap, item.name, item.namespace);
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(toolName);
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
@@ -118,7 +258,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name: toolName,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
@@ -143,9 +283,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
-    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
-      if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
-    }
+    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) continue;
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Buffer reasoning text; attached to next assistant message/function_call.
       // Also stash encrypted_content so a later openai→responses hop can restore
@@ -170,63 +308,11 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     }
   }
 
-  // Convert tools format.
-  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
-  // explicit `name` field and cannot be represented as Chat Completions function declarations.
-  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
-  // such as Gemini, which strictly validates function names.
-  const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
-  ];
-  if (responseTools.length > 0) {
-    result.tools = responseTools
-      .map(tool => {
-        // Already in Chat Completions format: { type: "function", function: { name, ... } }
-        if (tool.function) return tool;
-        // Responses API function/custom tool: { type, name, description, parameters|format }.
-        // Chat Completions has no freeform custom-tool declaration, so expose custom
-        // tools as functions with one raw `input` string while retaining their names
-        // in translator-only metadata for the response conversion.
-        const name = tool.name;
-        if (!name || typeof name !== "string" || name.trim() === "") return null;
-        if (tool.type === "custom") {
-          customToolNames.add(name);
-          const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
-          return {
-            type: OPENAI_BLOCK.FUNCTION,
-            function: {
-              name,
-              description: [String(tool.description || ""), formatHint].filter(Boolean).join("\n\n"),
-              parameters: {
-                type: "object",
-                properties: {
-                  input: {
-                    type: "string",
-                    description: "Raw freeform input for this custom tool"
-                  }
-                },
-                required: ["input"],
-                additionalProperties: false
-              }
-            }
-          };
-        }
-        // Responses API function tool: { type: "function", name, description, parameters }
-        // Only convert when a non-empty name is present; skip hosted tools without one.
-        return {
-          type: OPENAI_BLOCK.FUNCTION,
-          function: {
-            name,
-            description: String(tool.description || ""),
-            parameters: normalizeToolParameters(tool.parameters),
-            strict: tool.strict
-          }
-        };
-      })
-      .filter(Boolean);
-  }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+  if (responsesToolNameMap.size > 0) result._responsesToolNameMap = responsesToolNameMap;
+  if (body.tool_choice !== undefined) {
+    result.tool_choice = toChatToolChoice(body.tool_choice, responsesToolNameMap);
+  }
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
@@ -235,8 +321,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
+  // Structured Output: Responses `text.format` → Chat `response_format` (`text` is not a Chat field)
+  if (result.text !== undefined) {
+    const responseFormat = textFormatToResponseFormat(result.text);
+    if (responseFormat && result.response_format === undefined) result.response_format = responseFormat;
+    delete result.text;
+  }
+
   delete result.input;
-  delete result.instructions;
   delete result.include;
   delete result.prompt_cache_key;
   delete result.store;
@@ -245,17 +337,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   }
   delete result.reasoning;
   delete result.client_metadata;
+  // Responses-API-only knobs with no Chat Completions equivalent. `result` is a
+  // spread of the client body, so anything not deleted here is forwarded, and a
+  // non-OpenAI upstream rejects the whole request with 400 "Unsupported
+  // parameter(s)" rather than ignoring the field (#2318).
+  delete result.background;
+  delete result.truncation;
 
   return result;
-}
-
-/**
- * Ensure object schema always has properties field (required by Codex Responses API)
- */
-function normalizeToolParameters(params) {
-  if (!params) return { type: "object", properties: {} };
-  if (params.type === "object" && !params.properties) return { ...params, properties: {} };
-  return params;
 }
 
 /**
@@ -286,7 +375,12 @@ function buildReasoningInputItem(msg) {
 
   if (!encrypted && !summaryText) return null;
 
-  const item = { type: RESPONSES_ITEM.REASONING };
+  // `summary` is required on a reasoning item and the API rejects one without
+  // it — "Missing required parameter: 'input[66].summary'", the failure that
+  // made #3571's reporter retract their own Headroom proposal after a long
+  // agentic run. A turn carrying only encrypted_content has no text to put
+  // there, and the empty array is what that item looks like on the wire.
+  const item = { type: RESPONSES_ITEM.REASONING, summary: [] };
   if (summaryText) {
     item.summary = [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: summaryText }];
   }
@@ -295,26 +389,59 @@ function buildReasoningInputItem(msg) {
   return item;
 }
 
+// Normalize tool_choice to the Responses API shape.
+// - string "auto"|"none"|"required" pass through
+// - Claude {type:"any"} → "required"; Claude {type:"tool",name} → named function
+// - OpenAI Chat {type:"function",function:{name}} and Responses {type:"function",name}
+//   both normalize to the Responses-native {type:"function",name}
+// - unknown shapes (hosted tools like {type:"web_search"}) are preserved as-is
+function normalizeToolChoice(choice) {
+  if (choice === undefined || choice === null) return undefined;
+  if (typeof choice === "string") return choice;
+  if (typeof choice !== "object") return choice;
+  const name = choice.function?.name ?? choice.name;
+  if (choice.type === "any") return "required";
+  if ((choice.type === "function" || choice.type === "tool") && typeof name === "string" && name) {
+    return { type: OPENAI_BLOCK.FUNCTION, name };
+  }
+  return choice;
+}
+
+// Token limits: Responses API only knows max_output_tokens. Precedence:
+// max_output_tokens > max_completion_tokens > max_tokens.
+function resolveMaxOutputTokens(body) {
+  for (const key of ["max_output_tokens", "max_completion_tokens", "max_tokens"]) {
+    if (body[key] !== undefined) return body[key];
+  }
+  return undefined;
+}
+
 /**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
-  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
+  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[]).
+  // Respect the caller's stream intent (undefined keeps the historical streaming default);
+  // normalize token fields and tool_choice without rebuilding/altering `input`.
   if (body.input) {
-    const out = { ...body, model, stream: true };
-    if (out.max_output_tokens === undefined) {
-      if (out.max_completion_tokens !== undefined) out.max_output_tokens = out.max_completion_tokens;
-      else if (out.max_tokens !== undefined) out.max_output_tokens = out.max_tokens;
+    // Caller-resolved model always wins over any stale body.model.
+    const passthrough = { ...body, model };
+    const maxOut = resolveMaxOutputTokens(body);
+    if (maxOut !== undefined) {
+      passthrough.max_output_tokens = maxOut;
+      delete passthrough.max_completion_tokens;
+      delete passthrough.max_tokens;
     }
-    delete out.max_tokens;
-    delete out.max_completion_tokens;
-    return out;
+    const toolChoice = normalizeToolChoice(body.tool_choice);
+    if (toolChoice !== undefined) passthrough.tool_choice = toolChoice;
+    passthrough.stream = stream !== false;
+    return passthrough;
   }
 
   const result = {
     model,
     input: [],
-    stream: true,
+    stream: stream !== false,
     store: false
   };
 
@@ -357,6 +484,9 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
               return { type: RESPONSES_ITEM.INPUT_IMAGE, image_url: url, detail: c.image_url?.detail || "auto" };
             }
             if (c.type === RESPONSES_ITEM.INPUT_IMAGE) return c;
+            // AI SDK format: { type: "image", image: "data:..." } (#1330)
+            const aiSdkUrl = extractAiSdkImageUrl(c);
+            if (aiSdkUrl) return { type: RESPONSES_ITEM.INPUT_IMAGE, image_url: aiSdkUrl, detail: "auto" };
             // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
             const text = c.text || c.content || JSON.stringify(c);
             return { type: contentType, text: typeof text === "string" ? text : JSON.stringify(text) };
@@ -425,20 +555,48 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  if (body.max_output_tokens !== undefined) {
-    result.max_output_tokens = body.max_output_tokens;
-  } else if (body.max_completion_tokens !== undefined) {
-    result.max_output_tokens = body.max_completion_tokens;
-  } else if (body.max_tokens !== undefined) {
-    result.max_output_tokens = body.max_tokens;
-  }
+  // Responses schema only knows max_output_tokens. Explicit precedence:
+  // max_output_tokens > max_completion_tokens > max_tokens (fresh object — no legacy leak).
+  const maxOut = resolveMaxOutputTokens(body);
+  if (maxOut !== undefined) result.max_output_tokens = maxOut;
+  const toolChoice = normalizeToolChoice(body.tool_choice);
+  if (toolChoice !== undefined) result.tool_choice = toolChoice;
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
+  // Structured Output: Chat `response_format` → Responses `text.format` (#dropped otherwise)
+  const textFormat = responseFormatToTextFormat(body.response_format);
+  if (textFormat) result.text = { format: textFormat };
 
   return result;
+}
+
+/**
+ * Chat Completions `response_format` → Responses API `text.format`.
+ * Responses nests the schema one level up and flattens json_schema.{name,schema,strict}.
+ */
+function responseFormatToTextFormat(responseFormat) {
+  if (responseFormat?.type === "json_schema") {
+    const js = responseFormat.json_schema;
+    if (!js?.schema) return null;
+    return { type: "json_schema", name: js.name || "response", schema: js.schema, strict: js.strict ?? true };
+  }
+  if (responseFormat?.type === "json_object") return { type: "json_object" };
+  return null;
+}
+
+/**
+ * Responses API `text.format` → Chat Completions `response_format` (inverse of the above).
+ */
+function textFormatToResponseFormat(text) {
+  const fmt = text?.format;
+  if (fmt?.type === "json_schema" && fmt.schema) {
+    return { type: "json_schema", json_schema: { name: fmt.name || "response", schema: fmt.schema, strict: fmt.strict ?? true } };
+  }
+  if (fmt?.type === "json_object") return { type: "json_object" };
+  return null;
 }
 
 // Register both directions

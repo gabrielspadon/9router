@@ -19,6 +19,48 @@ export const COLORS = {
 
 // Buffer tokens to prevent context errors
 const BUFFER_TOKENS = 2000;
+const EXACT_COST_FIELDS = ["cost_usd", "cost_in_usd", "cost_in_usd_ticks"];
+
+// Reasoning is reported inside completion/output tokens, never in addition to
+// them. Reject invalid provider values and retain only the inclusive subset.
+export function clampReasoningTokens(reasoningTokens, completionTokens) {
+  const reasoning = typeof reasoningTokens === "number" && Number.isFinite(reasoningTokens)
+    ? Math.max(0, reasoningTokens)
+    : 0;
+  const completion = typeof completionTokens === "number" && Number.isFinite(completionTokens)
+    ? Math.max(0, completionTokens)
+    : 0;
+  return Math.min(reasoning, completion);
+}
+
+/**
+ * Copy finite, nonnegative provider totals used for internal cost accounting.
+ * These fields are deliberately excluded from filterUsageForFormat so provider
+ * pricing metadata never becomes part of a client-facing usage schema.
+ */
+export function copyNonnegativeExactCosts(source, target, { enumerable = true } = {}) {
+  if (!source || typeof source !== "object" || !target || typeof target !== "object") return target;
+
+  for (const field of EXACT_COST_FIELDS) {
+    const value = source[field];
+    if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) continue;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) continue;
+
+    if (enumerable) {
+      target[field] = numeric;
+    } else {
+      Object.defineProperty(target, field, {
+        value: numeric,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+
+  return target;
+}
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -131,6 +173,7 @@ export function normalizeUsage(usage) {
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
+  copyNonnegativeExactCosts(usage, normalized);
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -166,7 +209,14 @@ export function canonicalizeUsage(usage) {
 
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
-  const reasoning = num(usage.reasoning_tokens);
+  // Responses-API shapes nest the breakdowns: input_tokens_details.cached_tokens
+  // and output_tokens_details.reasoning_tokens. Read them so converter output
+  // reaching the usage DB keeps its cache/reasoning split.
+  const reasoning = num(
+    usage.reasoning_tokens
+      ?? usage.output_tokens_details?.reasoning_tokens
+      ?? usage.completion_tokens_details?.reasoning_tokens,
+  );
   // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently
@@ -190,10 +240,11 @@ export function canonicalizeUsage(usage) {
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
-    // nested prompt_tokens_details.cached_tokens shape, so without this the
-    // cache-read count is silently dropped on every buildUsage()-derived usage.
-    cached = num(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
+    cached = num(
+      usage.cached_tokens
+        ?? usage.input_tokens_details?.cached_tokens
+        ?? usage.prompt_tokens_details?.cached_tokens,
+    );
   }
 
   const result = {
@@ -205,7 +256,45 @@ export function canonicalizeUsage(usage) {
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
+  copyNonnegativeExactCosts(usage, result);
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  return result;
+}
+
+/**
+ * Convert Claude's cache-exclusive input accounting to OpenAI's convention,
+ * where prompt_tokens includes cached and newly cached input tokens.
+ */
+export function claudeUsageToOpenAI(usage) {
+  const canonical = canonicalizeUsage({
+    prompt_tokens: usage?.input_tokens,
+    completion_tokens: usage?.output_tokens,
+    cache_read_input_tokens: usage?.cache_read_input_tokens,
+    cache_creation_input_tokens: usage?.cache_creation_input_tokens,
+    reasoning_tokens: clampReasoningTokens(
+      usage?.output_tokens_details?.thinking_tokens,
+      usage?.output_tokens,
+    ),
+  });
+  if (!canonical) return null;
+
+  const result = {
+    prompt_tokens: canonical.prompt_tokens,
+    completion_tokens: canonical.completion_tokens,
+    total_tokens: canonical.total_tokens,
+  };
+  if (canonical.cached_tokens > 0 || canonical.cache_creation_input_tokens > 0) {
+    result.prompt_tokens_details = {};
+    if (canonical.cached_tokens > 0) {
+      result.prompt_tokens_details.cached_tokens = canonical.cached_tokens;
+    }
+    if (canonical.cache_creation_input_tokens > 0) {
+      result.prompt_tokens_details.cache_creation_tokens = canonical.cache_creation_input_tokens;
+    }
+  }
+  if (canonical.reasoning_tokens > 0) {
+    result.completion_tokens_details = { reasoning_tokens: canonical.reasoning_tokens };
+  }
   return result;
 }
 
@@ -248,17 +337,28 @@ export function extractUsage(chunk) {
       prompt_tokens: u.input_tokens || 0,
       completion_tokens: u.output_tokens || 0,
       cache_read_input_tokens: u.cache_read_input_tokens,
-      cache_creation_input_tokens: u.cache_creation_input_tokens
+      cache_creation_input_tokens: u.cache_creation_input_tokens,
+      cost_usd: u.cost_usd,
+      cost_in_usd: u.cost_in_usd,
+      cost_in_usd_ticks: u.cost_in_usd_ticks,
     });
   }
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
+    const completionTokens = chunk.usage.output_tokens || 0;
     return normalizeUsage({
       prompt_tokens: chunk.usage.input_tokens || 0,
-      completion_tokens: chunk.usage.output_tokens || 0,
+      completion_tokens: completionTokens,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens,
+      reasoning_tokens: clampReasoningTokens(
+        chunk.usage.output_tokens_details?.thinking_tokens,
+        completionTokens,
+      ),
+      cost_usd: chunk.usage.cost_usd,
+      cost_in_usd: chunk.usage.cost_in_usd,
+      cost_in_usd_ticks: chunk.usage.cost_in_usd_ticks,
     });
   }
 
@@ -271,6 +371,9 @@ export function extractUsage(chunk) {
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: cachedTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
+      cost_usd: usage.cost_usd,
+      cost_in_usd: usage.cost_in_usd,
+      cost_in_usd_ticks: usage.cost_in_usd_ticks,
       prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
   }
@@ -282,6 +385,9 @@ export function extractUsage(chunk) {
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
+      cost_usd: chunk.usage.cost_usd,
+      cost_in_usd: chunk.usage.cost_in_usd,
+      cost_in_usd_ticks: chunk.usage.cost_in_usd_ticks,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
       completion_tokens_details: chunk.usage.completion_tokens_details
     });
@@ -352,6 +458,34 @@ export function estimateInputTokens(body) {
     // Fallback if stringify fails
     return 0;
   }
+}
+
+/**
+ * Remove the client headroom buffer from an ESTIMATED usage object.
+ *
+ * The buffer at addBufferToUsage is deliberate client-facing headroom: it keeps
+ * a client's own context counter from running the request into a context error.
+ * Wire-reported usage carries it only on the copy handed to the client, and
+ * stream.js keeps the raw value on state.usage "for logging" — so recorded cost
+ * is the real number.
+ *
+ * Estimated usage has no such split: formatUsage bakes the buffer in, and the
+ * same object is both sent to the client and assigned to state.usage, so it
+ * reaches cost as +2000 phantom input tokens per request. Strip it at the one
+ * recording funnel rather than at each of the producers, which keeps the client
+ * headroom intact and makes estimated and wire usage bill the same way.
+ *
+ * @param {object} usage - Usage object carrying `estimated: true`
+ * @returns {object} Usage with the buffer removed, floored at 0
+ */
+export function stripBufferFromUsage(usage) {
+  if (!usage || typeof usage !== "object" || !usage.estimated) return usage;
+  const result = { ...usage };
+  const debuffer = (n) => Math.max(0, (n ?? 0) - BUFFER_TOKENS);
+  if (result.input_tokens !== undefined) result.input_tokens = debuffer(result.input_tokens);
+  if (result.prompt_tokens !== undefined) result.prompt_tokens = debuffer(result.prompt_tokens);
+  if (result.total_tokens !== undefined) result.total_tokens = debuffer(result.total_tokens);
+  return result;
 }
 
 /**

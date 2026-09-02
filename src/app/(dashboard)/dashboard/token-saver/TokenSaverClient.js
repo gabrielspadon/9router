@@ -1,20 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Card, Button, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
+import Card from "@/shared/components/Card";
+import Button from "@/shared/components/Button";
+import Input from "@/shared/components/Input";
+import Modal, { ConfirmModal } from "@/shared/components/Modal";
+import Toggle from "@/shared/components/Toggle";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import Tooltip from "../endpoint/components/Tooltip";
 import {
-  WENYAN_LOCALES,
   CAVEMAN_LEVELS,
   PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
+
+const TOKEN_SAVER_STATS_REFRESH_MS = 30_000;
+const TOKEN_SAVER_STATS_TIMEOUT_MS = 10_000;
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
-  const [headroomTimeoutMs, setHeadroomTimeoutMs] = useState(3000);
+  // "" = not configured; HEADROOM_TIMEOUT_MS and the built-in default then apply.
+  const [headroomTimeoutMs, setHeadroomTimeoutMs] = useState("");
   const [headroomStatus, setHeadroomStatus] = useState({
     installed: false,
     running: false,
@@ -30,6 +37,10 @@ export default function TokenSaverClient() {
     extras: { code: false, ml: false },
     available: ["code", "ml"],
     loading: false,
+    // /api/headroom/* is local-only, so a dashboard opened on a LAN address gets
+    // 401 here. That is not "no extras installed", and reporting it as such sent
+    // people looking for an install problem that did not exist (#2965).
+    restricted: false,
   });
   const [pendingExtras, setPendingExtras] = useState([]);
   const [extrasActionLoading, setExtrasActionLoading] = useState(false);
@@ -46,6 +57,10 @@ export default function TokenSaverClient() {
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
+  const [toolDisclosureEnabled, setToolDisclosureEnabled] = useState(false);
+  const [toolDisclosureFilterEnabled, setToolDisclosureFilterEnabled] = useState(false);
+  const [toolDisclosureMaxTools, setToolDisclosureMaxTools] = useState(20);
+  const [disclosureStats, setDisclosureStats] = useState([]);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
     installed: false,
@@ -58,27 +73,12 @@ export default function TokenSaverClient() {
   const [showPxpipeModal, setShowPxpipeModal] = useState(false);
   const [pxpipeActionLoading, setPxpipeActionLoading] = useState(false);
   const [pxpipeActionError, setPxpipeActionError] = useState("");
-  const [locale, setLocale] = useState("en");
 
   const { copied, copy } = useCopyToClipboard();
 
-  useEffect(() => {
-    setLocale(getCurrentLocale());
-    return onLocaleChange(() => setLocale(getCurrentLocale()));
-  }, []);
-
-  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
-  const visibleCavemanLevels = isWenyanLocale
-    ? CAVEMAN_LEVELS
-    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
-
-  useEffect(() => {
-    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
-    if (current?.wenyan && !isWenyanLocale) {
-      setCavemanLevel("ultra");
-      patchSetting({ cavemanLevel: "ultra" });
-    }
-  }, [isWenyanLocale, cavemanLevel]);
+  // Every caveman level is shown to every locale now that the classical Chinese
+  // levels are gone, so there is nothing left to gate on the interface language.
+  const visibleCavemanLevels = CAVEMAN_LEVELS;
 
   const patchSetting = async (patch) => {
     try {
@@ -146,6 +146,20 @@ export default function TokenSaverClient() {
         const er = await fetch("/api/headroom/extras", {
           headers: { "Cache-Control": "no-store" },
         });
+        if (er.status === 401 || er.status === 403) {
+          // Not a failure to report as absence: the route is local-only and this
+          // dashboard is not on loopback. Say so instead of claiming nothing is
+          // installed, which is what the state below would otherwise mean.
+          setHeadroomExtras({
+            version: null,
+            extras: { code: false, ml: false },
+            available: ["code", "ml"],
+            loading: false,
+            restricted: true,
+          });
+          setPendingExtras([]);
+          return;
+        }
         if (!er.ok) throw new Error("extras status failed");
         const ed = await er.json();
         setHeadroomExtras((s) => ({
@@ -154,6 +168,7 @@ export default function TokenSaverClient() {
           extras: ed.extras || { code: false, ml: false },
           available: ed.available || ["code", "ml"],
           loading: false,
+          restricted: false,
         }));
         setPendingExtras([]);
       } catch {
@@ -162,6 +177,7 @@ export default function TokenSaverClient() {
           extras: { code: false, ml: false },
           available: ["code", "ml"],
           loading: false,
+          restricted: false,
         });
         setPendingExtras([]);
       }
@@ -401,17 +417,42 @@ export default function TokenSaverClient() {
     patchSetting({ pxpipeEnabled: value });
   };
 
+  const handleHeadroomTimeoutBlur = () => {
+    const raw = String(headroomTimeoutMs).trim();
+    const parsed = Math.round(Number(raw));
+    const next =
+      raw && Number.isFinite(parsed) && parsed > 0 && parsed < 600000
+        ? parsed
+        : null;
+    setHeadroomTimeoutMs(next ?? "");
+    patchSetting({ headroomTimeoutMs: next });
+  };
+
   const handlePxpipeMinCharsBlur = () => {
     const next = Math.max(0, Number(pxpipeMinChars) || 25000);
     setPxpipeMinChars(next);
     patchSetting({ pxpipeMinChars: next });
   };
 
-  const handleHeadroomTimeoutBlur = () => {
-    const raw = Math.round(Number(headroomTimeoutMs));
-    const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
-    setHeadroomTimeoutMs(next);
-    patchSetting({ headroomTimeoutMs: next });
+  const handleToolDisclosureEnabled = (value) => {
+    setToolDisclosureEnabled(value);
+    patchSetting({ toolDisclosureEnabled: value });
+  };
+  const handleToolDisclosureFilterEnabled = (value) => {
+    setToolDisclosureFilterEnabled(value);
+    patchSetting({ toolDisclosureFilterEnabled: value });
+  };
+  const handleToolDisclosureMaxToolsBlur = () => {
+    const next = Math.max(1, Number(toolDisclosureMaxTools) || 20);
+    setToolDisclosureMaxTools(next);
+    patchSetting({ toolDisclosureMaxTools: next });
+  };
+
+  const refreshDisclosureStats = async () => {
+    try {
+      const res = await fetch("/api/tool-disclosure/stats");
+      if (res.ok) setDisclosureStats(await res.json());
+    } catch {}
   };
 
   useEffect(() => {
@@ -423,7 +464,9 @@ export default function TokenSaverClient() {
           setRtkEnabledState(data.rtkEnabled !== false);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
-          if (typeof data.headroomTimeoutMs === "number") setHeadroomTimeoutMs(data.headroomTimeoutMs);
+          setHeadroomTimeoutMs(
+            typeof data.headroomTimeoutMs === "number" ? data.headroomTimeoutMs : "",
+          );
           setCodeAware(data.headroomCodeAware === true);
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
@@ -432,9 +475,13 @@ export default function TokenSaverClient() {
           setPonytailLevel(data.ponytailLevel || "full");
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
+          setToolDisclosureEnabled(!!data.toolDisclosureEnabled);
+          setToolDisclosureFilterEnabled(!!data.toolDisclosureFilterEnabled);
+          if (typeof data.toolDisclosureMaxTools === "number") setToolDisclosureMaxTools(data.toolDisclosureMaxTools);
           refreshHeadroomStatus();
           // PRD: run the PXPIPE health check automatically when the page opens
           refreshPxpipeStatus().then(runPxpipeHealth);
+          refreshDisclosureStats();
         }
       } catch {}
     };
@@ -470,18 +517,68 @@ export default function TokenSaverClient() {
             : "Stopped";
   const pxpipeChipClass =
     pxpipeHealthy || pxpipeStatus.running
-      ? "bg-success/15 text-success"
-      : "bg-warning/15 text-warning";
+      ? "bg-success-soft border-success-line text-success"
+      : "bg-warning-soft border-warning-line text-warning";
+
+  // Aggregate observability (truthful units only; see /api/token-saver/stats)
+  const [tsStats, setTsStats] = useState(undefined); // undefined=loading, null=unavailable
+  useEffect(() => {
+    let alive = true;
+    let inFlight = false;
+    let activeController = null;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const requestController = new AbortController();
+      activeController = requestController;
+      let timeoutId;
+      try {
+        timeoutId = setTimeout(
+          () => requestController.abort(),
+          TOKEN_SAVER_STATS_TIMEOUT_MS
+        );
+        const res = await fetch("/api/token-saver/stats", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-store" },
+          signal: requestController.signal,
+        });
+        if (!res.ok) throw new Error("stats fetch failed");
+        const data = await res.json();
+        if (alive) setTsStats(data);
+      } catch (e) {
+        if (e?.name === "AbortError") {
+          if (!alive) return;
+          // timeout abort while mounted: same as transient network failure
+        }
+        if (alive)
+          setTsStats((current) =>
+            current === undefined ? null : current
+          );
+      } finally {
+        clearTimeout(timeoutId);
+        if (activeController === requestController) activeController = null;
+        inFlight = false;
+      }
+    };
+    refresh();
+    const timer = setInterval(refresh, TOKEN_SAVER_STATS_REFRESH_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      activeController?.abort();
+    };
+  }, []);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5.5">
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">
+          <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">
               bolt
             </span>
             Token Saver
+            <Tooltip text="Data boundary. RTK rewrites tool output locally. Headroom sends prompts to its configured compressor. Caveman and Ponytail change model-output instructions. PXPIPE renders context as images in-process." />
           </h2>
         </div>
         <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
@@ -492,18 +589,21 @@ export default function TokenSaverClient() {
                 href="https://github.com/rtk-ai/rtk"
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
               >
                 (RTK)
               </a>
             </p>
             <p className="text-sm text-text-muted">
-              git/grep/ls/tree/logs → 60-90% fewer input tokens
+              Rewrites git, grep, ls, tree and log output in place. The
+              reduction this instance achieved is measured below, in RTK
+              chars reduced.
             </p>
           </div>
           <Toggle
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
+            ariaLabel="Compress tool output with RTK"
           />
         </div>
         <div className="flex items-center justify-between py-4 gap-4 flex-wrap">
@@ -515,20 +615,23 @@ export default function TokenSaverClient() {
                   href="https://github.com/chopratejas/headroom"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs font-normal text-primary underline hover:opacity-80"
+                  className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
                 >
                   (Headroom)
                 </a>
               </p>
               <span
-                className={`text-xs px-2 py-0.5 rounded ${headroomRunning ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}
+                className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-[var(--radius-brand)] border ${headroomRunning ? "bg-success-soft border-success-line text-success" : "bg-warning-soft border-warning-line text-warning"}`}
               >
+                <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                  {headroomRunning ? "check_circle" : "pause_circle"}
+                </span>
                 {headroomStatusLabel}
               </span>
               <button
                 type="button"
                 onClick={() => setShowHeadroomInstallModal(true)}
-                className="text-xs text-primary underline hover:opacity-80"
+                className="focus-ring hit-44 rounded-sm text-xs text-brand underline hover:no-underline"
               >
                 {headroomRunning ? "Manage" : "Setup"}
               </button>
@@ -540,16 +643,23 @@ export default function TokenSaverClient() {
           <Toggle
             checked={headroomEnabled}
             onChange={() => handleHeadroomEnabled(!headroomEnabled)}
+            ariaLabel="Compress context before routing"
           />
         </div>
         {headroomStatus.installed && (
-          <div className="mb-3 ml-1 pl-3 pb-4 border-l-2 border-border">
+          <div className="mb-3 ms-1 ps-3 pb-4 border-s-2 border-border">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-text-muted">
                 Compression extras
                 {headroomExtras.version ? ` · v${headroomExtras.version}` : ""}:
               </span>
-              {headroomExtras.available.map((extra) => {
+              {headroomExtras.restricted && (
+                <span className="text-xs text-warning">
+                  Not readable from this address — open the dashboard on the host
+                  (localhost) to manage compression extras.
+                </span>
+              )}
+              {!headroomExtras.restricted && headroomExtras.available.map((extra) => {
                 const installed = !!headroomExtras.extras[extra];
                 const pending = pendingExtras.includes(extra);
                 const extraTitle =
@@ -562,7 +672,7 @@ export default function TokenSaverClient() {
                   return (
                     <div
                       key={extra}
-                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-success/40 bg-success/5 text-text"
+                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-[var(--radius-brand)] border border-success-line bg-success-soft text-text-main"
                       title={extraTitle}
                     >
                       <Toggle
@@ -570,13 +680,14 @@ export default function TokenSaverClient() {
                         checked={active}
                         disabled={restartingProxy}
                         onChange={() => toggleExtraActive(extra, !active)}
+                        ariaLabel={`Compression extra [${extra}]`}
                       />
                       <span className="font-medium">[{extra}]</span>
                       <button
                         type="button"
                         onClick={() => handleRemoveExtra(extra)}
                         disabled={removingExtra === extra}
-                        className="ml-1 text-error underline hover:opacity-80 disabled:opacity-50"
+                        className="focus-ring rounded-sm ms-1 text-danger underline hover:no-underline disabled:opacity-50"
                         title={`Uninstall [${extra}]`}
                       >
                         {removingExtra === extra ? "Uninstalling…" : "Uninstall"}
@@ -588,16 +699,16 @@ export default function TokenSaverClient() {
                 return (
                   <label
                     key={extra}
-                    className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border cursor-pointer transition-colors ${
+                    className={`focus-ring flex items-center gap-1.5 text-xs px-2 py-1 rounded-[var(--radius-brand)] border cursor-pointer transition-colors duration-150 ${
                       pending
-                        ? "border-primary bg-primary/10 text-primary"
+                        ? "border-brand-line bg-brand-soft text-brand"
                         : "border-border text-text-muted hover:bg-surface-2"
                     }`}
                     title={extraTitle}
                   >
                     <input
                       type="checkbox"
-                      className="w-3 h-3"
+                      className="w-3 h-3 accent-brand-500"
                       checked={pending}
                       onChange={() => togglePendingExtra(extra)}
                     />
@@ -607,25 +718,25 @@ export default function TokenSaverClient() {
                 );
               })}
               {pendingExtras.length > 0 && (
-                <button
+                <Button
+                  variant="primary" size="sm"
                   onClick={handleInstallExtras}
                   disabled={extrasActionLoading}
-                  className="text-xs px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 disabled:opacity-50"
                 >
                   {extrasActionLoading
                     ? "Installing…"
                     : `Install [proxy,${pendingExtras.join(",")}]`}
-                </button>
+                </Button>
               )}
             </div>
             {extrasActionError && (
-              <p className="text-xs text-error mt-1">{extrasActionError}</p>
+              <p className="text-xs text-danger mt-1">{extrasActionError}</p>
             )}
             {restartingProxy && (
               <p className="text-xs text-text-muted mt-1">Restarting proxy…</p>
             )}
             {(extrasActionLoading || removingExtra) && installLog && (
-              <pre className="mt-2 max-h-32 overflow-auto rounded bg-surface-2 p-2 text-[10px] leading-tight text-text-muted whitespace-pre-wrap">
+              <pre tabIndex={0} aria-label="Install log" className="focus-ring mt-2 max-h-32 overflow-auto rounded-[var(--radius-brand)] bg-surface-2 p-4 text-xs leading-tight text-text-muted whitespace-pre-wrap">
                 {installLog}
               </pre>
             )}
@@ -648,13 +759,15 @@ export default function TokenSaverClient() {
                 href="https://github.com/JuliusBrussee/caveman"
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
               >
                 (Caveman)
               </a>
             </p>
             <p className="text-sm text-text-muted">
-              Terse-style system prompt → ~65% fewer output tokens (up to 87%)
+              Asks the model for terse output. What the same answer would
+              have cost without it is counterfactual, so no reduction is
+              measured for it.
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -665,9 +778,10 @@ export default function TokenSaverClient() {
                     <button
                       key={lvl.id}
                       onClick={() => handleCavemanLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      aria-pressed={cavemanLevel === lvl.id}
+                      className={`focus-ring px-3 py-1.5 rounded-[var(--radius-brand)] text-xs font-medium border transition-colors duration-150 ${
                         cavemanLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
+                          ? "bg-brand-solid text-brand-on border-brand-solid"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
                       title={lvl.desc}
@@ -676,7 +790,7 @@ export default function TokenSaverClient() {
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-primary">
+                <p className="text-xs text-text-muted">
                   {
                     CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)
                       ?.desc
@@ -687,25 +801,26 @@ export default function TokenSaverClient() {
             <Toggle
               checked={cavemanEnabled}
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
+              ariaLabel="Compress LLM output with Caveman"
             />
           </div>
         </div>
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
-              Lazy senior dev{" "}
+              Minimal code output{" "}
               <a
                 href="https://github.com/DietrichGebert/ponytail"
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
+                className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
               >
                 (Ponytail)
               </a>
             </p>
             <p className="text-sm text-text-muted">
-              Bias the model toward minimal code: YAGNI, reuse stdlib,
-              deletion over addition
+              Ask the model to favor small, maintainable code changes: reuse,
+              deletion before addition, and no speculative abstraction.
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -716,9 +831,10 @@ export default function TokenSaverClient() {
                     <button
                       key={lvl.id}
                       onClick={() => handlePonytailLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      aria-pressed={ponytailLevel === lvl.id}
+                      className={`focus-ring px-3 py-1.5 rounded-[var(--radius-brand)] text-xs font-medium border transition-colors duration-150 ${
                         ponytailLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
+                          ? "bg-brand-solid text-brand-on border-brand-solid"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
                       title={lvl.desc}
@@ -727,7 +843,7 @@ export default function TokenSaverClient() {
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-primary">
+                <p className="text-xs text-text-muted">
                   {
                     PONYTAIL_LEVELS.find((lvl) => lvl.id === ponytailLevel)
                       ?.desc
@@ -738,11 +854,55 @@ export default function TokenSaverClient() {
             <Toggle
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+              ariaLabel="Bias code output toward minimal with Ponytail"
             />
           </div>
         </div>
-        {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
-        {false && (
+        {/* Tool Disclosure (Phase 1+2) */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Filter MCP tool schemas</p>
+            <p className="text-sm text-text-muted">
+              Static config-driven exclusion of irrelevant MCP server schemas
+            </p>
+          </div>
+          <Toggle
+            checked={toolDisclosureFilterEnabled}
+            onChange={() => handleToolDisclosureFilterEnabled(!toolDisclosureFilterEnabled)}
+            ariaLabel="Filter MCP tool schemas"
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">BM25 tool relevance</p>
+            <p className="text-sm text-text-muted">
+              Per-turn BM25 ranking — sends only the most relevant schemas (zero new deps)
+            </p>
+          </div>
+          <Toggle
+            checked={toolDisclosureEnabled}
+            onChange={() => handleToolDisclosureEnabled(!toolDisclosureEnabled)}
+            ariaLabel="Rank tools per turn with BM25"
+          />
+        </div>
+        {toolDisclosureEnabled && (
+          <div className="ms-1 ps-3 border-s-2 border-border mt-2 flex flex-col gap-2">
+            <p className="text-sm font-medium">Max tools per turn</p>
+            <Input
+              value={String(toolDisclosureMaxTools)}
+              onChange={(e) => setToolDisclosureMaxTools(e.target.value)}
+              onBlur={handleToolDisclosureMaxToolsBlur}
+              placeholder="20"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              BM25 runs when the tool count exceeds this threshold; top-K are kept.
+            </p>
+          </div>
+        )}
+
+
+        {/* PXPIPE card — unhidden by PR #3494 */}
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3 flex-wrap">
@@ -752,24 +912,27 @@ export default function TokenSaverClient() {
                   href="https://github.com/teamchong/pxpipe"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs font-normal text-primary underline hover:opacity-80"
+                  className="focus-ring rounded-sm text-xs font-normal text-brand underline hover:no-underline"
                 >
                   (PXPIPE)
                 </a>
               </p>
-              <span className={`text-xs px-2 py-0.5 rounded ${pxpipeChipClass}`}>
+              <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-[var(--radius-brand)] border ${pxpipeChipClass}`}>
+                <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                  {pxpipeHealthy || pxpipeStatus.running ? "check_circle" : "pause_circle"}
+                </span>
                 {pxpipeStatusLabel}
               </span>
               <button
                 type="button"
                 onClick={() => setShowPxpipeModal(true)}
-                className="text-xs text-primary underline hover:opacity-80"
+                className="focus-ring hit-44 rounded-sm text-xs text-brand underline hover:no-underline"
               >
                 {pxpipeStatus.installed ? "Manage" : "Setup"}
               </button>
               <a
                 href="/dashboard/pxpipe"
-                className="text-xs text-primary underline hover:opacity-80"
+                className="focus-ring hit-44 rounded-sm text-xs text-brand underline hover:no-underline"
               >
                 Dashboard
               </a>
@@ -784,10 +947,177 @@ export default function TokenSaverClient() {
             checked={pxpipeEnabled}
             disabled={!pxpipeStatus.installed}
             onChange={() => handlePxpipeEnabled(!pxpipeEnabled)}
+            ariaLabel="Render context as images with pxpipe"
           />
         </div>
-        )}
+
+        {/* Aggregate observability — three separate units, never summed */}
+        <section className="pt-4 mt-4 border-t border-border" aria-label="Token Saver aggregate statistics">
+          <h3 className="text-sm font-semibold text-text-main mb-4">Aggregate statistics</h3>
+          {tsStats === undefined ? (
+            <p className="text-sm text-text-muted">Loading…</p>
+          ) : tsStats === null ? (
+            <p className="text-sm text-text-muted">Statistics unavailable</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
+                  <p className="text-xs font-medium text-text-muted">RTK</p>
+                  <p className="text-lg font-semibold text-text-main metric">
+                    {(tsStats.windows?.today?.charsReduced ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-text-muted">chars reduced today</p>
+                </div>
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
+                  <p className="text-xs font-medium text-text-muted">Headroom</p>
+                  <p className="text-lg font-semibold text-text-main metric">
+                    {tsStats.sources?.headroom?.state === "ok"
+                      ? (tsStats.windows?.today?.proxyTokensSaved ?? 0).toLocaleString()
+                      : "\u2014"}
+                  </p>
+                  {tsStats.sources?.headroom?.state === "ok" ? (
+                    <p className="text-xs text-text-muted">
+                      proxy-reported tokens saved today ·{" "}
+                      <span className="metric">{(tsStats.windows?.today?.bodyBytesReduced ?? 0).toLocaleString()}</span> body bytes reduced
+                    </p>
+                  ) : tsStats.sources?.headroom?.state === "idle" ? (
+                    <p className="text-xs text-text-muted">No compression data yet</p>
+                  ) : (
+                    <p className="text-xs text-warning inline-flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">warning</span>
+                      Headroom statistics unavailable
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
+                  <p className="text-xs font-medium text-text-muted">PXPIPE</p>
+                  <p className="text-lg font-semibold text-text-main metric">
+                    {(tsStats.pxpipe?.windows?.today?.tokensSavedEst ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-text-muted">estimated tokens saved today</p>
+                </div>
+              </div>
+
+              {/* Phantom warning only when phantom events actually persisted */}
+              {tsStats.recent?.some?.((r) => r.reason === "phantom") && (
+                <p className="text-xs text-warning inline-flex items-start gap-1.5">
+                  <span className="material-symbols-outlined text-[14px] shrink-0" aria-hidden="true">warning</span>
+                  Headroom recently reported token savings while the outbound body barely shrank — savings may be phantom.
+                </p>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">Daily token-saver aggregates by unit</caption>
+                  <thead>
+                    <tr className="text-start text-xs text-text-muted">
+                      <th scope="col" className="px-4 py-3 font-medium">Day (UTC)</th>
+                      <th scope="col" className="px-4 py-3 font-medium">RTK chars</th>
+                      <th scope="col" className="px-4 py-3 font-medium">Headroom tokens</th>
+                      <th scope="col" className="px-4 py-3 font-medium">PXPIPE est. tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tsStats.timeline || []).slice(-7).map((row) => (
+                      <tr key={row.date} className="border-t border-border-subtle">
+                        <td className="px-4 py-3 text-text-main metric">{row.date}</td>
+                        <td className="px-4 py-3 text-text-main metric">{(row.charsReduced ?? 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-text-main metric">{(row.proxyTokensSaved ?? 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-text-main metric">{(row.estTokensSaved ?? 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
+                  <p className="text-xs font-medium text-text-muted">Caveman</p>
+                  <p className="text-sm text-text-main">
+                    {cavemanEnabled ? `Enabled (${cavemanLevel})` : "Disabled"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Counterfactual output savings are not measurable.
+                  </p>
+                </div>
+                <div className="rounded-[var(--radius-brand)] border border-border p-4">
+                  <p className="text-xs font-medium text-text-muted">Ponytail</p>
+                  <p className="text-sm text-text-main">
+                    {ponytailEnabled ? `Enabled (${ponytailLevel})` : "Disabled"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Counterfactual output savings are not measurable.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
       </Card>
+
+      {(toolDisclosureEnabled || toolDisclosureFilterEnabled) && (
+        <Card id="tool-disclosure-stats">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] text-text-muted" aria-hidden="true">build</span>
+              MCP Tools
+            </h2>
+            <button
+              type="button"
+              onClick={refreshDisclosureStats}
+              className="focus-ring hit-44 rounded-sm text-xs text-brand underline hover:no-underline"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {disclosureStats.length === 0 ? (
+            <p className="text-sm text-text-muted">
+              No tool disclosure events yet. Send a request with MCP tools attached to see stats.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {disclosureStats.slice(0, 5).map((entry, idx) => {
+                const savedPct = entry.before > 0
+                  ? Math.round((entry.stripped / entry.before) * 100)
+                  : 0;
+                const ago = Math.round((Date.now() - entry.ts) / 1000);
+                const agoLabel = ago < 60 ? `${ago}s ago` : `${Math.round(ago / 60)}m ago`;
+                return (
+                  <div key={idx} className="rounded-[var(--radius-brand)] border border-border p-4 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-3 text-xs text-text-muted">
+                      <span className="font-mono truncate min-w-0">
+                        {entry.connectionId ? `session:${entry.connectionId.slice(-8)}` : "no session"}
+                      </span>
+                      <span className="metric shrink-0">{agoLabel}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="font-medium font-mono text-text-main metric">{entry.before}</span>
+                      <span className="text-text-muted" aria-hidden="true">→</span>
+                      <span className="font-medium font-mono text-text-main metric">{entry.after}</span>
+                      {entry.stripped > 0 && (
+                        <span className="text-xs px-2 py-1 rounded-[var(--radius-brand)] border border-info-line bg-info-soft text-info ms-auto metric">
+                          −{entry.stripped} schemas ({savedPct}%)
+                        </span>
+                      )}
+                    </div>
+                    {entry.keptNames?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {entry.keptNames.map((n) => (
+                          <span key={n} title={`Kept: ${n}`} className="text-xs px-1.5 py-1 rounded-[var(--radius-brand)] bg-success-soft text-success font-mono truncate max-w-[180px]">{n}</span>
+                        ))}
+                        {(entry.strippedNames || []).map((n) => (
+                          <span key={n} title={`Stripped: ${n}`} className="text-xs px-1.5 py-1 rounded-[var(--radius-brand)] bg-surface-2 text-text-muted font-mono truncate max-w-[180px] line-through">{n}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      )}
 
       <Modal
         isOpen={showHeadroomInstallModal}
@@ -808,7 +1138,7 @@ export default function TokenSaverClient() {
               href="/api/headroom/proxy/dashboard"
               target="_blank"
               rel="noreferrer"
-              className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+              className="focus-ring block w-full rounded-[var(--radius-brand)] border border-border px-4 py-2 text-center text-sm text-text-main hover:bg-surface-2 transition-colors duration-150"
             >
               Open Headroom Dashboard
             </a>
@@ -828,16 +1158,18 @@ export default function TokenSaverClient() {
             </p>
           </div>
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">Timeout (ms)</p>
+            <p className="text-sm font-medium">Request Timeout (ms)</p>
             <Input
               value={String(headroomTimeoutMs)}
               onChange={(e) => setHeadroomTimeoutMs(e.target.value)}
               onBlur={handleHeadroomTimeoutBlur}
-              placeholder="3000"
+              placeholder="30000"
               className="font-mono text-sm"
             />
             <p className="text-xs text-text-muted">
-              Request timeout in milliseconds. Defaults to 3000 ms.
+              How long a compression request may take before the body is sent
+              uncompressed. Leave empty to use HEADROOM_TIMEOUT_MS, or the
+              built-in default.
             </p>
           </div>
           {headroomManaged ? (
@@ -874,7 +1206,7 @@ export default function TokenSaverClient() {
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium">Install then click Start:</p>
               <div className="flex items-center gap-2">
-                <pre className="flex-1 rounded bg-black/5 dark:bg-white/5 p-2 text-xs font-mono overflow-x-auto">
+                <pre className="flex-1 rounded-[var(--radius-brand)] bg-surface-2 text-text-main p-4 text-xs font-mono overflow-x-auto">
                   {`pip install "headroom-ai[proxy]"`}
                 </pre>
                 <Button
@@ -911,7 +1243,7 @@ export default function TokenSaverClient() {
       </Modal>
 
       <Modal
-        isOpen={false}
+        isOpen={showPxpipeModal}
         title={pxpipeStatus.installed ? "PXPIPE" : "Setup PXPIPE"}
         onClose={() => setShowPxpipeModal(false)}
       >
@@ -928,12 +1260,15 @@ export default function TokenSaverClient() {
             </span>
           </div>
           {pxpipeHealth?.checks?.length > 0 && (
-            <div className="flex flex-col gap-1 rounded border border-border p-3">
-              <p className="text-sm font-medium mb-1">Health check</p>
+            <div className="flex flex-col gap-1 rounded-[var(--radius-brand)] border border-border p-4">
+              <p className="text-sm font-semibold text-text-main mb-1">Health check</p>
               {pxpipeHealth.checks.map((check) => (
                 <div key={check.id} className="flex items-center justify-between text-xs">
-                  <span className={check.ok ? "text-success" : "text-warning"}>
-                    {check.ok ? "●" : "○"} {check.label}
+                  <span className={`inline-flex items-center gap-1 ${check.ok ? "text-success" : "text-warning"}`}>
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                      {check.ok ? "check_circle" : "radio_button_unchecked"}
+                    </span>
+                    {check.label}
                   </span>
                   {check.detail && (
                     <span className="text-text-muted font-mono truncate max-w-[50%]">{check.detail}</span>
@@ -947,7 +1282,10 @@ export default function TokenSaverClient() {
           )}
           {!pxpipeStatus.installed ? (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-warning">PXPIPE is not installed.</p>
+              <p className="text-sm text-warning inline-flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]" aria-hidden="true">warning</span>
+                PXPIPE is not installed.
+              </p>
               <Button
                 onClick={() => pxpipeAction("install")}
                 fullWidth
@@ -957,7 +1295,7 @@ export default function TokenSaverClient() {
               </Button>
               <p className="text-xs text-text-muted">
                 Installs the npm package <code className="font-mono">pxpipe-proxy</code> into
-                the 9Router data directory. May take a few minutes.
+                the TokenProxy data directory. May take a few minutes.
               </p>
             </div>
           ) : (
@@ -981,7 +1319,7 @@ export default function TokenSaverClient() {
               </Button>
               <a
                 href="/dashboard/pxpipe#logs"
-                className="col-span-2 rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+                className="focus-ring col-span-2 rounded-[var(--radius-brand)] border border-border px-4 py-2 text-center text-sm text-text-main hover:bg-surface-2 transition-colors duration-150"
               >
                 Open Logs
               </a>

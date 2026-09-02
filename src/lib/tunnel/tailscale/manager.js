@@ -71,11 +71,19 @@ export async function enableTailscale(localPort = 20128) {
       return { success: false, funnelNotEnabled: true, enableUrl: result.enableUrl };
     }
 
-    // Strict probe: bypass cache so we don't false-negative on first invocation
-    if (!(await isTailscaleLoggedInStrict()) || !(await isTailscaleRunningStrict())) {
-      console.error("[Tailscale] strict probe failed (device removed?)");
+    // Strict probes: bypass the cache so we don't false-negative on first
+    // invocation. These are two different failures and used to share one
+    // sentence — "device may have been removed" was reported even when the
+    // device was fine and only Funnel was off for the tailnet (#896).
+    if (!(await isTailscaleLoggedInStrict())) {
+      console.error("[Tailscale] not logged in after funnel start (device removed?)");
       stopFunnel();
-      return { success: false, error: "Tailscale not connected. Device may have been removed. Please re-login." };
+      return { success: false, error: "Tailscale is no longer logged in — this device may have been removed from the tailnet. Log in again." };
+    }
+    if (!(await isTailscaleRunningStrict())) {
+      console.error("[Tailscale] logged in, but no funnel is serving");
+      stopFunnel();
+      return { success: false, error: `Logged in, but Tailscale Funnel is not serving port ${localPort}. Enable Funnel and HTTPS certificates for this tailnet in the Tailscale admin console, then try again.` };
     }
 
     await updateSettings({ tailscaleEnabled: true, tailscaleUrl: result.tunnelUrl });

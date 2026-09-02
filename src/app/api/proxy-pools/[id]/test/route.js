@@ -1,37 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProxyPoolById, updateProxyPool } from "@/models";
-import { testProxyUrl } from "@/lib/network/proxyTest";
-import { fetch as undiciFetch } from "undici";
+import { testProxyUrl, testRelayUrl } from "@/lib/network/proxyTest";
 
-async function testVercelRelay(relayUrl, timeoutMs = 10000) {
-  const controller = new AbortController();
-  const startedAt = Date.now();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await undiciFetch(relayUrl, {
-      method: "GET",
-      headers: {
-        "x-relay-target": "https://httpbin.org",
-        "x-relay-path": "/get",
-      },
-      signal: controller.signal,
-    });
-    return {
-      ok: res.ok,
-      status: res.status,
-      statusText: res.statusText,
-      elapsedMs: Date.now() - startedAt,
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      status: 500,
-      error: err?.name === "AbortError" ? "Relay test timed out" : (err?.message || String(err)),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const RELAY_TYPES = new Set(["vercel", "cloudflare"]);
 
 // POST /api/proxy-pools/[id]/test - Test proxy pool entry
 export async function POST(request, { params }) {
@@ -43,8 +14,8 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    const result = proxyPool.type === "vercel" || proxyPool.type === "cloudflare" || proxyPool.type === "deno"
-      ? await testVercelRelay(proxyPool.proxyUrl)
+    const result = RELAY_TYPES.has(proxyPool.type)
+      ? await testRelayUrl({ relayUrl: proxyPool.proxyUrl })
       : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
     const now = new Date().toISOString();
 
@@ -62,6 +33,10 @@ export async function POST(request, { params }) {
       error: result.error || null,
       elapsedMs: result.elapsedMs || 0,
       testedAt: now,
+    }, {
+      // A rejected target is a caller error, not an upstream failure: surface it as
+      // 4xx so the dashboard shows the reason rather than a generic test failure.
+      status: !result.ok && result.status === 400 ? 400 : 200,
     });
   } catch (error) {
     console.log("Error testing proxy pool:", error);

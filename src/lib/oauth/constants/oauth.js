@@ -2,8 +2,13 @@
  * OAuth Configuration Constants — static data lives in registry, re-exported here for consumers.
  */
 import { platform, arch } from "os";
-import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "open-sse/providers/shared.js";
-import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "open-sse/providers/index.js";
+// Relative, not the bare "open-sse/..." specifier the rest of src/lib uses: that
+// one resolves only through the bundler and vitest aliases, and open-sse's own
+// executors reach this file, so a bare specifier here breaks loading open-sse
+// under plain Node.
+import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "../../../../open-sse/providers/shared.js";
+import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "../../../../open-sse/providers/index.js";
+export { AWS_REGION_PATTERN, assertValidAwsRegion } from "../../../../open-sse/config/awsRegions.js";
 
 /**
  * Get the platform enum value based on the current OS.
@@ -64,17 +69,6 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 // Kiro OAuth Configuration (multi-method: AWS Builder ID / IDC / Social / Import Token)
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
 
-// AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
-export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
-
-// Reject any region that is not a valid AWS region before interpolating it into a URL
-export function assertValidAwsRegion(region) {
-  if (typeof region !== "string" || !AWS_REGION_PATTERN.test(region)) {
-    throw new Error("Invalid region");
-  }
-  return region;
-}
-
 // Cursor OAuth Configuration (Import Token from Cursor IDE)
 // tokenStoragePaths: user-reference only, not stored in registry
 export const CURSOR_CONFIG = {
@@ -123,6 +117,13 @@ export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 // Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
+
+// Devin Cloud OAuth (PKCE + CLI callback exchange)
+export const DEVIN_CONFIG = {
+  ...PROVIDER_OAUTH.devin,
+  apiEndpoint: PROVIDER_OAUTH.devin.apiUrl,
+  webEndpoint: "https://app.devin.ai",
+};
 
 // Trae (ByteDance marscode) OAuth — authorization_code flow with local callback.
 //   1) POST GetLoginGuidance {loginTraceID} → {Result.LoginHost}

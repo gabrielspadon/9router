@@ -2,6 +2,11 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import {
+  createExecutorResponseHeaderTimeout,
+  isConnectTimeoutError,
+} from "../utils/responseHeaderTimeout.js";
 
 const GROK_CHAT_API = PROVIDERS["grok-web"].baseUrl;
 const GROK_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
@@ -96,6 +101,7 @@ async function* readGrokNdjsonEvents(body, signal) {
       try { yield JSON.parse(remaining); } catch { /* skip */ }
     }
   } finally {
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
@@ -223,7 +229,7 @@ export class GrokWebExecutor extends BaseExecutor {
     super("grok-web", PROVIDERS["grok-web"]);
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, connectTimeout = null }) {
     const messages = body?.messages;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       const errResp = new Response(JSON.stringify({
@@ -291,17 +297,27 @@ export class GrokWebExecutor extends BaseExecutor {
 
     log?.info?.("GROK-WEB", `Query to ${model} (grok=${grokModel}, mode=${modelMode}), len=${message.length}`);
 
+    const deadline = createExecutorResponseHeaderTimeout({
+      connectTimeout,
+      registryTimeout: this.config?.timeoutMs,
+      envTimeout: FETCH_CONNECT_TIMEOUT_MS,
+      signal,
+    });
     let response;
     try {
       response = await fetch(GROK_CHAT_API, {
-        method: "POST", headers, body: JSON.stringify(grokPayload), signal,
+        method: "POST", headers, body: JSON.stringify(grokPayload), signal: deadline.signal,
       });
-    } catch (err) {
-      log?.error?.("GROK-WEB", `Fetch failed: ${err.message || String(err)}`);
+    } catch (rawError) {
+      const error = deadline.classify(rawError);
+      if (error?.name === "AbortError" || isConnectTimeoutError(error)) throw error;
+      log?.error?.("GROK-WEB", `Fetch failed: ${error.message || String(error)}`);
       const errResp = new Response(JSON.stringify({
-        error: { message: `Grok connection failed: ${err.message || String(err)}`, type: "upstream_error" },
+        error: { message: `Grok connection failed: ${error.message || String(error)}`, type: "upstream_error" },
       }), { status: 502, headers: { "Content-Type": "application/json" } });
       return { response: errResp, url: GROK_CHAT_API, headers, transformedBody: grokPayload };
+    } finally {
+      deadline.clear();
     }
 
     if (!response.ok) {

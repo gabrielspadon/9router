@@ -57,6 +57,11 @@ const ANTHROPIC_BETA_BASE = [
   "fast-mode-2026-02-01",
   "redact-thinking-2026-02-12",
   "token-efficient-tools-2026-03-28",
+  // #2582: Claude Code's Advisor server tool needs this beta flag on the
+  // official Anthropic route, or the client reports "No such tool available:
+  // advisor". Same-format requests already pass the tool definition through
+  // untouched, so this was the missing enabling flag.
+  "advisor-tool-2026-03-01",
 ];
 const ANTHROPIC_BETA_HEAVY_AGENT = ["advanced-tool-use-2025-11-20", "effort-2025-11-24"];
 
@@ -74,10 +79,10 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
-// Official Antigravity IDE Desktop 2.1.1 fingerprint captured from macOS arm64.
-// Keep this static even when 9router runs on Linux: the provider profile is
+// Official Antigravity IDE Desktop 2.5.5 fingerprint captured from macOS arm64.
+// Keep this static even when tokenproxy runs on Linux: the provider profile is
 // intentionally matching the IDE client, not the server host.
-export const ANTIGRAVITY_IDE_VERSION = "2.1.1";
+export const ANTIGRAVITY_IDE_VERSION = "2.5.5";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 

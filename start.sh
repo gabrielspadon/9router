@@ -1,4 +1,4 @@
-docker stop 9router
-docker rm 9router
-docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 --env-file .env -v 9router-data:/app/data 9router
+docker stop tokenproxy
+docker rm tokenproxy
+docker build -t tokenproxy .
+docker run -d --name tokenproxy -p 127.0.0.1:20128 --env-file .env -v tokenproxy-data:/app/data tokenproxy

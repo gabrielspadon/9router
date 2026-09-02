@@ -4,16 +4,19 @@ export {
   getProviderConnectionById,
   createProviderConnection,
   updateProviderConnection,
+  updateConnectionProxyPoolSnapshotIfBound,
   deleteProviderConnection,
   getProviderNodes,
   getProviderNodeById,
   createProviderNode,
   updateProviderNode,
   deleteProviderNode,
+  deleteProviderNodeCascade,
   getProxyPools,
   getProxyPoolById,
   createProxyPool,
   updateProxyPool,
+  updateProxyPoolWithBoundSnapshots,
   deleteProxyPool,
   deleteProviderConnectionsByProvider,
   getCombos,
@@ -35,4 +38,17 @@ export {
   deleteApiKey,
   validateApiKey,
   isCloudEnabled,
+  updateProviderStrategyProxyPoolSnapshotIfBound,
 } from "@/lib/localDb";
+
+export { mergeProviderConnectionData } from "@/lib/db/repos/connectionsRepo.js";
+
+// Seen models (New Models discovery)
+export {
+  getSeenModels,
+  reconcileSeenModels,
+  acknowledgeModels,
+  countUnseenModels,
+  seedSeenModels,
+  getUnseenModels,
+} from "@/lib/db/repos/seenModelsRepo.js";

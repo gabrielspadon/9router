@@ -3,7 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { Card, Badge, Button, Modal, Select, StatusToken, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
+import {
+  createProviderStrategySaveQueue,
+  saveProviderStrategyPatch,
+} from "@/shared/utils/providerStrategyPatch";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -24,7 +29,7 @@ function CooldownTimer({ until }) {
   }, [until]);
 
   if (!remaining) return null;
-  return <span className="text-xs text-orange-500 font-mono">⏱ {remaining}</span>;
+  return <span className="text-xs text-warning font-mono">⏱ {remaining}</span>;
 }
 
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
@@ -87,7 +92,11 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
 
   const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
 
+  const quotaInfo = getQuotaPauseInfo(connection);
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
+  // See providers/[id]/ConnectionRow.js — same tone mapping, kept in sync.
+  const statusTone = { success: "ok", error: "failing" }[getStatusVariant()] || "idle";
+  const statusLabel = connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown");
 
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
@@ -100,35 +109,47 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   };
 
   return (
-    <div className={`group flex flex-col gap-3 p-2 rounded-lg sm:flex-row sm:items-center sm:justify-between hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex flex-col gap-3 p-2 rounded-lg sm:flex-row sm:items-center sm:justify-between hover:bg-surface-2 transition-colors duration-150 ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex w-full min-w-0 flex-1 items-start gap-3 sm:items-center">
         <div className="flex flex-col">
-          <button onClick={onMoveUp} disabled={isFirst} className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}>
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
-          </button>
-          <button onClick={onMoveDown} disabled={isLast} className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}>
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
-          </button>
+          <Button variant="bare" size="icon-sm" onClick={onMoveUp} disabled={isFirst} title="Raise connection priority" aria-label="Raise connection priority" className={isFirst ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}>
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_up</span>
+          </Button>
+          <Button variant="bare" size="icon-sm" onClick={onMoveDown} disabled={isLast} title="Lower connection priority" aria-label="Lower connection priority" className={isLast ? "text-text-muted cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-brand"}>
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">keyboard_arrow_down</span>
+          </Button>
         </div>
-        <span className="material-symbols-outlined text-base text-text-muted">{isOAuth ? "lock" : "key"}</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-sm text-text-muted">{isOAuth ? "lock" : "key"}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{displayName}</p>
+          {/* Name and live state are the object this row exists to show, so
+              both sit on the primary line instead of the state Badge reading
+              at the same weight as the metadata row below. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="text-sm font-medium truncate" title={displayName}>{displayName}</p>
+            <StatusToken tone={statusTone} className="shrink-0">{statusLabel}</StatusToken>
+          </div>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
-            </Badge>
             {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
-              <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>{connection.lastError}</span>
+            {quotaInfo.paused && connection.isActive !== false && (
+              <Badge variant="warning" size="sm">
+                Paused (quota)
+              </Badge>
+            )}
+            {/* Shown even when disabled — see ConnectionRow (#1447). */}
+            {connection.lastError && (
+              <span
+                className={`text-xs truncate max-w-[300px] ${connection.isActive === false ? "text-text-muted" : "text-danger"}`}
+                title={connection.lastError}
+              >{connection.lastError}</span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
           </div>
           {hasAnyProxy && (
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] text-text-muted truncate max-w-[420px]" title={proxyDisplayText}>{proxyDisplayText}</span>
-              {maskedProxyUrl && <code className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1 py-0.5 rounded text-text-muted">{maskedProxyUrl}</code>}
-              {noProxyText && <span className="text-[11px] text-text-muted truncate max-w-[320px]" title={noProxyText}>no_proxy: {noProxyText}</span>}
+              <span className="text-xs text-text-muted truncate max-w-[420px]" title={proxyDisplayText}>{proxyDisplayText}</span>
+              {maskedProxyUrl && <code className="text-xs font-mono bg-surface-2 px-1 py-1 rounded text-text-muted">{maskedProxyUrl}</code>}
+              {noProxyText && <span className="text-xs text-text-muted truncate max-w-[320px]" title={noProxyText}>no_proxy: {noProxyText}</span>}
             </div>
           )}
         </div>
@@ -139,32 +160,32 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                className={`focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-surface-2 transition-colors duration-150 ${hasAnyProxy ? "text-brand" : "text-text-muted hover:text-brand"}`}
                 disabled={updatingProxy}
               >
-                <span className="material-symbols-outlined text-[18px]">{updatingProxy ? "progress_activity" : "lan"}</span>
-                <span className="text-[10px] leading-tight">Proxy</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{updatingProxy ? "progress_activity" : "lan"}</span>
+                <span className="text-xs leading-tight">Proxy</span>
               </button>
               {showProxyDropdown && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
-                  <button onClick={() => handleSelectProxy("__none__")} className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}>None</button>
+                <div className="absolute end-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-elev py-1 min-w-[160px]">
+                  <button onClick={() => handleSelectProxy("__none__")} className={`focus-ring w-full text-start px-3 py-1.5 text-sm hover:bg-surface-2 ${!boundProxyPoolId ? "text-brand font-medium" : "text-text-main"}`}>None</button>
                   {(proxyPools || []).map((pool) => (
-                    <button key={pool.id} onClick={() => handleSelectProxy(pool.id)} className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}>{pool.name}</button>
+                    <button key={pool.id} onClick={() => handleSelectProxy(pool.id)} className={`focus-ring w-full text-start px-3 py-1.5 text-sm hover:bg-surface-2 ${boundProxyPoolId === pool.id ? "text-brand font-medium" : "text-text-main"}`}>{pool.name}</button>
                   ))}
                 </div>
               )}
             </div>
           )}
-          <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-            <span className="text-[10px] leading-tight">Edit</span>
+          <button onClick={onEdit} className="focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-surface-2 text-text-muted hover:text-brand">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="text-xs leading-tight">Edit</span>
           </button>
-          <button onClick={onDelete} className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-            <span className="text-[10px] leading-tight">Delete</span>
+          <button onClick={onDelete} className="focus-ring flex flex-col items-center px-2 py-1 rounded hover:bg-danger-soft text-danger">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="text-xs leading-tight">Delete</span>
           </button>
         </div>
-        <Toggle size="sm" checked={connection.isActive ?? true} onChange={onToggleActive} title={(connection.isActive ?? true) ? "Disable" : "Enable"} />
+        <Toggle size="sm" checked={connection.isActive ?? true} onChange={onToggleActive} title={`${(connection.isActive ?? true) ? "Disable" : "Enable"} connection ${displayName}`} />
       </div>
     </div>
   );
@@ -249,14 +270,14 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-xs text-text-muted mb-1 block">Name</label>
-          <input className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Production Key" />
+          <input className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Production Key" />
         </div>
         <div className="flex gap-2">
           <div className="flex-1">
             <label className="text-xs text-text-muted mb-1 block">API Key</label>
-            <input type="password" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary" value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} />
+            <input type="password" className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand" value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} />
           </div>
-          <div className="pt-6">
+          <div className="pt-5.5">
             <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
               {validating ? "Checking..." : "Check"}
             </Button>
@@ -269,7 +290,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
         )}
         <div>
           <label className="text-xs text-text-muted mb-1 block">Priority</label>
-          <input type="number" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary" value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })} />
+          <input type="number" className="focus-ring w-full px-3 py-2 text-sm border border-border rounded-lg bg-bg focus:border-brand" value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })} />
         </div>
         <Select label="Proxy Pool" value={formData.proxyPoolId} onChange={(e) => setFormData({ ...formData, proxyPoolId: e.target.value })}
           options={[{ value: NONE, label: "None" }, ...(proxyPools || []).map((p) => ({ value: p.id, label: p.name }))]} />
@@ -304,7 +325,16 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
+  const [strategySaving, setStrategySaving] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const providerStrategySaveQueueRef = useRef(null);
+  if (providerStrategySaveQueueRef.current == null) {
+    providerStrategySaveQueueRef.current = createProviderStrategySaveQueue(
+      saveProviderStrategyPatch,
+      setStrategySaving,
+    );
+  }
+  const enqueueProviderStrategySave = providerStrategySaveQueueRef.current;
 
   const fetch_ = useCallback(async () => {
     try {
@@ -325,21 +355,37 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     finally { setLoading(false); }
   }, [providerId]);
 
-  useEffect(() => { fetch_(); }, [fetch_]);
+  useEffect(() => {
+    // Initial server synchronization is intentionally owned by this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetch_();
+  }, [fetch_]);
 
-  const saveStrategy = async (strategy, stickyLimit) => {
-    try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
-      const current = data.providerStrategies || {};
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) delete updated[providerId];
-      else updated[providerId] = override;
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
-    } catch (e) { console.log("saveStrategy error:", e); }
+  const saveStrategy = (strategy, stickyLimit) => {
+    const values = {
+      fallbackStrategy: strategy || null,
+      stickyRoundRobinLimit: strategy === "round-robin" && stickyLimit !== ""
+        ? Number(stickyLimit) || 3
+        : null,
+    };
+    return enqueueProviderStrategySave({
+      providerId,
+      values,
+      onSuccess: () => {
+        setProviderStrategy(strategy);
+        if (strategy === "round-robin") {
+          setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
+        }
+      },
+      onError: async (error) => {
+        console.log("saveStrategy error:", error);
+        await fetch_();
+      },
+    }).catch(() => {});
+  };
+
+  const handleStickyLimitCommit = () => {
+    saveStrategy("round-robin", providerStickyLimit);
   };
 
   const handleSwapPriority = async (i1, i2) => {
@@ -396,7 +442,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     } catch (e) { console.log("update connection error:", e); }
   };
 
-  if (loading) return <Card><div className="h-20 animate-pulse bg-black/5 rounded-lg" /></Card>;
+  if (loading) return <Card><div className="h-20 animate-pulse bg-surface-2 rounded-lg" /></Card>;
 
   return (
     <>
@@ -406,7 +452,9 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-text-muted font-medium">Round Robin</span>
             <Toggle
+              ariaLabel="Round robin across this provider's connections"
               checked={providerStrategy === "round-robin"}
+              disabled={strategySaving}
               onChange={(enabled) => {
                 const strategy = enabled ? "round-robin" : null;
                 setProviderStrategy(strategy);
@@ -419,8 +467,16 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                 <span className="text-xs text-text-muted">Sticky:</span>
                 <input
                   type="number" min={1} value={providerStickyLimit}
-                  onChange={(e) => { setProviderStickyLimit(e.target.value); saveStrategy("round-robin", e.target.value); }}
-                  className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  onChange={(event) => setProviderStickyLimit(event.target.value)}
+                  onBlur={handleStickyLimitCommit}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  disabled={strategySaving}
+                  className="focus-ring w-16 px-2 py-1 text-xs border border-border rounded-md bg-bg focus:border-brand"
                 />
               </div>
             )}
@@ -434,7 +490,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
           </div>
         ) : (
           <>
-            <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+            <div className="flex flex-col divide-y divide-border">
               {connections.map((conn, idx) => (
                 <ConnectionRow
                   key={conn.id}

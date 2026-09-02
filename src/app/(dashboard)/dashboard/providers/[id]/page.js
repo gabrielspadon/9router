@@ -6,7 +6,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isNoAuthProvider, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import { getHotReloadConfig } from "@/shared/constants/config";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -23,6 +24,12 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import { useAntigravityVerification } from "./useAntigravityVerification";
+import ConnectTimeoutInput from "@/shared/components/ConnectTimeoutInput";
+import {
+  createProviderStrategySaveQueue,
+  saveProviderStrategyPatch,
+} from "@/shared/utils/providerStrategyPatch";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -35,10 +42,29 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function RunSummary({ summary, running, currentId, connections }) {
+  if (!summary) return null;
+  return (
+    <div className="mb-4 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-text-muted">
+      <div className="flex flex-wrap items-center gap-3">
+        <span>Total: {summary.total}</span>
+        <span>Completed: {summary.completed}</span>
+        <span>Passed: {summary.passed}</span>
+        <span>Failed: {summary.failed}</span>
+        {summary.stopped && <span className="text-warning">Stopped</span>}
+        {running && currentId && (
+          <span>Running: {connections.find((c) => c.id === currentId)?.name || currentId}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const providerId = params.id;
+  const antigravityVerification = useAntigravityVerification({ enabled: providerId === "antigravity" });
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,12 +86,17 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [testingAllModels, setTestingAllModels] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [providerStrategySaving, setProviderStrategySaving] = useState(false);
+  const [providerConnectTimeoutMs, setProviderConnectTimeoutMs] = useState(null);
+  const [codexFastMode, setCodexFastMode] = useState(false);
+  const [providerStrategyError, setProviderStrategyError] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -80,8 +111,22 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const [hotReloadRunning, setHotReloadRunning] = useState(false);
+  const [hotReloadStopping, setHotReloadStopping] = useState(false);
+  const [hotReloadResults, setHotReloadResults] = useState({});
+  const stopHotReloadRef = useRef(false);
+  const [hotReloadCurrentConnectionId, setHotReloadCurrentConnectionId] = useState(null);
+  const [hotReloadSummary, setHotReloadSummary] = useState(null);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
+  const providerStrategySaveQueueRef = useRef(null);
+  if (providerStrategySaveQueueRef.current == null) {
+    providerStrategySaveQueueRef.current = createProviderStrategySaveQueue(
+      saveProviderStrategyPatch,
+      setProviderStrategySaving,
+    );
+  }
+  const enqueueProviderStrategySave = providerStrategySaveQueueRef.current;
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
 
@@ -133,9 +178,25 @@ export default function ProviderDetailPage() {
   const providerInfo = providerNode
     ? {
         id: providerNode.id,
-        name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
-        color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
-        textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
+        name:
+          providerNode.name ||
+          (providerNode.type === "multi-compatible"
+            ? "Multi-protocol Compatible"
+            : providerNode.type === "anthropic-compatible"
+              ? "Anthropic Compatible"
+              : "OpenAI Compatible"),
+        color:
+          providerNode.type === "multi-compatible"
+            ? "#7C3AED"
+            : providerNode.type === "anthropic-compatible"
+              ? "#D97757"
+              : "#10A37F",
+        textIcon:
+          providerNode.type === "multi-compatible"
+            ? "MP"
+            : providerNode.type === "anthropic-compatible"
+              ? "AC"
+              : "OC",
         apiType: providerNode.apiType,
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
@@ -144,15 +205,16 @@ export default function ProviderDetailPage() {
   const authModes = providerInfo?.authModes || [];
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
-  const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
+  const isFreeNoAuth = isNoAuthProvider(providerId);
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
+  const models = ["cursor", "devin"].includes(providerId) && liveModels.length > 0
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
+  const isMultiCompatible = providerNode?.type === "multi-compatible";
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
   const oauthConnectionLabel =
@@ -167,7 +229,7 @@ export default function ProviderDetailPage() {
     : "API Key";
   // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
   const resolveThinkingSuffix = (modelId) => {
-    if (!thinkingMode || thinkingMode === "auto") return null;
+    if (!thinkingMode || thinkingMode === "auto" || thinkingMode === "none") return null;
     const levels = getThinkingLevels(providerId, modelId);
     return levels && levels.includes(thinkingMode) ? thinkingMode : null;
   };
@@ -181,7 +243,7 @@ export default function ProviderDetailPage() {
       if (!modelId || seen.has(modelId)) return;
       seen.add(modelId);
       const lv = getThinkingLevels(providerId, modelId);
-      if (lv) lv.forEach((l) => { if (l !== "none") set.add(l); });
+      if (lv) lv.forEach((l) => set.add(l));
     };
     for (const m of models) addLevels(m.id);
     for (const m of kiloFreeModels) addLevels(m.id);
@@ -315,6 +377,9 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setProviderConnectTimeoutMs(override.connectTimeoutMs ?? null);
+      setCodexFastMode(override.fastMode === true);
+      setProviderStrategyError("");
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -364,34 +429,27 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const saveProviderStrategy = async (strategy, stickyLimit) => {
-    try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerStrategies || {};
-
-      // Build override: null strategy means remove override, use global
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      }
-
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = override;
-      }
-
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
-      });
-    } catch (error) {
-      console.log("Error saving provider strategy:", error);
-    }
+  const saveProviderStrategy = (strategy, stickyLimit) => {
+    const values = {
+      fallbackStrategy: strategy || null,
+      stickyRoundRobinLimit: strategy === "round-robin" && stickyLimit !== ""
+        ? Number(stickyLimit) || 3
+        : null,
+    };
+    return enqueueProviderStrategySave({
+      providerId,
+      values,
+      onSuccess: () => {
+        setProviderStrategy(strategy);
+        if (strategy === "round-robin") {
+          setProviderStickyLimit(String(values.stickyRoundRobinLimit ?? ""));
+        }
+      },
+      onError: async (error) => {
+        console.log("Error saving provider strategy:", error);
+        await fetchConnections();
+      },
+    }).catch(() => {});
   };
 
   const handleRoundRobinToggle = (enabled) => {
@@ -402,9 +460,24 @@ export default function ProviderDetailPage() {
     saveProviderStrategy(strategy, sticky);
   };
 
-  const handleStickyLimitChange = (value) => {
-    setProviderStickyLimit(value);
-    saveProviderStrategy("round-robin", value);
+  const handleStickyLimitCommit = () => {
+    saveProviderStrategy("round-robin", providerStickyLimit);
+  };
+
+  const handleCodexFastModeToggle = (enabled) => {
+    const previous = codexFastMode;
+    setCodexFastMode(enabled);
+    enqueueProviderStrategySave({
+      providerId: "codex",
+      values: { fastMode: enabled ? true : null },
+      onStart: () => setProviderStrategyError(""),
+      onSuccess: () => setCodexFastMode(enabled),
+      onError: async (error) => {
+        setCodexFastMode(previous);
+        await fetchConnections();
+        setProviderStrategyError(error.message || "Failed to save Codex Fast mode");
+      },
+    }).catch(() => {});
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -460,11 +533,11 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Cursor's model availability is account-specific and changes frequently.
+  // Cursor and Devin model availability is account-specific and changes frequently.
   // Load the active account's live catalog for the dashboard; the static
   // registry remains the fallback while the request is pending or unavailable.
   useEffect(() => {
-    if (providerId !== "cursor") {
+    if (!["cursor", "devin"].includes(providerId)) {
       setLiveModels([]);
       return;
     }
@@ -527,12 +600,19 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias) => {
+  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias, caps = null) => {
     try {
       const res = await fetch("/api/models/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type }),
+        body: JSON.stringify({
+          providerAlias: providerAliasOverride,
+          id: modelId,
+          type,
+          ...(caps?.vision ? { vision: true } : {}),
+          ...(caps?.maxInputTokens ? { maxInputTokens: caps.maxInputTokens } : {}),
+          ...(caps?.maxOutputTokens ? { maxOutputTokens: caps.maxOutputTokens } : {}),
+        }),
       });
       if (res.ok) {
         await fetchCustomModels();
@@ -614,7 +694,7 @@ export default function ProviderDetailPage() {
   };
 
   const handleRunOneByOneTest = async () => {
-    if (oneByOneRunning || connections.length === 0) return;
+    if (oneByOneRunning || hotReloadRunning || connections.length === 0) return;
 
     const queuedState = Object.fromEntries(
       connections.map((connection) => [connection.id, { state: "queued", error: null }]),
@@ -626,6 +706,8 @@ export default function ProviderDetailPage() {
     setOneByOneCurrentConnectionId(null);
     setOneByOneResults(queuedState);
     setOneByOneSummary({ total: connections.length, completed: 0, passed: 0, failed: 0, stopped: false });
+    setHotReloadSummary(null);
+    setHotReloadResults({});
 
     let passed = 0;
     let failed = 0;
@@ -703,6 +785,73 @@ export default function ProviderDetailPage() {
     if (!oneByOneRunning) return;
     stopOneByOneRef.current = true;
     setOneByOneStopping(true);
+  };
+
+  const handleHotReload = async (connectionIds) => {
+    if (hotReloadRunning || oneByOneRunning || connectionIds.length === 0) return;
+    const ids = Array.isArray(connectionIds) ? connectionIds : [connectionIds];
+
+    stopHotReloadRef.current = false;
+    setHotReloadRunning(true);
+    setHotReloadStopping(false);
+    setHotReloadCurrentConnectionId(null);
+    setHotReloadResults((prev) => {
+      const next = { ...prev };
+      for (const id of ids) next[id] = { state: "queued", error: null };
+      return next;
+    });
+    setHotReloadSummary({ total: ids.length, completed: 0, passed: 0, failed: 0, stopped: false });
+    setOneByOneSummary(null);
+    setOneByOneResults({});
+
+    let passed = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      if (stopHotReloadRef.current) {
+        setHotReloadSummary({ total: ids.length, completed: passed + failed, passed, failed, stopped: true });
+        break;
+      }
+      setHotReloadCurrentConnectionId(id);
+      setHotReloadResults((prev) => ({ ...prev, [id]: { state: "testing", error: null } }));
+
+      try {
+        const res = await fetch(`/api/providers/${id}/hotreload`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        const ok = data.ok !== false && data.reloaded === true;
+        // Partial: poke landed but the count did not move — surface which models failed.
+        const partial = data.ok !== false && data.reloaded !== true
+          && Array.isArray(data.failedModels) && data.failedModels.length > 0;
+        if (ok) passed += 1;
+        else failed += 1;
+        setHotReloadResults((prev) => ({
+          ...prev,
+          [id]: {
+            state: ok ? "success" : (partial ? "partial" : "failed"),
+            error: ok ? null : (data.error || (partial ? "Some models failed to hot reload" : "Hot reload did not move the quota count")),
+          },
+        }));
+      } catch (error) {
+        failed += 1;
+        setHotReloadResults((prev) => ({
+          ...prev,
+          [id]: { state: "failed", error: error.message || "Poke failed" },
+        }));
+      }
+
+      setHotReloadSummary({ total: ids.length, completed: passed + failed, passed, failed, stopped: false });
+    }
+
+    setHotReloadCurrentConnectionId(null);
+    setHotReloadRunning(false);
+    setHotReloadStopping(false);
+    stopHotReloadRef.current = false;
+  };
+
+  const handleStopHotReload = () => {
+    if (!hotReloadRunning) return;
+    stopHotReloadRef.current = true;
+    setHotReloadStopping(true);
   };
 
   const handleDelete = async (id) => {
@@ -943,18 +1092,21 @@ export default function ProviderDetailPage() {
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
   const connectionsList = (
-    <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+    <div className="flex min-w-0 flex-col divide-y divide-border">
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
-            <div className="flex shrink-0 items-center pl-1 sm:pl-2">
+            {/* The label is the target: a 16px checkbox is under the floor in
+                design-system.md section 6. */}
+            <label className="flex min-w-11 shrink-0 cursor-pointer items-center justify-center ps-1 pe-2 sm:ps-2">
               <input
                 type="checkbox"
+                aria-label={`Select connection ${conn.name || conn.id}`}
                 checked={isSelected(conn.id)}
                 onChange={() => toggleSelectConnection(conn.id)}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                className="focus-ring h-4 w-4 rounded border-border text-brand"
               />
-            </div>
+            </label>
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
@@ -993,7 +1145,16 @@ export default function ProviderDetailPage() {
                   setShowEditModal(true);
                 }}
                 onDelete={() => handleDelete(conn.id)}
+                hotReload={getHotReloadConfig(providerId, conn.authType) ? {
+                  running: hotReloadRunning || oneByOneRunning,
+                  onRun: () => handleHotReload(conn.id),
+                } : null}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
+                hotReloadStatus={hotReloadResults[conn.id] || null}
+                verification={providerId === "antigravity" && !antigravityVerification.accessDenied && antigravityVerification.byConnectionId[conn.id] ? {
+                  ...antigravityVerification.byConnectionId[conn.id],
+                  onRecheck: () => antigravityVerification.recheck(conn.id),
+                } : null}
               />
             </div>
           </div>
@@ -1014,17 +1175,17 @@ export default function ProviderDetailPage() {
           <button
             onClick={handleApplyOneToOne}
             disabled={bulkUpdatingProxy || activePools.length === 0}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-start transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
             <span className="text-sm text-text-main">One-to-one (rotate)</span>
           </button>
           <button
             onClick={() => handleApplySinglePool(null)}
             disabled={bulkUpdatingProxy}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-start transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
             <span className="text-sm text-text-main">None (unbind all)</span>
           </button>
           {proxyPools.map((pool) => (
@@ -1032,12 +1193,12 @@ export default function ProviderDetailPage() {
               key={pool.id}
               onClick={() => handleApplySinglePool(pool.id)}
               disabled={bulkUpdatingProxy || pool.isActive !== true}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              className="focus-ring flex items-center gap-2 rounded-lg px-3 py-2 text-start transition-colors duration-150 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
               <span className="truncate text-sm text-text-main">{pool.name}</span>
               {pool.isActive !== true && (
-                <span className="text-[10px] text-text-muted">(inactive)</span>
+                <span className="text-xs text-text-muted">(inactive)</span>
               )}
             </button>
           ))}
@@ -1072,6 +1233,35 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // #1109: one click tests every model on the connection. The bulk endpoint has
+  // existed since the provider pages were written but nothing ever called it; it
+  // warms the first model serially so concurrent pings cannot each trigger their
+  // own refresh of the same token, which a client-side Promise.all cannot do.
+  const handleTestAllModels = async () => {
+    if (testingAllModels) return;
+    const connection = connections.find((conn) => conn.isActive !== false);
+    if (!connection) return;
+    setTestingAllModels(true);
+    setModelsTestError("");
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/test-models`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setModelsTestError(data.error || "Test failed");
+        return;
+      }
+      const merged = {};
+      for (const r of data.results || []) merged[r.modelId] = r.ok ? "ok" : "error";
+      setModelTestResults((prev) => ({ ...prev, ...merged }));
+      const failed = (data.results || []).filter((r) => !r.ok);
+      setModelsTestError(failed.length ? `${failed.length} of ${data.results.length} models not reachable` : "");
+    } catch {
+      setModelsTestError("Network error");
+    } finally {
+      setTestingAllModels(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1088,6 +1278,9 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          disabledModelIds={disabledModelIds}
+          onDisableModel={handleDisableModel}
+          onEnableModel={handleEnableModel}
         />
       );
     }
@@ -1164,12 +1357,30 @@ export default function ProviderDetailPage() {
           );
         })}
 
+        {/* Test every model on the active connection in one action (#1109) */}
+        {connections.some((conn) => conn.isActive !== false) && displayModels.length > 0 && (
+          <button
+            onClick={handleTestAllModels}
+            disabled={testingAllModels}
+            className="focus-ring flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-text-muted transition-colors duration-150 hover:border-brand hover:bg-brand-soft hover:text-brand disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-sm"
+              style={testingAllModels ? { animation: "spin 1s linear infinite" } : undefined}
+            >
+              {testingAllModels ? "progress_activity" : "science"}
+            </span>
+            {testingAllModels ? "Testing all models..." : "Test All Models"}
+          </button>
+        )}
+
         {/* Add model button — inline, same style as model chips */}
         <button
           onClick={() => setShowAddCustomModel(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
+          className="focus-ring flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-line px-3 py-2 text-xs text-brand transition-colors duration-150 hover:border-brand hover:bg-brand-soft sm:w-auto"
         >
-          <span className="material-symbols-outlined text-sm">add</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
 
@@ -1178,9 +1389,9 @@ export default function ProviderDetailPage() {
           <button
             onClick={handleImportQoderModels}
             disabled={importingQoderModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+            className="focus-ring flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-info-line px-3 py-2 text-xs text-info transition-colors duration-150 hover:border-info-line hover:bg-info-soft sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
               {importingQoderModels ? "progress_activity" : "download"}
             </span>
             {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
@@ -1208,10 +1419,10 @@ export default function ProviderDetailPage() {
                     onClick={async () => {
                       await handleAddCustomModel(m.id, "llm", providerStorageAlias);
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    className="focus-ring flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors duration-150"
                     title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
                   >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[13px]">add</span>
                     {m.id.split("/").pop()}
                   </button>
                 ))}
@@ -1229,10 +1440,10 @@ export default function ProviderDetailPage() {
                 <button
                   key={m.id}
                   onClick={() => handleEnableModel(m.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  className="focus-ring flex min-h-11 items-center gap-1 px-3 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-brand hover:border-brand-line hover:bg-brand-soft transition-colors duration-150"
                   title="Restore model"
                 >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[13px]">add</span>
                   {m.id}
                 </button>
               ))}
@@ -1245,7 +1456,7 @@ export default function ProviderDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-5.5">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -1256,7 +1467,7 @@ export default function ProviderDetailPage() {
     return (
       <div className="text-center py-20">
         <p className="text-text-muted">Provider not found</p>
-        <Link href="/dashboard/providers" className="text-primary mt-4 inline-block">
+        <Link href="/dashboard/providers" className="text-brand mt-4 inline-block">
           Back to Providers
         </Link>
       </div>
@@ -1265,6 +1476,7 @@ export default function ProviderDetailPage() {
 
   // Determine icon path: OpenAI Compatible providers use specialized icons
   const getHeaderIconPath = () => {
+    if (isMultiCompatible) return null;
     if (isOpenAICompatible && providerInfo.apiType) {
       return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
     }
@@ -1275,14 +1487,14 @@ export default function ProviderDetailPage() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:gap-8 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-5.5">
       {/* Header */}
       <div className="min-w-0">
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="hit-44 inline-flex items-center gap-1 text-sm text-text-muted hover:text-brand transition-colors duration-150 mb-4"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span aria-hidden="true" className="material-symbols-outlined dir-icon text-lg">arrow_back</span>
           Back to Providers
         </Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
@@ -1313,15 +1525,15 @@ export default function ProviderDetailPage() {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{providerInfo.name}</h1>
+              <h1 className="truncate text-lg font-semibold tracking-tight" title={providerInfo.name}>{providerInfo.name}</h1>
               {(providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website) && (
                 <a
                   href={providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  className="focus-ring hit-44 text-xs text-brand hover:underline inline-flex items-center gap-1"
                 >
-                  <span className="material-symbols-outlined text-sm">open_in_new</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-sm">open_in_new</span>
                   {providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
                 </a>
               )}
@@ -1333,23 +1545,34 @@ export default function ProviderDetailPage() {
         </div>
       </div>
 
+      {!isFreeNoAuth && connections.length === 0 && (
+        <Button
+          size="sm"
+          icon="add"
+          onClick={triggerAddConnection}
+          className="sm:hidden"
+        >
+          {isCompatible ? "Add API Key" : "Add Connection"}
+        </Button>
+      )}
+
       {providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
-          <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">{providerInfo.deprecationNotice}</p>
+        <div role="alert" className="flex items-start gap-2 px-3 py-2 rounded-lg bg-warning-soft border border-warning-line">
+          <span className="material-symbols-outlined text-[16px] text-warning mt-1 shrink-0" aria-hidden="true">warning</span>
+          <p className="min-w-0 text-xs text-warning leading-relaxed">{providerInfo.deprecationNotice}</p>
         </div>
       )}
 
       {providerInfo.notice?.text && !providerInfo.deprecated && (
-        <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
-          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
-          <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">{providerInfo.notice.text}</p>
+        <div className="flex flex-col gap-2 rounded-lg border border-info-line bg-info-soft px-3 py-2 sm:flex-row sm:items-center">
+          <span className="material-symbols-outlined text-[16px] text-info shrink-0" aria-hidden="true">info</span>
+          <p className="min-w-0 flex-1 text-xs leading-relaxed text-info">{providerInfo.notice.text}</p>
           {providerInfo.notice.apiKeyUrl && (
             <a
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
+              className="focus-ring inline-flex shrink-0 justify-center rounded bg-info-solid px-2 py-1 text-xs font-medium text-info-on transition-colors duration-150 hover:bg-info-solid-hover sm:py-1"
             >
               Get API Key →
             </a>
@@ -1361,11 +1584,33 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
-              <p className="break-all text-sm text-text-muted">
-                {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
-              </p>
+              <h2 className="text-lg font-semibold">
+                {isMultiCompatible
+                  ? "Multi-protocol Compatible Details"
+                  : isAnthropicCompatible
+                    ? "Anthropic Compatible Details"
+                    : "OpenAI Compatible Details"}
+              </h2>
+              {isMultiCompatible ? (
+                <div className="flex flex-col gap-1 text-sm text-text-muted">
+                  {providerNode.transports?.map((transport) => (
+                    <p key={transport.format} className="break-all">
+                      {transport.format === "openai"
+                        ? "Chat Completions"
+                        : transport.format === "claude"
+                          ? "Anthropic Messages"
+                          : "OpenAI Responses"}
+                      {" · "}
+                      {transport.baseUrl}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="break-all text-sm text-text-muted">
+                  {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
+                  {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
               <Button
@@ -1395,7 +1640,7 @@ export default function ProviderDetailPage() {
                 onClick={async () => {
                   setConfirmState({
                     title: "Delete Compatible Node",
-                    message: `Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
+                    message: `Delete this ${isMultiCompatible ? "Multi-protocol" : isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
                     onConfirm: async () => {
                       setConfirmState(null);
                       try {
@@ -1419,6 +1664,34 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Connections */}
+      <div className="rounded-lg border border-border bg-surface p-4">
+        <div className="w-full space-y-4 sm:max-w-xl">
+          <ConnectTimeoutInput
+            providerId={providerId}
+            value={providerConnectTimeoutMs}
+            disabled={loading}
+            onSaved={(value) => setProviderConnectTimeoutMs(value)}
+          />
+          {providerId === "codex" && (
+            <div className="border-t border-border pt-4">
+              <Toggle
+                checked={codexFastMode}
+                onChange={handleCodexFastModeToggle}
+                disabled={providerStrategySaving || loading}
+                ariaLabel="Use Fast tier for Codex Sol models"
+                label="Sol Fast"
+                description="Requests Fast for Sol and Sol Review only, across all Codex accounts. Uses 2.5× subscription credits; the backend may fall back to Standard."
+              />
+              {!!providerStrategyError && (
+                <p role="alert" className="mt-2 text-xs text-danger">
+                  {providerStrategyError}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {isFreeNoAuth ? (
         <NoAuthProxyCard providerId={providerId} />
       ) : (
@@ -1453,10 +1726,34 @@ export default function ProviderDetailPage() {
                     variant="secondary"
                     icon="sync"
                     onClick={handleRunOneByOneTest}
-                    disabled={oneByOneRunning}
+                    disabled={oneByOneRunning || hotReloadRunning}
                   >
                     {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
                   </Button>
+                  {getHotReloadConfig(providerId, "oauth") && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="rocket_launch"
+                        onClick={() => handleHotReload(connections.filter((c) => getHotReloadConfig(providerId, c.authType)).map((c) => c.id))}
+                        disabled={hotReloadRunning || oneByOneRunning}
+                      >
+                        {hotReloadRunning ? "Hot Reloading..." : "Hot Reload All"}
+                      </Button>
+                      {hotReloadRunning && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon="stop"
+                          onClick={handleStopHotReload}
+                          disabled={hotReloadStopping}
+                        >
+                          {hotReloadStopping ? "Stopping..." : "Stop"}
+                        </Button>
+                      )}
+                    </>
+                  )}
                   {oneByOneRunning && (
                     <Button
                       size="sm"
@@ -1474,19 +1771,30 @@ export default function ProviderDetailPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
                 <Toggle
+                  ariaLabel="Round robin across this provider's connections"
                   checked={providerStrategy === "round-robin"}
                   onChange={handleRoundRobinToggle}
+                  disabled={providerStrategySaving}
                 />
                 {providerStrategy === "round-robin" && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-text-muted">Sticky:</span>
                     <input
                       type="number"
+                      aria-label="Sticky requests per connection before rotating"
                       min={1}
                       value={providerStickyLimit}
-                      onChange={(e) => handleStickyLimitChange(e.target.value)}
+                      onChange={(event) => setProviderStickyLimit(event.target.value)}
+                      onBlur={handleStickyLimitCommit}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      disabled={providerStrategySaving}
                       placeholder="1"
-                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                      className="focus-ring w-14 px-2 py-1 text-xs border border-border rounded-md bg-bg focus:border-brand"
                     />
                   </div>
                 )}
@@ -1494,11 +1802,17 @@ export default function ProviderDetailPage() {
             </div>
           </div>
 
+          {providerId === "antigravity" && antigravityVerification.accessDenied && (
+            <p role="status" className="mb-3 text-sm text-text-muted">
+              {translate("Sign in or use the local dashboard to verify Antigravity")}
+            </p>
+          )}
+
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary shrink-0">
-                  <span className="material-symbols-outlined text-[18px]">{isOAuth ? "lock" : "key"}</span>
+                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-brand-soft text-brand shrink-0">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{isOAuth ? "lock" : "key"}</span>
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm text-text-muted">No connections yet</p>
@@ -1549,30 +1863,16 @@ export default function ProviderDetailPage() {
             </div>
           ) : (
             <>
-              {oneByOneSummary && (
-                <div className="mb-4 rounded-lg border border-black/10 bg-black/[0.02] px-3 py-2 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span>Total: {oneByOneSummary.total}</span>
-                    <span>Completed: {oneByOneSummary.completed}</span>
-                    <span>Passed: {oneByOneSummary.passed}</span>
-                    <span>Failed: {oneByOneSummary.failed}</span>
-                    {oneByOneSummary.stopped && (
-                      <span className="text-amber-600 dark:text-amber-400">Stopped</span>
-                    )}
-                    {oneByOneRunning && oneByOneCurrentConnectionId && (
-                      <span>Running: {connections.find((conn) => conn.id === oneByOneCurrentConnectionId)?.name || oneByOneCurrentConnectionId}</span>
-                    )}
-                  </div>
-                </div>
-              )}
+              <RunSummary summary={oneByOneSummary} running={oneByOneRunning} currentId={oneByOneCurrentConnectionId} connections={connections} />
+              <RunSummary summary={hotReloadSummary} running={hotReloadRunning} currentId={hotReloadCurrentConnectionId} connections={connections} />
               {connections.length > 0 && (
-                <div className="mb-3 flex items-center gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
-                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
+                <div className="mb-3 flex items-center gap-2 border-b border-border pb-2">
+                  <label className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-brand">
                     <input
                       type="checkbox"
                       checked={allSelected}
                       onChange={toggleSelectAllConnections}
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                      className="focus-ring h-4 w-4 rounded border-border text-brand"
                     />
                     Select All
                   </label>
@@ -1665,8 +1965,9 @@ export default function ProviderDetailPage() {
               <select
                 value={thinkingMode}
                 onChange={(e) => handleThinkingModeChange(e.target.value)}
+                aria-label="Thinking level appended to copied model names"
                 title="Appends (level) suffix to copied model names"
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                className="focus-ring min-h-11 rounded-md border border-border bg-bg px-2 py-1 text-xs focus:border-brand"
               >
                 {providerThinkingLevels.map((opt) => (
                   <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
@@ -1697,7 +1998,7 @@ export default function ProviderDetailPage() {
           })()}
         </div>
         {!!modelsTestError && (
-          <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+          <p className="text-xs text-danger mb-3 break-words">{modelsTestError}</p>
         )}
         {renderModelsSection()}
       </Card>
@@ -1781,8 +2082,8 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
-          onSave={async (modelId) => {
-            await handleAddCustomModel(modelId, "llm", providerStorageAlias);
+          onSave={async (modelId, caps) => {
+            await handleAddCustomModel(modelId, "llm", providerStorageAlias, caps);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}

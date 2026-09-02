@@ -38,7 +38,14 @@ describe("antigravity oauth client (deduped)", () => {
     const { dirname, join } = await import("node:path");
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../../src/lib/oauth/constants/oauth.js"), "utf8");
-    expect(src).toContain('import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "open-sse/providers/shared.js"');
+    // The specifier is relative, not the bare "open-sse/..." form the rest of
+    // src/lib uses: open-sse's own executors reach this file, and a bare
+    // specifier resolves only through the bundler, so plain Node could not load
+    // open-sse at all. What this asserts is the single shared source, not which
+    // spelling reaches it.
+    expect(src).toMatch(
+      /import \{ ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT \} from "[^"]*open-sse\/providers\/shared\.js"/,
+    );
     expect(src).toContain("...ANTIGRAVITY_OAUTH_CLIENT");
     expect(src).toContain("...GOOGLE_OAUTH_CLIENT");
     // authorizeUrl now lives in registry; oauth.js derives via PROVIDER_OAUTH spread
