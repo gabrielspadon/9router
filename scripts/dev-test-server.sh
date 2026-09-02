@@ -6,10 +6,10 @@
 # Usage: scripts/dev-test-server.sh [up|down|restart|status]   (SKIP_BUILD=1 skips the rebuild)
 set -euo pipefail
 
-PORT=20129
-DATA_DIR=/tmp/tokenproxy-test-data
-PID_FILE=/tmp/tokenproxy-test.pid
-LOG_FILE=/tmp/tokenproxy-test.log
+PORT=${PORT:-20129}
+DATA_DIR=${DATA_DIR:-/tmp/tokenproxy-test-data}
+PID_FILE=${PID_FILE:-/tmp/tokenproxy-test-$PORT.pid}
+LOG_FILE=${LOG_FILE:-/tmp/tokenproxy-test-$PORT.log}
 cd "$(dirname "$0")/.."
 
 pid() { [ -f "$PID_FILE" ] && cat "$PID_FILE" 2>/dev/null || true; }
