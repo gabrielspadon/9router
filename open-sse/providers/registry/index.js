@@ -143,6 +143,7 @@ import p137 from "./xquik.js";
 import p138 from "./xunfei.js";
 import p139 from "./youcom.js";
 import p140 from "./zed.js";
+import p141 from "./zenmux-free.js";
 
 export default [
   p0,
@@ -286,4 +287,5 @@ export default [
   p138,
   p139,
   p140,
+  p141,
 ];

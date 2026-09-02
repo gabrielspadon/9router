@@ -228,7 +228,11 @@
     "xunfei": "xunfei",
     "youcom": "youcom",
     "zd": "zed",
-    "zed": "zed"
+    "zed": "zed",
+    "zenmux": "zenmux-free",
+    "zenmux-free": "zenmux-free",
+    "zm": "zenmux-free",
+    "zmf": "zenmux-free"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -328,7 +332,8 @@
     "xiaomi-mimo": "xiaomi-mimo",
     "xiaomi-tokenplan": "xiaomi-tokenplan",
     "xunfei": "xunfei",
-    "zed": "zd"
+    "zed": "zd",
+    "zenmux-free": "zmf"
   },
   "modelKeys": [
     "af",
@@ -445,6 +450,7 @@
     "xiaomi-mimo-tts-models",
     "xiaomi-tokenplan",
     "xunfei",
-    "zd"
+    "zd",
+    "zmf"
   ]
 }

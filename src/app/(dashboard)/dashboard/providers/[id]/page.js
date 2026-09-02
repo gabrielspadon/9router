@@ -111,6 +111,7 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const loginPopupRef = useRef(null);
   const [hotReloadRunning, setHotReloadRunning] = useState(false);
   const [hotReloadStopping, setHotReloadStopping] = useState(false);
   const [hotReloadResults, setHotReloadResults] = useState({});
@@ -160,7 +161,23 @@ export default function ProviderDetailPage() {
       triggerOAuthConnection();
       return;
     }
+    // For cookie-auth free providers, auto-open the login page in a popup
+    if (providerInfo?.authType === "cookie" && providerInfo?.website) {
+      if (loginPopupRef.current && !loginPopupRef.current.closed) {
+        loginPopupRef.current.focus();
+      } else {
+        loginPopupRef.current = window.open(providerInfo.website, "provider_login", "width=500,height=700");
+      }
+    }
     triggerApiKeyConnection();
+  };
+
+  const openLoginPopup = () => {
+    if (loginPopupRef.current && !loginPopupRef.current.closed) {
+      loginPopupRef.current.focus();
+    } else if (providerInfo?.website) {
+      loginPopupRef.current = window.open(providerInfo.website, "provider_login", "width=500,height=700");
+    }
   };
 
   const handleAgRiskConfirm = () => {
@@ -203,7 +220,7 @@ export default function ProviderDetailPage() {
       }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
   const authModes = providerInfo?.authModes || [];
-  const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
+  const isOAuth = !!OAUTH_PROVIDERS[providerId] || (!!FREE_PROVIDERS[providerId] && providerInfo?.authType !== "cookie") || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = isNoAuthProvider(providerId);
   const staticModels = getModelsByProviderId(providerId);
@@ -2051,6 +2068,8 @@ export default function ProviderDetailPage() {
         authType={providerInfo?.authType}
         authHint={providerInfo?.authHint}
         website={providerInfo?.website}
+        loginUrl={providerInfo?.authType === "cookie" ? providerInfo?.website : null}
+        onOpenLogin={openLoginPopup}
         proxyPools={proxyPools}
         error={addConnectionError}
         existingNames={connections.map((c) => c.name).filter(Boolean)}
