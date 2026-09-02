@@ -1702,6 +1702,22 @@ exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (api
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > zenmux-free → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > alicode → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
@@ -2252,5 +2268,12 @@ exports[`GOLDEN buildUrl (default executor providers) > zed → url (stream + no
 {
   "nonStream": "https://cloud.zed.dev/completions",
   "stream": "https://cloud.zed.dev/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > zenmux-free → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://zenmux.ai/api/anthropic/v1/messages",
+  "stream": "https://zenmux.ai/api/anthropic/v1/messages",
 }
 `;
