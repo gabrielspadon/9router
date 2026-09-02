@@ -531,7 +531,7 @@ function StatCard({ label, value, note = null, lead = false }) {
 }
 
 // Request outcome. Badge supplies the glyph for the tone, so the result never
-// depends on hue alone. See docs/design/design-system.md section 1.
+// depends on hue alone.
 function StatusBadge({ status }) {
   const ok = status === "success" || status === "ok" || status === "200 OK";
   return (

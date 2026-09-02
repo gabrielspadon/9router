@@ -1,6 +1,6 @@
 // Unified thinking normalization: extract client intent → apply provider-native format.
 // Config-driven: thinking format/limits come from capabilities.js + registry transport,
-// never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
+// never hardcoded per-model here.
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
@@ -16,8 +16,6 @@ import {
 const FORMAT_TO_NATIVE = {
   openai: "openai",
   "openai-responses": "openai",
-  "openai-response": "openai",
-  codex: "openai",
   claude: "claude-budget",
   gemini: "gemini-budget",
   "gemini-cli": "gemini-budget",

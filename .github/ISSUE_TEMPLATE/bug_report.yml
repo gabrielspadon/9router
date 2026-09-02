@@ -34,7 +34,7 @@ body:
     attributes:
       label: Server version
       description: The version shown at the foot of the dashboard sidebar, or the `version` field in `package.json`.
-      placeholder: "0.1.0"
+      placeholder: "0.0.1"
     validations:
       required: true
 
@@ -43,7 +43,7 @@ body:
     attributes:
       label: CLI version
       description: Output of `tokenproxy --version`, or the `version` field in `cli/package.json`. Write "not used" if you do not run the CLI. The server and the CLI are versioned independently.
-      placeholder: "0.1.0"
+      placeholder: "0.0.1"
     validations:
       required: true
 

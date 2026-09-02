@@ -3,8 +3,7 @@
 import { cn } from "@/shared/utils/cn";
 
 // Closed variant set. Brand carries primary action, danger carries destruction,
-// and nothing else is coloured; `bare` colours nothing at all. See
-// docs/design/design-system.md section 1.
+// and nothing else is coloured; `bare` colours nothing at all.
 const variants = {
   primary:
     "bg-brand-solid text-brand-on hover:bg-brand-solid-hover disabled:bg-surface-3 disabled:text-text-muted disabled:shadow-none",

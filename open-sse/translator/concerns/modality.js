@@ -184,8 +184,6 @@ export function stripUnsupportedModalities(body, sourceFormat, caps) {
     case FORMATS.CLAUDE:
       return stripClaude(body, caps);
     case FORMATS.OPENAI_RESPONSES:
-    case FORMATS.OPENAI_RESPONSE:
-    case FORMATS.CODEX:
       return stripResponses(body, caps);
     case FORMATS.GEMINI:
     case FORMATS.GEMINI_CLI:

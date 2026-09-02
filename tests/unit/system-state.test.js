@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Contract test for GET /api/system/state — the aggregate the dashboard shell
-// reads once per refresh (docs/design/backend-handoff.md:38-41). It asserts the
-// response SHAPE and the null contract, not the numbers: a measure the schema
-// genuinely cannot answer must be null with a stated reason, never 0.
+// reads once per refresh. It asserts the response SHAPE and the null contract,
+// not the numbers: a measure the schema genuinely cannot answer must be null
+// with a stated reason, never 0.
 
 const mocks = vi.hoisted(() => ({
   getTrafficWindow: vi.fn(),

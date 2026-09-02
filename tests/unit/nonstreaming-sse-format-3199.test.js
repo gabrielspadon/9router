@@ -35,11 +35,10 @@ describe("a non-streaming SSE body is translated from its real format (#3199)", 
 
   it("the direct kiro to claude response route is registered", async () => {
     await import("../../open-sse/translator/index.js");
-    const { getResponseTranslator } = await import("../../open-sse/translator/registry.js").catch(() => ({}));
-    // Registry shape varies; the load-bearing assertion is that the module
-    // registering the route is imported by the barrel.
+    // The response registry is module-private with no exported getter, so the
+    // load-bearing assertion is that the module registering the route is
+    // imported by the barrel.
     const barrel = readFileSync(new URL("../../open-sse/translator/index.js", import.meta.url), "utf8");
     expect(barrel).toContain("./response/kiro-to-claude.js");
-    expect(typeof getResponseTranslator === "function" || getResponseTranslator === undefined).toBe(true);
   });
 });

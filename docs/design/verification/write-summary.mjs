@@ -15,10 +15,24 @@ import { spawnSync } from "node:child_process";
 const run = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
 const grab = (text, re, fallback = "not measured") => (text.match(re)?.[1] ?? fallback);
 
-const behaviour = run("node", ["docs/design/verification/check-behaviour.mjs"]).stdout || "";
-const contrast = JSON.parse(run("node", ["docs/design/verification/contrast.mjs", "--json"]).stdout || "{}");
-const reports = run("node", ["docs/design/verification/check-reports.mjs"]).stdout || "";
-const shots = run("node", ["docs/design/verification/check-shots.mjs"]).stdout || "";
+// A gate whose script is absent must not read as a measurement that ran. An
+// unresolvable `node <script>` exits non-zero with empty stdout, which the
+// `grab` fallbacks then render as "not measured" and the behaviour verdict
+// renders as "DIFFERS" -- a fabricated finding rather than a missing input. So
+// the script list is checked first and a missing one stops the summary.
+const gate = (script, args = []) => {
+  const path = `docs/design/verification/${script}`;
+  if (!existsSync(path)) {
+    console.error(`missing verification gate: ${path}`);
+    process.exit(2);
+  }
+  return run(script.endsWith(".sh") ? "bash" : "node", [path, ...args]).stdout || "";
+};
+
+const behaviour = gate("check-behaviour.mjs");
+const contrast = JSON.parse(gate("contrast.mjs", ["--json"]) || "{}");
+const reports = gate("check-reports.mjs");
+const shots = gate("check-shots.mjs");
 const lint = run("bash", ["docs/design/verification/check-lint-delta.sh"]).stdout || "";
 const lintSummary = /no lintable files changed/.test(lint)
   ? "no changed JavaScript files"

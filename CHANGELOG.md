@@ -6,7 +6,7 @@ Nothing released yet under this heading. A user-visible change appends an entry
 here rather than editing one already written, per
 `.github/PULL_REQUEST_TEMPLATE.md`.
 
-## 0.1.0
+## 0.0.1
 
 Initial TokenProxy release.
 

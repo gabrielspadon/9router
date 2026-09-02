@@ -90,8 +90,8 @@ export default function UsageChart({ period = "7d", refreshKey = 0 }) {
           <AreaChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             {/* Series colours come from the chart token scale, not raw palette
                 steps: amber-500 drew the cost line at 1.8:1 on the light ground,
-                under the 3:1 a 2px stroke needs to be seen at all. See
-                docs/design/design-system.md section 8. */}
+                under the 3:1 a 2px stroke needs to be seen at all. See the
+                --color-chart-* tokens in src/app/globals.css. */}
             <defs>
               <linearGradient id="gradTokens" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.25} />

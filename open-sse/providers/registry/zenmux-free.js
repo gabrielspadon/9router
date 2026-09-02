@@ -22,7 +22,6 @@ export default {
   transport: {
     baseUrl: "https://zenmux.ai/api/anthropic/v1/messages",
     format: "openai",
-    executor: "zenmux-free",
     noAuth: true,
     authType: "cookie",
   },

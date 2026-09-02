@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# eslint is already red on master, so a total count proves nothing. The gate is
+# eslint is already red on main, so a total count proves nothing. The gate is
 # that this source tree adds no NEW finding to the files it touches.
 #
 # Compares, per file and per rule, the findings on the branch against the
@@ -39,7 +39,7 @@ fi
 
 cd "$(dirname "$0")/../../.." || exit 2
 
-BASE_REF="${BASE_REF:-master}"
+BASE_REF="${BASE_REF:-main}"
 BASE="$(git merge-base "$BASE_REF" HEAD)"
 WT=/tmp/tokenproxy-lintbase
 OUT=/tmp/lint-delta

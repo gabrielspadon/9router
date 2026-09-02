@@ -25,7 +25,7 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * @property {boolean} [passthroughModels] Forward client model id untouched.
  *
  * TransportConfig: { baseUrl, format, headers, auth, forceStream, urlSuffix, quirks, retry, timeoutMs,
- *   executor, clientId, clientSecret, tokenUrl, refreshUrl, usage, cliVersion, apiClient, regions,
+ *   clientId, clientSecret, tokenUrl, refreshUrl, usage, cliVersion, apiClient, regions,
  *   defaultRegion, modelsFetcher, validateUrl, responsesUrl } — clientId/clientSecret/tokenUrl are
  *   injected from `oauth` automatically (single source); declare them in `oauth`, not here.
  *
@@ -52,8 +52,7 @@ export const PROVIDER_DEFAULTS = {
   quirks: {},
   passthroughModels: false,
   retry: DEFAULT_RETRY_CONFIG,
-  timeoutMs: FETCH_CONNECT_TIMEOUT_MS,
-  executor: "default"
+  timeoutMs: FETCH_CONNECT_TIMEOUT_MS
 };
 
 // Default endpoints per format (provider only overrides what differs)

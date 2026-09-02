@@ -48,7 +48,7 @@ const REASON_LABELS = {
   not_installed: "Not installed",
 };
 
-// Status vocabulary per docs/design/design-system.md section 1. A request that
+// Status vocabulary per src/shared/components/Badge.js. A request that
 // simply did not qualify for compression is a neutral notice, not a warning;
 // only a missing or switched-off module is degraded, and only a crash failed.
 const FAILED_REASONS = new Set(["transform_error", "timeout"]);

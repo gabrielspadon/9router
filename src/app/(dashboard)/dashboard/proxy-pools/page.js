@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
-// Badge's canonical status vocabulary, per docs/design/design-system.md section 1.
+// Badge's canonical status vocabulary, per src/shared/components/Badge.js.
 function getStatusVariant(status) {
   if (status === "active") return "success";
   if (status === "error") return "danger";

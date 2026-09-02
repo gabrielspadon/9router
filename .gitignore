@@ -62,16 +62,13 @@ next-env.d.ts
 !src/app/api/usage/logs/**
 /source/*
 .cursor/*
+# docs/ is ignored by default and each shipped page is un-ignored by name, so a
+# scratch note dropped in here never reaches a commit by accident. A new page
+# needs its own line below or git add will not see it.
 docs/*
-!docs/README.md
-!docs/getting-started.md
 !docs/providers.md
-!docs/oauth.md
-!docs/token-saver.md
 !docs/troubleshooting.md
 !docs/deployment.md
-!docs/ARCHITECTURE.md
-!docs/MEMORY_OPTIMIZATION.md
 # The design record ships with the repository: the written design system, the
 # artboards behind the chosen direction, the verification suite and the
 # captured evidence each gate is judged against. A gate that cannot be re-run

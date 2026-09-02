@@ -19,7 +19,7 @@
 /* ============================================================
    TokenProxy palette. Near-black and mineral white with one
    electric accent. Both themes are authored independently
-   rather than inverted; see docs/design/design-system.md.
+   rather than inverted.
    ============================================================ */
 :root {
   /* Brand scale (light) - centered on #E56A4A */
@@ -59,7 +59,7 @@
      surface-3 no lighter value clears 4.5:1, so those use muted. */
   --color-text-subtle: #5B6167;
 
-  /* Status (light). Five slots per status; see docs/design/design-system.md.
+  /* Status (light). Five slots per status.
      Every value here holds at least 4.5:1 against the surface it is used on. */
   /* Hover step for a solid fill. Darker, never lighter: a `/90` alpha hover
      blends the fill toward whatever is behind it, which lowers contrast
@@ -586,7 +586,7 @@ summary:focus-visible,
 }
 
 /* Pointer target floor, WCAG 2.2 SC 2.5.5. The drawn control stays at the
-   density docs/design/design-system.md section 3 settled; what a pointer hits
+   density the row-height scale in src/shared/components/Table.js settled; what a pointer hits
    is enlarged instead, so a dense layout meets the 44px pointer floor
    without growing. The overlay is a
    pseudo-element, so it costs no layout, paints nothing, and leaves the focus

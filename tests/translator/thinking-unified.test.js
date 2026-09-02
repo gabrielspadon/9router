@@ -1,5 +1,5 @@
 // Unit tests for unified thinking normalization (thinkingUnified.js).
-// Covers extract, suffix parse, and per-provider apply per MATRIX (.docs/thinking/plan.md).
+// Covers extract, suffix parse, and per-provider apply.
 import { describe, it, expect } from "vitest";
 import {
   parseSuffix,

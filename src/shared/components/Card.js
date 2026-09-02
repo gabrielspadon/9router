@@ -13,8 +13,9 @@ export default function Card({
   className,
   ...props
 }) {
-  // Densities from docs/design/design-system.md section 3. They do not vary by
-  // route: a route that needs a different density is a finding, not a prop.
+  // Densities per the spacing-scale test in
+  // tests/unit/design-system-rules.test.js. They do not vary by route: a route
+  // that needs a different density is a finding, not a prop.
   const paddings = {
     none: "",
     xs: "p-3",

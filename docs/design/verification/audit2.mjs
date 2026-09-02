@@ -6,8 +6,8 @@
 //   node docs/design/verification/audit2.mjs before http://127.0.0.1:20135
 //
 // The measured JSON is committed under docs/design/evidence/raw so every gate
-// re-runs from a clean checkout. The raw PNG capture is a build artefact:
-// docs/design/verification/publish-shots.mjs converts it to the committed webp.
+// re-runs from a clean checkout. The raw PNG capture is a build artefact and
+// is not committed.
 //
 // Playwright is not a dependency of this repository. Point NODE_PATH at an
 // installation that has it, for example:

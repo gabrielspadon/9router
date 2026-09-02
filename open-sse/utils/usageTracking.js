@@ -144,8 +144,6 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Use same fields for similar formats
   if (targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.ANTIGRAVITY) {
     fields = formatFields[FORMATS.GEMINI];
-  } else if (targetFormat === FORMATS.OPENAI_RESPONSE) {
-    fields = formatFields[FORMATS.OPENAI_RESPONSES];
   } else if (!fields) {
     fields = formatFields.default;
   }

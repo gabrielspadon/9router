@@ -1,7 +1,7 @@
 "use client";
 
 // Every alert tone is a status, so each one carries its glyph and its live
-// region politeness alongside the token. See docs/design/design-system.md section 1.
+// region politeness alongside the token.
 const TONES = {
   success: { box: "bg-success-soft border-success-line text-success", icon: "check_circle", live: "status" },
   warning: { box: "bg-warning-soft border-warning-line text-warning", icon: "warning", live: "status" },

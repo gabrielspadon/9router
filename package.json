@@ -1,8 +1,13 @@
 {
   "name": "tokenproxy-app",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "TokenProxy web dashboard",
+  "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gabrielspadon/TokenProxy.git"
+  },
   "engines": {
     "node": ">=20.9.0"
   },

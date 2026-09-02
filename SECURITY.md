@@ -173,6 +173,6 @@ update check. Provider calls remain, since they are the point.
 
 ## Supported versions
 
-Fixes land on `master` and go out in the next release of both the
+Fixes land on `main` and go out in the next release of both the
 `tokenproxy-app` server and the `tokenproxy` CLI package. Only the latest release is
 supported. Upgrade before reporting a defect against an older one.

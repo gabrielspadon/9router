@@ -18,9 +18,9 @@ ls open-sse/providers/registry/*.js | wc -l
 ```
 
 `open-sse/providers/registry/index.js` is a generated static import list.
-Regenerate it with `scripts/migrate-registry.mjs` or
-`scripts/injectDisplayToRegistry.mjs` rather than editing it by hand, and add a
-new provider by copying `open-sse/providers/REGISTRY_TEMPLATE.js`. An executor
+Regenerate it with `node scripts/generate-registry-index.mjs` rather than
+editing it by hand, and add a new provider by copying
+`open-sse/providers/REGISTRY_TEMPLATE.js`. An executor
 is only needed for an upstream that is not OpenAI-compatible.
 
 The authoritative list of what your instance can currently serve is

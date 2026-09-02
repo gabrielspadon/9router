@@ -9,10 +9,10 @@ export const revalidate = 0;
 /**
  * GET /api/system/state?windowSeconds=<60..21600>
  *
- * One aggregate telemetry read for the dashboard shell, closing
- * docs/design/backend-handoff.md:38-41. This is the DATA SOURCE only: it holds
- * no interval, no cache and no subscription, so refresh policy stays with the
- * caller.
+ * One aggregate telemetry read for the dashboard shell; the contract below is
+ * the one tests/unit/system-state.test.js enforces. This is the DATA SOURCE
+ * only: it holds no interval, no cache and no subscription, so refresh policy
+ * stays with the caller.
  *
  * AUTH. Nothing here authenticates. `/api/system/state` is deliberately absent
  * from PUBLIC_API_PATHS and PUBLIC_PREFIXES in src/dashboardGuard.js, so it

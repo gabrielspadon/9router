@@ -282,13 +282,13 @@ Publishing is automatic. Pushing a `v*` git tag runs
 `linux/arm64` and pushes to both GHCR and Docker Hub.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.0.1
+git push origin v0.0.1
 ```
 
 The tag names are produced by `docker/metadata-action` with
-`type=semver,pattern={{version}}`, so a `v0.1.0` git tag becomes image tag
-`0.1.0` without the leading `v`, alongside `latest` under the workflow's
+`type=semver,pattern={{version}}`, so a `v0.0.1` git tag becomes image tag
+`0.0.1` without the leading `v`, alongside `latest` under the workflow's
 `is_default_branch` condition.
 
 The GHCR image name is `ghcr.io/${{ github.repository }}`, so it follows

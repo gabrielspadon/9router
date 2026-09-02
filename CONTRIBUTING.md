@@ -62,7 +62,7 @@ machines without build tools, and the SQLite layer falls back through
 
 ## Branching and pull requests
 
-Branch off `master`. Open the pull request as a **draft** and mark it ready for
+Branch off `main`. Open the pull request as a **draft** and mark it ready for
 review only once the branch is settled. A draft signals that the branch is still
 moving and keeps reviewers from spending attention on a moving target.
 

@@ -210,7 +210,7 @@ function buildSSEStream(body, model, cid, created) {
   });
 }
 
-/** Validate cookies by calling user info endpoint. Used by credential validation in 9router. */
+/** Validate cookies by calling user info endpoint. Used by credential validation in TokenProxy. */
 export async function validateCookies(cookieStr) {
   const ctoken = extractCtoken(cookieStr);
   if (!ctoken) return { valid: false, error: "no ctoken" };

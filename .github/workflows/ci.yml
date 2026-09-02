@@ -8,7 +8,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      # Two-tier on purpose. `npx eslint .` is red on master with a backlog of
+      # Two-tier on purpose. `npx eslint .` is red on main with a backlog of
       # react-hooks findings in the routing and store layers that predate this
       # workflow, so making it the merge gate would wedge every pull request on
       # debt its author did not create. The blocking gate is therefore the diff:

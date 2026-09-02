@@ -54,9 +54,8 @@ const CONNECTION_FIXTURES = [
 
 // The masthead's own two vocabularies. `home/formatMeasure.js` owns both, but it
 // reaches for the i18n runtime, which is a client module and cannot be called
-// from this server component — so the renderings are restated here and
-// `tests/unit/gallery-primitive-states.test.js` asserts they still match what
-// `freshnessTone` produces for each state.
+// from this server component — so the renderings are restated here and must
+// still match what `freshnessTone` produces for each state.
 const FRESHNESS = [
   { tone: "ok", label: "live" },
   { tone: "info", label: "refreshing" },
@@ -104,8 +103,8 @@ export default function GalleryPage() {
         </h2>
         <p className="max-w-prose text-sm text-text-muted">
           Every primitive in every state. The authority for how these look is
-          docs/design/design-system.md; where a component and that document
-          disagree, the component is wrong.
+          the rules enforced in tests/unit/design-system-rules.test.js; where a
+          component and that suite disagree, the component is wrong.
         </p>
       </header>
 
