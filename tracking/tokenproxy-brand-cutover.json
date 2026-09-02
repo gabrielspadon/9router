@@ -14,12 +14,13 @@
   "legacy_pattern_flags": "-Ei",
   "payloadManifest": {
     "path": "tracking/tokenproxy-cutover-payload.sha256",
-    "files": 2365,
-    "sha256": "ef48c182d8d6a7421ee8590814052738f09288ae6c4295cbe5842dba74746b83",
+    "files": 2366,
+    "sha256": "57789380ce59139577cc6268a204e0078bf63d4805cf49b99c429fbdd33aa7eb",
     "excludes": [
       "tracking/"
     ],
-    "selfVerify": "sha256sum -c --quiet tracking/tokenproxy-cutover-payload.sha256"
+    "selfVerify": "sha256sum -c --quiet tracking/tokenproxy-cutover-payload.sha256",
+    "source": "git ls-files, the tracked payload of the root commit. Built from the untracked file list before the commit existed and rebuilt from the tracked list after, which is the authoritative set."
   },
   "surfaces": {
     "verifier": ".unlazy-receipts/verify-identity-surfaces.sh",
@@ -70,5 +71,26 @@
     "port": 20129,
     "status": "foreign-owned",
     "note": "listener belongs to another lane; not killed, not reused"
+  },
+  "rootCommit": {
+    "sha": "8c8220f30c6a67e0a498ffcc3d63989e2242b2b0",
+    "subject": "chore: initialize TokenProxy 0.1.0",
+    "parents": 0,
+    "branch": "main",
+    "remotes": 0,
+    "note": "Parentless. No predecessor commit, tag, or object is reachable from this history, and no predecessor remote is configured."
+  },
+  "secretPolicy": {
+    "config": ".gitleaks.toml",
+    "rulesetDefault": "enabled",
+    "exemptionScope": "per-rule, pinned to exact literals. No path-scoped exemption, so a real credential added to a file that already contains a declared constant is still a finding.",
+    "categories": [
+      "native-client OAuth secrets, non-confidential per RFC 8252 s8.5, already published in the upstream package",
+      "Firebase Web API key, a project identifier Google documents as safe to expose",
+      "fixed public endpoint token (Microsoft Edge read-aloud)",
+      "generated test fixtures and documentation placeholders"
+    ],
+    "verifiedBothDirections": "a generated RSA key placed in the same fixture file is still reported, and a github-pat, AWS access key and sk-ant key are all still reported",
+    "noProductionCredential": true
   }
 }
