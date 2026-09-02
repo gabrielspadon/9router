@@ -80,11 +80,12 @@ export async function GET(request) {
         try {
           // Push lightweight update immediately so UI reflects changes fast
           if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } =
+            const { activeRequests, activeSessions, recentRequests, errorProvider } =
               await getActiveRequests();
             const quickStats = {
               ...state.cachedStats,
               activeRequests,
+              activeSessions,
               // getActiveRequests reads a process-wide ring with no period in
               // it, so merging it raw put rows from outside the selection beside
               // totals that correctly excluded them — visibly stale data with no
@@ -111,11 +112,12 @@ export async function GET(request) {
       state.sendPending = coalesce(async () => {
         if (state.closed || !state.cachedStats) return;
         try {
-          const { activeRequests, recentRequests, errorProvider } =
+          const { activeRequests, activeSessions, recentRequests, errorProvider } =
             await getActiveRequests();
           const stats = {
             ...state.cachedStats,
             activeRequests,
+            activeSessions,
             recentRequests: scopeRecentToPeriod(recentRequests, period),
             errorProvider,
           };

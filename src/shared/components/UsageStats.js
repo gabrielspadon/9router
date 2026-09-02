@@ -11,86 +11,13 @@ function isLLMProvider(id) {
   return p.serviceKinds.includes("llm");
 }
 import Badge from "./Badge";
-import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import dynamic from "next/dynamic";
 // Lazy-load: keeps @xyflow/react out of the shared bundle until topology renders
 const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
-
-function timeAgo(timestamp) {
-  const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
-// Auto-update time display every second without re-rendering parent
-function TimeAgo({ timestamp }) {
-  const [, setTick] = useState(0);
-  
-  useEffect(() => {
-    const timer = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  
-  return <>{timeAgo(timestamp)}</>;
-}
-
-function RecentRequests({ requests = [] }) {
-  return (
-    <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
-      {/* Header */}
-      <div className="px-1 py-2 border-b border-border shrink-0">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-muted">Recent Requests</span>
-      </div>
-
-      {!requests.length ? (
-        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No requests yet.</div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          {/* Numeric columns below keep physical `text-right`: digits are an
-              LTR run, so they stay right-aligned in RTL too. Do not convert. */}
-          <table className="metric w-full min-w-[300px] border-collapse text-xs">
-            <thead className="sticky top-0 bg-bg z-10">
-              <tr className="border-b border-border">
-                <th className="py-1.5 text-start font-semibold text-text-muted w-2"></th>
-                <th className="py-1.5 text-start font-semibold text-text-muted">Model</th>
-                <th className="py-1.5 text-start font-semibold text-text-muted hidden sm:table-cell">Key</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted">In / Out</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {requests.map((r, i) => {
-                const ok = !r.status || r.status === "ok" || r.status === "success";
-                return (
-                  <tr key={i} className="hover:bg-surface-2 transition-colors">
-                    <td className="py-1.5">
-                      <span role="img" aria-label={ok ? "Succeeded" : "Failed"} title={ok ? "Succeeded" : "Failed"} className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-danger"}`} />
-                    </td>
-                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
-                    <td className="py-1.5 font-mono text-text-muted truncate max-w-[90px] hidden sm:table-cell" title={r.apiKey || "No key (loopback)"}>
-                      {r.apiKey || "—"}
-                    </td>
-                    <td className="py-1.5 text-right whitespace-nowrap">
-                      <span className="text-brand">{fmt(r.promptTokens)}↑</span>
-                      {" "}
-                      <span className="text-success">{fmt(r.completionTokens)}↓</span>
-                    </td>
-                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
+import RequestsPanel from "@/app/(dashboard)/dashboard/usage/components/RequestsPanel";
 
 function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
   return Object.entries(dataMap || {})
@@ -517,7 +444,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}
           />
-          <RecentRequests requests={stats.recentRequests || []} />
+          <RequestsPanel recentRequests={stats.recentRequests || []} activeSessions={stats.activeSessions || []} />
         </div>
       )}
 

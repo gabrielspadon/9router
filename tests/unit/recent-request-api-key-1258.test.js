@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildRecentRequestRow } from "../../src/lib/db/repos/usageRepo.js";
 
-const ui = readFileSync(new URL("../../src/shared/components/UsageStats.js", import.meta.url), "utf8");
+// The recent-requests table moved out of UsageStats into RequestsPanel when the
+// Sessions tab landed beside it. The guard is on the rendered column, not on
+// which file holds it, so read whichever one owns the view.
+const ui = readFileSync(
+  new URL("../../src/app/(dashboard)/dashboard/usage/components/RequestsPanel.js", import.meta.url),
+  "utf8",
+);
 
 // usageHistory already carried the apiKey and the ring buffer already selected
 // it, so the value reached buildRecentRequestRow and was dropped. The consumer

@@ -279,7 +279,7 @@ export default function AddApiKeyModal({
             <div className="text-xs text-text-muted space-y-2">
               <p>Login with Google at the website above, then extract your cookies:</p>
               <ol className="list-decimal list-inside space-y-1">
-                <li>Open Developer Tools (<kbd className="px-1 py-0.5 bg-sidebar rounded text-[10px] font-mono">F12</kbd>)</li>
+                <li>Open Developer Tools (<kbd className="px-1 py-1 bg-sidebar rounded text-[11px] font-mono">F12</kbd>)</li>
                 <li>Go to <strong>Application</strong> &rarr; <strong>Cookies</strong> &rarr; <strong>{new URL(loginUrl).hostname}</strong></li>
                 <li>Right-click any cookie &rarr; <strong>Select All</strong> &rarr; <strong>Copy</strong></li>
                 <li>Paste the full cookie string below</li>

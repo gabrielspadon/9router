@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 // periodCutoffIso gives the oldest timestamp a period includes,
@@ -34,6 +34,13 @@ function maskApiKey(key) {
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
+
+// Active (concurrent) sessions: in-flight + just-finished requests keyed by requestId.
+// Token counts are back-filled from saveRequestUsage on completion; rows linger briefly
+// so the dashboard can show the final in/out tallies before evicting.
+const ACTIVE_SESSION_TTL_MS = 120 * 1000;        // safety evict if completion never recorded
+const ACTIVE_SESSION_DONE_LINGER_MS = 20 * 1000; // keep finished rows visible so user sees tokens
+const ACTIVE_SESSION_CAP = 200;
 const CONN_CACHE_TTL_MS = 30 * 1000;
 const ALL_TIME_CHART_MAX_POINTS = 120;
 const USAGE_API_KEY_IDENTITY_SALT = "usageApiKeyIdentitySalt.v1";
@@ -110,6 +117,8 @@ if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
+if (!global._activeSessions) global._activeSessions = new Map();
+if (!global._activeSessionTimers) global._activeSessionTimers = {};
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
@@ -117,6 +126,8 @@ const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
+const activeSessions = global._activeSessions;
+const activeSessionTimers = global._activeSessionTimers;
 
 export const statsEmitter = global._statsEmitter;
 
@@ -285,6 +296,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
   if (!started && error && provider) {
     lastErrorProvider.provider = provider.toLowerCase();
     lastErrorProvider.ts = Date.now();
+    stampActiveSession({ provider, model, connectionId, status: "error" });
   }
 
   // [PENDING] console line removed; lifecycle is visible via "▶" and "📊 done" lines
@@ -316,6 +328,115 @@ export function buildRecentRequestRow(e) {
     // API response is the trust boundary, not the component.
     apiKey: maskApiKey(e.apiKey),
   };
+}
+
+// ---- Active (concurrent) sessions ----
+// One row per in-flight request. Completion tokens are back-filled from
+// saveRequestUsage; errors are stamped from trackPendingRequest(error=true).
+// Everything here is fail-open: a throw must never escape, since these run
+// inline on the request hot path.
+
+function evictActiveSession(requestId) {
+  activeSessions.delete(requestId);
+  const timer = activeSessionTimers[requestId];
+  if (timer) {
+    clearTimeout(timer);
+    delete activeSessionTimers[requestId];
+  }
+}
+
+function scheduleActiveSessionEviction(requestId, delayMs) {
+  clearTimeout(activeSessionTimers[requestId]);
+  const timer = setTimeout(() => {
+    delete activeSessionTimers[requestId];
+    activeSessions.delete(requestId);
+    scheduleStatsEvent("pending");
+  }, delayMs);
+  if (timer.unref) timer.unref();
+  activeSessionTimers[requestId] = timer;
+}
+
+export function trackActiveSession({ clientId, sessionId, model, provider, connectionId } = {}) {
+  try {
+    const requestId = randomUUID();
+    if (activeSessions.size >= ACTIVE_SESSION_CAP) {
+      const oldest = activeSessions.keys().next().value;
+      if (oldest) evictActiveSession(oldest);
+    }
+    activeSessions.set(requestId, {
+      requestId,
+      clientId: clientId || "unknown",
+      sessionId: sessionId || "",
+      model: model || "unknown",
+      provider: (provider || "unknown").toLowerCase(),
+      connectionId: connectionId || null,
+      startedAt: Date.now(),
+      completedAt: null,
+      durationMs: 0,
+      promptTokens: null,
+      completionTokens: null,
+      status: "active",
+    });
+    scheduleActiveSessionEviction(requestId, ACTIVE_SESSION_TTL_MS);
+    scheduleStatsEvent("pending");
+    return requestId;
+  } catch {
+    return null;
+  }
+}
+
+// FIFO-match the oldest still-tokenless row for this key and stamp it.
+// Used by saveRequestUsage (success) and trackPendingRequest(error) alike.
+function stampActiveSession({ provider, model, connectionId, promptTokens, completionTokens, status }) {
+  try {
+    const prov = (provider || "").toLowerCase();
+    let target = null;
+    for (const entry of activeSessions.values()) {
+      if (entry.promptTokens !== null && status !== "error") continue; // already stamped
+      if (status === "error" && entry.status === "error") continue;
+      if (entry.provider !== prov) continue;
+      if (model && entry.model !== model) continue;
+      if (connectionId && entry.connectionId && entry.connectionId !== connectionId) continue;
+      target = entry;
+      break; // Map iterates insertion order, so this is the oldest match
+    }
+    if (!target) return;
+    target.promptTokens = promptTokens ?? target.promptTokens;
+    target.completionTokens = completionTokens ?? target.completionTokens;
+    target.completedAt = Date.now();
+    target.durationMs = target.completedAt - target.startedAt;
+    target.status = status || "done";
+    scheduleActiveSessionEviction(target.requestId, ACTIVE_SESSION_DONE_LINGER_MS);
+    scheduleStatsEvent("pending");
+  } catch {
+    // fail-open
+  }
+}
+
+export async function getActiveSessions() {
+  const connectionMap = await getConnectionMapCached();
+  const now = Date.now();
+  const rows = [];
+  for (const entry of activeSessions.values()) {
+    rows.push({
+      requestId: entry.requestId,
+      clientId: entry.clientId,
+      sessionId: entry.sessionId,
+      model: entry.model,
+      provider: entry.provider,
+      account: entry.connectionId
+        ? (connectionMap[entry.connectionId] || `Account ${String(entry.connectionId).slice(0, 8)}...`)
+        : null,
+      startedAt: entry.startedAt,
+      completedAt: entry.completedAt,
+      durationMs: entry.completedAt ? entry.durationMs : (now - entry.startedAt),
+      promptTokens: entry.promptTokens,
+      completionTokens: entry.completionTokens,
+      status: entry.status,
+    });
+  }
+  rows.sort((a, b) => b.startedAt - a.startedAt);
+  return rows;
 }
 
 export async function getActiveRequests() {
@@ -352,7 +473,8 @@ export async function getActiveRequests() {
     .slice(0, 20);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
-  return { activeRequests, recentRequests, errorProvider };
+  const sessions = await getActiveSessions();
+  return { activeRequests, recentRequests, errorProvider, activeSessions: sessions };
 }
 
 export async function saveRequestUsage(entry) {
@@ -433,6 +555,10 @@ export async function saveRequestUsage(entry) {
 
     if (inserted) {
       pushToRing(entry);
+      stampActiveSession({
+        provider: entry.provider, model: entry.model, connectionId: entry.connectionId,
+        promptTokens, completionTokens, status: "done",
+      });
       scheduleStatsEvent("update", 250);
     }
   } catch (e) {
@@ -621,6 +747,7 @@ export async function getUsageStatsInRange(period = "all", range = null) {
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
+    activeSessions: [],
     recentRequests,
     errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
@@ -639,6 +766,8 @@ export async function getUsageStatsInRange(period = "all", range = null) {
       }
     }
   }
+
+  stats.activeSessions = await getActiveSessions();
 
   // last10Minutes — query 10min window
   const now = new Date();

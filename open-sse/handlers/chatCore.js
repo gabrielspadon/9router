@@ -36,6 +36,7 @@ import {
   trackPendingRequest,
   appendRequestLog,
   saveRequestDetail,
+  trackActiveSession,
 } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
@@ -267,7 +268,9 @@ export async function handleChatCore({
     "service_tier",
   );
 
-  // Check for bypass patterns (warmup, skip, cc naming)
+  // Check for bypass patterns (warmup, skip, cc naming) BEFORE tracking. These
+  // return early and never reach completion, so they must not create a session
+  // row that would linger as a phantom "active" entry on the dashboard.
   const bypassResponse = handleBypassRequest(
     body,
     model,
@@ -275,6 +278,26 @@ export async function handleChatCore({
     ccFilterNaming,
   );
   if (bypassResponse) return bypassResponse;
+
+  // Track as an active (concurrent) session for the dashboard. clientId is the
+  // real client IP stamped by custom-server.js as x-tp-real-ip, which is the
+  // only trustworthy source here: that wrapper deletes client-supplied
+  // x-forwarded-for and trusts x-real-ip only from a loopback reverse proxy.
+  // sessionId is the conversation-stable id resolved above. Fail-open: this
+  // never blocks the request.
+  try {
+    const trackingHeaders = clientRawRequest?.headers || {};
+    const clientId = trackingHeaders["x-tp-real-ip"] || "unknown";
+    trackActiveSession({
+      clientId,
+      sessionId: sessionSeed,
+      model,
+      provider,
+      connectionId,
+    });
+  } catch {
+    // dashboard tracking must never break a request
+  }
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
