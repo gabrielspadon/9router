@@ -1,52 +1,57 @@
-# TokenProxy Embeddings Tests
+# TokenProxy test suite
 
-Unit tests for the `/v1/embeddings` endpoint implementation.
+This directory is an independent ESM package with its own `package.json` and its
+own dependency tree. It is not wired into the root `npm test`, so it needs the
+root install first and then its own.
 
-## Setup
+The canonical procedure, the baseline gate and the opt-in flags for live
+provider tests are in [CONTRIBUTING.md](../CONTRIBUTING.md#tests). This page
+covers only how the directory is laid out.
 
-Install test dependencies from the `tests/` directory:
-
-```bash
-cd tests/ && npm install
-```
-
-## Running Tests
-
-From the `tests/` directory:
+## Running
 
 ```bash
-npm test
+npm install              # repository root, first
+cd tests && npm install  # then the suite's own dependencies
+npx vitest run           # the whole suite
+npx vitest run unit/capabilities.test.js   # one file, path relative to tests/
 ```
 
-Or run vitest directly with npx:
+Run vitest from inside `tests/`. It discovers `tests/vitest.config.js`, which
+resolves the `open-sse` and `@/` aliases back to the repository root, so the
+suite works regardless of where the vitest binary lives.
+
+The committed `test` script in `tests/package.json` hardcodes a shared
+`NODE_PATH` inherited from upstream. Use the `npx vitest` form above instead.
+
+## Layout
+
+| Path | What lives there |
+|---|---|
+| `unit/` | The bulk of the suite. One file per behaviour, usually named after the issue it pins. |
+| `translator/` | Format-translation round trips, one file per `source:target` pair. |
+| `translator/real/` | Live provider calls. Gated behind `RUN_REAL=1`, and they cost money. |
+| `auth/` | SAML single sign-on. |
+| `e2e/` | Playwright browser specs, run by `playwright.config.js` there, not by vitest. |
+| `fixtures/` | Recorded request and response bodies shared across tests. |
+| `qa/` | The regression gate driven by `npm run qa:regression` from the root. |
+| `__baseline__/` | Snapshot baselines and the verifiers that compare against them. |
+| `smoke.mjs` | Root `npm run qa` / `qa:prod` entry point against a running instance. |
+
+## The verdict is the baseline gate, not the red count
+
+The suite is not expected to be green on a plain checkout. Judge a change with
 
 ```bash
-npx vitest run --reporter=verbose --config ./vitest.config.js
+npx vitest run --reporter=json --outputFile.json=/tmp/run.json
+node __baseline__/verify-no-regression.mjs /tmp/run.json
 ```
 
-## Test Files
+which passes only when every failure in the run is already catalogued in
+`__baseline__/known-fails.txt`. After touching the provider registry or alias
+logic, also run `verify-providers.mjs`, `verify-alias.mjs` and
+`verify-oauth-urls.mjs` from the same directory.
 
-| File | What it tests |
-|------|--------------|
-| `unit/embeddingsCore.test.js` | `open-sse/handlers/embeddingsCore.js` — core logic: body builder, URL router, headers, handler flow |
-| `unit/embeddings.cloud.test.js` | `cloud/src/handlers/embeddings.js` — cloud worker handler: auth, validation, rate limits, CORS |
-
-## Coverage Summary (59 tests)
-
-### `embeddingsCore.test.js` (36 tests)
-- `buildEmbeddingsBody`: single string, array, encoding_format, default float
-- `buildEmbeddingsUrl`: openai, openrouter, openai-compatible-*, unsupported providers
-- `buildEmbeddingsHeaders`: per-provider header sets, fallback to accessToken
-- `handleEmbeddingsCore` input validation: missing, wrong type, null, empty
-- `handleEmbeddingsCore` success: response format, CORS, Content-Type, callbacks
-- `handleEmbeddingsCore` errors: 400/429/500, network error, invalid JSON
-- `handleEmbeddingsCore` token refresh: 401 retry, graceful fallback
-
-### `embeddings.cloud.test.js` (23 tests)
-- CORS OPTIONS: 200 response, empty body, correct headers
-- Authentication: missing key, bad format, old-format key, wrong key value, valid key
-- Body validation: invalid JSON, missing model, missing input, bad model
-- Happy path: single string, array, correct delegation, CORS header, machineId override
-- Rate limiting: all accounts rate-limited → 503 + Retry-After, no credentials → 400
-- Error propagation: non-fallback errors passed through, 429 exhausts accounts
-- machineId override: validates key, rejects wrong key
+`unit/embeddings.cloud.test.js` fails here by design: it imports
+`cloud/src/handlers/embeddings.js`, a worker directory that is not part of this
+repository.

@@ -1,12 +1,16 @@
 # Docker
 
 Running TokenProxy in a container. The image is built from the `Dockerfile` at
-the repository root for `linux/amd64` and `linux/arm64`. TokenProxy publishes no
-image yet; build it locally with `docker build -t tokenproxy .`.
+the repository root for `linux/amd64` and `linux/arm64`. No release tag has been
+pushed yet, so no image exists on GHCR or Docker Hub to pull; build it locally
+with `docker build -t tokenproxy .` until the first `v*` tag runs the publish
+workflow described under [Publishing](#publishing).
 
 The environment contract and where state lives are in `.env.example` and in
-[CONTRIBUTING.md](CONTRIBUTING.md). This page covers only what is specific to
-the container.
+[CONTRIBUTING.md](CONTRIBUTING.md). Running it as a long-lived service outside a
+container, behind a reverse proxy or under systemd, is in
+[docs/deployment.md](docs/deployment.md). This page covers only what is specific
+to the container.
 
 ## Quick start
 
@@ -63,16 +67,24 @@ $DATA_DIR/
 Host path `$HOME/.tokenproxy/db/data.sqlite` maps to container path
 `/app/data/db/data.sqlite`.
 
-Request logs are not written anywhere. `appendRequestLog()` in
-`src/lib/db/repos/usageRepo.js` is an empty function, so no `logs/` directory is
-produced and nothing needs mounting for it.
+`ENABLE_REQUEST_LOGS=true` does two separate things, and neither writes into
+the mounted volume.
 
-`ENABLE_REQUEST_LOGS=true` still does something, but not that. It is the
-second-precedence override that turns on request-detail recording into the
+It turns on the per-request file logger in `open-sse/utils/requestLogger.js`,
+called from `open-sse/handlers/chatCore.js`. That writes one folder per request
+under a `logs/` directory resolved against the process working directory, which
+is `/app` in the image, not `DATA_DIR`. Mount it explicitly if you want those
+files to survive the container. Treat them as secret material: credential
+headers are masked to a scheme plus the last four characters, but request and
+response bodies are written as sent.
+
+It is also the second-precedence override for request-detail recording into the
 SQLite database behind `OBSERVABILITY_ENABLED`, which is what fills the Usage
-"Details" tab. Credential headers are stripped before a record is stored, but
-request and response bodies are stored as sent, so leave the flag off in
-production unless you are debugging.
+"Details" tab. Same caveat on bodies. Leave the flag off in production unless
+you are debugging.
+
+The older `appendRequestLog()` in `src/lib/db/repos/usageRepo.js` is an empty
+function; nothing writes a `log.txt` any more.
 
 The image also creates `/app/data-home` and symlinks `/root/.tokenproxy` to it.
 That path is a separate location from `/app/data` on purpose, so a home-directory

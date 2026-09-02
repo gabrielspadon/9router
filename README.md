@@ -73,9 +73,13 @@ the published container image, or behind a reverse proxy on a server.
 - [Providers](docs/providers.md) for what each upstream costs, how it is
   connected, and how self-hosted speech and embedding endpoints are wired.
 - [Troubleshooting](docs/troubleshooting.md) for the errors people hit most.
+- [Deployment](docs/deployment.md) for running it as a service, what must be set
+  before the port is reachable, and what a reverse proxy has to do.
 - [Contributing](CONTRIBUTING.md) for the repository layout, local setup, the
   test suite, and the environment contract.
-- [Docker](DOCKER.md) for the container, compose, and the published image.
+- [Docker](DOCKER.md) for the container, compose, and the image build.
+- [Agent skills](public/skills/README.md) for the bundled skill bundles the
+  dashboard serves to coding agents.
 - [Security](SECURITY.md) for the private disclosure route.
 
 The routing and translation engine documents its own conventions in
