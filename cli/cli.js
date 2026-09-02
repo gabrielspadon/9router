@@ -3,6 +3,7 @@
 const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
 const https = require("https");
 const net = require("net");
 const os = require("os");
@@ -39,6 +40,66 @@ function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
     };
     tryConnect();
   });
+}
+
+// A port is treated as an already-running TokenProxy only when it answers the
+// gateway's public liveness signature. This is not process identity: every
+// other listener fails closed as occupied, and is never terminated by startup.
+function probeExistingRouter(port, { timeoutMs = 750 } = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let req;
+    let deadline;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(result);
+    };
+    deadline = setTimeout(() => {
+      req?.destroy();
+      done("occupied");
+    }, timeoutMs);
+    try {
+      req = http.get({
+        host: "127.0.0.1",
+        port,
+        path: "/api/health",
+        agent: false,
+      }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+          if (body.length > 8192) {
+            res.destroy();
+            done("occupied");
+          }
+        });
+        res.on("end", () => {
+          try {
+            done(res.statusCode === 200 && JSON.parse(body)?.ok === true ? "router" : "occupied");
+          } catch {
+            done("occupied");
+          }
+        });
+        res.on("error", () => done("occupied"));
+        res.on("aborted", () => done("occupied"));
+      });
+      req.on("error", (err) => done(err?.code === "ECONNREFUSED" ? "free" : "occupied"));
+    } catch {
+      done("occupied");
+    }
+  });
+}
+
+async function waitForPortRelease(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probeExistingRouter(port) === "free") return true;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return false;
 }
 
 // Native spinner - no external dependency
@@ -136,6 +197,7 @@ const PROCESS_IDENTIFIERS = [
 let port = DEFAULT_PORT;
 let host = DEFAULT_HOST;
 let noBrowser = false;
+let takeOver = false;
 let skipUpdate = false;
 let showLog = false;
 let trayMode = false;
@@ -156,6 +218,8 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
     process.env.TRAY_MODE = "1";
+  } else if (args[i] === "--takeover") {
+    takeOver = true;
   } else if (args[i] === "--help" || args[i] === "-h") {
     console.log(`
 Usage: ${APP_NAME} [options]
@@ -183,14 +247,13 @@ Commands:
   }
 }
 
-// `tokenproxy stop` shuts down a gateway this launcher started and exits. The
-// in-menu update path already used these two primitives; without a subcommand a
-// service manager or a script had no supported way to stop what `tokenproxy`
+// `tokenproxy stop` stops the listener selected by --port and exits. A service
+// manager or script otherwise had no supported way to stop what `tokenproxy`
 // started, leaving `pkill` as the only option (#967). Placed after argument
-// parsing so `--port` is honoured.
+// parsing so --port is honoured without touching unrelated next-server
+// processes.
 if (args[0] === "stop") {
-  killAllAppProcesses(port)
-    .then(() => killProcessOnPort(port))
+  killProcessOnPort(port)
     .then(() => {
       console.log(`tokenproxy stopped (port ${port}).`);
       process.exit(0);
@@ -584,8 +647,30 @@ if (!fs.existsSync(serverPath)) {
 
 // Start server immediately; run update check in parallel (not on the critical path).
 const updatePromise = checkForUpdate();
-killAllAppProcesses(port)
-  .then(() => killProcessOnPort(port))
+async function verifyStartupOwnership() {
+  let ownership = await probeExistingRouter(port);
+  // Hide-to-tray starts its replacement before the foreground launcher has
+  // released the child server. Only a TokenProxy liveness response enters that
+  // handoff wait; an unknown listener fails closed without waiting or killing.
+  if (takeOver && ownership === "router") {
+    ownership = await waitForPortRelease(port) ? "free" : await probeExistingRouter(port);
+  }
+
+  if (ownership === "router") {
+    const url = `http://${getDisplayHost()}:${port}/dashboard`;
+    console.log(`tokenproxy is already running at ${url}`);
+    if (!trayMode && !noBrowser) openBrowser(url);
+    process.exit(0);
+    return;
+  }
+  if (ownership === "occupied") {
+    console.error(`Port ${port} is already in use by a non-TokenProxy process.`);
+    process.exit(1);
+    return;
+  }
+}
+
+verifyStartupOwnership()
   .then(() => startServer(updatePromise))
   // Terminal, unlike the strays the handler above absorbs: a failure here means
   // there is no server to supervise, and swallowing it would leave a live
@@ -912,7 +997,7 @@ function startServer(updatePromise) {
           // Windows/Linux: spawn detached bgProcess (systray works fine in child)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
-          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
+          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--takeover", "--skip-update", "-p", port.toString()], {
             detached: true,
             stdio: "ignore",
             windowsHide: true,
