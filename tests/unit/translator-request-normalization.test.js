@@ -48,7 +48,30 @@ describe("request normalization", () => {
     expect(Array.isArray(result.messages[0].content)).toBe(true);
   });
 
-  it("filterToOpenAIFormat flattens text-only arrays to string", () => {
+  // filterToOpenAIFormat used to flatten a text-only content array on EVERY
+  // role. open-sse/translator/formats/openai.js:63 narrowed that to the system
+  // role: a system prompt only travels as blocks so its cache_control markers
+  // can reach a provider that honours them, and when none survive the strip the
+  // block shape carries nothing a string does not. User and assistant arrays are
+  // now left alone. The three cases below pin each side of that narrowing.
+  it("filterToOpenAIFormat flattens a text-only SYSTEM array to string", () => {
+    const body = {
+      messages: [
+        {
+          role: "system",
+          content: [
+            { type: "text", text: "a" },
+            { type: "text", text: "b" },
+          ],
+        },
+      ],
+    };
+
+    const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)));
+    expect(result.messages[0].content).toBe("a\nb");
+  });
+
+  it("filterToOpenAIFormat preserves a text-only USER array as blocks", () => {
     const body = {
       messages: [
         {
@@ -62,7 +85,29 @@ describe("request normalization", () => {
     };
 
     const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)));
-    expect(result.messages[0].content).toBe("a\nb");
+    expect(result.messages[0].content).toEqual([
+      { type: "text", text: "a" },
+      { type: "text", text: "b" },
+    ]);
+  });
+
+  it("filterToOpenAIFormat keeps a SYSTEM array when a cache_control survives", () => {
+    const body = {
+      messages: [
+        {
+          role: "system",
+          content: [{ type: "text", text: "a", cache_control: { type: "ephemeral" } }],
+        },
+      ],
+    };
+
+    const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)), {
+      preserveCacheControl: true,
+    });
+    // Flattening here would drop the marker, which is the reason for the narrowing.
+    expect(result.messages[0].content).toEqual([
+      { type: "text", text: "a", cache_control: { type: "ephemeral" } },
+    ]);
   });
 
   it("translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe", () => {
