@@ -497,13 +497,20 @@ WantedBy=default.target
 }
 
 function disableLinuxHeadless() {
+  // Only ever touch the unit THIS installation wrote. The disable used to run
+  // unconditionally, ahead of the existence check, so a caller with no unit on
+  // disk still issued `systemctl --user disable` against the real user bus --
+  // which on a developer machine is the live gateway's own bus. A unit test
+  // with a temp XDG root has no unit file and wants no systemd interaction at
+  // all, so the existence check is the correct gate for both statements.
+  const unitPath = systemdUnitPath();
+  if (!fs.existsSync(unitPath)) {
+    return true;
+  }
   try {
     execSync(`systemctl --user disable ${APP_NAME}.service`, { stdio: "ignore", timeout: 5000 });
   } catch (e) {}
-  const unitPath = systemdUnitPath();
-  if (fs.existsSync(unitPath)) {
-    fs.unlinkSync(unitPath);
-  }
+  fs.unlinkSync(unitPath);
   return true;
 }
 
