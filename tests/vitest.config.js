@@ -35,6 +35,10 @@ export default defineConfig({
     // Node by default — most of the suite is handlers and translators. A test that
     // needs a DOM opts in per file with a `// @vitest-environment jsdom` docblock
     // on its first line (jsdom is pinned in tests/package.json).
+    // Per-FILE data dir. env.DATA_DIR above is one path shared by every worker,
+    // which let unrelated files write one data.sqlite concurrently; see the file
+    // for why that made the failure set vary between identical runs.
+    setupFiles: ["./setup-isolate-data-dir.js"],
     environment: "node",
     // Node 22.4+ ships its own `globalThis.localStorage`, and vitest's jsdom
     // environment copies a window property onto the global only when the name is
