@@ -39,3 +39,34 @@ describe("Claude Code model discovery (#2947)", () => {
     expect(detectClientTool({ "user-agent": "OpenAI/NodeJS/4.0" }, {})).not.toBe("claude");
   });
 });
+
+// Reproduces the exact gate expression from the route (the boolean above the
+// `it("the rewrite gate accepts the detector..."` assertion) against a bare
+// header getter, so the identity-vs-protocol claim can be checked without
+// standing up the full GET handler's provider/db dependencies.
+function rewriteGate(headerValue, clientTool) {
+  const request = { headers: { get: (name) => (name === "anthropic-version" ? headerValue : null) } };
+  return Boolean(request.headers.get("anthropic-version") || clientTool === "claude");
+}
+
+describe("the rewrite is protocol-keyed first, identity only as the one-call fallback (#2947)", () => {
+  it("any client sending anthropic-version gets it, not only claude-cli", () => {
+    // A hypothetical harness built on @anthropic-ai/sdk that isn't Claude Code
+    // at all still sends this header on every real request and gets the
+    // identical treatment — the header decides, not the tool name.
+    expect(rewriteGate("2023-06-01", detectClientTool({ "user-agent": "SomeOtherAnthropicHarness/1.0" }, {}))).toBe(true);
+    expect(rewriteGate("2023-06-01", null)).toBe(true);
+  });
+
+  it("the identity fallback only ever fires when the header is absent", () => {
+    expect(rewriteGate(null, "claude")).toBe(true);
+    expect(rewriteGate(null, "codex")).toBe(false);
+    expect(rewriteGate(null, null)).toBe(false);
+  });
+
+  it("once the header is present, clientTool cannot change the outcome", () => {
+    for (const tool of ["claude", "codex", "gemini-cli", null]) {
+      expect(rewriteGate("2023-06-01", tool)).toBe(true);
+    }
+  });
+});

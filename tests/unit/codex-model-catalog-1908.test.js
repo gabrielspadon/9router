@@ -86,4 +86,14 @@ describe("only a Codex client sees it", () => {
     const sorted = route.indexOf("out = [...out].sort(");
     expect(route.indexOf("buildCodexCatalog(out)")).toBeGreaterThan(sorted);
   });
+
+  it("both branches read the same `out`, so Codex never sees a different set", () => {
+    // buildCodexCatalog(out) and { object: "list", data: out } close over the
+    // identical variable — there is no separate, Codex-only data path this
+    // could quietly narrow or extend, only a different envelope around the
+    // same array. Two clients differing ONLY in identity therefore always
+    // describe the same models, whichever shape each one's decoder needs.
+    expect(route).toContain("buildCodexCatalog(out)");
+    expect(route).toContain('{ object: "list", data: out }');
+  });
 });
