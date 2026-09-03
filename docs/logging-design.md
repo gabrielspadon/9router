@@ -1,9 +1,9 @@
 ---
 title: Agent-efficient decision logging
-status: proposed
+status: partially implemented (steps 1, 2, and the chat.js half of steps 3.6/4)
 owner: gabrielspadon
 last_verified: 2026-09-03
-scope: design only, no runtime change
+scope: emitter and correlation shipped; steps 3.1-3.5, 5 and the front proxy remain
 supersedes: none
 ---
 
@@ -684,7 +684,7 @@ Proposed composition of the ~920:
 853  REQ.<outcome>, one per admitted request, ~190 B
  30  non-nominal decision lines (the 31 measured facts, folded)
  14  CRED repeat roll-ups
- ~8  ADM.ratelimited roll-ups (15,548 rejections, one client)
+ 128 ADM.ratelimited roll-ups (15,548 rejections, one client) -- MEASURED, see note
  ~15 startup, config, drain and lifecycle
 ```
 
@@ -694,6 +694,16 @@ value. It is worth being precise about why, because the result is not obvious:
 three lines per request that fold into one. The new decision lines are more
 numerous in *kind* (45 classes that speak versus roughly 12 today) but they
 fire only on non-nominal paths, which on this workload is under 2% of events.
+
+> **Correction, measured 2026-09-03 against the shipped `fold()`.** The `~8`
+> above contradicted section 3.6 own schedule and is wrong. Replaying the real
+> 15,548 refusals (a 25-minute burst, not a six-hour drizzle) through the
+> implemented folder emits **128** lines for one caller and 148 for four,
+> because the every-128-thereafter clause yields 121 emissions past the
+> exponential head. That line still falls from 718,484 bytes to 17,664, a
+> 40.7x reduction on the call site and 2.28x on the whole journal from that one
+> edit. The rest of the table is unretested: steps 3.1-3.5 and 5 have not
+> shipped.
 
 **Per-request bounds.**
 
