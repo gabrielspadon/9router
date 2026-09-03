@@ -139,8 +139,22 @@ export { releaseAccountLease, releaseAccountLeaseOnResponse, _getLeaseRegistry }
  * write failure must never make an account ineligible, which is the same
  * fail-open direction evaluateQuota itself takes.
  */
-function persistWindows(connectionId, windows) {
-  if (!connectionId || !Array.isArray(windows) || windows.length === 0) return;
+function persistWindows(connectionId, windows, { hasEvidence = false } = {}) {
+  if (!connectionId || !Array.isArray(windows)) return;
+  // An EMPTY array is written when, and only when, a quota read actually
+  // produced a snapshot and that snapshot held no rankable window. That is
+  // itself evidence -- "this account reports nothing the ranker can compare" --
+  // and putWindows' delete-then-insert is the only thing that clears a window
+  // the provider has stopped reporting. Skipping the write on an empty array
+  // left the previous snapshot on disk indefinitely, so the ranker kept
+  // comparing a shape the account no longer has: exactly the resurrection
+  // putWindows' transaction docstring says it exists to prevent.
+  //
+  // With NO snapshot at all (ineligible account, required proxy unavailable, a
+  // fetch that failed or timed out) nothing was measured, so nothing is
+  // written. Erasing good evidence because one read failed is the opposite of
+  // the fail-open direction evaluateQuota takes.
+  if (windows.length === 0 && !hasEvidence) return;
   putWindows(connectionId, windows).catch(() => {});
 }
 
@@ -382,8 +396,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         // back one without the other) — forwarding it is what lets the bridge
         // upgrade a window from the synthetic percentage scale to the
         // provider's own absolute remaining/limit.
-        const windows = toRankerWindows(q.snapshot || c.lastQuotaSnapshot, q.rawUsage || null, { now: nowMs });
-        persistWindows(c.id, windows);
+        const evidence = q.snapshot || c.lastQuotaSnapshot || null;
+        const windows = toRankerWindows(evidence, q.rawUsage || null, { now: nowMs });
+        persistWindows(c.id, windows, { hasEvidence: Boolean(evidence) });
         return { connection: c, windows };
       })
     );

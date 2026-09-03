@@ -303,6 +303,84 @@ describe('E1.1w: getProviderCredentials selects through the scheduler', () => {
     expect(windows[0].confidence).toBe('unknown');
   });
 
+  // W3, the other half. The gate asked whether evidence is WRITTEN; absence of
+  // evidence is evidence too, and it was the half that never reached the table.
+  // putWindows is delete-then-insert precisely so a window the provider has
+  // stopped reporting disappears, but persistWindows used to return early on an
+  // empty array, so the delete never ran and the ranker went on comparing a
+  // shape the account no longer has.
+  it('CLEARS a stale window once a live read reports nothing rankable (W3)', async () => {
+    const repos = await import('@/lib/db/repos/quotaWindowsRepo.js');
+    await repos.putWindows('alpha', [
+      {
+        scope: 'session (5h)',
+        remaining: 90,
+        limit: 100,
+        resetAt: iso(HOUR),
+        observedAt: iso(0),
+        confidence: 'fresh',
+      },
+    ]);
+    expect(rows('SELECT scope FROM quotaWindows')).toHaveLength(1);
+
+    // A read that SUCCEEDED and found one unlimited window. The bridge drops an
+    // unlimited window (it constrains nothing), so this is real evidence that
+    // yields zero rankable windows -- not a failed fetch.
+    quotaMocks.evaluateQuota.mockResolvedValue({
+      paused: false,
+      reason: 'ok',
+      snapshot: {
+        windows: [{ key: 'session (5h)', remainingPercentage: 90, resetAt: iso(HOUR), unlimited: true }],
+        fetchedAt: iso(0),
+      },
+      rawUsage: null,
+    });
+    dbMocks.getProviderConnections.mockResolvedValue([connection('alpha', { key: FAKE_KEY_A })]);
+
+    const picked = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+    leases.releaseAccountLease(picked.accountLease);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // The row is GONE. Left behind, it would outrank an account that reported
+    // honestly, on a number nothing measured.
+    expect(rows('SELECT scope FROM quotaWindows')).toHaveLength(0);
+  });
+
+  // The same change must not erase good evidence on a read that FAILED. That
+  // direction is fail-open: evaluateQuota never pauses an account it could not
+  // read, and the table must not lose what it knows either.
+  it('KEEPS a stored window when the read produced no snapshot at all (W3)', async () => {
+    const repos = await import('@/lib/db/repos/quotaWindowsRepo.js');
+    await repos.putWindows('alpha', [
+      {
+        scope: 'session (5h)',
+        remaining: 90,
+        limit: 100,
+        resetAt: iso(HOUR),
+        observedAt: iso(0),
+        confidence: 'fresh',
+      },
+    ]);
+
+    // snapshot:null and the connection carries no persisted one either, so
+    // nothing was measured on this pass.
+    quotaMocks.evaluateQuota.mockResolvedValue({
+      paused: false,
+      reason: 'quota fetch timeout',
+      snapshot: null,
+      rawUsage: null,
+    });
+    dbMocks.getProviderConnections.mockResolvedValue([connection('alpha', { key: FAKE_KEY_A })]);
+
+    const picked = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+    leases.releaseAccountLease(picked.accountLease);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const kept = rows('SELECT scope, remaining, confidence FROM quotaWindows');
+    expect(kept).toHaveLength(1);
+    expect(kept[0].remaining).toBe(90);
+  });
+
   it('reports a WAIT rather than a silent round-robin when every account is at capacity', async () => {
     dbMocks.getProviderConnections.mockResolvedValue([
       connection('alpha', { key: FAKE_KEY_A, maxConcurrent: 1, snapshot: snapshot(90) }),
