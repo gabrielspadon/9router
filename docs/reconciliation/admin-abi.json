@@ -1,0 +1,410 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TokenProxy native admin ABI",
+    "version": "0.1.0-frozen",
+    "description": "Frozen contract for the endpoints that replace the retired edge gateway (RECONCILIATION.md, 'Ownership Boundary' and 'Account Scheduling Contract'). Every implementation leaf for qualification, quota, drain, activation, rollback, and provider evidence codes against this document, not against a later implementation detail. Endpoints live under a new /api/admin/** namespace, separate from the existing dashboard-only /api/** routes (src/dashboardGuard.js) and from the public inference surface (/v1, /v1beta, /api/v1, /api/v1beta, /codex)."
+  },
+  "authClasses": {
+    "inference": {
+      "description": "An inference API key, the same credential a caller already uses against /v1/**, is sufficient. Verified the same way dashboardGuard.js verifies it today: collectClientApiKeyCandidates + validateApiKey (src/lib/auth/clientApiKey.js), or a loopback request per isLocalRequest (src/dashboardGuard.js:133).",
+      "sufficientCredentials": ["inference-api-key", "loopback-request"]
+    },
+    "operator": {
+      "description": "A distinct operator credential: the CLI token (x-tp-cli-token, machineId-derived, src/dashboardGuard.js:15-29) or a signed-in dashboard session (auth_token JWT, verifyDashboardAuthToken). An inference API key alone never satisfies this class, mirroring the existing ALWAYS_PROTECTED gate (src/dashboardGuard.js:230-241) rather than the weaker requireLogin=false bypass PROTECTED_API_PATHS allows: these endpoints read or change account, quota, and release state, so the requireLogin=false escape hatch does not apply to them.",
+      "sufficientCredentials": ["cli-token", "dashboard-session-jwt"],
+      "insufficientCredentials": ["inference-api-key-alone"]
+    }
+  },
+  "adminMutationPolicy": {
+    "statement": "Every state-changing endpoint in this document (POST /api/admin/qualification/{connectionId}/recheck, POST /api/admin/drain/{connectionId}, DELETE /api/admin/drain/{connectionId}, POST /api/admin/activation, POST /api/admin/rollback) is loopback-bound by default: it is reachable only from a request that isLocalRequest() (src/dashboardGuard.js:133) would accept, the same loopback-plus-origin check the existing local-only routes already use (LOCAL_ONLY_PATHS, src/dashboardGuard.js:78-98). Remote administration reaches these endpoints only by traversing an authenticated tunnel that terminates as a loopback peer, never by relaxing the bind itself.",
+    "operatorDistinctFromInference": "The operator credential (CLI token or dashboard session) is never satisfied by an inference API key. A caller holding only an inference key that reaches a state-changing endpoint receives 403, identical in shape to a caller holding no credential at all except for the status code.",
+    "byteIdenticalOnRejection": "A 401 or 403 is decided and returned before any transaction, lock acquisition, or write against quota, drain, activation, or rollback state begins. No audit row, receipt, or side effect is written for a rejected call. Quota windows, drain flags, the active release pointer, and switch-receipt history read back byte-identical to their pre-request value after any 401 or 403 response. This matches the existing ordering in src/proxy.js -> src/dashboardGuard.js, where the guard runs and can short-circuit before any route handler under src/app/api/** executes.",
+    "appliesTo": [
+      "POST /api/admin/qualification/{connectionId}/recheck",
+      "POST /api/admin/drain/{connectionId}",
+      "DELETE /api/admin/drain/{connectionId}",
+      "POST /api/admin/activation",
+      "POST /api/admin/rollback"
+    ]
+  },
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error", "source"],
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "string", "description": "Machine-readable failure reason, e.g. invalid_request, unauthorized, forbidden_class, forbidden_loopback, not_found, version_conflict, no_prior_release, recheck_in_progress." },
+          "source": { "const": "tokenproxy-admin" },
+          "currentVersion": { "type": "string", "description": "Present only on 412 responses: the version the caller should re-read before retrying." }
+        }
+      },
+      "WindowRecord": {
+        "type": "object",
+        "description": "Normalized quota-window evidence, exactly the record shape required by the Account Scheduling Contract, rule 1.",
+        "required": ["scope", "remaining", "limit", "resetAt", "observedAt", "confidence"],
+        "properties": {
+          "scope": { "type": "string", "description": "Provider-defined window identifier, e.g. '5h', '7d', '30d', or a provider-specific future window key. Providers may omit windows they do not have." },
+          "remaining": { "type": "number", "description": "Absolute usable entitlement remaining in this window, provider units. Never a percentage." },
+          "limit": { "type": "number", "description": "Absolute entitlement ceiling for this window." },
+          "resetAt": { "type": "string", "format": "date-time", "description": "ISO-8601 timestamp when this window resets." },
+          "observedAt": { "type": "string", "format": "date-time", "description": "ISO-8601 timestamp this evidence was captured. Unknown evidence is distinguished from fresh evidence by staleness of this field, per Account Scheduling Contract rule 2." },
+          "confidence": { "type": "string", "enum": ["measured", "estimated", "unknown"], "description": "measured: read directly from a provider usage response. estimated: derived (e.g. carried forward from a stale snapshot). unknown: no evidence yet; must not outrank fresher known evidence for a different account (rule 2)." }
+        }
+      },
+      "Connection": {
+        "type": "object",
+        "required": ["connectionId", "provider", "status", "isActive", "isDraining"],
+        "properties": {
+          "connectionId": { "type": "string" },
+          "provider": { "type": "string", "description": "Canonical provider id (src/shared/constants/providers.js)." },
+          "displayName": { "type": ["string", "null"], "description": "Account label for operator display. Never the raw credential or token." },
+          "status": { "type": "string", "enum": ["healthy", "degraded", "cooldown", "drained", "unqualified"] },
+          "isActive": { "type": "boolean" },
+          "isDraining": { "type": "boolean" },
+          "lastQualifiedAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastError": { "type": ["string", "null"], "description": "Redacted human-readable message. Never a credential or a request/response body." }
+        }
+      },
+      "QualificationDetail": {
+        "type": "object",
+        "required": ["connectionId", "provider", "status", "checkedAt", "generation", "quota"],
+        "properties": {
+          "connectionId": { "type": "string" },
+          "provider": { "type": "string" },
+          "status": { "type": "string", "enum": ["healthy", "degraded", "cooldown", "drained", "unqualified", "error"] },
+          "checkedAt": { "type": "string", "format": "date-time" },
+          "generation": {
+            "type": "object",
+            "description": "Credential-safe generation evidence: proof the connection can complete a real generation, never the generated content.",
+            "required": ["ok", "model", "latencyMs", "error"],
+            "properties": {
+              "ok": { "type": "boolean" },
+              "model": { "type": ["string", "null"] },
+              "latencyMs": { "type": ["number", "null"] },
+              "error": { "type": ["string", "null"], "description": "Redacted. Never a credential, prompt, or provider response body." }
+            }
+          },
+          "quota": { "type": "array", "items": { "$ref": "#/components/schemas/WindowRecord" } }
+        }
+      },
+      "QuotaSnapshot": {
+        "type": "object",
+        "required": ["connectionId", "provider", "windows"],
+        "properties": {
+          "connectionId": { "type": "string" },
+          "provider": { "type": "string" },
+          "windows": { "type": "array", "items": { "$ref": "#/components/schemas/WindowRecord" } }
+        }
+      },
+      "DrainState": {
+        "type": "object",
+        "required": ["connectionId", "isDraining", "activeStreams", "version"],
+        "properties": {
+          "connectionId": { "type": "string" },
+          "isDraining": { "type": "boolean" },
+          "requestedAt": { "type": ["string", "null"], "format": "date-time" },
+          "activeStreams": { "type": "number", "description": "In-flight requests still finishing on this connection. New selection stops immediately; existing streams are allowed to finish (RECONCILIATION.md Phase 4 step 4, 'Existing streams finish during drain')." },
+          "completedAt": { "type": ["string", "null"], "format": "date-time", "description": "Set once activeStreams reaches zero after a drain request." },
+          "version": { "type": "string", "description": "Opaque optimistic-concurrency token. Echo it back as ifMatch on the next mutation of this connection's drain state." }
+        }
+      },
+      "Release": {
+        "type": "object",
+        "required": ["releaseId", "version", "status"],
+        "properties": {
+          "releaseId": { "type": "string" },
+          "version": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "active", "rolled_back", "failed"] },
+          "activatedAt": { "type": ["string", "null"], "format": "date-time" },
+          "previousReleaseId": { "type": ["string", "null"], "description": "The release this one superseded, so a rollback with no explicit toReleaseId has an unambiguous target." },
+          "concurrencyVersion": { "type": "string", "description": "Opaque optimistic-concurrency token for the activation pointer. Echo it back as ifMatch on activation or rollback." }
+        }
+      },
+      "SwitchReceipt": {
+        "type": "object",
+        "description": "The switch-receipt record required by Account Scheduling Contract rule 8. Credentials and prompt bodies are never present in this schema, in storage, or in any response that returns it.",
+        "required": ["receiptId", "timestamp", "trigger", "model", "sessionHash", "newConnectionId", "windows"],
+        "properties": {
+          "receiptId": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "trigger": { "type": "string", "enum": ["exhausted", "reset", "drain", "model_failure", "manual"], "description": "Why the switch happened, per rule 8." },
+          "model": { "type": "string", "description": "Canonical model id the switch was scoped to." },
+          "sessionHash": { "type": "string", "description": "One-way hash of the client session identifier. Never the raw session id, never a credential." },
+          "oldConnectionId": { "type": ["string", "null"], "description": "null only for the first pin of a session that had no prior account." },
+          "newConnectionId": { "type": "string" },
+          "windows": {
+            "type": "object",
+            "required": ["old", "new"],
+            "properties": {
+              "old": { "type": ["array", "null"], "items": { "$ref": "#/components/schemas/WindowRecord" } },
+              "new": { "type": "array", "items": { "$ref": "#/components/schemas/WindowRecord" } }
+            }
+          }
+        },
+        "neverContains": ["credential", "apiKey", "token", "secret", "promptBody", "requestBody", "responseBody", "rawSessionId"]
+      }
+    }
+  },
+  "paths": {
+    "/api/admin/health": {
+      "get": {
+        "summary": "Liveness for the admin ABI itself. Cheap, no upstream or database contact required to return ok.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "inference",
+        "loopbackBound": false,
+        "responses": {
+          "200": { "description": "Admin ABI process is up.", "content": { "application/json": { "schema": { "type": "object", "required": ["status", "uptimeSeconds", "generatedAt"], "properties": { "status": { "const": "ok" }, "uptimeSeconds": { "type": "number" }, "generatedAt": { "type": "string", "format": "date-time" } } } } } },
+          "401": { "description": "No inference key and no loopback origin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/health/detail": {
+      "get": {
+        "summary": "Readiness: database reachability plus per-provider degraded-account counts. Passive only; never contacts a provider (parity with the existing /api/health/detail judgment).",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "responses": {
+          "200": { "description": "Always 200; the verdict is in the body.", "content": { "application/json": { "schema": { "type": "object", "required": ["status", "checks"], "properties": { "status": { "type": "string", "enum": ["ok", "degraded", "error"] }, "checks": { "type": "object", "properties": { "database": { "type": "object" }, "connections": { "type": "array", "items": { "$ref": "#/components/schemas/Connection" } } } } } } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "An inference key was presented but the operator class was required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/models": {
+      "get": {
+        "summary": "Model catalog visible to the admin ABI: canonical id, provider, and capability flags an edge caller needs to pick a model before routing a request.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "inference",
+        "loopbackBound": false,
+        "responses": {
+          "200": { "description": "Catalog.", "content": { "application/json": { "schema": { "type": "object", "required": ["models"], "properties": { "models": { "type": "array", "items": { "type": "object", "required": ["model", "provider", "fullModel"], "properties": { "model": { "type": "string" }, "provider": { "type": "string" }, "fullModel": { "type": "string" }, "caps": { "type": "object" } } } } } } } } },
+          "401": { "description": "No inference key and no loopback origin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/qualification": {
+      "get": {
+        "summary": "Qualification summary across every configured connection: status, activity, and drain flag, without generation or quota detail.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "responses": {
+          "200": { "description": "List.", "content": { "application/json": { "schema": { "type": "object", "required": ["connections"], "properties": { "connections": { "type": "array", "items": { "$ref": "#/components/schemas/Connection" } } } } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/qualification/{connectionId}": {
+      "get": {
+        "summary": "Full qualification detail for one connection: last passive status plus the most recent generation and quota evidence on file. Never contacts the provider.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "parameters": [ { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "Detail.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QualificationDetail" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "connectionId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/qualification/{connectionId}/recheck": {
+      "post": {
+        "summary": "Actively probe the connection: spends one real generation against the provider and refreshes stored qualification and quota evidence. The only qualification endpoint that touches the network.",
+        "readOnly": false,
+        "stateChanging": true,
+        "authClass": "operator",
+        "loopbackBound": true,
+        "parameters": [ { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "force": { "type": "boolean", "description": "Probe even if a recent qualification result is still fresh. Default false." } } } } } },
+        "responses": {
+          "200": { "description": "Probe completed (result may itself be a failed generation; that is still a successful call, reported inside the body's generation.ok field).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QualificationDetail" } } } },
+          "400": { "description": "Request body present but not a JSON object, or force is not a boolean.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only, or the caller is not a loopback peer.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "connectionId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "This connection is draining, or a recheck for it is already in flight.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/quota": {
+      "get": {
+        "summary": "Normalized quota-window evidence for every connection, the exact record shape from Account Scheduling Contract rule 1.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "responses": {
+          "200": { "description": "List.", "content": { "application/json": { "schema": { "type": "object", "required": ["snapshots"], "properties": { "snapshots": { "type": "array", "items": { "$ref": "#/components/schemas/QuotaSnapshot" } } } } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/quota/{connectionId}": {
+      "get": {
+        "summary": "Normalized quota windows for one connection.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "parameters": [ { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "Snapshot.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QuotaSnapshot" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "connectionId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/drain": {
+      "get": {
+        "summary": "Drain state for every connection. Defaults to connections currently draining; pass all=true for the full set.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "parameters": [ { "name": "all", "in": "query", "required": false, "schema": { "type": "boolean" } } ],
+        "responses": {
+          "200": { "description": "List.", "content": { "application/json": { "schema": { "type": "object", "required": ["connections"], "properties": { "connections": { "type": "array", "items": { "$ref": "#/components/schemas/DrainState" } } } } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/drain/{connectionId}": {
+      "post": {
+        "summary": "Begin draining a connection: stop new selection immediately, let in-flight streams finish. Idempotent against a connection already draining.",
+        "readOnly": false,
+        "stateChanging": true,
+        "authClass": "operator",
+        "loopbackBound": true,
+        "parameters": [ { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "ifMatch": { "type": "string", "description": "DrainState.version from the last read. Omit only for a first-time drain of a connection with no prior DrainState." } } } } } },
+        "responses": {
+          "200": { "description": "Draining (already draining returns the current state unchanged).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DrainState" } } } },
+          "400": { "description": "Malformed body: ifMatch present but not a string, or an unrecognized field.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only, or the caller is not a loopback peer.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "connectionId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "412": { "description": "ifMatch does not match the connection's current DrainState.version: a concurrent write already changed it. currentVersion is returned; state is unchanged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+      "delete": {
+        "summary": "Cancel a drain: resume eligibility for new selection. Idempotent against a connection that is not currently draining.",
+        "readOnly": false,
+        "stateChanging": true,
+        "authClass": "operator",
+        "loopbackBound": true,
+        "parameters": [
+          { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "ifMatch", "in": "query", "required": false, "schema": { "type": "string" }, "description": "DrainState.version from the last read." }
+        ],
+        "responses": {
+          "200": { "description": "Not draining (already not draining returns the current state unchanged).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DrainState" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only, or the caller is not a loopback peer.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "connectionId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "412": { "description": "ifMatch does not match the connection's current DrainState.version. State is unchanged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/activation": {
+      "get": {
+        "summary": "The active release plus recent activation history.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "responses": {
+          "200": { "description": "Current and recent releases.", "content": { "application/json": { "schema": { "type": "object", "required": ["active", "history"], "properties": { "active": { "$ref": "#/components/schemas/Release" }, "history": { "type": "array", "items": { "$ref": "#/components/schemas/Release" } } } } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+      "post": {
+        "summary": "Activate a built release. Idempotent against re-activating the release that is already active.",
+        "readOnly": false,
+        "stateChanging": true,
+        "authClass": "operator",
+        "loopbackBound": true,
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["releaseId"], "properties": { "releaseId": { "type": "string" }, "ifMatch": { "type": "string", "description": "Release.concurrencyVersion of the currently active release, from the last GET." } } } } } },
+        "responses": {
+          "200": { "description": "Now active.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Release" } } } },
+          "400": { "description": "releaseId missing or not a string.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only, or the caller is not a loopback peer.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "releaseId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "releaseId exists but has not passed the build/qualification precondition for activation.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "412": { "description": "ifMatch does not match the active release's concurrencyVersion: a concurrent activation or rollback already moved it. currentVersion is returned; state is unchanged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/rollback": {
+      "post": {
+        "summary": "Return to the prior healthy release. Omitting toReleaseId targets the active release's previousReleaseId.",
+        "readOnly": false,
+        "stateChanging": true,
+        "authClass": "operator",
+        "loopbackBound": true,
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "toReleaseId": { "type": "string" }, "ifMatch": { "type": "string", "description": "Release.concurrencyVersion of the currently active release, from the last GET." } } } } } },
+        "responses": {
+          "200": { "description": "Rolled back; the response is the now-active release.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Release" } } } },
+          "400": { "description": "toReleaseId present but not a string.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only, or the caller is not a loopback peer.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "toReleaseId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "No previousReleaseId on file and no toReleaseId given: nothing to roll back to.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "412": { "description": "ifMatch does not match the active release's concurrencyVersion. State is unchanged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/receipts": {
+      "get": {
+        "summary": "Paginated switch receipts: the durable reason for every account repin (Account Scheduling Contract rule 8), without credentials or prompt bodies.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "parameters": [
+          { "name": "connectionId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "model", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "since", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "number" } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Page.", "content": { "application/json": { "schema": { "type": "object", "required": ["receipts"], "properties": { "receipts": { "type": "array", "items": { "$ref": "#/components/schemas/SwitchReceipt" } }, "nextCursor": { "type": ["string", "null"] } } } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/receipts/{receiptId}": {
+      "get": {
+        "summary": "One switch receipt in full.",
+        "readOnly": true,
+        "stateChanging": false,
+        "authClass": "operator",
+        "loopbackBound": false,
+        "parameters": [ { "name": "receiptId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "Receipt.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SwitchReceipt" } } } },
+          "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "receiptId does not exist.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    }
+  }
+}
