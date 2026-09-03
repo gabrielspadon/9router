@@ -132,10 +132,25 @@ const DEFAULT_SETTINGS = {
   toolDisclosureExcludeTools: [],
 };
 
+// Second line of defence behind parseJson's byte decoding. Every writer in this
+// file reads the row, spreads it, and writes the result back, so anything that
+// is not a plain object turns into a persisted byte-spread that erases the real
+// settings. Throwing keeps a damaged row readable for repair; falling back to
+// {} would overwrite it with defaults on the very next patch.
+function asSettingsObject(value) {
+  if (value == null) return {};
+  if (typeof value !== "object" || Array.isArray(value) || ArrayBuffer.isView(value)) {
+    throw new TypeError(
+      `settings row did not parse to a plain object (got ${Object.prototype.toString.call(value)}); refusing to overwrite it`,
+    );
+  }
+  return value;
+}
+
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-  return row ? parseJson(row.data, {}) : {};
+  return row ? asSettingsObject(parseJson(row.data, {})) : {};
 }
 
 function deleteClearedProxyPoolSnapshots(providerStrategies) {
@@ -205,7 +220,7 @@ export async function updateSettings(updates) {
   let next;
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-    const current = row ? parseJson(row.data, {}) : {};
+    const current = row ? asSettingsObject(parseJson(row.data, {})) : {};
     // Nested config objects arrive as partial PATCHes from the dashboard;
     // shallow top-level spread would replace them wholesale and drop
     // sibling keys (e.g. { claudeCompat: { keywords } } losing enabled).
@@ -251,7 +266,7 @@ export async function updateProviderStrategy(providerId, values) {
   let next;
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-    const current = row ? parseJson(row.data, {}) : {};
+    const current = row ? asSettingsObject(parseJson(row.data, {})) : {};
     const strategies = { ...(current.providerStrategies || {}) };
     const provider = { ...(strategies[providerId] || {}) };
     for (const [key, value] of Object.entries(values)) {
@@ -280,7 +295,7 @@ export async function updateProviderStrategyProxyPoolSnapshotIfBound(providerId,
   let result = null;
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-    const current = row ? parseJson(row.data, {}) : {};
+    const current = row ? asSettingsObject(parseJson(row.data, {})) : {};
     const strategies = { ...(current.providerStrategies || {}) };
     const strategy = strategies[providerId];
     if (
