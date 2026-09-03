@@ -805,11 +805,28 @@ export async function GET(request) {
     let out = data;
     let rewroteForClaude = false;
     if (
-      // Gating on anthropic-version alone missed the discovery request itself:
-      // Claude Code lists models with credential headers and nothing else, so
-      // it received raw ids, filtered them by /(claude|anthropic)/i and dropped
-      // every model this router offers (#2947). The detector already recognises
-      // the client on the request path, so it decides here too.
+      // Protocol-keyed, not identity-keyed: anthropic-version is what the
+      // @anthropic-ai/sdk sends on every real request, so ANY client built on
+      // it gets this rewrite the moment it sends one, not only Claude Code.
+      //
+      // The `clientTool === "claude"` half exists only to cover the one
+      // request shape that has no anthropic-version to key off: the bare
+      // discovery GET, where Claude Code lists models with credential headers
+      // and nothing else, so without it every model this router offers got
+      // filtered out client-side by /(claude|anthropic)/i and dropped (#2947).
+      // It is not a better-hidden identity check standing in reserve — it is
+      // the only signal this one call carries. x-api-key (Anthropic's own
+      // auth-header convention, and the one this app's own
+      // collectClientApiKeyCandidates already treats as protocol-level rather
+      // than tool-specific) was considered and rejected: this app's Claude
+      // Code integration writes ANTHROPIC_AUTH_TOKEN, so Claude Code presents
+      // Authorization: Bearer here too — indistinguishable from a plain
+      // OpenAI client's Bearer token, so it settles nothing that
+      // anthropic-version does not already settle. There is also no
+      // protocol-distinct endpoint to key off instead, unlike /v1/messages vs
+      // /v1/responses: catalog discovery is one shared /v1/models GET for
+      // every client. Detector reused rather than re-run, since the request
+      // path above already computed it.
       (request?.headers?.get("anthropic-version") || clientTool === "claude") &&
       process.env.DISABLE_CLAUDE_COMPAT !== "true"
     ) {
@@ -844,6 +861,20 @@ export async function GET(request) {
     // list, and fail on ours with "failed to decode models response: missing
     // field `models`" (#1908). Same detector the request path uses, so a client
     // that routes as Codex also reads its catalog as Codex.
+    //
+    // Envelope only, never content: buildCodexCatalog() re-shapes `out` in
+    // place — same ids, same order, same set, just `{models:[...]}` instead
+    // of `{object:"list",data:[...]}` — so this branch never gives Codex a
+    // model Non-Codex clients don't also see. No endpoint- or header-based
+    // alternative exists to key this off: Codex's config always sets
+    // wire_api = "responses" (src/app/api/cli-tools/codex-settings/route.js)
+    // and it lists models by GETting this same shared /v1/models — there is
+    // no separate /v1/responses/models path, and it sends no inbound header
+    // naming its wire dialect (the outbound "OpenAI-Beta": "codex-1" in
+    // open-sse/services/usage/codex.js is this gateway talking to the
+    // provider, not Codex talking to this gateway) — so detectClientTool is
+    // the only signal this one call carries, same as the claude- prefix case
+    // above.
     if (clientTool === "codex") {
       return Response.json(buildCodexCatalog(out), {
         headers: { "Access-Control-Allow-Origin": "*" },
