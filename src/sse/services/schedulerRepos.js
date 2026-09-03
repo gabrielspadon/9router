@@ -44,12 +44,12 @@ function livePin(row, nowIso) {
 }
 
 /**
- * Build the four-method surface `selectAndReserve` is documented to take.
+ * Build the five-method surface `selectAndReserve` is documented to take.
  *
  * @param {{now?: Date|number}} [options] - injected clock for the TTL check and
  *   for `lastSeenAt`, so a scheduling decision stays reproducible.
  * @returns {Promise<{transaction: Function, getPin: Function, setPin: Function,
- *   recordSwitch: Function}>} every method SYNCHRONOUS. The promise is the
+ *   touchPin: Function, recordSwitch: Function}>} every method SYNCHRONOUS. The promise is the
  *   adapter resolution, and it is resolved before the transaction opens.
  */
 export async function createSchedulerRepos({ now = Date.now() } = {}) {
@@ -88,6 +88,22 @@ export async function createSchedulerRepos({ now = Date.now() } = {}) {
         [sessionHash, model, connectionId, pinnedAt, nowIso]
       );
       return { connectionId, pinnedAt };
+    },
+
+    // lastSeenAt ONLY, matching sessionAffinityRepo.touchPin. A same-account
+    // re-selection is not a new binding, so pinnedAt must not move: decideRepin
+    // re-ranks at the pin's own timestamp, and restamping it every request would
+    // make a settled pin look permanently new and defeat rule 5. This is the
+    // only write a reused pin produces, which is what makes a live session
+    // distinguishable from an abandoned one and from a writer never reached.
+    touchPin({ sessionHash, model, at } = {}) {
+      if (!sessionHash || !model) return 0;
+      const seenAt = typeof at === 'string' && at !== '' ? at : nowIso;
+      const res = db.run(
+        `UPDATE sessionAffinity SET lastSeenAt = ? WHERE sessionHash = ? AND model = ?`,
+        [seenAt, sessionHash, model]
+      );
+      return res?.changes ?? 0;
     },
 
     // Append-only, matching accountSwitchRepo.recordSwitch. The receipt arrives

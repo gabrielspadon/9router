@@ -234,6 +234,42 @@ describe('E1.1w: getProviderCredentials selects through the scheduler', () => {
     expect(rows('SELECT trigger FROM accountSwitches').map((r) => r.trigger)).toEqual(['first-pin']);
   });
 
+  it('advances lastSeenAt on a sticky re-selection without moving pinnedAt', async () => {
+    // The reuse branch is the ONLY branch a settled session ever takes, and it
+    // wrote NOTHING. selectAndReserve calls setPin on a first pin and on a
+    // repin, and no production caller ever reached sessionAffinityRepo.touchPin,
+    // so one session produced exactly one row-write for its entire life. That is
+    // why a gateway can serve forty requests off a live pin and leave
+    // sessionAffinity untouched, and why lastSeenAt could not tell "the pin was
+    // reused" apart from "the writer was never reached".
+    dbMocks.getProviderConnections.mockResolvedValue([
+      connection('alpha', { key: FAKE_KEY_A, maxConcurrent: 4, snapshot: snapshot(90) }),
+    ]);
+
+    const first = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+    expect(first.connectionId).toBe('alpha');
+    leases.releaseAccountLease(first.accountLease);
+    const atPin = rows('SELECT pinnedAt, lastSeenAt FROM sessionAffinity')[0];
+    expect(atPin.pinnedAt).toBe(iso(0));
+    expect(atPin.lastSeenAt).toBe(iso(0));
+
+    vi.setSystemTime(NOW + HOUR);
+    const second = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+    expect(second.connectionId).toBe('alpha');
+    leases.releaseAccountLease(second.accountLease);
+
+    const after = rows('SELECT pinnedAt, lastSeenAt FROM sessionAffinity');
+    expect(after).toHaveLength(1);
+    // Liveness moved: the row now says the session was seen an hour later.
+    expect(after[0].lastSeenAt).toBe(iso(HOUR));
+    // The binding's own age did NOT move. decideRepin re-ranks at pinnedAt, so
+    // restamping it on every reuse would make a settled pin look permanently
+    // new and defeat rule 5.
+    expect(after[0].pinnedAt).toBe(iso(0));
+    // A same-account re-selection is still not a switch.
+    expect(rows('SELECT trigger FROM accountSwitches').map((r) => r.trigger)).toEqual(['first-pin']);
+  });
+
   it('repins and writes a switch receipt when the pinned account is gone', async () => {
     dbMocks.getProviderConnections.mockResolvedValue([
       connection('alpha', { key: FAKE_KEY_A, snapshot: snapshot(90) }),

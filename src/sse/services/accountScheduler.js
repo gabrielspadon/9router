@@ -13,6 +13,7 @@
  *   transaction(fn)                      -> fn's return value, synchronously
  *   getPin({sessionHash, model})         -> {connectionId} | null
  *   setPin({sessionHash, model, connectionId, at})
+ *   touchPin({sessionHash, model, at})   -> lastSeenAt on a reused pin
  *   recordSwitch(receipt)                -> persistence of rule 8's receipt
  * Everything else the scheduler needs is a parameter, because a scheduler that
  * reaches for state it was not handed is not reproducible from its inputs.
@@ -55,6 +56,8 @@ function runInTransaction(repos, fn) {
  * @param {{reserve: Function, release: Function}} input.registry - a lease
  *   registry from createLeaseRegistry.
  * @param {object} input.repos - injected persistence (see module docstring).
+ *   `touchPin` is optional: a caller that does not supply it loses only the
+ *   liveness stamp, never the selection.
  * @returns {{connection: object, lease: object, receipt: object|null, reason: string}
  *   | {unavailable: true, retryAfter: number, reason: string}}
  */
@@ -140,6 +143,14 @@ export function selectAndReserve({
             at: new Date(nowMs).toISOString(),
           });
         }
+      } else if (typeof repos.touchPin === 'function') {
+        // A settled session takes THIS branch and no other, for every request
+        // after its first. Writing nothing here meant one session produced one
+        // row-write for its whole life, so a gateway serving off a live pin left
+        // sessionAffinity untouched and lastSeenAt could not tell a reused pin
+        // from a writer that was never reached. pinnedAt deliberately does not
+        // move: it is when this binding started and decideRepin re-ranks at it.
+        repos.touchPin({ sessionHash, model, at: new Date(nowMs).toISOString() });
       }
 
       // Rule 8: a receipt for every switch, including the first pin, which is
