@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/admin/guard.js";
 import { adminError, adminJson } from "@/lib/admin/policy.js";
-import { queryReceipts } from "@/lib/admin/receipts.js";
+import { ReceiptQueryError, queryReceipts } from "@/lib/admin/receipts.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -38,6 +38,13 @@ export async function GET(request) {
       }),
     );
   } catch (error) {
+    // A typed parameter the caller got wrong is 400, never 500: `limit`, `since`
+    // and `cursor` are documented types in the admin ABI, and answering the
+    // default page for a malformed one left a caller unable to tell a rejected
+    // parameter from a filter that happened to match it.
+    if (error instanceof ReceiptQueryError) {
+      return adminError(400, "invalid_request", error.message);
+    }
     return adminError(500, "state_unavailable", error?.message || "Receipts could not be read.");
   }
 }

@@ -379,12 +379,13 @@
         "parameters": [
           { "name": "connectionId", "in": "query", "required": false, "schema": { "type": "string" } },
           { "name": "model", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "since", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } },
-          { "name": "limit", "in": "query", "required": false, "schema": { "type": "number" } },
-          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+          { "name": "since", "in": "query", "required": false, "description": "ISO-8601 date-time. A value that does not parse is 400 invalid_request, never a silently unfiltered page.", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "limit", "in": "query", "required": false, "description": "Positive integer. Absent means 50. Non-numeric, fractional, zero and negative are 400 invalid_request. A value above 200 is CLAMPED to 200 rather than refused: this document sets no maximum, so capping bounds the scan without breaking a caller the contract permits.", "schema": { "type": "integer", "minimum": 1, "default": 50 } },
+          { "name": "cursor", "in": "query", "required": false, "description": "Opaque, issued only as a prior response's nextCursor. Encodes the (switchedAt, id) of the last row returned, because switchedAt alone is not unique and a tie-blind cursor skips rows. A value this endpoint did not issue is 400 invalid_request, never a silent restart from the first page.", "schema": { "type": "string" } }
         ],
         "responses": {
-          "200": { "description": "Page.", "content": { "application/json": { "schema": { "type": "object", "required": ["receipts"], "properties": { "receipts": { "type": "array", "items": { "$ref": "#/components/schemas/SwitchReceipt" } }, "nextCursor": { "type": ["string", "null"] } } } } } },
+          "200": { "description": "Page. Rows are totally ordered by (switchedAt DESC, id DESC), so a cursor walk returns every row exactly once and agrees with a full read at any page size.", "content": { "application/json": { "schema": { "type": "object", "required": ["receipts"], "properties": { "receipts": { "type": "array", "items": { "$ref": "#/components/schemas/SwitchReceipt" } }, "nextCursor": { "type": ["string", "null"] } } } } } },
+          "400": { "description": "A typed query parameter was malformed: limit, since or cursor. Validated BEFORE the switch log is read, so a caller error costs no scan and is never reported as 500 state_unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "401": { "description": "No operator credential presented.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "403": { "description": "Inference key only; operator class required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
