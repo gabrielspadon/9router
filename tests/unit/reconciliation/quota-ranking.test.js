@@ -1,0 +1,319 @@
+import { describe, it, expect } from 'vitest';
+import {
+  rankAccounts,
+  selectAccount,
+  classifyWindow,
+  windowHorizonMs,
+  normalizeAccountWindows,
+} from '@/shared/utils/quotaRanking.js';
+
+// Fake clock. Every case below is anchored here and no test reads Date.now(),
+// so a ranking result is a function of its inputs alone — a ranking test that
+// drifts with wall time proves nothing about the ranker.
+const NOW = Date.parse('2026-01-01T00:00:00.000Z');
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+const iso = (offsetMs) => new Date(NOW + offsetMs).toISOString();
+
+const w = (scope, remaining, limit, resetAt, confidence = 'fresh') => ({
+  scope,
+  remaining,
+  limit,
+  resetAt,
+  observedAt: iso(0),
+  confidence,
+});
+
+describe('quotaRanking: window classification and horizons', () => {
+  it('reads a parenthetical duration in preference to the bare name', () => {
+    expect(windowHorizonMs('session (5h)')).toBe(5 * HOUR);
+    expect(windowHorizonMs('weekly (7d)')).toBe(7 * DAY);
+    expect(windowHorizonMs('monthly (30d)')).toBe(30 * DAY);
+  });
+
+  it('falls back on the bare window name when no duration is given', () => {
+    expect(windowHorizonMs('weekly')).toBe(7 * DAY);
+    expect(windowHorizonMs('hourly')).toBe(HOUR);
+  });
+
+  it('treats a per-model sub-quota as scoped and ignores it for ranking', () => {
+    expect(classifyWindow('per-model opus')).toBe('scoped');
+    expect(classifyWindow('session (5h)')).toBe('general');
+    expect(classifyWindow('gibberish')).toBeNull();
+  });
+
+  it('drops scoped windows but keeps the account rankable on its general ones', () => {
+    const r = normalizeAccountWindows([
+      w('session (5h)', 100, 300, iso(HOUR)),
+      { scope: 'per-model sonnet', remaining: 0, limit: 10, resetAt: iso(HOUR) },
+    ]);
+    expect(r.ok).toBe(true);
+    expect(r.windows.map((x) => x.scope)).toEqual(['session (5h)']);
+  });
+});
+
+describe('quotaRanking: compound window shapes (Acceptance: Compound windows)', () => {
+  it('5h + 7d — the account whose LONGEST window resets soonest wins', () => {
+    // b's 7d window resets first, so its entitlement is the one about to be
+    // wasted, even though a's 5h window resets sooner.
+    const accounts = [
+      {
+        id: 'a',
+        windows: [
+          w('session (5h)', 100, 300, iso(HOUR)),
+          w('weekly (7d)', 1000, 5000, iso(6 * DAY)),
+        ],
+      },
+      {
+        id: 'b',
+        windows: [
+          w('session (5h)', 100, 300, iso(4 * HOUR)),
+          w('weekly (7d)', 1000, 5000, iso(2 * DAY)),
+        ],
+      },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.degraded).toBe(false);
+    expect(res.winner.id).toBe('b');
+    expect(res.ranked.map((r) => r.id)).toEqual(['b', 'a']);
+  });
+
+  it("7d only — a single-shape cohort still ranks by that window's reset", () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 500, 5000, iso(5 * DAY))] },
+      { id: 'b', windows: [w('weekly (7d)', 500, 5000, iso(1 * DAY))] },
+      { id: 'c', windows: [w('weekly (7d)', 500, 5000, iso(3 * DAY))] },
+    ];
+    expect(rankAccounts(accounts, { now: NOW }).ranked.map((r) => r.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('5h + 7d + 30d — the 30d window is compared first and binds the result', () => {
+    // a wins on both shorter windows, but b's 30d window resets sooner, and the
+    // longest window is compared first. Burning a's short entitlement against a
+    // 30d window that is not close to resetting would overspend the long one.
+    const accounts = [
+      {
+        id: 'a',
+        windows: [
+          w('session (5h)', 200, 300, iso(1 * HOUR)),
+          w('weekly (7d)', 4000, 5000, iso(1 * DAY)),
+          w('monthly (30d)', 40_000, 90_000, iso(29 * DAY)),
+        ],
+      },
+      {
+        id: 'b',
+        windows: [
+          w('session (5h)', 200, 300, iso(4 * HOUR)),
+          w('weekly (7d)', 4000, 5000, iso(6 * DAY)),
+          w('monthly (30d)', 40_000, 90_000, iso(3 * DAY)),
+        ],
+      },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.winner.id).toBe('b');
+  });
+
+  it('falls through to the next-longest window when the longest ties', () => {
+    const accounts = [
+      {
+        id: 'a',
+        windows: [
+          w('session (5h)', 100, 300, iso(4 * HOUR)),
+          w('weekly (7d)', 900, 5000, iso(3 * DAY)),
+        ],
+      },
+      {
+        id: 'b',
+        windows: [
+          w('session (5h)', 100, 300, iso(1 * HOUR)),
+          w('weekly (7d)', 900, 5000, iso(3 * DAY)),
+        ],
+      },
+    ];
+    expect(selectAccount(accounts, { now: NOW })).toBe('b');
+  });
+});
+
+describe('quotaRanking: eligibility requires headroom in EVERY known hard window', () => {
+  it('an account with headroom in one scope and none in another is ineligible', () => {
+    // a has a full 5h window but its 7d window is spent. Contract rule 2: every
+    // known hard window must have headroom, so the fresh short window does not
+    // rescue it. `remaining: 0` is what spent means; a window at
+    // remaining == limit is UNTOUCHED and is the most usable window there is.
+    const accounts = [
+      {
+        id: 'a',
+        windows: [
+          w('session (5h)', 300, 300, iso(1 * HOUR)),
+          w('weekly (7d)', 0, 5000, iso(6 * DAY)),
+        ],
+      },
+      {
+        id: 'b',
+        windows: [
+          w('session (5h)', 50, 300, iso(4 * HOUR)),
+          w('weekly (7d)', 100, 5000, iso(6 * DAY)),
+        ],
+      },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.winner.id).toBe('b');
+    expect(res.eligible.map((r) => r.id)).toEqual(['b']);
+    expect(res.ineligible.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('a depleted window whose resetAt has already elapsed counts as replenished', () => {
+    // Reset-aware repin (rule 5) needs this: a stale depleted reading about a
+    // window that has since rolled over must not strand the account forever.
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 0, 5000, iso(-HOUR))] },
+      { id: 'b', windows: [w('weekly (7d)', 0, 5000, iso(6 * DAY))] },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.winner.id).toBe('a');
+    expect(res.ineligible.map((r) => r.id)).toEqual(['b']);
+  });
+
+  it('a cohort with no usable account degrades instead of picking one', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 0, 5000, iso(6 * DAY))] },
+      { id: 'b', windows: [w('weekly (7d)', 0, 5000, iso(5 * DAY))] },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.degraded).toBe(true);
+    expect(res.reason).toBe('cohort-all-depleted');
+    expect(res.winner).toBeNull();
+    // Still retained as failover inventory (§10), never deactivated.
+    expect(res.ranked).toHaveLength(2);
+  });
+});
+
+describe('quotaRanking: tie-break path', () => {
+  it('uses configured priority ONLY when every reset timestamp is identical', () => {
+    const accounts = [
+      { id: 'a', priority: 9, windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      { id: 'b', priority: 1, windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      { id: 'c', priority: 5, windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+    ];
+    expect(rankAccounts(accounts, { now: NOW }).ranked.map((r) => r.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('never lets priority override a sooner-resetting longest window', () => {
+    const accounts = [
+      { id: 'a', priority: 1, windows: [w('weekly (7d)', 900, 5000, iso(6 * DAY))] },
+      { id: 'b', priority: 99, windows: [w('weekly (7d)', 900, 5000, iso(1 * DAY))] },
+    ];
+    expect(selectAccount(accounts, { now: NOW })).toBe('b');
+  });
+
+  it('prefers the previous pin over priority on an exact reset tie (no round-robin)', () => {
+    const accounts = [
+      { id: 'a', priority: 1, windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      { id: 'b', priority: 2, windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+    ];
+    expect(selectAccount(accounts, { now: NOW, previousPinId: 'b' })).toBe('b');
+    // and the pin is genuinely load-bearing, not a coincidence of input order
+    expect(selectAccount(accounts, { now: NOW })).toBe('a');
+  });
+
+  it('a missing priority is unbounded, so a configured one outranks it', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      { id: 'b', priority: 7, windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+    ];
+    expect(selectAccount(accounts, { now: NOW })).toBe('b');
+  });
+
+  it('orders unknown-confidence evidence behind fresh evidence, without dropping it', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(1 * DAY), 'unknown')] },
+      { id: 'b', windows: [w('weekly (7d)', 900, 5000, iso(6 * DAY), 'fresh')] },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.winner.id).toBe('b');
+    expect(res.eligible.map((r) => r.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('quotaRanking: null resetAt is not usable entitlement (overlay-spec §1, strict)', () => {
+  it('falls an account with a null resetAt out of ranking rather than sorting it first', () => {
+    const r = normalizeAccountWindows([w('weekly (7d)', 0, 5000, null)]);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('bad-resetAt:weekly (7d)');
+  });
+
+  it('degrades the whole cohort to previous-pin order when one member has a null resetAt', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(6 * DAY))] },
+      { id: 'b', windows: [w('weekly (7d)', 0, 5000, null)] },
+    ];
+    const res = rankAccounts(accounts, { now: NOW, previousPinId: 'a' });
+    expect(res.degraded).toBe(true);
+    expect(res.reason).toContain('bad-resetAt');
+    expect(res.winner).toBeNull();
+    // Fallback is previous-pin-first in original order, never an abort.
+    expect(res.ranked.map((r) => r.id)).toEqual(['a', 'b']);
+  });
+
+  it('rejects an unparseable resetAt on the same strict grounds', () => {
+    expect(normalizeAccountWindows([w('weekly (7d)', 10, 100, 'not-a-date')]).ok).toBe(false);
+    expect(normalizeAccountWindows([w('weekly (7d)', 10, 100, '')]).ok).toBe(false);
+  });
+});
+
+describe('quotaRanking: cohort gate and clock injection', () => {
+  it('degrades when window shapes differ across the cohort', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      {
+        id: 'b',
+        windows: [w('session (5h)', 90, 300, iso(HOUR)), w('weekly (7d)', 900, 5000, iso(3 * DAY))],
+      },
+    ];
+    const res = rankAccounts(accounts, { now: NOW });
+    expect(res.degraded).toBe(true);
+    expect(res.reason).toBe('cohort-shape-mismatch');
+  });
+
+  it('short-circuits a single-member cohort with no ranking work', () => {
+    const res = rankAccounts([{ id: 'solo', windows: [w('weekly (7d)', 10, 100, iso(DAY))] }], {
+      now: NOW,
+    });
+    expect(res.degraded).toBe(false);
+    expect(res.winner.id).toBe('solo');
+  });
+
+  it('refuses to run without an injected clock', () => {
+    const accounts = [{ id: 'a', windows: [w('weekly (7d)', 10, 100, iso(DAY))] }];
+    expect(() => rankAccounts(accounts, {})).toThrow(TypeError);
+    expect(() => rankAccounts(accounts, { now: 'whenever' })).toThrow(/injected/);
+  });
+
+  it('accepts a Date as well as an epoch number, with identical results', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(6 * DAY))] },
+      { id: 'b', windows: [w('weekly (7d)', 900, 5000, iso(1 * DAY))] },
+    ];
+    expect(selectAccount(accounts, { now: new Date(NOW) })).toBe(
+      selectAccount(accounts, { now: NOW })
+    );
+  });
+
+  it('is a total order — the same inputs always produce the same ranking', () => {
+    const accounts = [
+      { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      { id: 'b', windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+      { id: 'c', windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
+    ];
+    const once = rankAccounts(accounts, { now: NOW }).ranked.map((r) => r.id);
+    for (let i = 0; i < 5; i += 1) {
+      expect(rankAccounts(accounts, { now: NOW }).ranked.map((r) => r.id)).toEqual(once);
+    }
+  });
+
+  it('returns no winner for an empty cohort instead of throwing', () => {
+    const res = rankAccounts([], { now: NOW });
+    expect(res.winner).toBeNull();
+    expect(res.reason).toBe('empty-cohort');
+  });
+});
