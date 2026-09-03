@@ -38,6 +38,7 @@ import {
   saveRequestDetail,
   trackActiveSession,
 } from "@/lib/usageDb.js";
+import { nextRid } from "@/shared/observability/decide.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import {
@@ -180,6 +181,7 @@ export function stripContinuityFields(body, provider, model, log) {
 }
 
 export async function handleChatCore({
+  requestId,
   body,
   modelInfo,
   credentials: rawCredentials,
@@ -256,11 +258,20 @@ export async function handleChatCore({
       return connectionId || "";
     }
   })();
-  const reqTag = log?.tagForSession
+  const emojiTag = log?.tagForSession
     ? log.tagForSession(sessionSeed)
     : log?.nextTag
       ? log.nextTag()
       : "";
+  // `reqTag` is a display prefix and nothing else -- every consumer passes it
+  // straight to log.line/log.errorLine -- so putting the request id INSIDE it
+  // gives all ~20 emit sites in this file and its handlers a correlation id for
+  // no further plumbing. That is what makes the existing ▶ and 📊 lines joinable:
+  // the emoji namespace has 8 buckets and collides above ~4 in-flight requests,
+  // which is why the live journal shows a 🟢 DONE landing before the 🟡 that
+  // started it. The emoji stays for the operator's own eye.
+  const rid = requestId || nextRid();
+  const reqTag = rid ? `${emojiTag} rid=${rid}`.trim() : emojiTag;
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
   const clientServiceTierSpecified = Object.prototype.hasOwnProperty.call(

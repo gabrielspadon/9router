@@ -33,6 +33,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
+import { decide, idPrefix, relativeReset, requestRid } from "@/shared/observability/decide.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel,
@@ -151,10 +152,31 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   const presentedApiKey = resolvedApiKey.apiKey;
   const apiKey = resolvedApiKey.valid ? presentedApiKey : null;
   const rateLimitKey = apiKey || request.headers.get("x-forwarded-for") || "anonymous";
+  // The request id for everything this call emits. Adopted from the front
+  // proxy's x-tp-rid when it sent one, minted here otherwise.
+  const rid = requestRid(request);
   if (isRateLimited(rateLimitKey)) {
-    log.warn("CHAT", "Rate limit exceeded");
+    const resetAt = rateLimitResetAtMs(rateLimitKey);
+    // This was `log.warn("CHAT", "Rate limit exceeded")`: 15,548 lines in a
+    // measured six-hour window, 73.9% of the whole journal, naming neither the
+    // caller, the limit, the window nor the reset -- while all four were in
+    // scope on the next line. It is now one folded ADM.ratelimited carrying all
+    // four. `key` is a SHA-256 prefix, which tells two callers apart without the
+    // line ever holding the credential. `model` is deliberately absent: the body
+    // is not parsed until after this gate and reading it here to decorate a log
+    // line would consume the request stream.
+    decide("ADM", "ratelimited", {
+      rid,
+      key: apiKey
+        ? `api:${idPrefix(apiKey)}`
+        : rateLimitKey === "anonymous" ? "anon" : `ip:${idPrefix(rateLimitKey)}`,
+      limit: `${RATE_LIMIT_MAX_REQUESTS}/${RATE_LIMIT_WINDOW_MS / 1000}s`,
+      win: `${RATE_LIMIT_WINDOW_MS / 1000}s`,
+      reset: relativeReset(resetAt),
+      why: apiKey ? "api-key-window" : "client-window",
+    });
     return errorResponse(HTTP_STATUS.RATE_LIMITED, "Too many requests, please slow down", {
-      retryAfter: { at: rateLimitResetAtMs(rateLimitKey) },
+      retryAfter: { at: resetAt },
       failurePhase: "admission",
     });
   }
@@ -685,6 +707,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         ? await createAntigravityVerificationHooks(credentials.connectionId)
         : {};
       const result = await handleChatCore({
+        // Same Request object as handleChat saw, so this is the SAME rid: the
+        // admission line and the request lines join on one grep.
+        requestId: requestRid(request),
         body: { ...body, model: `${provider}/${effectiveModel}` },
         modelInfo: { provider, model: effectiveModel },
         credentials: refreshedCredentials,
