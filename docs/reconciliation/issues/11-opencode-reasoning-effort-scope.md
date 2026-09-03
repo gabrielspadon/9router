@@ -1,9 +1,11 @@
 # OpenCode reasoning effort scope
 
 Priority: P1
-Status: Partial
+Status: Fixed, but not the way this doc prescribed — see correction below (this doc's own root-cause diagnosis was superseded, not just its status).
 
 ## Current behavior
+
+Correction: `thinkingLevels.js:130-133`'s precedence chain (`routeFmt = PROVIDERS[provider]?.thinkingFormat || openai-compatible check`, `fmt = routeFmt || caps.thinkingFormat`) is UNCHANGED today — still unconditional for every provider, no `oc/`-prefix gate, exactly as described below. But `tests/unit/reconciliation/opencode-effort-scope.test.js` (landed alongside the actual fix) asserts this broad precedence is *correct* for eight non-OpenCode providers by name (`meta`, `ollama`, `tokenrouter`, `openrouter`, `vercel-ai-gateway`, `venice`, `nube`, `siliconflow`) plus `openai-compatible-*` and `cloudflare-ai` — the reconciliation determined narrowing to `oc/`-only, as this doc's "Required behavior" prescribes, would have been wrong. The actual defect was one level lower, in `PATTERN_THINKING`: an unscoped `*codex*` pattern entry (no `provider` field) matched on the model NAME and outranked the route's own declared format. The fix scopes name-only pattern entries to defer to a declared route format while leaving `provider`-scoped pattern entries authoritative (test comment, `opencode-effort-scope.test.js:1-12`) — a different code path than the `:130-133` chain this doc's Blast Radius names.
 
 - Core reasoning-effort forwarding exists and works: `open-sse/providers/thinkingLevels.js` resolves valid thinking levels per model, reusing `capabilities.js`'s `thinkingFormat`/`canDisable` so level sets stay defined in one place (file header, `:1-2`).
 - The gap is precedence, not forwarding. `open-sse/providers/thinkingLevels.js:124` opens the comment block (`// Provider-declared format wins over per-model caps (same precedence as thinkingUnified.resolveFormat)...`) whose code follows at `:130-133`:

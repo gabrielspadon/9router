@@ -1,13 +1,13 @@
 # Cache-write accounting
 
 Priority: P1
-Status: Partial
+Status: Implemented — see correction below.
 
 ## Current behavior
 
 - `open-sse/utils/usageTracking.js:220` (`const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);`) already recognizes two spellings of cache-creation (cache-write) evidence: the top-level `cache_creation_input_tokens` field and the nested `prompt_tokens_details.cache_creation_tokens` shape. This is the ingestion side, and it already handles writes.
 - `open-sse/translator/concerns/usage.js:109` is `export function toResponsesUsage(raw)`, the function that converts Chat-Completions-shaped usage into the Responses-API field names Codex and OpenCode expect. Inside it (`:122-127`), only `cachedTokens` (cache *reads*, sourced from `input_tokens_details.cached_tokens`, `prompt_tokens_details.cached_tokens`, or bare `cached_tokens`) is copied into the output `usage.input_tokens_details.cached_tokens`. There is no equivalent line writing a cache-creation field into the Responses-API output shape — cache-write evidence that `usageTracking.js` already captured on ingestion is dropped on this specific export path.
-- Neither `usageTracking.js` nor `usage.js` reads the common `cache_write_tokens` spelling (as opposed to `cache_creation_input_tokens`/`cache_creation_tokens`) anywhere in either file — a provider that emits that spelling produces zero recognized cache-write tokens through either path.
+- Neither `usageTracking.js` nor `usage.js` reads the common `cache_write_tokens` spelling (as opposed to `cache_creation_input_tokens`/`cache_creation_tokens`) anywhere in either file — a provider that emits that spelling produces zero recognized cache-write tokens through either path. **Fixed**: `usageTracking.js:207` now lists `cache_write_tokens` in its write-alias set, and `usage.js`'s `toResponsesUsage` now calls a shared `resolveCacheTokens(raw)` (imported from `usageTracking.js`) so both consumers read one normalizer instead of two — `usage.js:122-133` now writes `input_tokens_details.cache_creation_tokens` into the Responses-API output whenever `cacheCreationTokens > 0`.
 
 ## Required behavior
 
@@ -35,4 +35,4 @@ Vitest translation:
 - Daily/account/cost aggregation code (wherever `usageDaily` and per-account usage rows are written, downstream of `usageTracking.js`) — confirm it reads the now-normalized `cacheCreationTokens` field rather than re-deriving it from a raw payload.
 - `tests/unit/reconciliation/cache-write-accounting.test.js` — new.
 
-No DB migration. `requestStats` already carries dedicated `cachedTokens`/`cacheCreationTokens` integer columns (`src/lib/db/schema.js:199-200`), so once the fix above lands, the right values reach existing columns. `usageHistory` and `usageDaily` (also present in the 13-entry `TABLES`) store their per-record and per-day figures as opaque JSON blobs (`tokens`/`meta` on `usageHistory`, `data` on `usageDaily`) rather than dedicated cache columns — this row changes what gets serialized into those blobs, not their shape, so no schema change is needed there either.
+No DB migration, confirmed. `requestStats` already carries dedicated `cachedTokens`/`cacheCreationTokens` integer columns (`src/lib/db/schema.js:199-200`, now the right values as of the fix above). `usageHistory` and `usageDaily` (present in `TABLES` at `schema.js:21`, 16 entries today, not 13) store their per-record and per-day figures as opaque JSON blobs (`tokens`/`meta` on `usageHistory`, `data` on `usageDaily`) rather than dedicated cache columns — this row changed what gets serialized into those blobs, not their shape, so no schema change was needed there either.

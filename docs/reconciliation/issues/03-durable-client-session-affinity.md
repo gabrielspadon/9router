@@ -1,14 +1,16 @@
 # Durable client-session affinity
 
 Priority: P0
-Status: Absent
+Status: Implemented (commit 02afc6af, "feat: quota-window scheduling core") — see correction below.
 
 ## Current behavior
+
+Superseded: a `sessionAffinity` table now exists (`schema.js:246`), backed by `src/lib/db/repos/sessionAffinityRepo.js` and wired into selection via `src/sse/services/schedulerRepos.js` and `resolveRoutingSessionHash`/`selectAndReserve` in `auth.js:483-491`. The pin/repin/switch-receipt behavior this row asked for is built. The paragraphs below describe the pre-implementation state for context; the one claim that still holds is that `open-sse/utils/sessionManager.js`'s `runtimeSessionStore` (confirmed unchanged, still lines 14-15) was correctly left alone rather than repurposed — the new affinity logic lives beside it, not inside it, exactly as this row's Blast Radius specified.
 
 - `open-sse/utils/sessionManager.js:14` is a comment (`// Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }`) directly above the actual store at line 15, `const runtimeSessionStore = new Map();`. The module docstring (`:5-6`) states the intent plainly: "generates a session ID at startup and keeps it for the process lifetime, scoped per account/connection" — an in-memory `Map` that is empty again on every restart, by design, for a different purpose (Antigravity Cloud Code prompt-cache continuity), not client-session-to-account affinity.
 - `src/sse/handlers/chat.js:487-490` (`const pinnedConnectionId = comboChain ? resolveComboMemberConnection(...) : null;`) is the only pinning in the request path, and it only fires for combo chains or the same-request retry loop (`requestReplayConnectionId`, `:485`). A plain single-model request from the same client session has no pin at all — the matrix's cited `:486` lands on the explanatory comment one line above this block, which is accurate to the described behavior, not a drift.
 - A grep for `affinity` across `src` and `open-sse` turns up exactly one hit, `open-sse/executors/mimo-free.js:124` (`"x-session-affinity": sessionId`), an outbound header for one provider's own load balancer — unrelated to TokenProxy owning session-to-account affinity.
-- No table in `src/lib/db/schema.js` stores a client-session key. There is no restart-recovery path because there is nothing to recover.
+- No table in `src/lib/db/schema.js` stores a client-session key. There is no restart-recovery path because there is nothing to recover. **This sentence is now false**: `sessionAffinity` (`schema.js:246-266`) stores exactly this, with `idx_sa_conn`/`idx_sa_expires` indexes for the repin and TTL-eviction paths.
 
 ## Required behavior
 
@@ -41,4 +43,4 @@ Vitest translation:
 - `open-sse/utils/sessionManager.js` stays as-is; it is process-cache continuity for a different provider concern (Antigravity), not the thing being replaced — do not repurpose it, add the new persistence alongside it.
 - `tests/unit/reconciliation/durable-client-session-affinity.test.js` — new.
 
-DB migration: yes. This is the row that needs a genuinely new persisted shape — a session-affinity table (session hash → connection ID, TTL, last-switch metadata) plus a switch-reason log table. Both are additive: new entries in `src/lib/db/schema.js`'s `TABLES` (13 entries today at `:21`, confirmed by direct read — not the 14 the migration-facts note states), picked up automatically by `syncSchemaFromTables` (`migrate.js:43-73`) the next time `runMigrationOnce` runs (invoked lazily from `src/lib/db/driver.js:105-106`). No `SCHEMA_VERSION` bump is needed for a pure table addition; bump it only if an *existing* table's columns change, which would trigger the pre-change backup at `migrate.js:92-103`.
+DB migration: done, as predicted. `sessionAffinity` and `accountSwitches` (the switch-reason log, feeding `src/shared/utils/switchReceipt.js`) are both live `TABLES` entries (`schema.js:21`, 16 entries today, not 13 or 14).

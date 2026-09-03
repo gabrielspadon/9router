@@ -1,7 +1,7 @@
 # Native connection qualification
 
 Priority: P0
-Status: Absent
+Status: Implemented — `src/app/api/admin/{qualification,drain,activation,rollback}` routes live, plus `qualification/[connectionId]/recheck`. See correction below.
 
 ## Current behavior
 
@@ -9,7 +9,7 @@ Status: Absent
 - `src/proxy.js:2` imports `{ proxy as dashboardProxy } from "./dashboardGuard"`, wiring every request through the guard before any handler runs.
 - `src/dashboardGuard.js:46` declares `PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"]` — the structural-facts note in the task prompt cites this at `:73`; the live file has it at `:46`, a drift beyond the two the task named. `canAccessPublicLlmApi` (confirmed at `:164`) is the function that decides whether an inference key may reach one of those prefixes.
 - Everything else under `/api/*` is deny-by-default: `src/dashboardGuard.js:269-270` (`// Deny-by-default for /api/*` / `if (pathname.startsWith("/api/")) {`) falls through to requiring a valid CLI token or an authenticated session (`:286-288`), returning 401 otherwise. This range matches the structural fact's `:269-289` closely.
-- No qualification, activation, drain, or rollback endpoint exists under `/api/*` today for this guard to protect — there is nothing yet for it to extend.
+- No qualification, activation, drain, or rollback endpoint exists under `/api/*` today for this guard to protect — there is nothing yet for it to extend. **This is now false**: `src/app/api/admin/qualification/route.js`, `.../drain/route.js`, `.../activation/route.js`, and `.../rollback/route.js` all exist, backed by `src/lib/admin/{qualification,state}.js`. The guard shape differs from what "Required behavior" below predicted: rather than extending `PROTECTED_API_PATHS`, `dashboardGuard.js:66` gives `/api/admin` its own `ADMIN_API_PREFIX` gate (`adminGateDenial`/`requireAdmin` in `src/lib/admin/guard.js`, sharing `adminDecision`/`adminAuthClass` from `src/lib/admin/policy.js`) — deliberately never added to `PUBLIC_PREFIXES` or leniency-eligible `PROTECTED_API_PATHS`, and state-changing calls take the `ALWAYS_PROTECTED`-equivalent path regardless of `requireLogin`.
 
 ## Required behavior
 
@@ -36,4 +36,4 @@ Vitest translation:
 - New service module for qualification/drain/activation/rollback state transitions, called by both the admin routes and row 02/03's reservation and affinity layers (drain needs to see live reservations; rollback needs to see active affinity pins).
 - `tests/unit/reconciliation/native-connection-qualification.test.js` — new.
 
-DB migration: yes, for release/activation state (current release ID, drain status per connection, rollback history) and generation receipts. Both are additive `TABLES` entries in `src/lib/db/schema.js` (13 entries today at `:21`; the "14 entries" migration-facts note does not match a direct read of the file), synced by `migrate.js:43-73` without a `SCHEMA_VERSION` bump. A `SCHEMA_VERSION` bump (`schema.js:6`) is needed only if this row's work also alters an existing table's columns, which would trigger the pre-change backup at `migrate.js:92-103`.
+DB migration: none — contrary to this doc's prediction. `src/lib/admin/state.js` stores release/activation/drain state as singleton documents in the existing `kv` table (via `makeKv`), not new `TABLES` entries: "nothing here is queried by anything but id... a table would buy an index no query uses" (`state.js:9-13`). `TABLES` (`schema.js:21`) is at 16 entries today, none of them a release/drain/receipt table.

@@ -1,9 +1,11 @@
 # Operational redaction
 
 Priority: P1
-Status: Partial
+Status: Implemented — see correction below.
 
 ## Current behavior
+
+Superseded: `open-sse/utils/redact.js` now exists — the exact shared module this row's Blast Radius specified — exporting `maskSensitiveHeaders`, `stripSensitiveHeaders`, `redactSecrets`, and `redactSecretsText`. Both consumers now import from it: `requestLogger.js:1` and `requestDetailsRepo.js:1` (`sanitizeHeaders` at `:127` is now just `= stripSensitiveHeaders`, the header-key-list unification this row asked for). Body redaction is field-level, not merely truncation: `requestDetailsRepo.js:148-154`'s `redactAndTruncate` calls `redactSecrets(obj)` before `truncateField`, and on a redaction failure returns `{ redacted: true, reason: "redaction failed" }` rather than the raw body — matching the "fails closed" direction this row required. The paragraphs below describe the pre-implementation state for context.
 
 - `open-sse/utils/requestLogger.js:72` is a comment (`// Mask credentials in headers. Request logs are written to disk unredacted...`) directly above the actual function at `:75`, `function maskSensitiveHeaders(headers) {` (`:75-79`, filtering on a fixed key list: `authorization`, `x-api-key`, `api-key`, `cookie`, `token`, `secret`). This is the task's second known drift, confirmed: the behavior described (masking headers) is real, but it lives at `:75`, not `:72`.
 - The same comment block states plainly that request logs are "written to disk unredacted otherwise" — header masking is the only redaction `requestLogger.js` performs; full request/response bodies pass through to disk whenever `ENABLE_REQUEST_LOGS` is on.

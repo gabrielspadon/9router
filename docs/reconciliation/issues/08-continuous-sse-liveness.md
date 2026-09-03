@@ -1,9 +1,11 @@
 # Continuous SSE liveness
 
 Priority: P1
-Status: Partial
+Status: Implemented — see correction below.
 
 ## Current behavior
+
+Superseded: the `chunkCount === 0` gate described below is gone. `streamHandler.js` now re-arms a self-rescheduling `setTimeout` (`armKeepalive`, around line 517) after every downstream write, so a ping fires during any silent interval, before or after the first chunk. `tests/unit/sse-keepalive.test.js:72`'s describe title now reads `"SSE keepalive (post-transform, every silent interval)"`, and its test at `:82` asserts pings "before AND after the first chunk" — the exact opposite of the paragraphs below, which describe the pre-implementation state for context.
 
 - `open-sse/utils/streamHandler.js:598-601` gates the downstream keepalive: `if (keepaliveMs > 0) { keepaliveTimer = setInterval(() => { if (chunkCount === 0 && streamController.isConnected()) { ...ping... } }, ...) }`. The `chunkCount === 0` guard means the ping fires only while zero upstream chunks have arrived — heartbeats stop the instant the first real chunk lands, by design.
 - `tests/unit/sse-keepalive.test.js:72` is the `describe` block title itself: `describe("SSE keepalive (post-transform, pre-first-chunk only)", () => {`, and its one test (`:77`, `"emits pings post-transform while chunkCount is 0, stops at first chunk; translator input never sees a ping"`) asserts exactly that current, narrower behavior — heartbeats are required to stop after first data, which is the opposite of what continuous liveness needs.

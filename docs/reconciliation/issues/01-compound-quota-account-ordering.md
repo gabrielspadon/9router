@@ -1,17 +1,17 @@
 # Compound quota account ordering
 
 Priority: P0
-Status: Partial
+Status: Implemented (commit 02afc6af, "feat: quota-window scheduling core") — see correction below.
 
 ## Current behavior
 
-Quota evidence today only gates eligibility (pass/fail); it never ranks the accounts that pass.
+Superseded: `src/shared/utils/quotaRanking.js` now exports `rankAccounts`/`normalizeAccountWindows`, called from `src/sse/services/accountScheduler.js:103` via `selectAndReserve`, which `src/sse/services/auth.js:485` calls in place of the `fallbackStrategy` branch described below. Quota evidence no longer only gates eligibility — it ranks. The rest of this section describes the pre-implementation state for context.
 
 - `src/shared/utils/quotaPause.js:50` `getPausedWindow(connection)` walks `connection.lastQuotaSnapshot.windows`, skips windows marked `unlimited` or without a configured threshold (`normalizeWindowThreshold`, line 42, clamps to 0-100), and returns the first window whose `remainingPercentage` is at or below its threshold. It answers "is this account paused right now," nothing more.
 - `src/sse/services/auth.js:222` calls `evaluateQuota(c)` (`src/sse/services/quotaGuard.js:107`) for every candidate connection inside `getProviderCredentials` and drops any connection that comes back paused from `availableConnections`. `evaluateQuota` is deliberately fail-open: a missing or errored quota read never pauses an account (`quotaGuard.js:15`, `:108-109`).
 - `src/sse/services/auth.js:272` reads `providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first"`. The two implemented strategies are `"round-robin"` (line 287: sorts `routedConnections` by `lastUsedAt` recency, rotates once `consecutiveUseCount` exceeds `stickyRoundRobinLimit`, default 3, at line 288) and the implicit fill-first fallback (first eligible connection by static `priority`). Neither strategy reads `remaining`, `limit`, `resetAt`, or `confidence` from the quota snapshot — quota only removes ineligible accounts before the strategy runs.
 
-No function in the codebase normalizes simultaneous windows (five-hour, seven-day, thirty-day) into one ranked order, and nothing computes "soonest-expiring usable entitlement." Both `src/sse/services/auth.js:222` and `:272` cited by the matrix are accurate as cited.
+No function in the codebase normalizes simultaneous windows (five-hour, seven-day, thirty-day) into one ranked order, and nothing computes "soonest-expiring usable entitlement." Both `src/sse/services/auth.js:222` and `:272` cited by the matrix are accurate as cited. **This paragraph is now false**: `rankAccounts` (`quotaRanking.js:197`) does exactly this, and the `:272` `fallbackStrategy`/round-robin branch it describes is gone from `auth.js` — replaced by the `selectAndReserve` call. Confirmed live: `grep -n fallbackStrategy src/sse/services/auth.js` returns nothing.
 
 ## Required behavior
 
@@ -45,4 +45,4 @@ Vitest translation:
 - `src/sse/services/auth.js` — the `:272` `fallbackStrategy` branch gains a ranking-based path that calls the new module instead of (or ahead of) `round-robin`/fill-first.
 - `tests/unit/reconciliation/compound-quota-account-ordering.test.js` — new.
 
-No DB migration needed. Ranking reads the connection's live `lastQuotaSnapshot`, which is not persisted through `src/lib/db/schema.js` today; `TABLES` (`schema.js:21`) has 13 entries, not the 14 the migration-facts note claims, and none of them is a quota-window table. If a later row (persisted switch reason, see row 03) adds one, it lands as a new `TABLES` entry picked up by the additive auto-sync at `migrate.js:43-73` — no `SCHEMA_VERSION` bump required for this row on its own.
+Superseded: a `quotaWindows` table now exists in `TABLES` (`schema.js:21`, 16 entries live today, not the 13/14 either note claimed), populated by `src/lib/db/repos/quotaWindowsRepo.js` via `putWindows` (`auth.js:44`). `sessionAffinity` and `accountSwitches` are also new entries (rows 03's switch-receipt work).

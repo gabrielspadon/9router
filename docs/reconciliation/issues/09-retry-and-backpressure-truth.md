@@ -1,14 +1,16 @@
 # Retry and backpressure truth
 
 Priority: P1
-Status: Partial
+Status: Implemented (rows 01-02's scheduler landed the queue this row needed) — see correction below.
 
 ## Current behavior
+
+Superseded: `src/sse/services/accountScheduler.js`'s `selectAndReserve` now returns a `decision.unavailable` WAIT outcome (`accountScheduler.js:170-172`, "this is a WAIT... queues and retries rather than seeing a 503 while entitlement is free") with `decision.retryAfter` computed from live scheduler state, consumed at `auth.js:494-498`. The `fallbackStrategy`/`:272` mechanism named below no longer exists in `auth.js` (`grep fallbackStrategy` returns nothing) — it was replaced, not merely supplemented. The provider-wide `providerConcurrencyOverflow` gate described below still exists as the doc's own "Required behavior" specified it should ("the existing cap survives as an optional outer ceiling"), now at `chat.js:402-419`/`:504-516`, carrying a fixed `ADMISSION_RETRY_HINT_MS = 1000` (`chat.js:69`) and a `failurePhase: "admission"` field distinguishing a local refusal from a provider-capacity claim — the outer ceiling's hint is still a constant, but the per-account path below it is not.
 
 - Provider fallback across accounts already exists in `src/sse/services/auth.js` (the `fallbackStrategy` selection at `:272`, walking `routedConnections` on failure), so a single account's transient error already tries the next candidate.
 - The gap is upstream of that fallback: `src/sse/handlers/chat.js:460-463` (`providerConcurrencyOverflow`) can return a 503 before any account has even been reserved — it is a provider-wide in-flight count check (`getActiveRequests()`, `src/lib/db/repos/usageRepo.js:442`) compared against `providerStrategies[<provider>].maxConcurrent`, with no queue behind it. A caller hitting this cap gets an immediate local refusal with no wait and no per-account distinction, and row 02 confirms there is no reservation-spanning-the-request-lifetime primitive that a queue could sit behind yet.
 - The resilience overlay's 180-second admission wait and `Retry-After` behavior (`auth-proxy.mjs:1085`, `:3109`) lives in `ai-dotfiles`, outside this repository — there is no TokenProxy-side queue-with-timeout to re-verify against; the matrix's own Decision column already frames this as something to build here, not something to port byte-for-byte.
-- No local admission refusal today carries a `Retry-After` header computed from queue state; `chat.js:463`'s `errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, ...)` is a bare 503.
+- No local admission refusal today carries a `Retry-After` header computed from queue state; `chat.js:463`'s `errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, ...)` is a bare 503. **Now false** for the per-account path — see the scheduler `decision.retryAfter` note above.
 
 ## Required behavior
 

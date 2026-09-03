@@ -1,9 +1,11 @@
 # Runtime patch parity
 
 Priority: P1
-Status: Unproven
+Status: Proven — see correction below (built differently than prescribed, but the underlying "no expect.fail placeholder" requirement is met).
 
 ## Current behavior
+
+Superseded: `tests/unit/reconciliation/patch-parity.test.js` (not the `runtime-patch-parity.test.js` name this doc proposes) now covers all ten itemized behaviors — max effort, cache controls, cache and cost truth, tool-fragment normalization, usage-only termination, exact account pins, deterministic 4xx handling, provider metadata, generation IDs, and bundled-log removal — with direct native assertions against real exported functions (`applyThinking`, `mergeToolArguments`, `translateNonStreamingResponse`, `OpenRouterExecutor`, `generationId` utilities, etc.), not the coverage-mapping/pointer test this row's "Acceptance test" section describes. `grep -n "expect.fail\|no coverage mapped" patch-parity.test.js` returns nothing — none of the three items this doc flagged as unmapped ("max effort," "tool-fragment normalization," "bundled-log removal") are left as placeholders.
 
 - The matrix's evidence for this row is entirely on the `ai-dotfiles` side: "the resilience overlay deletes a 385-line byte patch while moving to the native predecessor release." There is no TokenProxy `file:line` naming the patch itself, since it never lived in this repository — TokenProxy began from the predecessor release at `90b52e06` (Evidence Snapshot), so whatever the byte patch changed either is or is not already native here, and nobody has proven which for every itemized behavior.
 - The itemized behaviors the Decision column lists — max effort, cache controls, cache and cost truth, tool-fragment normalization, usage-only termination, exact account pins, deterministic 4xx handling, provider metadata, generation IDs, bundled-log removal — are each already the subject of one or more other rows in this matrix: cache and cost truth is row 07, exact account pins is rows 02/03, usage-only termination is row 08's stream-completion truth, deterministic 4xx handling is row 09's terminal-failure classification, and generation IDs/provider metadata sit inside row 04's admin/receipt surface. This row is a cross-cutting "prove nothing regressed" checklist over the others, not an independent behavior with its own code path to cite.

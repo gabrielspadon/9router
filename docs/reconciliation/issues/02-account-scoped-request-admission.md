@@ -1,14 +1,16 @@
 # Account-scoped request admission
 
 Priority: P0
-Status: Absent
+Status: Implemented (commit 02afc6af, "feat: quota-window scheduling core") — see correction below.
 
 ## Current behavior
+
+Superseded: `src/shared/utils/accountLease.js` (`createLeaseRegistry`) plus `src/sse/services/accountLeaseRegistry.js`/`accountScheduler.js` (`selectAndReserve`, called from `auth.js:485`) now provide exactly the atomic select-and-reserve, per-account capacity, and lifetime-spanning lease this row asked for — `releaseAccountLease`/`releaseAccountLeaseOnResponse` are wired into every handler (chat, tts, embeddings, search, videoGeneration, imageGeneration, rerank, fetch, stt, jsonProxy). The paragraphs below describe the pre-implementation state for context; the specific line numbers have also drifted (`getProviderCredentials` is now at `auth.js:230`, `providerSelectionQueues` declared `:49`, its `releaseQueue()` call at `:571`) since the file grew with the new scheduler imports.
 
 - `src/sse/services/auth.js:123` `getProviderCredentials(...)` acquires a per-provider queue (`providerSelectionQueues`, declared `:34`) that serializes *selection* only: `await previousQueue` at the top of the function, then a `finally` block at line 371 that calls `releaseQueue()` at **line 372** and clears the map entry. The matrix evidence cites the release at line 371; the actual `releaseQueue()` call is one line later, at `:372` — a drift beyond the two the task called out. The queue's lock is held for the duration of picking a connection, not for the duration of the request that connection then serves; once `getProviderCredentials` returns, the "lease" is gone.
 - `src/sse/handlers/chat.js:358-376` (`providerConcurrencyOverflow`) is a *provider-wide* cap read from `providerStrategies[<provider>].maxConcurrent`, compared against `getActiveRequests()` (`src/lib/db/repos/usageRepo.js:442`) grouped by provider. It has no per-account dimension and no reservation: the comparison `if (inFlight < limit) return null;` (`:375`) is a point-in-time read with no lock between the read and the caller proceeding.
 - `src/sse/handlers/chat.js:460-464` is where a provider-wide overflow becomes a hard refusal — `const overflow = await providerConcurrencyOverflow(provider);` / `if (overflow) { ... return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, ...); }`. This is the real 503 site; the matrix's cited `:375` is the cap comparison inside the helper, not the refusal itself, confirming the task's first known drift.
-- There is no queue, no cancellation path, and no per-account capacity anywhere between the moment a connection is chosen and the moment the stream finishes. Two concurrent requests that both pass the `:460` check can both proceed against the same account with no reservation counting either of them.
+- There is no queue, no cancellation path, and no per-account capacity anywhere between the moment a connection is chosen and the moment the stream finishes. Two concurrent requests that both pass the `:460` check can both proceed against the same account with no reservation counting either of them. **This paragraph is now false**: `effectiveCapacity` (`accountCapacity.js`, imported `auth.js:42`) supplies per-account capacity and `createLeaseRegistry` enforces it with a real reservation counter.
 
 ## Required behavior
 
@@ -39,4 +41,4 @@ Vitest translation:
 - New module (e.g. `src/sse/services/accountReservation.js`) for the atomic select-and-reserve primitive and its queue.
 - `tests/unit/reconciliation/account-scoped-request-admission.test.js` — new.
 
-DB migration: likely, but only if reservations need to be visible across process restarts or for cross-request fairness accounting beyond in-memory state; an in-process `Map`-backed reservation table (mirroring the existing `providerSelectionQueues` pattern at `auth.js:34`) needs none. If a durable reservation ledger is chosen instead, it is additive — a new `TABLES` entry in `src/lib/db/schema.js` (13 entries today, not 14 — the audit's "14 entries" note does not match the live file) picked up by the auto-sync at `migrate.js:43-73` without a `SCHEMA_VERSION` bump.
+DB migration: as predicted, none — the lease registry landed in-process (`accountLease.js`'s `Map`-backed `createLeaseRegistry`), not as a durable table. `TABLES` (`schema.js:21`) has 16 entries today (not 13 or 14); the three added since this doc were written are `quotaWindows`, `sessionAffinity`, `accountSwitches` — none is a reservation ledger.
