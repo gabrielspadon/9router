@@ -83,7 +83,7 @@ describe("usage API-key identities (#2919)", () => {
       expect(unknownRows.every((row) => /^sk-legac\*\*\* \([0-9a-f]{8}\)$/.test(row.keyName))).toBe(true);
       expect(unknownRows.every((row) => /^hmac:[0-9a-f]{32}$/.test(row.apiKeyKey))).toBe(true);
 
-      const deleted = rows.find((row) => row.apiKeyMasked === "sk-***-del123");
+      const deleted = rows.find((row) => row.apiKeyMasked === "sk-***-del123***");
       expect(deleted?.apiKeyKey).toMatch(/^hmac:[0-9a-f]{32}$/);
       expect(rows.find((row) => row.apiKeyKey === `id:${REGISTERED_ID}`)?.keyName).toBe("Registered key");
 

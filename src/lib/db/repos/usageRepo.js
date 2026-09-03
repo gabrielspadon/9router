@@ -9,18 +9,35 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 // the adapter chain in to do it.
 import { PERIOD_MS, periodCutoffIso } from "../../usagePeriod.js";
 import { canonicalizeUsage } from "open-sse/utils/usageTracking.js";
+import { KEY_ID_DISPLAY_CHARS } from "@/shared/utils/apiKey";
 
 /**
  * A display form that distinguishes one key from another WITHOUT carrying the
  * material that would let a reader rebuild it.
  *
- * The old mask was the first 8 characters, which for the sk-{machineId}-{keyId}-
- * {crc} format is "sk-" plus five characters of the machineId — identical for
- * every key issued on one install, so it distinguished nothing (#2206).
+ * The mask before #2206 was the first 8 characters, which for the
+ * sk-{machineId}-{keyId}-{crc} format is "sk-" plus five characters of the
+ * machineId — identical for every key issued on one install, so it
+ * distinguished nothing.
  *
- * The keyId is the per-key half, so that is what is shown. The machineId is
- * deliberately NOT shown: the crc is derived from machineId + keyId, so a
- * display carrying both halves would be a reconstructible key.
+ * #2206 replaced it with the keyId IN FULL, on the reasoning that the crc needs
+ * machineId as well and so a keyId alone is not reconstructible. That reasoning
+ * does not hold and this is the correction. The machineId is the SAME for every
+ * key on an install and is legible in plaintext inside any key the viewer
+ * already holds, and the crc is a pure function of machineId and keyId under a
+ * checksum secret that defaults to a literal shipped in source. A viewer with
+ * one key of their own could therefore rebuild any other key on the install
+ * from its displayed keyId alone.
+ *
+ * So only a PREFIX of the keyId is shown. At the current width that is 6 hex
+ * characters revealed against 122 bits withheld, which still separates the keys
+ * an install actually has. The trailing marker is what makes it read as
+ * truncated rather than complete.
+ *
+ * A 6-character keyId minted before the widening is shown in full by this same
+ * prefix rule, and that is not a mask failure: such a key carries about 31 bits
+ * end to end and is guessable whether or not it is ever displayed. Rotation is
+ * its remedy, not redaction.
  *
  * An old-format sk-{random8} key has no keyId, so it keeps a prefix mask; there
  * is nothing else in it to show.
@@ -28,7 +45,9 @@ import { canonicalizeUsage } from "open-sse/utils/usageTracking.js";
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   const parts = key.startsWith("sk-") ? key.split("-") : [];
-  if (parts.length === 4 && parts[2]) return `sk-***-${parts[2]}`;
+  if (parts.length === 4 && parts[2]) {
+    return `sk-***-${parts[2].slice(0, KEY_ID_DISPLAY_CHARS)}***`;
+  }
   if (key.length <= 8) return key.charAt(0) + "***";
   return key.slice(0, 8) + "***";
 }
