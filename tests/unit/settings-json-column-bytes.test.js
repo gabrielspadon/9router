@@ -43,6 +43,26 @@ describe("parseJson byte columns", () => {
     });
   });
 
+  // The same helper backs the per-key model allowlist, which is stored as a JSON
+  // array in kv and read through normalizeAllowedModels. That reader keeps the
+  // value only when Array.isArray holds, so bytes returned unparsed became "not
+  // a list", which it treats as "no allowlist at all" and writes back by DELETING
+  // the row. That direction is fail-open: a key restricted to two models would
+  // silently become a key allowed to route any model, on an ordinary update that
+  // never mentioned the allowlist.
+  it("parses a byte column holding an ARRAY, so an allowlist is not silently dropped", () => {
+    const allowed = ["openai/gpt-4o", "anthropic/claude-sonnet-5"];
+    for (const column of [
+      JSON.stringify(allowed),
+      Buffer.from(JSON.stringify(allowed), "utf8"),
+      new TextEncoder().encode(JSON.stringify(allowed)),
+    ]) {
+      const parsed = parseJson(column, null);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toEqual(allowed);
+    }
+  });
+
   it("returns the fallback for null and undefined", () => {
     expect(parseJson(null, { f: 1 })).toEqual({ f: 1 });
     expect(parseJson(undefined, { f: 1 })).toEqual({ f: 1 });
