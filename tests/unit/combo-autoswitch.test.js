@@ -35,11 +35,27 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("vision")).toBe(true);
   });
 
-  it("web_search tool -> search", () => {
+  // open-sse/services/combo.js:306 disables search detection outright
+  // ("search: temporarily disabled in auto-switch (feature not wired yet)"), so
+  // a web_search tool must NOT pin the combo to a search-capable member. This
+  // pins the disabled contract; flip it back when search is wired.
+  it("web_search tool -> no capability (search detection disabled)", () => {
     const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [
       { type: "web_search" },
     ] });
-    expect(r.has("search")).toBe(true);
+    expect(r.has("search")).toBe(false);
+    // tools are request-wide, so nothing in the array may leak into the set
+    expect(r.size).toBe(0);
+  });
+
+  // The disablement is scoped to tools only. A modality in the current user turn
+  // must still be detected even when a search tool rides along on the request.
+  it("web_search tool alongside an image still detects vision", () => {
+    const r = detectRequiredCapabilities({
+      messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }],
+      tools: [{ type: "web_search" }],
+    });
+    expect([...r]).toEqual(["vision"]);
   });
 
   it("responses input_image -> vision", () => {
