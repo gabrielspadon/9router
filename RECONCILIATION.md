@@ -67,6 +67,47 @@ To preserve the repository residual-name gate, this document calls the retired p
 | Qualification and health | TokenProxy | Expose credential-safe connection, model, and generation evidence through a native admin ABI. |
 | Activation, draining, and rollback command | `ai-dotfiles` | Thin operator wrappers call the TokenProxy admin ABI. TokenProxy owns the state transition. |
 
+## External Dependencies
+
+TokenProxy declares what it requires from outside its own process, so a missing
+dependency is a stated contract violation rather than a silent behaviour change.
+
+### Headroom
+
+Third-party prompt-compression and cache proxy, installed at `~/.local/bin/headroom`.
+Neither repository owns the application.
+
+| Concern | Owner |
+|---|---|
+| Whether it runs, and its host tuning | `ai-dotfiles` |
+| What happens in the request path | TokenProxy |
+
+`ai-dotfiles` provides and supervises it through `services/headroom/headroom-proxy.service`,
+the launchd plist, `install-headroom.sh`, and a `manifests/services.json` entry carrying
+`host_roles`. Its `--workers` and `--limit-concurrency` values are host-capacity tuning and
+differ per host, which is why they live beside the host manifest rather than here.
+
+TokenProxy owns the client, `open-sse/rtk/headroom.js`. It POSTs to `/v1/compress` at the
+configured endpoint, translating Claude-format bodies into the OpenAI shape that surface
+expects. The endpoint comes from the `headroomUrl` settings row, gated by `headroomEnabled`,
+and defaults to the loopback `127.0.0.1:8787`. `HEADROOM_API_KEY` and `HEADROOM_PROXY_TOKEN`
+authenticate when set.
+
+FAILURE CONTRACT, and it is fail-open by construction. `compressWithHeadroom` returns `null`
+rather than throwing when the feature is disabled, when no endpoint is configured, when the
+body is absent or exceeds `MAX_COMPRESS_BODY_BYTES`, when the body carries an error tool
+block, or when the call itself fails. It makes one call and never retries. The request then
+proceeds UNCOMPRESSED. So Headroom being down degrades economics, never availability, and a
+host where it is merely installed but unsupervised serves no compression while still
+reporting as configured.
+
+WHY SUPERVISION IS NOT TOKENPROXY'S, recorded because the split reads as arbitrary until it
+is stated. A gateway cannot supervise itself. The fleet lockout of 2026-09-03 is the
+demonstration: the admission front held every request because its backend was down, so the
+supervisor has to sit outside the thing it supervises. `ai-dotfiles/services/` supervises
+four services on this plane, TokenProxy among them, and moving one out would leave a gateway
+that is itself harness-supervised supervising a peer.
+
 ## Boundary Purity
 
 Harness and gateway are two sovereign sides joined by one API. `ai-dotfiles` owns launchers, lane and model-role policy, workflow planning, and host admission; TokenProxy owns account selection, request admission, translation, streaming, and accounting, per the Ownership Boundary table above. Neither reaches across, and a TokenProxy change may break the connection but must never break the harness.
