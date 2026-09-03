@@ -128,7 +128,18 @@ async function extractTokensViaCLI(dbPath) {
     }
   };
 
-  const query = async (sql) => {
+  // The sqlite3 CLI has no parameter binding, so this fallback cannot use the
+  // placeholder form the better-sqlite3 path above uses. It takes a KEY rather
+  // than a SQL string, and refuses any key outside the identifier charset, so a
+  // statement cannot be built out of caller-supplied text even by mistake. The
+  // keys are module constants today; the guard is what keeps that true when
+  // someone later passes something that is not.
+  const SAFE_KEY = /^[A-Za-z0-9._/-]+$/;
+  const query = async (key) => {
+    if (typeof key !== "string" || !SAFE_KEY.test(key)) {
+      throw new Error(`refusing unsafe sqlite key: ${JSON.stringify(key)}`);
+    }
+    const sql = `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`;
     const { stdout } = await execFileAsync("sqlite3", [dbPath, sql], {
       timeout: 10000,
     });
@@ -139,9 +150,7 @@ async function extractTokensViaCLI(dbPath) {
   let accessToken = null;
   for (const key of ACCESS_TOKEN_KEYS) {
     try {
-      const raw = await query(
-        `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
-      );
+      const raw = await query(key);
       if (raw) {
         accessToken = normalize(raw);
         break;
@@ -154,9 +163,7 @@ async function extractTokensViaCLI(dbPath) {
   let machineId = null;
   for (const key of MACHINE_ID_KEYS) {
     try {
-      const raw = await query(
-        `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
-      );
+      const raw = await query(key);
       if (raw) {
         machineId = normalize(raw);
         break;
