@@ -36,6 +36,16 @@ function shouldExclude(name) {
   });
 }
 
+function countFilesRecursive(dir) {
+  let n = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) n += countFilesRecursive(p);
+    else n += 1;
+  }
+  return n;
+}
+
 function copyRecursive(src, dest, ancestorDirectories = new Set()) {
   if (!fs.existsSync(src)) {
     console.warn(`Warning: Source ${src} does not exist`);
@@ -259,6 +269,23 @@ function buildCliPackage() {
   // the bundle's node_modules or every importer throws MODULE_NOT_FOUND at runtime. Output
   // tracing normally copies it; this is the same belt-and-braces guard used for sql.js.
   ensureModuleInBundle("open");
+  // The open-sse engine is resolved from process.cwd() at runtime (Step 7c), so
+  // Next.js output tracing never sees it and never traces its dependencies
+  // either. These four are STATIC imports inside that tree, so a missing one is
+  // not a degraded feature but ERR_MODULE_NOT_FOUND on the first provider
+  // request. Discovered by scanning open-sse for bare specifiers and diffing
+  // against the bundle's node_modules; got-scraping is deliberately absent from
+  // this list because its only import sits inside a commented-out block.
+  for (const pkg of ["undici", "socks-proxy-agent", "uuid", "jose"]) {
+    ensureModuleInBundle(pkg);
+    // ensureModuleInBundle only warns on a miss, which is right for an optional
+    // driver and wrong here: a warning that produces a crashing artifact is
+    // worse than a failed build.
+    if (!fs.existsSync(path.join(cliAppDir, "node_modules", pkg))) {
+      console.error(`\u274c ${pkg} is a static open-sse import and is not in the bundle`);
+      process.exit(1);
+    }
+  }
   const betterDir = path.join(cliAppDir, "node_modules", "better-sqlite3");
   if (fs.existsSync(betterDir)) {
     fs.rmSync(betterDir, { recursive: true, force: true });
@@ -330,6 +357,31 @@ function buildCliPackage() {
     console.log("⏭️  No updater files found\n");
   }
 
+  // Step 7c: Copy the open-sse engine tree. Next.js bundles what it can trace,
+  // but the built server also resolves modules from process.cwd() at runtime,
+  // and a traced bundle cannot see through that. Two such sites exist today
+  // (open-sse/utils/proxyFetch.js and src/mitm/server.js, the latter covered by
+  // Step 7). Standalone output therefore shipped open-sse/package.json alone,
+  // 1 file of 445, and every provider request died with ERR_MODULE_NOT_FOUND on
+  // proxyFetch. Copy the tree rather than the single file: the cwd-resolution
+  // set is discovered by grepping the emitted chunks, so pinning one filename
+  // here makes the next dynamically-resolved module fail exactly the same way.
+  console.log("7\ufe0f\u20e3 c Copying open-sse engine...");
+  const openSseSrc = path.join(appDir, "open-sse");
+  const openSseDest = path.join(cliAppDir, "open-sse");
+  if (fs.existsSync(openSseSrc)) {
+    copyRecursive(openSseSrc, openSseDest);
+    const shipped = countFilesRecursive(openSseDest);
+    if (shipped < 2) {
+      console.error(`\u274c open-sse copy shipped ${shipped} file(s); the engine tree is missing`);
+      process.exit(1);
+    }
+    console.log(`\u2705 Copied open-sse (${shipped} files)\n`);
+  } else {
+    console.error("\u274c open-sse source tree not found at " + openSseSrc);
+    process.exit(1);
+  }
+
   // Step 8: Build MITM server (config driven - see app/cli/scripts/buildMitm.js)
   console.log("8️⃣  Building MITM server...");
   try {
@@ -338,6 +390,23 @@ function buildCliPackage() {
   } catch (error) {
     console.error("❌ MITM build failed");
     process.exit(1);
+  }
+
+  // Step 9: stamp the commit this artifact was built from. An installed CLI
+  // otherwise carries only a version, and 0.0.1 cannot distinguish one local
+  // build from another or from a registry package of the same version. Written
+  // only when the build really is a git checkout: an absent stamp is a true
+  // "provenance unknown", which is what a verifier must see rather than a
+  // placeholder it would have to trust.
+  console.log("9\uFE0F\u20E3  Stamping build provenance...");
+  try {
+    const sha = execSync("git rev-parse HEAD", { cwd: cliDir, encoding: "utf8" }).trim();
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`unexpected rev-parse output: ${sha}`);
+    fs.writeFileSync(path.join(cliDir, "BUILD_SHA"), sha + "\n");
+    console.log(`\u2705 BUILD_SHA ${sha.slice(0, 8)}\n`);
+  } catch (error) {
+    fs.rmSync(path.join(cliDir, "BUILD_SHA"), { force: true });
+    console.log("\u26A0\uFE0F  not a git checkout, BUILD_SHA omitted\n");
   }
 
   console.log("✨ CLI package build completed!");

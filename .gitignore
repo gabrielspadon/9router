@@ -75,6 +75,12 @@ docs/*
 # from a clean checkout is not a gate.
 !docs/design/
 !docs/design/**
+# The reconciliation record ships too: the frozen admin ABI, the redacted
+# overlay specification, the per-capability issues, and the provenance receipt.
+# A contract every later change is judged against cannot live in an ignored
+# directory, or a clean checkout cannot re-derive what was agreed.
+!docs/reconciliation/
+!docs/reconciliation/**
 test/*
 open-sse/test/*
 RM.vn.md
@@ -147,3 +153,6 @@ README.*.md
 # evidence that ships lives under docs/design/evidence/; anchored so a product
 # image committed deliberately inside public/ or src/ stays visible.
 /*.png
+
+# Build provenance stamp, written by cli/scripts/build-cli.js at pack time.
+cli/BUILD_SHA
