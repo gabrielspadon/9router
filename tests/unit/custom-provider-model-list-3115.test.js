@@ -187,7 +187,7 @@ describe("compatible-provider public model allowlists", () => {
 
   it("reports an unreachable compatible catalog as a retryable non-success response without exposing transport details", async () => {
     const refusal = Object.assign(new TypeError("fetch failed"), {
-      cause: { code: "ECONNREFUSED", address: "100.64.0.91", port: 11500 },
+      cause: { code: "ECONNREFUSED", address: "203.0.113.10", port: 9999 },
     });
     fetchMock.mockRejectedValueOnce(refusal);
 

@@ -33,6 +33,10 @@ function normalizeToolSchema(schema) {
   return out;
 }
 
+// Fields that identify the route and the upstream prompt cache. They are
+// forwarded verbatim across the Claude to OpenAI request translation.
+export const PASSTHROUGH_REQUEST_FIELDS = ["provider", "session_id", "prompt_cache_key"];
+
 export function claudeToOpenAIRequest(model, body, stream) {
   const result = {
     model: model,
@@ -137,6 +141,15 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   if (body.reasoning !== undefined) {
     result.reasoning = body.reasoning;
+  }
+
+  // Routing and cache identity are the caller's, not ours to invent or drop.
+  // `provider` pins the upstream route; `session_id` and `prompt_cache_key`
+  // are the keys an upstream hashes to hit its own prompt cache. Losing any of
+  // them still returns a valid completion, so the only visible symptom is a
+  // cache miss on every turn.
+  for (const key of PASSTHROUGH_REQUEST_FIELDS) {
+    if (body[key] !== undefined) result[key] = body[key];
   }
 
   return result;

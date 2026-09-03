@@ -13,6 +13,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { withGenerationIdHeader } from "../../utils/generationId.js";
 import {
   classifyAntigravityJsonValidation,
   classifyAntigravitySseOutcome,
@@ -473,7 +474,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // call's `arguments`. No filter (the default) returns the same stream.
   return {
     success: true,
-    response: new Response(restoreResponseStream(privacyFilter, transformedBody), { headers: SSE_HEADERS })
+    response: new Response(restoreResponseStream(privacyFilter, transformedBody), {
+      // The upstream's own generation id, when it sent one that passes the
+      // allowlist in utils/generationId.js. It is the only handle a user or an
+      // operator has for correlating this turn against the upstream's billing
+      // and logs.
+      headers: withGenerationIdHeader(SSE_HEADERS, providerResponse)
+    })
   };
 }
 

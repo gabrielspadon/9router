@@ -1,6 +1,8 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { resolveProviderCost } from "../../translator/response/openai-to-claude.js";
+import { withGenerationIdHeader } from "../../utils/generationId.js";
 import { rememberThoughtSignature } from "../../translator/concerns/thoughtSignature.js";
 import { canonicalEchoModel } from "../../services/model.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
@@ -114,6 +116,36 @@ function parseToolArguments(value) {
   }
 }
 
+/**
+ * Tokens this turn read from the upstream's prompt cache. Every spelling a
+ * gateway may use, in the order the streaming translators already read them.
+ */
+function cachedInputTokens(usage) {
+  const raw = usage?.input_tokens_details?.cached_tokens
+    ?? usage?.prompt_tokens_details?.cached_tokens
+    ?? usage?.cached_tokens
+    ?? usage?.cache_read_input_tokens;
+  return typeof raw === "number" ? raw : 0;
+}
+
+/**
+ * The Claude-shaped cache and cost fields for a turn, or an empty object when
+ * the upstream reported neither. Emitting zeros instead would assert a measured
+ * cache miss on every provider that simply does not report cache activity.
+ */
+function claudeCacheUsage(usage) {
+  const read = cachedInputTokens(usage);
+  const createdRaw = usage?.cache_creation_input_tokens
+    ?? usage?.prompt_tokens_details?.cache_creation_tokens;
+  const created = typeof createdRaw === "number" ? createdRaw : 0;
+  const cost = resolveProviderCost(usage);
+  return {
+    ...(read > 0 ? { cache_read_input_tokens: read } : {}),
+    ...(created > 0 ? { cache_creation_input_tokens: created } : {}),
+    ...(cost !== undefined ? { cost } : {}),
+  };
+}
+
 function openAICompletionToClaudeMessage(responseBody) {
   if (!responseBody?.choices?.[0]) return responseBody;
   const choice = responseBody.choices[0];
@@ -150,6 +182,15 @@ function openAICompletionToClaudeMessage(responseBody) {
     usage: {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
       output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      // The streaming path already carries the cache split and the upstream's
+      // own price through to a Claude client (translator/response/openai-to-claude.js).
+      // The JSON path reported neither, so the same request billed differently
+      // depending only on whether the caller asked for a stream.
+      //
+      // Present only when there is something to report, matching the streaming
+      // translator: a turn with no cache activity emits no cache fields at all,
+      // rather than a pair of zeros that reads as a measured cache miss.
+      ...claudeCacheUsage(usage),
     },
   };
 }
@@ -238,6 +279,14 @@ function openAICompletionToResponses(responseBody, customToolNames = null, respo
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
       output_tokens: usage.completion_tokens || usage.output_tokens || 0,
       total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+      // Same asymmetry as the Claude conversion above: the streaming Responses
+      // translator emits input_tokens_details.cached_tokens and this one did
+      // not, so a Codex-shaped client saw a cache hit rate of zero on every
+      // non-streaming turn. Omitted entirely when nothing was cached, so the
+      // absence of a cache stays distinguishable from a measured zero.
+      ...(cachedInputTokens(usage) > 0
+        ? { input_tokens_details: { cached_tokens: cachedInputTokens(usage) } }
+        : {}),
       ...(typeof reasoningTokens === "number" && reasoningTokens > 0
         ? { output_tokens_details: { reasoning_tokens: reasoningTokens } }
         : {}),
@@ -941,7 +990,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   return {
     success: true,
     response: new Response(restoreResponseJson(privacyFilter, JSON.stringify(translatedResponse)), {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      // Same generation-id forwarding as the streaming path, so the handle a
+      // user needs for a billing dispute does not depend on whether they asked
+      // for a stream.
+      headers: withGenerationIdHeader(
+        { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        providerResponse,
+      )
     })
   };
 }
