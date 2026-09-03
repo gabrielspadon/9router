@@ -181,32 +181,29 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
     return { provider: staticOwner, model: parsed.model };
   }
 
-  // Fallback: infer provider from model name prefix
-  return {
-    provider: inferProviderFromModelName(parsed.model),
-    model: parsed.model,
-  };
+  // Nothing claims this bare name: no custom model, no user alias, no static
+  // registry declaration. The old fallback guessed a provider from a 5-entry
+  // regex prefix table (defaulting to "openai" when nothing matched) and
+  // silently forwarded the request to it — a fail-open self-healing violation
+  // that routed a genuinely unknown model to a provider that never agreed to
+  // serve it. Reject instead of guessing.
+  throw new ModelNotFoundError(parsed.model);
 }
 
-// Config-driven prefix → provider inference (first match wins, fallback "openai").
-// Only fires for bare names that survive the full resolution chain in
-// src/sse/services/model.js (resolveBareModelToProvider) — custom models, user
-// aliases, static registry declarations, and the live opencode catalog all win
-// first. Names that genuinely belong to openrouter hit the deepseek rule here.
-const MODEL_PREFIX_PROVIDERS = [
-  [/^claude-/, "anthropic"],
-  [/^gemini-/, "gemini"],
-  [/^gpt-/, "openai"],
-  [/^o[134]/, "openai"],
-  [/^deepseek-/, "openrouter"],
-];
-
 /**
- * Infer provider from model name prefix
- * Used as fallback when no provider prefix or alias is given
+ * Thrown by getModelInfoCore when a bare model name matches no custom model,
+ * user alias, or static registry declaration. `.status`/`.type`/`.code` mirror
+ * ERROR_TYPES[404] in open-sse/config/errorConfig.js so a catching route can
+ * shape a response with buildErrorBody(err.status, err.message) without
+ * re-deriving them.
  */
-function inferProviderFromModelName(modelName) {
-  if (!modelName) return "openai";
-  const m = modelName.toLowerCase();
-  return MODEL_PREFIX_PROVIDERS.find(([re]) => re.test(m))?.[1] || "openai";
+export class ModelNotFoundError extends Error {
+  constructor(modelName) {
+    super(`Model not found: "${modelName}" is not in the catalog`);
+    this.name = "ModelNotFoundError";
+    this.status = 404;
+    this.type = "invalid_request_error";
+    this.code = "model_not_found";
+    this.model = modelName;
+  }
 }

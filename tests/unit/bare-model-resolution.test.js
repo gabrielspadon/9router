@@ -7,6 +7,7 @@ import {
   canonicalEchoModel,
   getModelInfoCore,
   parseModel,
+  ModelNotFoundError,
 } from "open-sse/services/model.js";
 import { getProviderModels } from "open-sse/config/providerModels.js";
 
@@ -79,6 +80,44 @@ describe("bare model resolution", () => {
     await expect(getModelInfoCore("grok-4.3", {})).resolves.toEqual({
       provider: "xai",
       model: "grok-4.3",
+    });
+  });
+
+  it("still resolves a known catalog id (guards the fix below against regressing this)", async () => {
+    await expect(getModelInfoCore("grok-4.6", {})).resolves.toEqual({
+      provider: "xai",
+      model: "grok-4.6",
+    });
+  });
+
+  it("rejects an unknown bare model instead of guessing a provider from its prefix", async () => {
+    // The removed fallback matched bare names against a 5-entry regex prefix
+    // table (/^gpt-/ -> "openai" among them) and silently forwarded the
+    // request to the guessed provider. "gpt-9999-does-not-exist" matches that
+    // rule but is not a real model anywhere in the catalog, so it must now be
+    // rejected by name rather than routed to openai.
+    await expect(getModelInfoCore("gpt-9999-does-not-exist", {})).rejects.toBeInstanceOf(
+      ModelNotFoundError,
+    );
+    await expect(getModelInfoCore("gpt-9999-does-not-exist", {})).rejects.toMatchObject({
+      name: "ModelNotFoundError",
+      status: 404,
+      model: "gpt-9999-does-not-exist",
+      message: expect.stringContaining("gpt-9999-does-not-exist"),
+    });
+  });
+
+  it("rejects an unknown bare model that matches none of the prefix rules (closes the openai default too)", async () => {
+    // The removed fallback defaulted to "openai" even when no regex matched
+    // at all — the widest form of the guess. A name with no recognizable
+    // provider prefix must be rejected the same way as one that resembles a
+    // real prefix.
+    await expect(
+      getModelInfoCore("totally-nonexistent-zzz-model", {}),
+    ).rejects.toMatchObject({
+      name: "ModelNotFoundError",
+      status: 404,
+      model: "totally-nonexistent-zzz-model",
     });
   });
 
