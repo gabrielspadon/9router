@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK, OPENAI_FINISH } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { mergeToolArguments } from "../concerns/toolCall.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -44,6 +45,39 @@ function isValidPdfPagesArg(filePath, pages) {
     filePath.toLowerCase().endsWith(".pdf") &&
     typeof pages === "string" &&
     /^\d+(?:-\d+)?$/.test(pages);
+}
+
+// The upstream's own price for this turn. A gateway that resells several
+// providers is the only party that knows what the call actually cost — every
+// local figure is a per-token estimate against a published rate card, and it is
+// wrong the moment the gateway takes a margin or routes to a cheaper upstream.
+//
+// Two spellings, both seen in the wild: a flat `cost`, and a `cost_details`
+// breakdown whose `upstream_inference_cost` is the inference portion. A finite
+// number wins, including 0 — a free-tier route really did cost nothing, and
+// re-estimating it would invent a charge.
+export function resolveProviderCost(usage) {
+  if (!usage || typeof usage !== "object") return undefined;
+  if (Number.isFinite(usage.cost)) return usage.cost;
+  if (Number.isFinite(usage.cost_details?.upstream_inference_cost)) {
+    return usage.cost_details.upstream_inference_cost;
+  }
+  return undefined;
+}
+
+// Close the Claude message for a finish_reason whose terminal was held back
+// waiting for authoritative usage. No-op unless one is pending, so it is safe
+// to call from the usage-only path and from the flush.
+function emitDeferredTerminal(state, results) {
+  if (!state?.pendingFinishReason) return;
+  const reason = state.pendingFinishReason;
+  state.pendingFinishReason = null;
+  results.push({
+    type: "message_delta",
+    delta: { stop_reason: convertFinishReason(reason) },
+    usage: state.usage || { input_tokens: 0, output_tokens: 0 }
+  });
+  results.push({ type: "message_stop" });
 }
 
 // Open the Claude tool_use block for one index. The name travels in
@@ -104,6 +138,15 @@ function stopTextBlock(state, results) {
 // #3416. The flush is the last point at which the block can still be closed, so
 // drain it here rather than dropping it.
 function drainToolBlocksAtFlush(state) {
+  // A finish_reason that deferred its terminal waiting for usage that never
+  // arrived (the upstream dropped, or promised include_usage and did not
+  // deliver) still has to close the message: `data: [DONE]` is withheld from a
+  // Claude client, so nothing else will.
+  if (state?.pendingFinishReason) {
+    const held = [];
+    emitDeferredTerminal(state, held);
+    return held;
+  }
   if (state?.claudeTerminalEmitted) return null;
   if (!state?.toolCalls?.size && !state?.toolPending?.size) return null;
   state.claudeTerminalEmitted = true;
@@ -155,20 +198,29 @@ function drainToolBlocksAtFlush(state) {
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
   if (!chunk) return drainToolBlocksAtFlush(state);
-  if (!chunk.choices?.[0]) return null;
 
   const results = [];
-  const choice = chunk.choices[0];
-  const delta = choice.delta;
 
-  // Track usage from OpenAI chunk if available
+  // Track usage from OpenAI chunk if available. Read BEFORE the choices test
+  // below: with `stream_options.include_usage` the authoritative usage arrives
+  // in its own trailing chunk that carries `choices: []` and nothing else, and
+  // returning early on it threw away the only real token counts the stream ever
+  // produced — every such request was then billed from an estimate.
   if (chunk.usage && typeof chunk.usage === "object") {
     const promptTokens = typeof chunk.usage.prompt_tokens === "number" ? chunk.usage.prompt_tokens : 0;
     const outputTokens = typeof chunk.usage.completion_tokens === "number" ? chunk.usage.completion_tokens : 0;
 
-    // Extract cache tokens from prompt_tokens_details
-    const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
-    const cacheCreationTokens = chunk.usage.prompt_tokens_details?.cache_creation_tokens;
+    // Extract cache tokens from prompt_tokens_details, then from the top level.
+    // A gateway that aggregates several upstreams reports the cache read at the
+    // top of `usage` (`cached_tokens`, or Anthropic's `cache_read_input_tokens`
+    // when the upstream is Claude) and sends no `prompt_tokens_details` at all,
+    // so reading only the nested breakdown billed every cached request at the
+    // full input rate and showed the client a cache hit rate of zero.
+    const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens
+      ?? chunk.usage.cached_tokens
+      ?? chunk.usage.cache_read_input_tokens;
+    const cacheCreationTokens = chunk.usage.prompt_tokens_details?.cache_creation_tokens
+      ?? chunk.usage.cache_creation_input_tokens;
     const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
     const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
 
@@ -191,9 +243,28 @@ export function openaiToClaudeResponse(chunk, state) {
       state.usage.cache_creation_input_tokens = cacheCreateTokens;
     }
 
+    // The price the upstream actually charged. A gateway that resells several
+    // providers knows the real figure and reports it; every local estimate is a
+    // per-token guess against a published rate card, which is wrong the moment
+    // the gateway applies its own margin or routes to a cheaper upstream. Kept
+    // whenever it is a finite number so a genuine 0 (a free-tier route) is
+    // reported as free rather than re-estimated into a charge.
+    const providerCost = resolveProviderCost(chunk.usage);
+    if (providerCost !== undefined) state.usage.cost = providerCost;
+
     // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
     // No need to add separately as Claude expects total output_tokens
   }
+
+  // A chunk with no choice carries usage and nothing else. If the finish chunk
+  // deferred its terminal waiting for exactly this, release it now.
+  if (!chunk.choices?.[0]) {
+    emitDeferredTerminal(state, results);
+    return results.length > 0 ? results : null;
+  }
+
+  const choice = chunk.choices[0];
+  const delta = choice.delta;
 
   // Every branch below opens or extends a content block, and the client's
   // message is already closed once `message_stop` went out. A provider that
@@ -329,10 +400,12 @@ export function openaiToClaudeResponse(chunk, state) {
         // upstream status is 200, so nothing locks the model or fails over and
         // the turn is lost silently (#2869). A chunk that carries the buffer as
         // its own prefix is a restatement, not a fragment: replace it.
-        const prevArgs = state.toolArgBuffers.get(idx) || "";
+        // Delta, cumulative restatement and terminal replay all arrive on this
+        // one field; mergeToolArguments is the single place that tells them
+        // apart (see its docstring in concerns/toolCall.js).
         state.toolArgBuffers.set(
           idx,
-          tc.function.arguments.startsWith(prevArgs) ? tc.function.arguments : prevArgs + tc.function.arguments
+          mergeToolArguments(state.toolArgBuffers.get(idx), tc.function.arguments)
         );
       }
     }
@@ -380,14 +453,15 @@ export function openaiToClaudeResponse(chunk, state) {
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+    // `stream_options.include_usage` is a two-part protocol: every chunk up to
+    // and including the finish chunk carries an explicit `usage: null`, and the
+    // real counts follow in a trailing chunk with no choices. Closing the
+    // message on the finish chunk therefore reports zeros on precisely the
+    // streams that were about to report the truth. The explicit null is the
+    // signal — a provider that simply omits the field is not promising
+    // anything, and its terminal goes out immediately as before.
+    state.pendingFinishReason = choice.finish_reason;
+    if (chunk.usage !== null) emitDeferredTerminal(state, results);
   }
 
   return results.length > 0 ? results : null;

@@ -6,7 +6,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage, toResponsesUsage } from "../concerns/usage.js";
-import { fallbackToolCallId } from "../concerns/toolCall.js";
+import { fallbackToolCallId, mergeToolArguments } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
@@ -386,7 +386,7 @@ function emitToolCall(state, emit, tc) {
     // Custom input is emitted once at close, after the Chat JSON wrapper can be
     // parsed and unwrapped. Streaming the raw JSON fragments would expose
     // {"input":"..."} instead of the freeform program Codex expects.
-    state.funcArgsBuf[tcIdx] += tc.function.arguments;
+    state.funcArgsBuf[tcIdx] = mergeToolArguments(state.funcArgsBuf[tcIdx], tc.function.arguments);
   }
 }
 

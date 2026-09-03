@@ -380,3 +380,45 @@ export function defaultClaudeToolType(tools) {
   if (!Array.isArray(tools)) return tools;
   return tools.map((tool) => (tool?.type ? tool : { ...tool, type: "custom" }));
 }
+
+// Accumulate one tool call's `arguments` across streamed chunks.
+//
+// Three provider behaviours arrive on the same field and a blind `+=` is only
+// correct for the first:
+//
+//   - DELTA      — each chunk carries the next slice. Append.
+//   - CUMULATIVE — each chunk restates everything so far. A chunk that has the
+//                  buffer as its own prefix is a restatement, so replace.
+//   - REPLAY     — the terminal chunk repeats the complete object a second
+//                  time, giving `{...}{...}`. Neither append nor prefix test
+//                  catches it, because the restatement is not a prefix of the
+//                  doubled string it produces.
+//
+// The replay case is the reason for the halving loop: an even-length buffer
+// whose two halves are identical AND whose first half parses as JSON is one
+// object sent twice, so keep one copy. Parsing is what makes it safe — two
+// legitimately identical argument slices that do not form valid JSON on their
+// own are left alone. Looped, because a provider that replays twice doubles
+// twice.
+//
+// Without this a Claude client receives `{...}{...}` in the single
+// input_json_delta, rejects the tool call as unparseable, and the turn is lost
+// against an upstream that answered 200.
+export function mergeToolArguments(previous, fragment) {
+  const prev = previous || "";
+  const next = typeof fragment === "string" ? fragment : "";
+  let merged = prev && next.length > prev.length && next.startsWith(prev) ? next : prev + next;
+
+  while (merged.length > 0 && merged.length % 2 === 0) {
+    const half = merged.slice(0, merged.length / 2);
+    if (half !== merged.slice(merged.length / 2)) break;
+    try {
+      JSON.parse(half);
+    } catch {
+      break;
+    }
+    merged = half;
+  }
+
+  return merged;
+}

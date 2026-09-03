@@ -15,6 +15,7 @@ import { resolveResponsesToolCall } from "../../translator/response/openai-respo
 import { stripJsonFence, unfenceJsonChoices, wantsJsonOutput } from "../../utils/jsonFence.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { mergeToolArguments } from "../../translator/concerns/toolCall.js";
 import { extractReasoningText } from "../../translator/concerns/reasoning.js";
 import { parseSSELine } from "../../utils/streamHelpers.js";
 import { ANTIGRAVITY_SAFE_ERROR_MESSAGE, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE } from "../../services/antigravityValidation.js";
@@ -276,7 +277,8 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
         const existing = toolCallMap.get(idx);
         if (tc.id) existing.id = tc.id;
         if (tc.function?.name) existing.function.name += tc.function.name;
-        if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+        if (tc.function?.arguments)
+          existing.function.arguments = mergeToolArguments(existing.function.arguments, tc.function.arguments);
       }
     }
   }
