@@ -4,6 +4,9 @@ import {
   clearAccountError,
   isValidApiKey,
 } from "../services/auth.js";
+// Lease release lives in its own module, not in auth.js: a handler test that
+// partially mocks account SELECTION must still run the real release path.
+import { releaseAccountLease } from "../services/accountLeaseRegistry.js";
 import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings } from "@/lib/localDb";
 import { isInternalModelTestAuthorized } from "@/lib/auth/internalCliToken";
@@ -135,74 +138,86 @@ async function handleSingleModelEmbeddings(body, modelStr, apiKey, endpoint, res
   let lastStatus = null;
 
   while (true) {
+    // The admission slot this selection reserved (auth.js). Released on EVERY
+    // exit of this attempt - the unavailable returns, the success return, each
+    // rotation `continue`, and any throw from the core - because `finally` is
+    // what makes that exhaustive rather than a list that goes stale. Release is
+    // idempotent (accountLease.js), so a double release frees nothing. This
+    // core buffers its whole response before returning, so unlike the chat
+    // stream there is no body still reading after the return.
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const accountLease = credentials?.accountLease || null;
+    try {
 
-    // All accounts unavailable
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const errorMsg = credentials.lastError || "Unavailable";
-        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-        log.warn("EMBEDDINGS", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      // All accounts unavailable
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.allRateLimited) {
+          const errorMsg = credentials.lastError || "Unavailable";
+          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          log.warn("EMBEDDINGS", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        }
+        if (excludeConnectionIds.size === 0) {
+          log.error("AUTH", `No credentials for provider: ${provider}`);
+          return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        }
+        log.warn("EMBEDDINGS", "No more accounts available", { provider });
+        return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
       }
-      if (excludeConnectionIds.size === 0) {
-        log.error("AUTH", `No credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+
+      log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
+
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+      const effectiveModel = !modelStr.includes("/") && credentials.defaultModel
+        ? credentials.defaultModel
+        : model;
+
+      const result = await handleEmbeddingsCore({
+        body: { ...body, model: `${provider}/${effectiveModel}` },
+        modelInfo: { provider, model: effectiveModel },
+        credentials: refreshedCredentials,
+        log,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+
+      if (result.success) {
+        const usage = exactEmbeddingUsage(result.usage);
+        if (usage) {
+          saveRequestUsage({
+            provider,
+            model,
+            connectionId: credentials.connectionId,
+            apiKey,
+            endpoint,
+            tokens: usage,
+            status: "success",
+          }).catch(() => {});
+        }
+        return result.response;
       }
-      log.warn("EMBEDDINGS", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
-    }
 
-    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
+      const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-    const effectiveModel = !modelStr.includes("/") && credentials.defaultModel
-      ? credentials.defaultModel
-      : model;
-
-    const result = await handleEmbeddingsCore({
-      body: { ...body, model: `${provider}/${effectiveModel}` },
-      modelInfo: { provider, model: effectiveModel },
-      credentials: refreshedCredentials,
-      log,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
+      if (shouldFallback) {
+        log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
       }
-    });
 
-    if (result.success) {
-      const usage = exactEmbeddingUsage(result.usage);
-      if (usage) {
-        saveRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint,
-          tokens: usage,
-          status: "success",
-        }).catch(() => {});
-      }
       return result.response;
+    } finally {
+      releaseAccountLease(accountLease);
     }
-
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
-
-    if (shouldFallback) {
-      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
-
-    return result.response;
   }
 }

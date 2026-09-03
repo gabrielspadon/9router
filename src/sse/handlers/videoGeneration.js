@@ -4,6 +4,9 @@ import {
   clearAccountError,
   isValidApiKey,
 } from "../services/auth.js";
+// Lease release lives in its own module, not in auth.js: a handler test that
+// partially mocks account SELECTION must still run the real release path.
+import { releaseAccountLease } from "../services/accountLeaseRegistry.js";
 import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -154,63 +157,75 @@ export async function handleVideoCreate(request, action) {
   let lastStatus = null;
 
   while (true) {
+    // The admission slot this selection reserved (auth.js). Released on EVERY
+    // exit of this attempt - the unavailable returns, the success return, each
+    // rotation `continue`, and any throw from the core - because `finally` is
+    // what makes that exhaustive rather than a list that goes stale. Release is
+    // idempotent (accountLease.js), so a double release frees nothing. This
+    // core buffers its whole response before returning, so unlike the chat
+    // stream there is no body still reading after the return.
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const accountLease = credentials?.accountLease || null;
+    try {
 
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const errorMsg = credentials.lastError || "Unavailable";
-        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-        return unavailableResponse(status, `[${provider}/${model || "video"}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.allRateLimited) {
+          const errorMsg = credentials.lastError || "Unavailable";
+          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          return unavailableResponse(status, `[${provider}/${model || "video"}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        }
+        if (excludeConnectionIds.size === 0) {
+          return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        }
+        return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
       }
-      if (excludeConnectionIds.size === 0) {
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+
+      const result = await handleVideoProxyCore({
+        provider,
+        action,
+        rawBody: forwardBody,
+        contentType: bodyInfo.contentType || null,
+        idempotencyKey,
+        credentials: refreshedCredentials,
+        signal: request.signal,
+        log,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            // Without the existing map the merge at tokenRefresh.js:178 has
+            // nothing to merge onto, so a refresh REPLACES the stored data and
+            // drops the connection proxy fields auth.js inflates onto
+            // credentials, silently unpinning the account from its pool (#884).
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active",
+          });
+        },
+      });
+
+      if (result.success) {
+        await clearAccountError(credentials.connectionId, credentials, model);
+        log.info("VIDEO", `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`);
+        return withConnectionHeader(result.response, credentials.connectionId);
       }
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+
+      // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
+      const { shouldFallback } = await markAccountUnavailable(
+        credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, model
+      );
+
+      if (shouldFallback && CREATE_ROTATION_STATUSES.has(result.status)) {
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
+      }
+
+      return result.response;
+    } finally {
+      releaseAccountLease(accountLease);
     }
-
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-
-    const result = await handleVideoProxyCore({
-      provider,
-      action,
-      rawBody: forwardBody,
-      contentType: bodyInfo.contentType || null,
-      idempotencyKey,
-      credentials: refreshedCredentials,
-      signal: request.signal,
-      log,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          // Without the existing map the merge at tokenRefresh.js:178 has
-          // nothing to merge onto, so a refresh REPLACES the stored data and
-          // drops the connection proxy fields auth.js inflates onto
-          // credentials, silently unpinning the account from its pool (#884).
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active",
-        });
-      },
-    });
-
-    if (result.success) {
-      await clearAccountError(credentials.connectionId, credentials, model);
-      log.info("VIDEO", `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`);
-      return withConnectionHeader(result.response, credentials.connectionId);
-    }
-
-    // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
-    const { shouldFallback } = await markAccountUnavailable(
-      credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, model
-    );
-
-    if (shouldFallback && CREATE_ROTATION_STATUSES.has(result.status)) {
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
-
-    return result.response;
   }
 }
 
@@ -255,6 +270,11 @@ export async function handleVideoGet(request, requestId) {
     );
   }
 
+  // Poll path: one attempt, no rotation, so the whole remainder is the lease's
+  // lifetime. try/finally rather than a release before each return, so a throw
+  // from the core or from markAccountUnavailable cannot strand the slot.
+  const accountLease = credentials?.accountLease || null;
+  try {
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
   const result = await handleVideoProxyCore({
@@ -284,4 +304,7 @@ export async function handleVideoGet(request, requestId) {
     credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, null
   );
   return result.response;
+  } finally {
+    releaseAccountLease(accountLease);
+  }
 }

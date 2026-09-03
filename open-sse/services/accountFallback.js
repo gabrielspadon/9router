@@ -46,6 +46,25 @@ export function getQuotaCooldown(backoffLevel = 0) {
   return Math.min(cooldown, BACKOFF_CONFIG.max);
 }
 
+// 4xx statuses that describe TIMING rather than a malformed request, so a
+// retry (on this key or the next) can still succeed. Everything else in the
+// 4xx range is deterministic: the same request gets the same answer.
+export const RETRYABLE_CLIENT_ERROR_STATUSES = new Set([402, 408, 409, 425, 429]);
+
+/**
+ * True when a 4xx is the caller's request being deterministically wrong, so no
+ * account rotation and no model cooldown can change the outcome.
+ * @param {number} status
+ * @returns {boolean}
+ */
+export function isDeterministicClientError(status) {
+  const code = Number(status);
+  return Number.isFinite(code)
+    && code >= 400
+    && code < 500
+    && !RETRYABLE_CLIENT_ERROR_STATUSES.has(code);
+}
+
 /**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
@@ -105,6 +124,22 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
+  }
+
+  // A 4xx no rule above claimed is the caller's own request being wrong, and
+  // replaying it verbatim on the next key produces the identical rejection.
+  // Falling through to the transient cooldown quarantined a perfectly healthy
+  // model for 5 seconds on a 405, a 415 or a 451 while the client retried, so
+  // an unsupported method or an unacceptable media type drained the pool one
+  // key at a time. The exceptions are the four 4xx statuses that are genuinely
+  // about timing rather than about the request: 408 timeout, 409 contention,
+  // 425 too-early, and 429, which is decided above.
+  //
+  // The statuses ERROR_RULES already names (400, 401, 402, 403, 404, 413, 422)
+  // never reach here, so this closes the gap without reclassifying a credential
+  // fact: a 401 or 403 is a statement about the KEY and still rotates.
+  if (isDeterministicClientError(status)) {
+    return { shouldFallback: false, cooldownMs: 0 };
   }
 
   // Default: transient cooldown for any unmatched error

@@ -4,6 +4,9 @@ import {
   clearAccountError,
   isValidApiKey,
 } from "../services/auth.js";
+// Lease release lives in its own module, not in auth.js: a handler test that
+// partially mocks account SELECTION must still run the real release path.
+import { releaseAccountLease } from "../services/accountLeaseRegistry.js";
 import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings } from "@/lib/localDb";
 import { isInternalModelTestAuthorized } from "@/lib/auth/internalCliToken";
@@ -130,61 +133,73 @@ async function handleSingleModelImage(body, modelStr, {
   let lastStatus = null;
 
   while (true) {
+    // The admission slot this selection reserved (auth.js). Released on EVERY
+    // exit of this attempt - the unavailable returns, the success return, each
+    // rotation `continue`, and any throw from the core - because `finally` is
+    // what makes that exhaustive rather than a list that goes stale. Release is
+    // idempotent (accountLease.js), so a double release frees nothing. This
+    // core buffers its whole response before returning, so unlike the chat
+    // stream there is no body still reading after the return.
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const accountLease = credentials?.accountLease || null;
+    try {
 
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const errorMsg = credentials.lastError || "Unavailable";
-        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.allRateLimited) {
+          const errorMsg = credentials.lastError || "Unavailable";
+          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        }
+        if (excludeConnectionIds.size === 0) {
+          return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        }
+        return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
       }
-      if (excludeConnectionIds.size === 0) {
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+
+      const result = await handleImageGenerationCore({
+        body,
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        streamToClient: wantsStream,
+        binaryOutput,
+        connectTimeout,
+        signal,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            // Without the existing map, the merge at tokenRefresh.js:178 has
+            // nothing to merge onto and the refreshed data REPLACES what was
+            // stored, dropping the connection proxy fields auth.js inflates
+            // onto credentials (connectionProxyPoolId and friends). A refresh
+            // then silently unpins the account from its proxy pool (#884).
+            // chat.js already passed this; these three did not.
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+
+      if (result.success) return result.response;
+
+      if (result.status === 499) return result.response;
+
+      const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+
+      if (shouldFallback) {
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
       }
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+
+      return result.response;
+    } finally {
+      releaseAccountLease(accountLease);
     }
-
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-
-    const result = await handleImageGenerationCore({
-      body,
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      streamToClient: wantsStream,
-      binaryOutput,
-      connectTimeout,
-      signal,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          // Without the existing map, the merge at tokenRefresh.js:178 has
-          // nothing to merge onto and the refreshed data REPLACES what was
-          // stored, dropping the connection proxy fields auth.js inflates
-          // onto credentials (connectionProxyPoolId and friends). A refresh
-          // then silently unpins the account from its proxy pool (#884).
-          // chat.js already passed this; these three did not.
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-      }
-    });
-
-    if (result.success) return result.response;
-
-    if (result.status === 499) return result.response;
-
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
-
-    if (shouldFallback) {
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
-
-    return result.response;
   }
 }

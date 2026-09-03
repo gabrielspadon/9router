@@ -6,6 +6,9 @@ import {
   clearAccountError,
   isValidApiKey,
 } from "../services/auth.js";
+// Lease release lives in its own module, not in auth.js: a handler test that
+// partially mocks account SELECTION must still run the real release path.
+import { releaseAccountLease, releaseAccountLeaseOnResponse } from "../services/accountLeaseRegistry.js";
 import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings } from "@/lib/localDb";
 import { isInternalModelTestAuthorized } from "@/lib/auth/internalCliToken";
@@ -16,7 +19,7 @@ import { DEFAULT_HEADROOM_URL, parseHeadroomTimeoutMs } from "@/lib/headroom/det
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { appendTokenSaverEvent } from "@/lib/tokenSaver/events.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, isRetryableStatus } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities, resolveComboMemberConnection, resolveComboTokenSaver } from "open-sse/services/combo.js";
 import { AUTO_MODEL_IDS, resolveAutoModel } from "@/sse/services/autoRouter.js";
 import { detectAgentRole, applyAgentRoleGroup } from "open-sse/utils/agentRole.js";
@@ -36,10 +39,38 @@ import { looksLikeClaudeWrappedModel,
   stripContextSuffix, normalizeClaudeModelName, buildClaudeRoutingIndex, readClaudeCompat } from "@/lib/claudeCompat";
 import { recordApiKeyDevice } from "@/sse/services/apiKeyDevices.js";
 
+// The header a caller uses to name the exact account a request must run on.
+// Shared spelling with the image and video handlers.
+const REQUEST_CONNECTION_HEADER = "x-connection-id";
+// The header a caller uses to cap how many accounts one request may spend.
+const REQUEST_MAX_ATTEMPTS_HEADER = "x-max-attempts";
+
+/**
+ * Read the caller's attempt ceiling. Anything that is not a positive safe
+ * integer is no ceiling at all: a "0", a "-1" or a "many" must not be read as
+ * "stop after zero attempts", which would refuse every request.
+ * @param {Request} request
+ * @returns {number|null}
+ */
+export function readAttemptCeiling(request) {
+  const raw = Number(request?.headers?.get(REQUEST_MAX_ATTEMPTS_HEADER));
+  return Number.isSafeInteger(raw) && raw > 0 ? raw : null;
+}
+
 async function createAntigravityVerificationHooks(connectionId) {
   const { createAntigravityVerificationHooks: createHooks } = await import("@/lib/antigravityVerification");
   return createHooks(connectionId);
 }
+
+// The wait a local admission refusal advertises. There is no queue behind the
+// per-provider cap yet (see HANDOFF in the leaf report), so the honest budget is
+// the overlay spec's own floor rather than a number invented to look precise:
+// the in-flight requests this cap is counting have no knowable finish time.
+const ADMISSION_RETRY_HINT_MS = 1000;
+// Retry-After floor from overlay-spec §4: a retryable status always names some
+// delay, because `Retry-After: 0` reads as "retry immediately" and turns a
+// refusal into a hot loop.
+const RETRY_AFTER_FLOOR_MS = 1000;
 
 // Simple in-memory sliding-window rate limiter to stop abuse of the expensive AI calls below
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -78,10 +109,20 @@ function isRateLimited(key) {
   return false;
 }
 
+// The instant this caller's window reopens: the oldest hit still inside the
+// window ages out one window after it landed. Real state the limiter already
+// held and was discarding, which is what a truthful Retry-After is made of --
+// a constant here would be a guess that is wrong for every caller but one.
+function rateLimitResetAtMs(key) {
+  const oldest = (rateLimitHits.get(key) || [])[0];
+  return oldest === undefined ? null : oldest + RATE_LIMIT_WINDOW_MS;
+}
+
 // Test seam: the limiter is a process-wide singleton, so a suite needs a way to
 // drive it and start from empty without reaching into the map.
 export const __rateLimiter = {
   isRateLimited,
+  resetAtMs: rateLimitResetAtMs,
   size: () => rateLimitHits.size,
   reset: () => {
     rateLimitHits.clear();
@@ -112,7 +153,10 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   const rateLimitKey = apiKey || request.headers.get("x-forwarded-for") || "anonymous";
   if (isRateLimited(rateLimitKey)) {
     log.warn("CHAT", "Rate limit exceeded");
-    return errorResponse(HTTP_STATUS.RATE_LIMITED, "Too many requests, please slow down");
+    return errorResponse(HTTP_STATUS.RATE_LIMITED, "Too many requests, please slow down", {
+      retryAfter: { at: rateLimitResetAtMs(rateLimitKey) },
+      failurePhase: "admission",
+    });
   }
 
   let body = options.body;
@@ -460,7 +504,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const overflow = await providerConcurrencyOverflow(provider);
   if (overflow) {
     log.warn("CHAT", `[${provider}/${model}] ${overflow}`);
-    return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `[${provider}/${model}] ${overflow}`);
+    // A LOCAL admission refusal, not a claim that the provider is out of
+    // capacity — those are different facts, and a caller doing its own backoff
+    // math is misled by the conflation. `failure_phase` is what lets it tell
+    // them apart, and the wait budget is the local gate's own, so the message
+    // names TokenProxy rather than the upstream.
+    return errorResponse(
+      HTTP_STATUS.SERVICE_UNAVAILABLE,
+      `[${provider}/${model}] TokenProxy is ${overflow}`,
+      { retryAfter: { ms: ADMISSION_RETRY_HINT_MS }, failurePhase: "admission" },
+    );
   }
 
   // Extract userAgent from request
@@ -490,6 +543,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   if (pinnedConnectionId) {
     log.info("CHAT", `[${provider}/${model}] pinned to connection ${pinnedConnectionId.slice(0, 8)}`);
   }
+  // A caller may name the exact account this request must run on. The image and
+  // video handlers already read this header; chat did not, so a client holding
+  // per-account session state had no way to say which account it meant and its
+  // follow-up landed on whichever account selection happened to pick.
+  const requestedConnectionId = request?.headers?.get(REQUEST_CONNECTION_HEADER) || null;
+  // Optional caller-supplied ceiling on how many accounts one request may burn.
+  // Without it the loop rotates through the whole pool, which is right for a
+  // background job and wrong for an interactive client that would rather see
+  // the first real error than wait out eight upstream timeouts.
+  const maxAttempts = readAttemptCeiling(request);
 
   while (true) {
     if (callerSignal?.aborted) return errorResponse(499, "Request aborted");
@@ -508,229 +571,312 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       credentialOptions.preferredConnectionId = pinnedConnectionId;
       credentialOptions.strictPreferredConnection = true;
     }
+    // Lowest precedence: a replay pin is about reaching the account that just
+    // failed and a combo pin is configuration, so both outrank what the caller
+    // asked for on this single request.
+    else if (requestedConnectionId) credentialOptions.preferredConnectionId = requestedConnectionId;
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, credentialOptions);
+    // The slot this selection reserved (auth.js reserve). It is held for the
+    // WHOLE attempt and given back exactly once, whichever of this loop's many
+    // exits ends it: the four aborts, the empty-stream rotation, the replay
+    // retry, the attempt-ceiling return, every same-account and next-account
+    // retry, and any throw from handleChatCore. `finally` is what makes that
+    // exhaustive - an exit added later is covered without being enumerated,
+    // and a rotation that picks a DIFFERENT account next pass cannot leak the
+    // previous one because release happens before `continue` leaves the block.
+    //
+    // The single exception is a response that is still streaming when the
+    // handler returns: ownership moves to the body, and `leaseHandedOff` says
+    // so, because releasing at `return` would report the account idle for the
+    // entire stream. Release is idempotent (accountLease.js), so the belt is
+    // free even where the braces already held.
+    const accountLease = credentials?.accountLease || null;
+    let leaseHandedOff = false;
+    try {
 
-    // All accounts unavailable
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const errorMsg = credentials.lastError || "Unavailable";
-        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      // Selection may substitute a healthy account for the pinned one. For a
+      // caller that named an account that is not a helpful fallback: it spends the
+      // wrong subscription and breaks whatever account-bound state the pin existed
+      // to reach. Say so instead of silently serving someone else.
+      if (requestedConnectionId && credentials && credentials.allRateLimited !== true
+          && credentials.connectionId !== requestedConnectionId) {
+        return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Pinned connection unavailable", {
+          failurePhase: "provider",
+        });
       }
-      if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+
+      // All accounts unavailable
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.allRateLimited) {
+          const errorMsg = credentials.lastError || "Unavailable";
+          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        }
+        if (excludeConnectionIds.size === 0) {
+          log.warn("AUTH", `No active credentials for provider: ${provider}`);
+          return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        }
+        log.warn("CHAT", "No more accounts available", { provider });
+        const exhaustedStatus = lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        // Every account is out, and none of them told us when it comes back
+        // (a lock with an expiry took the unavailableResponse branch above). The
+        // §4 floor fills the absence so the caller is never handed a retryable
+        // status with no delay hint at all — and isRetryableStatus keeps it off a
+        // 401 or 402, where the correct advice is to stop rather than to wait.
+        return errorResponse(exhaustedStatus, lastError || "All accounts unavailable", {
+          retryAfter: { ms: RETRY_AFTER_FLOOR_MS },
+          failurePhase: "provider",
+        });
       }
-      log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
-    }
 
-    // Account selection shown in the unified "▶" line (acc:...)
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-    const effectiveModel = !modelStr.includes("/") && credentials.defaultModel
-      ? credentials.defaultModel
-      : model;
+      // Account selection shown in the unified "▶" line (acc:...)
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+      const effectiveModel = !modelStr.includes("/") && credentials.defaultModel
+        ? credentials.defaultModel
+        : model;
 
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const projectVerificationHooks = provider === "antigravity"
+      // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+      if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+        const projectVerificationHooks = provider === "antigravity"
+          ? await createAntigravityVerificationHooks(credentials.connectionId)
+          : {};
+        const pid = await getProjectIdForConnection(
+          credentials.connectionId,
+          refreshedCredentials.accessToken,
+          provider,
+          projectVerificationHooks,
+        );
+        if (pid) {
+          refreshedCredentials.projectId = pid;
+          // Persist to DB in background so subsequent requests have it immediately
+          updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+        }
+      }
+
+      // Use shared chatCore
+      const chatSettings = await getSettings();
+      // The token saver was global, so a combo mixing an expensive model with a
+      // cheap one had to be saved for both or neither (#2289, #2037). The chain
+      // names the combo this attempt came from, so a combo's own overrides apply
+      // to its members; a combo that declares nothing resolves to the global
+      // settings unchanged, and a request outside a combo has no chain at all.
+      const comboTokenSaver = resolveComboTokenSaver(comboChain, chatSettings);
+      const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+      const connectTimeout = {
+        providerOverride: chatSettings.providerStrategies?.[provider]?.connectTimeoutMs,
+        globalTimeout: chatSettings.connectTimeoutMs,
+      };
+      const chatVerificationHooks = provider === "antigravity"
         ? await createAntigravityVerificationHooks(credentials.connectionId)
         : {};
-      const pid = await getProjectIdForConnection(
-        credentials.connectionId,
-        refreshedCredentials.accessToken,
-        provider,
-        projectVerificationHooks,
-      );
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
-      }
-    }
+      const result = await handleChatCore({
+        body: { ...body, model: `${provider}/${effectiveModel}` },
+        modelInfo: { provider, model: effectiveModel },
+        credentials: refreshedCredentials,
+        callerSignal,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: comboTokenSaver.rtkEnabled,
+        privacyEnabled: !!chatSettings.privacyFilterEnabled,
+        privacyTerms: chatSettings.privacyFilterTerms || [],
+        headroomEnabled: comboTokenSaver.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        headroomTimeoutMs: chatSettings.headroomTimeoutMs ?? parseHeadroomTimeoutMs(),
+        cavemanEnabled: comboTokenSaver.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        ponytailEnabled: comboTokenSaver.ponytailEnabled,
+        ponytailLevel: chatSettings.ponytailLevel || "full",
+        pxpipeEnabled: comboTokenSaver.pxpipeEnabled,
+        pxpipeMinChars: chatSettings.pxpipeMinChars,
+        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+        // Lazily warms the in-process module on first use; null when not installed (fail-open)
+        pxpipeTransform: comboTokenSaver.pxpipeEnabled ? await getPxpipeTransform() : null,
+        onPxpipeEvent: appendPxpipeEvent,
+        onTokenSaverEvent: appendTokenSaverEvent,
+        providerThinking,
+        connectTimeout,
+        codexFastMode: chatSettings.providerStrategies?.codex?.fastMode === true,
+        memorySettings: chatSettings,
+        toolDisclosure: (chatSettings.toolDisclosureEnabled || chatSettings.toolDisclosureFilterEnabled) ? {
+          disclosureEnabled: !!chatSettings.toolDisclosureEnabled,
+          filterEnabled: !!chatSettings.toolDisclosureFilterEnabled,
+          maxTools: chatSettings.toolDisclosureMaxTools ?? 20,
+          excludeServers: chatSettings.toolDisclosureExcludeServers || [],
+          excludeTools: chatSettings.toolDisclosureExcludeTools || [],
+        } : null,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        verificationContext: chatVerificationHooks.verificationContext,
+        onValidationRequired: chatVerificationHooks.onValidationRequired,
+        onVerificationSuccess: chatVerificationHooks.onVerificationSuccess,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        },
+        // Stream finished with no text/thinking/output tokens (upstream 200'd on
+        // nothing). The response already went out to this client — this only
+        // locks the account+model so the *next* request (including this
+        // client's own empty-stream retry) skips it and falls to the next
+        // combo/account candidate, then comes back into rotation once the lock
+        // expires.
+        onEmptyStream: async () => {
+          await markAccountUnavailable(
+            credentials.connectionId,
+            HTTP_STATUS.BAD_GATEWAY,
+            `Empty streaming response from ${provider}/${model}`,
+            provider,
+            model,
+            Date.now() + EMPTY_CONTENT_COOLDOWN_MS
+          );
+        }
+      });
 
-    // Use shared chatCore
-    const chatSettings = await getSettings();
-    // The token saver was global, so a combo mixing an expensive model with a
-    // cheap one had to be saved for both or neither (#2289, #2037). The chain
-    // names the combo this attempt came from, so a combo's own overrides apply
-    // to its members; a combo that declares nothing resolves to the global
-    // settings unchanged, and a request outside a combo has no chain at all.
-    const comboTokenSaver = resolveComboTokenSaver(comboChain, chatSettings);
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const connectTimeout = {
-      providerOverride: chatSettings.providerStrategies?.[provider]?.connectTimeoutMs,
-      globalTimeout: chatSettings.connectTimeoutMs,
-    };
-    const chatVerificationHooks = provider === "antigravity"
-      ? await createAntigravityVerificationHooks(credentials.connectionId)
-      : {};
-    const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${effectiveModel}` },
-      modelInfo: { provider, model: effectiveModel },
-      credentials: refreshedCredentials,
-      callerSignal,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: comboTokenSaver.rtkEnabled,
-      privacyEnabled: !!chatSettings.privacyFilterEnabled,
-      privacyTerms: chatSettings.privacyFilterTerms || [],
-      headroomEnabled: comboTokenSaver.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      headroomTimeoutMs: chatSettings.headroomTimeoutMs ?? parseHeadroomTimeoutMs(),
-      cavemanEnabled: comboTokenSaver.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: comboTokenSaver.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: comboTokenSaver.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-      // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: comboTokenSaver.pxpipeEnabled ? await getPxpipeTransform() : null,
-      onPxpipeEvent: appendPxpipeEvent,
-      onTokenSaverEvent: appendTokenSaverEvent,
-      providerThinking,
-      connectTimeout,
-      codexFastMode: chatSettings.providerStrategies?.codex?.fastMode === true,
-      memorySettings: chatSettings,
-      toolDisclosure: (chatSettings.toolDisclosureEnabled || chatSettings.toolDisclosureFilterEnabled) ? {
-        disclosureEnabled: !!chatSettings.toolDisclosureEnabled,
-        filterEnabled: !!chatSettings.toolDisclosureFilterEnabled,
-        maxTools: chatSettings.toolDisclosureMaxTools ?? 20,
-        excludeServers: chatSettings.toolDisclosureExcludeServers || [],
-        excludeTools: chatSettings.toolDisclosureExcludeTools || [],
-      } : null,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
-      verificationContext: chatVerificationHooks.verificationContext,
-      onValidationRequired: chatVerificationHooks.onValidationRequired,
-      onVerificationSuccess: chatVerificationHooks.onVerificationSuccess,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-      },
-      // Stream finished with no text/thinking/output tokens (upstream 200'd on
-      // nothing). The response already went out to this client — this only
-      // locks the account+model so the *next* request (including this
-      // client's own empty-stream retry) skips it and falls to the next
-      // combo/account candidate, then comes back into rotation once the lock
-      // expires.
-      onEmptyStream: async () => {
+      if (callerSignal?.aborted) return errorResponse(499, "Request aborted");
+
+      // A streaming 200 is not proof of an answer. Combo mode already refuses an
+      // empty stream and moves to the next member (peekStreamForContent in
+      // open-sse/services/combo.js), and the non-streaming path already refuses
+      // one through hasUsefulContent in nonStreamingHandler.js. The SINGLE-model
+      // streaming path had neither, so an upstream that opened SSE and closed
+      // with nothing was forwarded verbatim and the client waited forever on a
+      // stream the log called "complete".
+      //
+      // That gap is the whole differential in #2535: the built-in model test
+      // probes with `stream: false` (src/app/api/models/test/ping.js), so it takes
+      // the guarded branch and reports the model healthy while every streaming
+      // client hangs. onEmptyStream below fires only after the body has already
+      // gone out (see the buildOnStreamComplete docstring in streamingHandler.js)
+      // and so protects the NEXT request; peeking here is what gets THIS one
+      // retried on another account.
+      if (result.success) {
+        const peeked = await peekStreamForContent(result.response);
+        if (callerSignal?.aborted) return errorResponse(499, "Request aborted");
+        if (peeked.hasContent) {
+          // The answer is live from here to the last token, which for a long
+          // stream is minutes after this return. Ownership of the slot moves to
+          // the body so the ceiling counts requests actually on the wire; the
+          // `finally` below stands down because releasing now would free it
+          // while the client is still reading.
+          leaseHandedOff = true;
+          // Non-SSE replies come back with body:null and pass through as-is.
+          return releaseAccountLeaseOnResponse(
+            peeked.body
+              ? new Response(peeked.body, {
+                status: result.response.status,
+                statusText: result.response.statusText,
+                headers: result.response.headers,
+              })
+              : result.response,
+            accountLease,
+          );
+        }
+        const reason = peeked.upstreamError?.reason || "provider returned an empty stream";
+        lastError = reason;
+        lastStatus = peeked.upstreamError?.status || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} ${reason} → NEXT ACCOUNT`);
         await markAccountUnavailable(
           credentials.connectionId,
           HTTP_STATUS.BAD_GATEWAY,
-          `Empty streaming response from ${provider}/${model}`,
+          `${reason} from ${provider}/${model}`,
           provider,
           model,
           Date.now() + EMPTY_CONTENT_COOLDOWN_MS
         );
-      }
-    });
-
-    if (callerSignal?.aborted) return errorResponse(499, "Request aborted");
-
-    // A streaming 200 is not proof of an answer. Combo mode already refuses an
-    // empty stream and moves to the next member (peekStreamForContent in
-    // open-sse/services/combo.js), and the non-streaming path already refuses
-    // one through hasUsefulContent in nonStreamingHandler.js. The SINGLE-model
-    // streaming path had neither, so an upstream that opened SSE and closed
-    // with nothing was forwarded verbatim and the client waited forever on a
-    // stream the log called "complete".
-    //
-    // That gap is the whole differential in #2535: the built-in model test
-    // probes with `stream: false` (src/app/api/models/test/ping.js), so it takes
-    // the guarded branch and reports the model healthy while every streaming
-    // client hangs. onEmptyStream below fires only after the body has already
-    // gone out (see the buildOnStreamComplete docstring in streamingHandler.js)
-    // and so protects the NEXT request; peeking here is what gets THIS one
-    // retried on another account.
-    if (result.success) {
-      const peeked = await peekStreamForContent(result.response);
-      if (callerSignal?.aborted) return errorResponse(499, "Request aborted");
-      if (peeked.hasContent) {
-        // Non-SSE replies come back with body:null and pass through as-is.
-        return peeked.body
-          ? new Response(peeked.body, {
-            status: result.response.status,
-            statusText: result.response.statusText,
-            headers: result.response.headers,
-          })
-          : result.response;
-      }
-      const reason = peeked.upstreamError?.reason || "provider returned an empty stream";
-      lastError = reason;
-      lastStatus = peeked.upstreamError?.status || HTTP_STATUS.SERVICE_UNAVAILABLE;
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} ${reason} → NEXT ACCOUNT`);
-      await markAccountUnavailable(
-        credentials.connectionId,
-        HTTP_STATUS.BAD_GATEWAY,
-        `${reason} from ${provider}/${model}`,
-        provider,
-        model,
-        Date.now() + EMPTY_CONTENT_COOLDOWN_MS
-      );
-      excludeConnectionIds.add(credentials.connectionId);
-      continue;
-    }
-
-    if (result.clientAborted || result.status === 499) return result.response;
-    if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
-      requestReplayAttempted = true;
-      requestReplayConnectionId = credentials.connectionId;
-      log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
-      continue;
-    }
-
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const accountFailureArgs = [
-      credentials.connectionId,
-      result.status,
-      result.error,
-      provider,
-      model,
-      result.resetsAtMs,
-    ];
-    if (result.failureMetadata) accountFailureArgs.push(result.failureMetadata);
-    const { shouldFallback, cooldownMs } = await markAccountUnavailable(...accountFailureArgs);
-
-    if (shouldFallback) {
-      lastError = result.error;
-      lastStatus = result.status;
-      const fails = (failCountByConn.get(credentials.connectionId) || 0) + 1;
-      failCountByConn.set(credentials.connectionId, fails);
-      // The same-account retry exists for a transient glitch. markAccountUnavailable
-      // already computed how long this account is out for, and that answer was
-      // being discarded: an account locked for two minutes was still hammered
-      // three times in a row before the loop moved on, costing the user two
-      // pointless upstream calls and the latency of both (#1641).
-      if (fails < ACCOUNT_RETRY_LIMIT && cooldownMs <= SAME_ACCOUNT_RETRY_MAX_COOLDOWN_MS) {
-        // Same account, immediate retry — cooldown was skipped for transient
-        // errors, so this is a fast re-dispatch rather than a wait.
-        log.warn("RETRY", `⇄ ACC:${credentials.connectionName} failed (${result.status}) attempt ${fails}/${ACCOUNT_RETRY_LIMIT} → RETRY SAME`);
-        continue;
-      }
-      if (cooldownMs > SAME_ACCOUNT_RETRY_MAX_COOLDOWN_MS) {
-        log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} locked ${Math.round(cooldownMs / 1000)}s (${result.status}) → NEXT ACCOUNT`);
         excludeConnectionIds.add(credentials.connectionId);
         continue;
       }
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE after ${ACCOUNT_RETRY_LIMIT} tries (${result.status}) → NEXT ACCOUNT`);
-      excludeConnectionIds.add(credentials.connectionId);
-      continue;
-    }
 
-    return result.response;
+      if (result.clientAborted || result.status === 499) {
+        // The client is gone or going, but the upstream body it was handed may
+        // still be open. The helper releases at once when there is nothing to
+        // read, and on cancel otherwise, so neither case leaks.
+        leaseHandedOff = true;
+        return releaseAccountLeaseOnResponse(result.response, accountLease);
+      }
+      if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
+        requestReplayAttempted = true;
+        requestReplayConnectionId = credentials.connectionId;
+        log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
+        continue;
+      }
+
+      // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
+      const accountFailureArgs = [
+        credentials.connectionId,
+        result.status,
+        result.error,
+        provider,
+        model,
+        result.resetsAtMs,
+      ];
+      if (result.failureMetadata) accountFailureArgs.push(result.failureMetadata);
+      const { shouldFallback, cooldownMs } = await markAccountUnavailable(...accountFailureArgs);
+
+      if (shouldFallback) {
+        // A rate limit is the most actionable thing a caller can be told, and the
+        // loop used to overwrite it with whatever the next account happened to
+        // fail with. A client handed a generic 503 has no reset time to wait for,
+        // so it retries immediately into the same quota.
+        if (lastStatus === null
+            || (result.status === HTTP_STATUS.RATE_LIMITED && lastStatus !== HTTP_STATUS.RATE_LIMITED)) {
+          lastError = result.error;
+          lastStatus = result.status;
+        }
+        // The caller capped how many accounts this request may spend. Hand back
+        // the real upstream response rather than rotating past the budget.
+        if (maxAttempts && excludeConnectionIds.size + 1 >= maxAttempts) {
+          log.warn("CHAT", `[${provider}/${model}] attempt ceiling ${maxAttempts} reached`);
+          leaseHandedOff = true;
+          return releaseAccountLeaseOnResponse(result.response, accountLease);
+        }
+        const fails = (failCountByConn.get(credentials.connectionId) || 0) + 1;
+        failCountByConn.set(credentials.connectionId, fails);
+        // The same-account retry exists for a transient glitch. markAccountUnavailable
+        // already computed how long this account is out for, and that answer was
+        // being discarded: an account locked for two minutes was still hammered
+        // three times in a row before the loop moved on, costing the user two
+        // pointless upstream calls and the latency of both (#1641).
+        // A terminal status never earns a same-account retry, whatever the
+        // cooldown works out to. Re-dispatching the identical request against the
+        // identical credential after a 401, 402 or 403 spends an upstream call to
+        // be told the same thing. Rotation to a DIFFERENT credential still runs
+        // below — a distinct key is a distinct fact, which is what #2429 pins.
+        if (isRetryableStatus(result.status)
+            && fails < ACCOUNT_RETRY_LIMIT && cooldownMs <= SAME_ACCOUNT_RETRY_MAX_COOLDOWN_MS) {
+          // Same account, immediate retry — cooldown was skipped for transient
+          // errors, so this is a fast re-dispatch rather than a wait.
+          log.warn("RETRY", `⇄ ACC:${credentials.connectionName} failed (${result.status}) attempt ${fails}/${ACCOUNT_RETRY_LIMIT} → RETRY SAME`);
+          continue;
+        }
+        if (cooldownMs > SAME_ACCOUNT_RETRY_MAX_COOLDOWN_MS) {
+          log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} locked ${Math.round(cooldownMs / 1000)}s (${result.status}) → NEXT ACCOUNT`);
+          excludeConnectionIds.add(credentials.connectionId);
+          continue;
+        }
+        log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE after ${ACCOUNT_RETRY_LIMIT} tries (${result.status}) → NEXT ACCOUNT`);
+        excludeConnectionIds.add(credentials.connectionId);
+        continue;
+      }
+
+      // shouldFallback === false: this upstream response IS the answer, and its
+      // body may still be unread. Same handoff as the peeked path; a body-less
+      // response releases immediately inside the helper.
+      leaseHandedOff = true;
+      return releaseAccountLeaseOnResponse(result.response, accountLease);
+    } finally {
+      if (!leaseHandedOff) releaseAccountLease(accountLease);
+    }
   }
 }

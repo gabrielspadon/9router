@@ -128,6 +128,18 @@ export const ERROR_RULES = [
   { text: "context_length_exceeded", pass: true },
   { text: "prompt is too long", pass: true },
   { text: "exceeds the limit", pass: true },
+  // A policy rejection is a fact about the REQUEST, not the account. Rotating
+  // burns every key in the pool on a request that no key will accept, and the
+  // caller is told to retry something that can only fail again. The status-based
+  // 403 rule below still rotates on the quota-exhausted reading of 403 (#2429's
+  // key_retry_on list), because text rules run first and only these words reach
+  // here.
+  { text: "content policy", pass: true },
+  { text: "content_policy", pass: true },
+  { text: "policy violation", pass: true },
+  { text: "prohibited_content", pass: true },
+  { text: "blocked by safety", pass: true },
+  { text: "safety_violation", pass: true },
   { text: "rate limit", backoff: true },
   { text: "too many requests", backoff: true },
   { text: "quota exceeded", backoff: true },

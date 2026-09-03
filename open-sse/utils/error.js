@@ -23,19 +23,72 @@ export function buildErrorBody(statusCode, message) {
 }
 
 /**
+ * Statuses on which a retry can never succeed, so a `Retry-After` must never be
+ * attached to one. Authentication (401), payment (402) and policy (403) are the
+ * cases the caller must be told to STOP on; 400, 413 and 422 are malformed
+ * requests that no amount of waiting repairs.
+ *
+ * This is the same set `ERROR_RULES` marks `pass: true` plus the three that earn
+ * a long account cooldown, and it is deliberately ONE list: a second hand-rolled
+ * "is this retryable" test somewhere else is how a 401 starts advertising a
+ * retry window that will never open.
+ */
+export const NEVER_RETRY_STATUSES = new Set([400, 401, 402, 403, 413, 422]);
+
+export function isRetryableStatus(statusCode) {
+  return !NEVER_RETRY_STATUSES.has(Number(statusCode));
+}
+
+/**
+ * Seconds a client should wait, from REAL state — a window reset instant (`at`)
+ * or a measured wait budget (`ms`). Returns null when neither was supplied, so a
+ * caller with nothing true to say emits no header rather than inventing one.
+ *
+ * The floor is 1 (overlay-spec §4): a reset already in the past, or a sub-second
+ * budget, still has to name a delay, because `Retry-After: 0` reads as "retry
+ * immediately" and turns a cooldown into a hot loop.
+ */
+export function retryAfterSeconds({ at = null, ms = null } = {}, now = Date.now()) {
+  let remainingMs = null;
+  if (at != null) {
+    const atMs = at instanceof Date ? at.getTime() : (typeof at === "number" ? at : Date.parse(at));
+    if (Number.isFinite(atMs)) remainingMs = atMs - now;
+  }
+  if (remainingMs === null && Number.isFinite(ms)) remainingMs = Number(ms);
+  if (remainingMs === null) return null;
+  return Math.max(Math.ceil(remainingMs / 1000), 1);
+}
+
+/**
  * Create error Response object (for non-streaming)
+ *
+ * `retryAfter` carries the real state behind the wait ({ at } = a quota window
+ * reset instant, { ms } = a wait budget). `failurePhase` marks WHERE the request
+ * died: "admission" means TokenProxy's own local gate refused it, which is not a
+ * claim that the upstream provider is out of capacity — conflating the two is
+ * what misleads a caller doing its own backoff math.
+ *
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {{ retryAfter?: {at?: number|string|Date, ms?: number}, failurePhase?: string }} [options]
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
-    status: statusCode,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*"
-    }
-  });
+export function errorResponse(statusCode, message, options = {}) {
+  const body = buildErrorBody(statusCode, message);
+  if (options.failurePhase) body.error.failure_phase = options.failurePhase;
+
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*"
+  };
+  // Gate first, compute second: a terminal status must not even carry a
+  // computed wait, however real the number behind it is.
+  if (options.retryAfter && isRetryableStatus(statusCode)) {
+    const secs = retryAfterSeconds(options.retryAfter);
+    if (secs !== null) headers["Retry-After"] = String(secs);
+  }
+
+  return new Response(JSON.stringify(body), { status: statusCode, headers });
 }
 
 export class CallerAbortError extends Error {
@@ -320,18 +373,15 @@ export function createErrorResult(statusCode, message, resetsAtMs, failureMetada
  * @returns {Response}
  */
 export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
-  const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
-  return new Response(
-    JSON.stringify({ error: { message: msg } }),
-    {
-      status: statusCode,
-      headers: {
-        "Content-Type": "application/json",
-        "Retry-After": String(retryAfterSec)
-      }
-    }
-  );
+  const headers = { "Content-Type": "application/json" };
+  // Same gate as errorResponse, same reason. `retryAfter` here is a real lock
+  // expiry, but a 401 or 402 is terminal no matter how truthful the instant is.
+  if (isRetryableStatus(statusCode)) {
+    const secs = retryAfterSeconds({ at: retryAfter });
+    if (secs !== null) headers["Retry-After"] = String(secs);
+  }
+  return new Response(JSON.stringify({ error: { message: msg } }), { status: statusCode, headers });
 }
 
 /**

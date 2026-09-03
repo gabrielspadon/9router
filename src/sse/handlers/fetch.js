@@ -4,6 +4,9 @@ import {
   clearAccountError,
   isValidApiKey,
 } from "../services/auth.js";
+// Lease release lives in its own module, not in auth.js: a handler test that
+// partially mocks account SELECTION must still run the real release path.
+import { releaseAccountLease } from "../services/accountLeaseRegistry.js";
 import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
@@ -186,69 +189,81 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   let lastStatus = null;
 
   while (true) {
+    // The admission slot this selection reserved (auth.js). Released on EVERY
+    // exit of this attempt - the unavailable returns, the success return, each
+    // rotation `continue`, and any throw from the core - because `finally` is
+    // what makes that exhaustive rather than a list that goes stale. Release is
+    // idempotent (accountLease.js), so a double release frees nothing. This
+    // core buffers its whole response before returning, so unlike the chat
+    // stream there is no body still reading after the return.
     const credentials = await getProviderCredentials(providerId, excludeConnectionIds);
+    const accountLease = credentials?.accountLease || null;
+    try {
 
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const errorMsg = credentials.lastError || "Unavailable";
-        const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-        log.warn("FETCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.allRateLimited) {
+          const errorMsg = credentials.lastError || "Unavailable";
+          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          log.warn("FETCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
+          return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        }
+        if (excludeConnectionIds.size === 0) {
+          log.error("AUTH", `No credentials for provider: ${providerId}`);
+          return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${providerId}`);
+        }
+        log.warn("FETCH", "No more accounts available", { provider: providerId });
+        return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
       }
-      if (excludeConnectionIds.size === 0) {
-        log.error("AUTH", `No credentials for provider: ${providerId}`);
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${providerId}`);
-      }
-      log.warn("FETCH", "No more accounts available", { provider: providerId });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
-    }
 
-    log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
+      log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
 
-    const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
+      const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
 
-    const result = await handleFetchCore({
-      url: targetUrl,
-      format,
-      maxCharacters,
-      provider: resolvedProvider.id,
-      providerConfig,
-      credentials: refreshedCredentials,
-      signal: request.signal,
-      proxyOptions: buildFetchProxyOptions(refreshedCredentials),
-      log,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          // Without the existing map, the merge at tokenRefresh.js:178 has
-          // nothing to merge onto and the refreshed data REPLACES what was
-          // stored, dropping the connection proxy fields auth.js inflates
-          // onto credentials (connectionProxyPoolId and friends). A refresh
-          // then silently unpins the account from its proxy pool (#884).
-          // chat.js already passed this; these three did not.
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
+      const result = await handleFetchCore({
+        url: targetUrl,
+        format,
+        maxCharacters,
+        provider: resolvedProvider.id,
+        providerConfig,
+        credentials: refreshedCredentials,
+        signal: request.signal,
+        proxyOptions: buildFetchProxyOptions(refreshedCredentials),
+        log,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            // Without the existing map, the merge at tokenRefresh.js:178 has
+            // nothing to merge onto and the refreshed data REPLACES what was
+            // stored, dropping the connection proxy fields auth.js inflates
+            // onto credentials (connectionProxyPoolId and friends). A refresh
+            // then silently unpins the account from its proxy pool (#884).
+            // chat.js already passed this; these three did not.
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        }
+      });
+
+      if (result.success) {
+        await clearAccountError(credentials.connectionId, credentials);
+        return new Response(JSON.stringify(result.data), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       }
-    });
 
-    if (result.success) {
-      await clearAccountError(credentials.connectionId, credentials);
-      return new Response(JSON.stringify(result.data), {
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-      });
+      const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, providerId);
+
+      if (shouldFallback) {
+        log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
+      }
+
+      return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Fetch failed");
+    } finally {
+      releaseAccountLease(accountLease);
     }
-
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, providerId);
-
-    if (shouldFallback) {
-      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
-
-    return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Fetch failed");
   }
 }
