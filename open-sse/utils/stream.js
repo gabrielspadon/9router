@@ -386,8 +386,14 @@ export function createSSEStream(options = {}) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+            streamDoneSent = true;
           }
-          streamDoneSent = true;
+          // `streamDoneSent` means SENT, not "seen". It used to be set here
+          // unconditionally, so an upstream sentinel on a non-Responses translate
+          // stream was swallowed by the `continue` below AND recorded as though it
+          // had been forwarded — which then suppressed the flush's own emit and
+          // left an OpenAI client with no terminator at all. Only the branch that
+          // actually enqueues one may set it.
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
         }

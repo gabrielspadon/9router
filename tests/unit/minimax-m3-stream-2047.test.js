@@ -93,8 +93,18 @@ describe("MiniMax-M3 streaming to an OpenAI client (#2047)", () => {
 
   it("drops everything when the wire format and the declared target disagree", async () => {
     // The reported symptom, reproduced as the negative control: OpenAI frames
-    // read as Claude translate to nothing at all.
-    expect(await pump(OPENAI_WIRE, "claude")).toBe("");
+    // read as Claude translate to no CONTENT at all.
+    //
+    // This used to assert an exactly empty body. The stream now closes with the
+    // OpenAI sentinel, because the sentinel follows the CLIENT protocol and this
+    // client speaks OpenAI: a mismatch delivers an empty completion the caller
+    // can see rather than an unterminated stream it waits on until timeout. The
+    // property under protection is unchanged and asserted directly below --
+    // nothing that looks like an answer survives a format mismatch.
+    const mismatched = await pump(OPENAI_WIRE, "claude");
+    expect(mismatched).not.toContain('"content":"pong"');
+    expect(mismatched.split("\n\n").filter((f) => f.startsWith("data: ") && !f.includes("[DONE]"))).toHaveLength(0);
+    expect(mismatched).toBe("data: [DONE]\n\n");
     expect(await pump(OPENAI_WIRE, "openai")).toContain('"content":"pong"');
   });
 });
