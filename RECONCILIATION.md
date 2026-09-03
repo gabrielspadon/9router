@@ -67,6 +67,18 @@ To preserve the repository residual-name gate, this document calls the retired p
 | Qualification and health | TokenProxy | Expose credential-safe connection, model, and generation evidence through a native admin ABI. |
 | Activation, draining, and rollback command | `ai-dotfiles` | Thin operator wrappers call the TokenProxy admin ABI. TokenProxy owns the state transition. |
 
+## Boundary Purity
+
+Harness and gateway are two sovereign sides joined by one API. `ai-dotfiles` owns launchers, lane and model-role policy, workflow planning, and host admission; TokenProxy owns account selection, request admission, translation, streaming, and accounting, per the Ownership Boundary table above. Neither reaches across, and a TokenProxy change may break the connection but must never break the harness.
+
+Runtime doctrine extends that split with three purity requirements:
+
+- The gateway fails closed and fast when its upstream is unreachable. It never queues a request indefinitely.
+- Every readiness probe in the fleet carries a timeout larger than its upstream's measured p95, and no probe takes a destructive action on one failed sample.
+- No SSH tunnel, port forward, or tunnel watchdog remains anywhere in the client path on Mac, RTX, or XTX. The one exception is the admin ABI, which stays loopback-only by design (D8); inference data-plane traffic reaches TokenProxy over loopback or the fleet's own tailnet endpoint instead of an SSH forward.
+
+Source of truth: `gates/E1.6-boundary.md` (gates B1-B9).
+
 ## Capability Matrix
 
 Priority means migration urgency. `P0` blocks removal of the predecessor integration, `P1` is required for behavioral parity, and `P2` improves resilience after cutover.
@@ -164,7 +176,7 @@ The `ai-dotfiles` migration should be mechanical once TokenProxy exposes the req
 ### Phase 0. Freeze contracts and repair evidence
 
 1. Convert each P0 and P1 matrix row into a TokenProxy issue with its exact acceptance test.
-2. Correct `tracking/tokenproxy-brand-cutover.json`. It claims a parentless root at `8c8220f3`, but `git cat-file -p f6bb8f79` shows parent `90b52e06`. Until corrected, the receipt is not reliable provenance evidence.
+2. `docs/reconciliation/brand-cutover.json` (moved from `tracking/tokenproxy-brand-cutover.json`) is already corrected: it records `f6bb8f79`'s parent as `90b52e06ffd666b7929554211474d01588f6b1f8`, reachable from HEAD, and documents the earlier `8c8220f3` root claim as a dangling reflog-only object never on this history. The receipt is reliable provenance evidence.
 3. Rebase or reconstruct the resilience overlay on current `ai-dotfiles` main without carrying unrelated snapshots or concurrent work.
 4. Freeze the native admin ABI needed by thin wrappers. Include health, model catalog, connection qualification, quota windows, drain, activation, rollback, and generation receipt queries.
 5. Bind admin mutation endpoints to loopback by default and require a scoped operator credential distinct from the inference key. Remote administration must traverse an authenticated tunnel. Specify 401 and 403 behavior with unchanged-state proof.
