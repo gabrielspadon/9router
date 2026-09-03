@@ -4,6 +4,13 @@ import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
 import { collectClientApiKeyCandidates, resolveClientApiKey } from "@/lib/auth/clientApiKey";
+import {
+  ADMIN_ERROR_SOURCE,
+  adminAuthClass,
+  adminDecision,
+  isAdminMutation,
+  isAdminPath,
+} from "@/lib/admin/policy.js";
 
 // A 401 from the gateway itself and a 401 relayed from an upstream provider
 // rendered identically in clients, so users could not tell whether to sign in
@@ -44,6 +51,30 @@ const PUBLIC_API_PATHS = [
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
+
+// The frozen admin ABI (docs/reconciliation/admin-abi.json). Deliberately NOT
+// in PUBLIC_API_PATHS or PUBLIC_PREFIXES: every operation under it is gated,
+// and the two inference-class reads (/api/admin/health, /api/admin/models)
+// still require an inference key or a loopback origin rather than being open.
+//
+// It gets its own gate rather than an ALWAYS_PROTECTED entry because that list
+// is one verdict for one shape of route, and this prefix carries two auth
+// classes and a loopback binding on mutations. What it DOES take from
+// ALWAYS_PROTECTED is the part that matters: requireLogin=false is not identity
+// here either, so an open dashboard never confers operator rights over drain,
+// activation or rollback.
+const ADMIN_API_PREFIX = "/api/admin";
+
+// Fail closed at import rather than trusting review: an entry added to either
+// public list that would expose the admin prefix takes the whole middleware
+// down instead of silently opening 16 operator endpoints.
+if (
+  PUBLIC_API_PATHS.some((p) => p === ADMIN_API_PREFIX || p.startsWith(`${ADMIN_API_PREFIX}/`)) ||
+  PUBLIC_PREFIXES.some((p) => ADMIN_API_PREFIX === p || ADMIN_API_PREFIX.startsWith(`${p}/`))
+) {
+  throw new Error("dashboardGuard: the admin ABI prefix must never be public.");
+}
+
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -195,6 +226,28 @@ async function isAuthenticated(request) {
   return false;
 }
 
+/**
+ * The admin ABI's gate, reaching the same verdict as src/lib/admin/guard.js
+ * through the same pure decision function. Two layers, one rule: a matcher edit
+ * or a directly-imported handler cannot open a hole the other layer would close.
+ *
+ * The refusal is returned BEFORE the request reaches a handler, which is what
+ * the ABI's byte-identical-on-rejection clause requires: quota, drain,
+ * activation and rollback state are never read or written on a rejected call.
+ */
+async function adminGateDenial(request, pathname) {
+  const operator = (await hasValidCliToken(request)) || (await hasValidToken(request));
+  return adminDecision({
+    authClass: adminAuthClass(pathname),
+    mutating: isAdminMutation(request.method),
+    operator,
+    // Only asked when it can still change the answer, since validating a key
+    // is a database round trip on every admin request otherwise.
+    inference: operator ? false : await hasValidApiKey(request),
+    loopback: isLocalRequest(request),
+  });
+}
+
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
   return PUBLIC_API_PATHS.some(
@@ -221,6 +274,17 @@ export async function proxy(request) {
         { status: 403 },
       );
     }
+  }
+
+  // The admin ABI, gated before every other /api rule so no later branch can
+  // reach it. ADMIN_API_PREFIX is the literal these paths are matched on.
+  if (isAdminPath(pathname)) {
+    const denial = await adminGateDenial(request, pathname);
+    if (!denial) return NextResponse.next();
+    return NextResponse.json(
+      { error: denial.error, code: denial.code, source: ADMIN_ERROR_SOURCE },
+      { status: denial.status },
+    );
   }
 
   // Always protected - require valid JWT or local CLI token (machineId-based).

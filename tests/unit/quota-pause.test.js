@@ -153,10 +153,20 @@ describe("deriveQuotaSnapshot (raw usage → per-window snapshot)", () => {
 });
 
 describe("evaluateQuota (routing engine)", () => {
-  it("returns disabled when no window thresholds set", async () => {
-    const r = await evaluateQuota(okConn({ lastQuotaSnapshot: { windows: [{ key: "session (5h)", remainingPercentage: 2 }] } }));
+  it("fetches quota evidence even when no window thresholds are set, and never pauses", async () => {
+    // The pause gate being off must not starve the ranker of evidence: a read
+    // still runs (evaluateQuota no longer short-circuits on an empty
+    // quotaPauseThresholds map), it is just guaranteed never to pause anything
+    // because isQuotaPaused already returns false with no configured threshold.
+    vi.mocked(getUsageForProvider).mockResolvedValue({
+      quotas: { "session (5h)": { used: 98, total: 100, remainingPercentage: 2 } },
+    });
+    const r = await evaluateQuota(okConn());
+    expect(getUsageForProvider).toHaveBeenCalledTimes(1);
     expect(r.paused).toBe(false);
-    expect(r.reason).toBe("disabled");
+    expect(r.reason).toBe("ok");
+    expect(r.snapshot?.windows?.[0]).toMatchObject({ key: "session (5h)", remainingPercentage: 2 });
+    expect(r.rawUsage).toEqual({ quotas: { "session (5h)": { used: 98, total: 100, remainingPercentage: 2 } } });
   });
 
   it("uses a fresh persisted snapshot without a live fetch", async () => {
