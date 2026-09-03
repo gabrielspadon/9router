@@ -19,7 +19,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig, toConnectionProxyOptions } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
 import * as localDb from "@/lib/localDb";
-import { getWindowThresholds, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
+import { isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 import { runAntigravityUsageProbe } from "@/lib/antigravityVerification";
 
 // How long a snapshot (memory or persisted) stays fresh before a live refresh.
@@ -30,10 +30,6 @@ const LIVE_FETCH_TIMEOUT_MS = 3000;
 // Module-level in-memory cache to avoid a live provider fetch on every request.
 // key: connectionId -> { snapshot, fetchedAt }
 const memoryCache = new Map();
-
-function hasWindowThresholds(connection) {
-  return Object.values(getWindowThresholds(connection)).some((v) => Number(v) > 0 && Number(v) <= 100);
-}
 
 function freshSnapshot(snapshot, fetchedAt) {
   if (!snapshot || !fetchedAt) return null;
@@ -78,7 +74,7 @@ function buildProxyOptions(connection) {
 
 async function fetchLiveSnapshot(connection, providedProxyOptions = null) {
   const proxyOptions = providedProxyOptions || await buildProxyOptions(connection);
-  if (proxyOptions?.kind === "required-unavailable") return proxyOptions;
+  if (proxyOptions?.kind === "required-unavailable") return { snapshot: proxyOptions, rawUsage: null };
   const usagePromise = connection.provider === "antigravity"
     ? runAntigravityUsageProbe(connection, proxyOptions)
     : getUsageForProvider(connection, proxyOptions, {});
@@ -88,9 +84,11 @@ async function fetchLiveSnapshot(connection, providedProxyOptions = null) {
   const usage = await Promise.race([usagePromise, timeout]);
   // getUsageForProvider nests remaining % inside `usage.quotas`; derive the
   // single gating snapshot (most-depleted window) from it. null → fail-open.
+  // The raw payload is returned alongside it (not just the snapshot) so a
+  // caller can hand both to quotaWindowBridge.js and upgrade ranking from the
+  // synthetic percentage scale to the provider's own absolute units.
   const snapshot = deriveQuotaSnapshot(connection.provider, usage);
-  if (!snapshot) return null;
-  return snapshot;
+  return { snapshot: snapshot || null, rawUsage: usage };
 }
 
 function storeSnapshot(connectionId, snapshot) {
@@ -101,12 +99,24 @@ function storeSnapshot(connectionId, snapshot) {
 
 /**
  * Decide whether an account should be skipped for routing due to low quota.
+ *
+ * Evidence acquisition is unconditional on anything the PAUSE gate cares
+ * about: a quota read runs whenever the account is eligible and reachable,
+ * whether or not any window threshold is configured. `isQuotaPaused` already
+ * answers "never" when no threshold is set (quotaPause.js:36-45's thresholds
+ * map is empty, so every window's `normalizeWindowThreshold` is 0 and no
+ * window can trigger), so gating the FETCH on the same condition only starved
+ * the ranker, the quotaWindows table and the admin surface of evidence that
+ * was never going to pause anything anyway.
  * @param {Object} connection
- * @returns {Promise<{paused:boolean, reason:string, snapshot:Object|null}>}
+ * @returns {Promise<{paused:boolean, reason:string, snapshot:Object|null, rawUsage:Object|null}>}
+ *   `rawUsage` is the provider's own payload from THIS call's live fetch, for
+ *   quotaWindowBridge.js to convert onto the ranker's absolute-unit scale. It
+ *   is null on a cache hit (no live fetch ran) or when the read produced no
+ *   usable snapshot, so it is never paired with evidence it did not produce.
  */
 export async function evaluateQuota(connection) {
-  if (!hasWindowThresholds(connection)) return { paused: false, reason: "disabled", snapshot: null };
-  if (!isQuotaEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null };
+  if (!isQuotaEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null, rawUsage: null };
 
   const proxyOptions = await buildProxyOptions(connection);
   if (proxyOptions?.kind === "required-unavailable") {
@@ -115,21 +125,30 @@ export async function evaluateQuota(connection) {
       reason: "required-proxy-unavailable",
       code: "required_proxy_unavailable",
       snapshot: null,
+      rawUsage: null,
     };
   }
 
   let snapshot = readSnapshot(connection);
+  let rawUsage = null;
   if (!snapshot) {
     try {
-      snapshot = await fetchLiveSnapshot(connection, proxyOptions);
-      if (snapshot?.kind === "required-unavailable") {
+      const fetched = await fetchLiveSnapshot(connection, proxyOptions);
+      if (fetched?.snapshot?.kind === "required-unavailable") {
         return {
           paused: false,
           reason: "required-proxy-unavailable",
           code: "required_proxy_unavailable",
           snapshot: null,
+          rawUsage: null,
         };
       }
+      snapshot = fetched?.snapshot ?? null;
+      // Only carried alongside the snapshot it produced: a null snapshot means
+      // deriveQuotaSnapshot found no usable quotas in it, and pairing it with
+      // a DIFFERENT (persisted) snapshot below would mislabel stale evidence
+      // as fresh.
+      rawUsage = snapshot ? fetched?.rawUsage ?? null : null;
     } catch {
       snapshot = null;
     }
@@ -141,6 +160,7 @@ export async function evaluateQuota(connection) {
     paused,
     reason: paused ? "below-threshold" : snapshot ? "ok" : "no-data",
     snapshot,
+    rawUsage,
   };
 }
 

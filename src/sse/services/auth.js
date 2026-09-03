@@ -26,7 +26,22 @@ import {
 import { FREE_TIER_RATE_LIMIT_COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { ACCOUNT_ERROR_MESSAGE_MAX_CHARS } from "open-sse/config/runtimeConfig.js";
 import { resolveProviderId, NO_AUTH_PROVIDER_IDS, isNoAuthProvider, isProviderDisabled, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
+import { createHash } from "node:crypto";
+import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
+import { readAllDrainDocs } from "@/lib/admin/state.js";
 import { evaluateQuota } from "./quotaGuard.js";
+import { selectAndReserve } from "./accountScheduler.js";
+import { createSchedulerRepos } from "./schedulerRepos.js";
+import {
+  leaseRegistry,
+  registerAccountCapacity,
+  releaseAccountLease,
+  releaseAccountLeaseOnResponse,
+  _getLeaseRegistry,
+} from "./accountLeaseRegistry.js";
+import { effectiveCapacity } from "@/shared/utils/accountCapacity.js";
+import { toRankerWindows } from "@/shared/utils/quotaWindowBridge.js";
+import { putWindows } from "@/lib/db/repos/quotaWindowsRepo.js";
 import * as log from "../utils/logger.js";
 import { collectClientApiKeyCandidates } from "@/lib/auth/clientApiKey";
 
@@ -35,6 +50,98 @@ const providerSelectionQueues = new Map();
 
 export function _getProviderSelectionQueueSize() {
   return providerSelectionQueues.size;
+}
+
+// overlay-spec §4: a local admission refusal always carries a nonzero
+// retry-after, so a caller is never told to retry with no delay hint at all.
+// Mirrors accountScheduler.js's own RETRY_AFTER_SECONDS.
+const SCHEDULER_RETRY_AFTER_SECONDS = 1;
+
+// The affinity table is keyed by (sessionHash, model) and both are NOT NULL, so
+// a request that names no model still needs a key. A sentinel rather than the
+// empty string keeps the row legible and keeps a modelless request from sharing
+// a pin with a request for a model literally named "".
+const MODEL_ANY = "*";
+
+/**
+ * The HASH of this request's client session identity — never the raw id.
+ *
+ * open-sse/utils/sessionManager.js is the single session-identity authority in
+ * this codebase, so `resolveSessionIdentity` resolves WHICH session this is and
+ * nothing here invents a second scheme. What reaches the affinity table and the
+ * switch receipt is sha256 of that id, truncated the same way sessionManager's
+ * own `sha16` truncates, so rule 8 holds by construction: a raw session id, a
+ * bearer token or a prompt body cannot be written even by mistake, because the
+ * only value that leaves this function is a digest.
+ *
+ * A request that carries no session evidence at all still gets a stable key
+ * from the provider node, which pins every anonymous caller of one provider
+ * together. That is the honest reading: with no way to tell two callers apart,
+ * claiming they are separate sessions would be a fabricated distinction.
+ *
+ * WHY THE IDENTITY IS RESOLVED TWICE. resolveSessionIdentity never reports "no
+ * evidence"; with none it falls through to deriveSessionId(connectionId), and
+ * selection has no connection yet by construction, so that arm returns
+ * generateBinaryStyleId() — `crypto.randomUUID() + Date.now()`, a DIFFERENT
+ * value on every call (sessionManager.js:45 and :81). Hashing that would give
+ * every request its own pin: affinity could never hit, and sessionAffinity
+ * would gain one dead row per request forever. A client-derived id (a header,
+ * a prompt_cache_key, the assistant-text digest) is a pure function of the same
+ * inputs, so it reproduces. Comparing two resolutions is therefore the exact
+ * test for "did this come from the client", and it needs nothing from
+ * sessionManager that is not already exported. An id that does not reproduce
+ * carries no session information and is treated as anonymous.
+ */
+function resolveRoutingSessionHash(options, providerId) {
+  let sessionId = null;
+  const headers = options?.clientHeaders || null;
+  const body = options?.clientBody || null;
+  if (headers || body) {
+    try {
+      const args = { headers, body, scope: providerId };
+      const first = resolveSessionIdentity(args);
+      // ephemeral is sessionManager's own "this id is disposable" flag (kiro).
+      if (!first?.ephemeral && first?.sessionId
+          && first.sessionId === resolveSessionIdentity(args)?.sessionId) {
+        sessionId = first.sessionId;
+      }
+    } catch {
+      // An identity resolution failure must not fail the request. Falling back
+      // to the provider node makes the session read as a shared anonymous one,
+      // which still ranks and still pins, rather than throwing inside selection.
+      sessionId = null;
+    }
+  }
+  return createHash("sha256")
+    .update(`${providerId}:${sessionId || "anonymous"}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+// Re-exported so a handler keeps ONE import for "select an account and give
+// the slot back". The definitions live in accountLeaseRegistry.js because a
+// test that partially mocks this module must not lose the release path.
+export { releaseAccountLease, releaseAccountLeaseOnResponse, _getLeaseRegistry };
+
+/**
+ * Quota windows in the RANKER's units, persisted so the ranker reads a live
+ * table rather than an empty one.
+ *
+ * `evaluateQuota` already fetched (or cache-read) the provider's usage for its
+ * own fail-open pause check, and that read is the only quota evidence in the
+ * request path. It emits PERCENTAGES; the ranker needs absolute units. The
+ * bridge converts, honestly (a percentage-only provider keeps
+ * `confidence: 'unknown'` rather than getting a fabricated total), and the row
+ * is written through quotaWindowsRepo.putWindows so a restart, the dashboard
+ * and the admin surface all read the same evidence the decision used.
+ *
+ * Persistence is best-effort and deliberately NOT awaited into the decision: a
+ * write failure must never make an account ineligible, which is the same
+ * fail-open direction evaluateQuota itself takes.
+ */
+function persistWindows(connectionId, windows) {
+  if (!connectionId || !Array.isArray(windows) || windows.length === 0) return;
+  putWindows(connectionId, windows).catch(() => {});
 }
 
 /**
@@ -206,14 +313,29 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections.
+    // Filter out draining, model-locked and excluded connections.
     // ignoreModelLockConnId: a same-account retry must still reach the just-
     // failed connection (its transient model-lock would otherwise force a
-    // switch), so skip the lock check for that one connection only.
+    // switch), so skip the lock check for that one connection only. Draining
+    // is checked ahead of that bypass: an operator drain must still exclude
+    // the connection from this same-account retry, not just a first attempt.
+    //
+    // A draining connection is excluded from NEW selection only. An existing
+    // session pin or in-flight stream already bound to it is untouched here:
+    // selectAndReserve simply finds the pin ineligible against this smaller
+    // candidate set and repins to the next eligible account, the same way it
+    // already repins around any other account that drops out of eligibility.
+    const drainDocs = await readAllDrainDocs();
+    const draining = new Set(
+      Object.entries(drainDocs || {})
+        .filter(([, doc]) => doc?.isDraining)
+        .map(([connectionId]) => connectionId)
+    );
     const ignoreLockConn = options?.ignoreModelLockConnId || null;
     const availableConnections = connections.filter(c => {
       if (strictPreferredConnection && c.id !== preferredConnectionId) return false;
       if (excludeSet.has(c.id)) return false;
+      if (draining.has(c.id)) return false;
       if (c.id === ignoreLockConn) return true;
       if (isModelLockActive(c, model)) return false;
       return true;
@@ -222,25 +344,61 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Filter out accounts paused due to low remaining quota (safety buffer).
     // evaluateQuota is fail-open: a missing/erroring quota read never pauses an
     // account, so this only drops accounts we can actually confirm are below threshold.
+    //
+    // The same read is the ONLY quota evidence in the request path, so its
+    // snapshot is also what the ranker gets: converting it here means one
+    // provider fetch answers both questions instead of two. A throw is caught
+    // per account, because a quota lookup that fails must never make an account
+    // ineligible.
+    const nowMs = Date.now();
     const quotaChecked = await Promise.all(
       availableConnections.map(async (c) => {
-        const q = await evaluateQuota(c);
+        let q;
+        try {
+          q = await evaluateQuota(c);
+        } catch {
+          // Fail OPEN, explicitly. evaluateQuota swallows its own fetch errors,
+          // but a throw from anywhere else in it (a proxy resolution, a repo
+          // read) would otherwise reject this Promise.all and take the WHOLE
+          // provider down rather than one account.
+          return { connection: c, windows: [] };
+        }
         if (q.paused) {
           log.info("AUTH", `${provider} | ${c.id?.slice(0, 8)} skipped: quota paused (window below per-window threshold)`);
           return null;
         }
-        return c;
+        // Percentage in, absolute units out (quotaWindowBridge.js). An empty
+        // array is a valid answer meaning "no usable quota evidence" and is
+        // never padded with an invented window.
+        //
+        // evaluateQuota now fetches evidence whenever the account is eligible
+        // and reachable, threshold or no threshold (quotaGuard.js:100-117), so
+        // snapshot:null means the read itself found nothing (ineligible, a
+        // required proxy unavailable, or a failed/empty fetch) rather than "the
+        // pause gate is off". The persisted snapshot the usage route writes
+        // (src/app/api/usage/[connectionId]/route.js:208) is the fallback for
+        // that case, in the identical shape. q.rawUsage is THIS call's raw
+        // payload, paired one-to-one with q.snapshot (quotaGuard.js never hands
+        // back one without the other) — forwarding it is what lets the bridge
+        // upgrade a window from the synthetic percentage scale to the
+        // provider's own absolute remaining/limit.
+        const windows = toRankerWindows(q.snapshot || c.lastQuotaSnapshot, q.rawUsage || null, { now: nowMs });
+        persistWindows(c.id, windows);
+        return { connection: c, windows };
       })
     );
-    const routedConnections = quotaChecked.filter(Boolean);
+    const routed = quotaChecked.filter(Boolean);
+    const routedConnections = routed.map((r) => r.connection);
+    const windowsByConnection = Object.fromEntries(routed.map((r) => [r.connection.id, r.windows]));
 
     log.debug("AUTH", `${provider} | available: ${routedConnections.length}/${connections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
+      const isDraining = draining.has(c.id);
       const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
+      if (excluded || isDraining || locked) {
         const lockUntil = getEarliestModelLockUntil(c, model);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${isDraining ? "draining" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
       }
     });
 
@@ -270,62 +428,90 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const settings = await getSettings();
-    // Per-provider strategy overrides global setting
-    const providerOverride = (settings.providerStrategies || {})[providerId] || {};
-    const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
-    let connection;
-    // Pin to preferred connection if specified and available
+    let connection = null;
+    let lease = null;
+    // Pin to preferred connection if specified and available. This is an
+    // OPERATOR pin (a combo member, a replay of the connection that just
+    // failed), which is a different fact from the session pin the scheduler
+    // owns: the operator named this account, so ranking does not get a vote.
     if (preferredConnectionId) {
-      connection = routedConnections.find((c) => c.id === preferredConnectionId);
+      connection = routedConnections.find((c) => c.id === preferredConnectionId) || null;
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
     }
+
+    // Register every candidate's capacity before anything reserves, so the
+    // registry's capacityOf sees the configured ceiling rather than the
+    // fail-open sentinel on this account's first ever selection.
+    for (const c of routedConnections) {
+      registerAccountCapacity(c.id, effectiveCapacity(c, { settings, provider: providerId }).limit);
+    }
+
     if (connection) {
-      // skip strategy
-    } else if (strategy === "round-robin") {
-      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
-
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...routedConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
-
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
-
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
-      } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...routedConnections].sort((a, b) => {
-          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
-        });
-
-        connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        });
+      // An operator pin still takes a LEASE: rule 7's per-account ceiling is
+      // about the account, not about how it was chosen, and skipping the
+      // reservation here would let a pinned combo member over-admit while every
+      // other path is gated.
+      lease = leaseRegistry.reserve(connection.id);
+      if (!lease) {
+        // At capacity is a WAIT, not a failure (overlay-spec §4): entitlement
+        // is free, the slot is not. Reported with a nonzero retry-after through
+        // the shape callers already read for "come back later".
+        const retryAt = new Date(Date.now() + SCHEDULER_RETRY_AFTER_SECONDS * 1000).toISOString();
+        log.info("AUTH", `${provider} | ${connection.id?.slice(0, 8)} at capacity, caller should retry`);
+        return {
+          allRateLimited: true,
+          retryAfter: retryAt,
+          retryAfterHuman: `${SCHEDULER_RETRY_AFTER_SECONDS}s`,
+          lastError: "Account at capacity",
+          lastErrorCode: null,
+          clientErrorStatus: null,
+        };
       }
     } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = routedConnections[0];
+      // The scheduler decides: the ranker orders by expiring entitlement, the
+      // durable pin keeps a session on its account while that account stays
+      // eligible, and the reservation is what proves a slot was free. There is
+      // deliberately no round-robin or fill-first fallback underneath — a
+      // silent fall-through to arbitrary order is exactly the failure the
+      // durable pin exists to prevent, so a refusal is reported as a wait.
+      //
+      // The adapter is resolved BEFORE selectAndReserve opens its transaction,
+      // because db.transaction(fn) is synchronous (schedulerRepos.js).
+      const sessionHash = resolveRoutingSessionHash(options, providerId);
+      const repos = await createSchedulerRepos({ now: nowMs });
+      const decision = selectAndReserve({
+        sessionHash,
+        model: model || MODEL_ANY,
+        accounts: routedConnections,
+        windows: windowsByConnection,
+        now: nowMs,
+        registry: leaseRegistry,
+        repos,
+      });
+
+      if (decision?.unavailable) {
+        const retryAt = new Date(nowMs + (decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS) * 1000).toISOString();
+        log.info("AUTH", `${provider} | scheduler: ${decision.reason}, caller should retry`);
+        return {
+          allRateLimited: true,
+          retryAfter: retryAt,
+          retryAfterHuman: `${decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS}s`,
+          lastError: `No account available (${decision.reason})`,
+          lastErrorCode: null,
+          clientErrorStatus: null,
+        };
+      }
+
+      connection = decision.connection;
+      lease = decision.lease;
+      log.info(
+        "AUTH",
+        `${provider} | ${connection.id?.slice(0, 8)} selected (${decision.reason})`
+        + (decision.receipt ? ` from ${decision.receipt.fromConnectionId?.slice(0, 8) || "none"}` : "")
+      );
     }
 
     const connectionProxyData = connection.providerSpecificData || {};
@@ -335,7 +521,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         ? (pair) => updateConnectionProxyPoolSnapshotIfBound(connection.id, expectedPoolId, pair)
         : undefined,
     });
-    if (resolvedProxy.kind !== "usable") return null;
+    if (resolvedProxy.kind !== "usable") {
+      // The lease was taken before the proxy was resolved, and this return
+      // happens AFTER the reservation, so it is the one exit inside this
+      // function that can strand a slot. Release it here: nothing downstream
+      // ever learns the lease existed, so nothing downstream can free it.
+      leaseRegistry.release(lease);
+      return null;
+    }
     const proxyOptions = toConnectionProxyOptions(resolvedProxy);
 
     return {
@@ -365,6 +558,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
+      // The admission slot this selection reserved. The caller HOLDS it for the
+      // whole request and hands it back through releaseAccountLease() on every
+      // exit — success, error, abort, client disconnect. Release is idempotent,
+      // so a belt-and-braces release costs nothing and a missed one is a leaked
+      // slot that never comes back until the process restarts.
+      accountLease: lease,
       // Pass full connection for clearAccountError to read modelLock_* keys
       _connection: connection
     };
