@@ -40,6 +40,24 @@ export default defineConfig({
     // for why that made the failure set vary between identical runs.
     setupFiles: ["./setup-isolate-data-dir.js"],
     environment: "node",
+
+    // TIMEOUTS. Vitest defaults to 5s per test and 10s per hook, and this suite
+    // works right on top of both, which made the failure COUNT a function of how
+    // busy the box was rather than of the tree. Measured over two full runs:
+    // decision-log "the 73% line" passed at 4489ms in one and failed at 5004ms
+    // in the other, and node-builtins-imports passed at 4576ms then failed at
+    // 5003ms -- same tests, same tree, straddling the default. The render-heavy
+    // cases sit in the same band: media-provider-key-mask and
+    // providers-detail-ssr-2362 take 0.7-1.0s each when run alone and time out
+    // just over 5000ms under a full-suite run. A timed-out case also poisons the
+    // ones after it in its file, because the abandoned act() keeps resolving into
+    // the next test's container, which is how one timeout in
+    // media-provider-key-mask produced three reds.
+    // These ceilings are here to catch a genuine hang, so they are set well clear
+    // of the suite's own working range (patch-parity legitimately spends ~10.6s in
+    // hooks) rather than inside it. Nothing about what the tests ASSERT changes.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     // Node 22.4+ ships its own `globalThis.localStorage`, and vitest's jsdom
     // environment copies a window property onto the global only when the name is
     // absent from the global or on its own KEYS list. localStorage is on neither,
