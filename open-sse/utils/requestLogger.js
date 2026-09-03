@@ -1,3 +1,5 @@
+import { maskSensitiveHeaders, redactSecrets, redactSecretsText } from "./redact.js";
+
 // Check if running in Node.js environment (has fs module)
 const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
@@ -63,37 +65,37 @@ function writeJsonFile(sessionPath, filename, data) {
   
   try {
     const filePath = path.join(sessionPath, filename);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify(redactLogRecord(data), null, 2));
   } catch (err) {
     console.log(`[LOG] Failed to write ${filename}:`, err.message);
   }
 }
 
-// Mask credentials in headers. Request logs are written to disk unredacted
-// otherwise, so an enabled ENABLE_REQUEST_LOGS persists provider OAuth tokens
-// and client API keys in plaintext for as long as the log folder survives.
-function maskSensitiveHeaders(headers) {
-  if (!headers) return {};
-  const masked = { ...headers };
-  const sensitiveKeys = ["authorization", "x-api-key", "api-key", "cookie", "token", "secret"];
-
-  for (const key of Object.keys(masked)) {
-    const lowerKey = key.toLowerCase();
-    if (!sensitiveKeys.some(sk => lowerKey.includes(sk))) continue;
-    const value = masked[key];
-    if (typeof value !== "string" || !value) continue;
-
-    // Keep the auth scheme so logs still show which auth path ran, plus the last
-    // 4 chars to tell two credentials apart — never the secret itself. Short
-    // values are masked too: a 12-char key is no less sensitive than a 40-char one.
-    const parts = value.match(/^(\S+)\s+(.*)$/);
-    const scheme = parts && /^(bearer|basic|token)$/i.test(parts[1]) ? `${parts[1]} ` : "";
-    const secret = scheme ? parts[2] : value;
-    masked[key] = `${scheme}***${secret.length > 4 ? secret.slice(-4) : ""}`;
-  }
-
-  return masked;
+function plainHeaders(headers) {
+  if (headers && typeof headers.entries === "function") return Object.fromEntries(headers.entries());
+  return headers || {};
 }
+
+/**
+ * The single point that decides what a log record may contain, so a log* method
+ * added later cannot forget either half.
+ *
+ * `headers` keeps the MASK (scheme plus a 4-char tail) because an operator
+ * comparing two sessions needs to tell two accounts apart. Every other field is
+ * deep-redacted, which bodies never were.
+ */
+function redactLogRecord(data) {
+  const { headers, ...rest } = data || {};
+  const record = redactSecrets(rest);
+  if (headers !== undefined) record.headers = maskSensitiveHeaders(plainHeaders(headers));
+  return record;
+}
+
+// Header masking AND body redaction both come from open-sse/utils/redact.js, the
+// same module the DB path reads. Header masking used to be the only redaction
+// this file performed, and every body and every raw stream chunk went to disk
+// verbatim whenever ENABLE_REQUEST_LOGS was on, which persisted provider tokens
+// and client keys in plaintext for as long as the log folder survived.
 
 // No-op logger when logging is disabled
 function createNoOpLogger() {
@@ -136,7 +138,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "1_req_client.json", {
         timestamp: new Date().toISOString(),
         endpoint,
-        headers: maskSensitiveHeaders(headers),
+        headers,
         body
       });
     },
@@ -145,7 +147,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logRawRequest(body, headers = {}) {
       writeJsonFile(sessionPath, "2_req_source.json", {
         timestamp: new Date().toISOString(),
-        headers: maskSensitiveHeaders(headers),
+        headers,
         body
       });
     },
@@ -163,7 +165,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "4_req_target.json", {
         timestamp: new Date().toISOString(),
         url,
-        headers: maskSensitiveHeaders(headers),
+        headers,
         body
       });
     },
@@ -175,7 +177,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: maskSensitiveHeaders(headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {}),
+        headers,
         body
       });
     },
@@ -185,7 +187,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, redactSecretsText(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -196,7 +198,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, redactSecretsText(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -215,7 +217,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, redactSecretsText(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -258,7 +260,7 @@ export function logError(provider, { error, url, model, requestBody }) {
       requestBody
     };
     
-    fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");
+    fs.appendFileSync(logPath, JSON.stringify(redactSecrets(logEntry)) + "\n");
   } catch (err) {
     console.log("[LOG] Failed to write error log:", err.message);
   }

@@ -1,3 +1,4 @@
+import { redactSecrets, stripSensitiveHeaders } from "open-sse/utils/redact.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { saveRequestStats } from "./requestStatsRepo.js";
@@ -120,17 +121,12 @@ function capWriteBuffer(config) {
   if (writeBuffer.length > limit) writeBuffer.splice(0, writeBuffer.length - limit);
 }
 
-function sanitizeHeaders(headers) {
-  if (!headers || typeof headers !== "object") return {};
-  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
-  const sanitized = { ...headers };
-  for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
-  }
-  return sanitized;
-}
+// Header dropping now reads open-sse/utils/redact.js's single key list, which
+// requestLogger.js reads too. The two lists had already drifted apart ("secret"
+// was in one and not the other), and drift in this direction is silent.
+const sanitizeHeaders = stripSensitiveHeaders;
 
-export const __test__ = { sanitizeHeaders, bufferSize: () => writeBuffer.length };
+export const __test__ = { sanitizeHeaders, redactAndTruncate, bufferSize: () => writeBuffer.length };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -139,12 +135,28 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
-function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
+/**
+ * Redact FIRST, then truncate. The other order is what shipped: the preview is a
+ * raw 200-char slice of the serialized body, so an `Authorization` header echoed
+ * back in a provider error message landed in the DB inside `_preview` even when
+ * the body itself was too big to store. Redacting first means the preview is cut
+ * from already-scrubbed text.
+ *
+ * A body that will not serialize (a BigInt, a getter that throws) is dropped to
+ * the failure marker rather than persisted: the closed direction.
+ */
+function redactAndTruncate(obj, maxSize) {
+  const safe = redactSecrets(obj);
+  let str;
+  try {
+    str = JSON.stringify(safe ?? {});
+  } catch {
+    return { redacted: true, reason: "redaction failed" };
+  }
   if (str.length > maxSize) {
     return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
   }
-  return obj || {};
+  return safe ?? {};
 }
 
 async function flushToDatabase() {
@@ -173,11 +185,13 @@ async function flushToDatabase() {
             status: item.status || null,
             latency: item.latency || {},
             tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
+            request: redactAndTruncate(item.request, config.maxJsonSize),
+            providerRequest: redactAndTruncate(item.providerRequest, config.maxJsonSize),
+            providerResponse: redactAndTruncate(item.providerResponse, config.maxJsonSize),
+            response: redactAndTruncate(item.response, config.maxJsonSize),
+            // The receipt is counts today, but it is persisted next to the bodies and
+            // read by the same projections, so it goes through the same walk.
+            pxpipe: item.pxpipe ? redactSecrets(item.pxpipe) : undefined,
           };
 
           db.run(

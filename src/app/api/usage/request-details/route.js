@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
 import { isObservabilityEnabled } from "@/lib/requestDetailsDb";
+import { redactSecrets, redactSecretsText } from "open-sse/utils/redact.js";
 
 // Upstream error text is diagnostics, not conversation. Cap it anyway: a
 // provider can echo a slice of the offending request back in its message.
@@ -24,7 +25,12 @@ const MAX_ERROR_CHARS = 2000;
  * every other response field and every request body.
  */
 export function redactDetail(detail) {
-  const redacted = { ...detail };
+  // Deep-redact FIRST, over the whole record. The blanking loop below only knows
+  // the four body fields, so every other field — `pxpipe`, and whatever is added
+  // beside it next — reached the reader verbatim. Rows written before
+  // requestDetailsRepo started scrubbing at write time are still in the table, so
+  // this pass is the only thing between them and a reader.
+  const redacted = redactSecrets(detail);
   for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
     if (redacted[key] === undefined) continue;
     const err = key === "response" ? redacted[key]?.error : undefined;
@@ -32,7 +38,11 @@ export function redactDetail(detail) {
       redacted[key] = { redacted: true };
       continue;
     }
-    const text = typeof err === "string" ? err : JSON.stringify(err);
+    // The stored value is already scrubbed at write time
+    // (requestDetailsRepo.redactAndTruncate), so this second pass exists for rows
+    // written before that landed: the projection is the only thing standing
+    // between an old row and a reader.
+    const text = redactSecretsText(typeof err === "string" ? err : JSON.stringify(err));
     redacted[key] = {
       redacted: true,
       error: text.length > MAX_ERROR_CHARS ? `${text.slice(0, MAX_ERROR_CHARS)}…` : text,
