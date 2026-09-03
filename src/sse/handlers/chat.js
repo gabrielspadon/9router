@@ -557,7 +557,21 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   while (true) {
     if (callerSignal?.aborted) return errorResponse(499, "Request aborted");
     const lastFailedConn = failCountByConn.size ? [...failCountByConn.entries()].find(([id, c]) => c >= 1 && c < ACCOUNT_RETRY_LIMIT)?.[0] : null;
-    const credentialOptions = {};
+    // Session affinity's ONLY input. resolveRoutingSessionHash (auth.js) hashes
+    // whatever identity sessionManager can read out of these two fields; given
+    // neither, it falls back to the literal "anonymous" and every request of a
+    // provider collapses onto ONE pin, which is what made the durable pin -- and
+    // the prompt-cache locality it exists to protect -- inert.
+    //
+    // clientRawRequest.headers is a PLAIN object: sessionManager's headerValue
+    // indexes headers by name, so handing it a Headers instance would read as
+    // "no session evidence" without erroring. withoutClientCredentialHeaders has
+    // already stripped the credential headers from it, so no bearer can reach
+    // the hash input.
+    const credentialOptions = {
+      clientHeaders: clientRawRequest?.headers || null,
+      clientBody: body,
+    };
     if (lastFailedConn) credentialOptions.ignoreModelLockConnId = lastFailedConn;
     if (requestReplayConnectionId) credentialOptions.preferredConnectionId = requestReplayConnectionId;
     // A combo may pin this member to one account (#1477): not every account of a

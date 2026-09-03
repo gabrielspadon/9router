@@ -177,13 +177,21 @@ describe("caller abort propagation", () => {
     expect(dispatchMocks.handleChatCore.mock.calls.map(([options]) => options.callerSignal))
       .toEqual([incoming.signal, incoming.signal]);
     expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
+    // The options object also carries this request's client session evidence
+    // (clientHeaders/clientBody), which is what selection hashes into the
+    // durable pin. Match on the ROUTING directives this test is about, then
+    // assert the other two are absent, so the exactness that mattered here --
+    // no stray pin or lock bypass leaking in -- survives the wider shape.
     expect(authMocks.getProviderCredentials).toHaveBeenNthCalledWith(
       2,
       "codex",
       expect.any(Set),
       "gpt-5.6-sol",
-      { preferredConnectionId: "account-a" },
+      expect.objectContaining({ preferredConnectionId: "account-a" }),
     );
+    const replayOptions = authMocks.getProviderCredentials.mock.calls[1][3];
+    expect(replayOptions.strictPreferredConnection).toBeUndefined();
+    expect(replayOptions.ignoreModelLockConnId).toBeUndefined();
   });
 
   it("takes one ordinary account-failure transition for a body deadline", async () => {
