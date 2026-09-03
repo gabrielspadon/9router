@@ -8,6 +8,10 @@ const OPTIONAL_FIELDS = [
   "scope", "projectId", "apiKey", "testStatus",
   "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
   "consecutiveUseCount", "idToken", "lastRefreshAt",
+  // Per-connection admission capacity (Account Scheduling Contract rule 7).
+  // Resolved by src/shared/utils/accountCapacity.js; absent means the
+  // documented default, 0 means explicitly ungated.
+  "maxConcurrent",
 ];
 
 function rowToConn(row) {

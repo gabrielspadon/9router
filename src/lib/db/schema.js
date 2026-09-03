@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -207,6 +207,91 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rs_provider ON requestStats(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rs_model ON requestStats(model)",
       "CREATE INDEX IF NOT EXISTS idx_rs_conn ON requestStats(connectionId)",
+    ],
+  },
+  // Normalized quota evidence, one row per (connection, window). The shape is
+  // fixed by the Account Scheduling Contract: every provider's general-use quota
+  // collapses into scope/remaining/limit/resetAt/observedAt/confidence, so a
+  // five-hour, seven-day, thirty-day or future window is the same type and the
+  // ranker in src/shared/utils/quotaRanking.js never learns provider dialects.
+  // `limit` is a SQLite keyword, hence the quoted identifier; migrate.js
+  // compares column names with the quotes stripped.
+  quotaWindows: {
+    columns: {
+      connectionId: "TEXT NOT NULL",
+      // Provider window name verbatim, e.g. "session (5h)", "weekly (7d)".
+      scope: "TEXT NOT NULL",
+      // Absolute units, not percentages — a percentage cannot express headroom
+      // across windows whose limits differ by three orders of magnitude.
+      remaining: "REAL",
+      '"limit"': "REAL",
+      // ISO-8601 UTC. NULL means the provider gave no reset evidence, which the
+      // ranker treats as unusable entitlement rather than as usable-forever.
+      resetAt: "TEXT",
+      observedAt: "TEXT NOT NULL",
+      // "fresh" | "stale" | "unknown". Unknown evidence stays selectable but
+      // never outranks fresh known evidence (Scheduling Contract rule 2).
+      confidence: "TEXT NOT NULL DEFAULT 'unknown'",
+    },
+    primaryKey: "PRIMARY KEY (connectionId, scope)",
+    indexes: [
+      // "which window resets next across every account" drives reset-aware
+      // repin (rule 5). Per-connection reads ride the primary key.
+      "CREATE INDEX IF NOT EXISTS idx_qw_reset ON quotaWindows(resetAt)",
+    ],
+  },
+  // Durable client-session to account affinity (Scheduling Contract rule 4).
+  // A table rather than a Map because the pin must survive a process restart:
+  // a session that re-pins on every boot is round-robin with extra steps.
+  sessionAffinity: {
+    columns: {
+      // Salted hash of the client session identity. Never the raw identity,
+      // never a credential, never a prompt body (rule 8).
+      sessionHash: "TEXT NOT NULL",
+      model: "TEXT NOT NULL",
+      connectionId: "TEXT NOT NULL",
+      providerNode: "TEXT",
+      pinnedAt: "TEXT NOT NULL",
+      // NULL means no TTL; the pin then ends only on exhaustion, reset, drain
+      // or model-specific failure.
+      expiresAt: "TEXT",
+      lastSeenAt: "TEXT NOT NULL",
+    },
+    primaryKey: "PRIMARY KEY (sessionHash, model)",
+    indexes: [
+      // Draining or exhausting one account has to find every session pinned to
+      // it in one pass.
+      "CREATE INDEX IF NOT EXISTS idx_sa_conn ON sessionAffinity(connectionId)",
+      // TTL sweep.
+      "CREATE INDEX IF NOT EXISTS idx_sa_expires ON sessionAffinity(expiresAt)",
+    ],
+  },
+  // Why a session left one account for another (Scheduling Contract rule 8).
+  // An append-only receipt log: every switch records the evidence that caused
+  // it, so a repin is auditable after the windows it was based on have moved on.
+  accountSwitches: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      // Same salted hash the affinity row is keyed by. Never the raw identity.
+      sessionHash: "TEXT NOT NULL",
+      model: "TEXT NOT NULL",
+      // NULL fromConnectionId means the first pin for this session (no switch
+      // away from anything), which is still worth a receipt.
+      fromConnectionId: "TEXT",
+      toConnectionId: "TEXT NOT NULL",
+      // "exhaustion" | "reset" | "drain" | "model-failure" | "initial-pin".
+      trigger: "TEXT NOT NULL",
+      reason: "TEXT",
+      // JSON snapshot of the normalized windows the decision was made on, per
+      // connection. Quota evidence only — rule 8 forbids secrets and prompt
+      // bodies here, and nothing on this path ever sees either.
+      windows: "TEXT",
+      switchedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_as_session ON accountSwitches(sessionHash, switchedAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_as_conn ON accountSwitches(toConnectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_as_at ON accountSwitches(switchedAt DESC)",
     ],
   },
 };

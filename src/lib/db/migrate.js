@@ -50,7 +50,11 @@ function syncSchemaFromTables(adapter) {
     const existing = adapter.all(`PRAGMA table_info(${tableName})`);
     const existingNames = new Set(existing.map((r) => r.name));
     for (const [colName, colDef] of Object.entries(def.columns)) {
-      if (!existingNames.has(colName)) {
+      // A column whose name is a SQLite keyword is declared quoted in TABLES so
+      // CREATE TABLE parses. PRAGMA table_info reports the bare name, so compare
+      // unquoted or the column reads as missing on every boot and the ALTER
+      // below fails with "duplicate column name" forever.
+      if (!existingNames.has(colName.replace(/^"|"$/g, ""))) {
         // SQLite ADD COLUMN restrictions: no PRIMARY KEY / UNIQUE w/o NULL ok.
         // We strip PRIMARY KEY / UNIQUE since those are only valid at create time.
         const safeDef = colDef
