@@ -24,6 +24,11 @@ export default {
       "HTTP-Referer": "https://endpoint-proxy.local",
       "X-Title": "Endpoint Proxy",
     },
+    // OpenRouter reads Anthropic-style cache_control markers and passes them to
+    // the upstream that honours them. Stripping them during OpenAI
+    // normalization silently turned every cached prompt into a full-price one:
+    // the request still succeeds, so nothing surfaces the loss but the bill.
+    quirks: { preserveCacheControl: true },
   },
   models: [
     { id: "openai/text-embedding-3-large", name: "OpenAI Text Embedding 3 Large", kind: "embedding" },
