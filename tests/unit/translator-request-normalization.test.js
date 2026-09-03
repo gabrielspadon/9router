@@ -171,7 +171,10 @@ describe("request normalization", () => {
       done: false,
     });
 
-    const parsed = parseSSELine(raw);
+    // NDJSON has no "data:" prefix to sniff, so parseSSELine gates that branch on
+    // an explicit format rather than guessing; called without one it correctly
+    // treats a bare "{" line as not-SSE and returns null.
+    const parsed = parseSSELine(raw, FORMATS.OLLAMA);
     expect(parsed).toEqual({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
