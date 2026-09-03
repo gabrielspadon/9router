@@ -127,11 +127,24 @@ export function getThinkingLevels(provider, model) {
   // Same precedence as thinkingUnified.resolveFormat, including the
   // openai-compatible node case: those speak OpenAI's wire whatever their model
   // ids look like, so their levels are OpenAI's too (#2752).
-  const fmt =
+  const routeFmt =
     (provider && PROVIDERS[provider]?.thinkingFormat) ||
-    (typeof provider === "string" && provider.startsWith("openai-compatible-") ? "openai" : null) ||
-    caps.thinkingFormat;
-  let levels = hit?.levels || FORMAT_LEVELS[fmt] || L.base;
+    (typeof provider === "string" && provider.startsWith("openai-compatible-") ? "openai" : null);
+  const fmt = routeFmt || caps.thinkingFormat;
+
+  // Levels come from the ROUTE, not the model name. A PATTERN_THINKING entry
+  // carrying a `provider` is route-scoped and stays authoritative. An entry with
+  // no provider is pure NAME inference, and a gateway that declares its own
+  // format serves every model through one enum whatever the upstream vendor the
+  // id names — so name inference must not override it. Without this, "*codex*"
+  // handed the four-level Codex ladder to every gateway: the opencode picker
+  // lost the "max"/"none" its enum takes, ollama's gpt-oss-codex offered an
+  // "xhigh" that format has no level for, and meta advertised a "max" its
+  // ladder stops short of. Same defect fe41dec32 named — resolve from the
+  // route, not the name — reached through the pattern table rather than caps.
+  const nameOnlyHit = hit && !hit.provider;
+  const hitLevels = nameOnlyHit && routeFmt ? null : hit?.levels;
+  let levels = hitLevels || FORMAT_LEVELS[fmt] || L.base;
   if (caps.thinkingCanDisable === false)
     levels = levels.filter((l) => l !== "none");
   return levels;

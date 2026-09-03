@@ -210,7 +210,12 @@ function normalizeOpenAILevel(level, supportedLevels) {
   if (supportedLevels.includes(level)) return level;
 
   const idx = OPENAI_LEVEL_LADDER.indexOf(level);
-  if (idx < 0) return level; // not a level this ladder knows; not ours to rewrite
+  // A value outside this ladder is not an effort level at all. Forwarding it
+  // verbatim spent a whole upstream round trip to be told so, and on a provider
+  // that answers 400 for an unknown enum member that round trip also marked the
+  // account unavailable. Dropping the field lets the upstream default apply,
+  // which is the same outcome the caller would have got from omitting it.
+  if (idx < 0) return null;
 
   // Clamp DOWN to the highest level the provider actually accepts. The previous
   // version examined only "max" and "ultra" and then returned "xhigh"
@@ -344,8 +349,9 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
         break;
       }
       const level = toLevel(eff);
-      if (level)
-        body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      // null means the level was not one this ladder knows, so no field is sent.
+      const normalized = level ? normalizeOpenAILevel(level, supportedLevels) : null;
+      if (normalized) body.reasoning_effort = normalized;
       break;
     }
     case "claude-adaptive": {
@@ -545,7 +551,10 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // upstream default applies. No "max" — clamp max/ultra to "xhigh".
       const level = toLevel(eff);
       if (level === "none") break;
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, ["xhigh", "high", "medium", "low", "minimal"]);
+      const metaLevel = level
+        ? normalizeOpenAILevel(level, ["xhigh", "high", "medium", "low", "minimal"])
+        : null;
+      if (metaLevel) body.reasoning_effort = metaLevel;
       break;
     }
     case "kiro":
