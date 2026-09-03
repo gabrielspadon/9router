@@ -69,6 +69,7 @@ docs/*
 !docs/providers.md
 !docs/troubleshooting.md
 !docs/deployment.md
+!docs/logging-design.md
 # The design record ships with the repository: the written design system, the
 # artboards behind the chosen direction, the verification suite and the
 # captured evidence each gate is judged against. A gate that cannot be re-run
