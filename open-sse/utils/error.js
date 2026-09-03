@@ -24,16 +24,24 @@ export function buildErrorBody(statusCode, message) {
 
 /**
  * Statuses on which a retry can never succeed, so a `Retry-After` must never be
- * attached to one. Authentication (401), payment (402) and policy (403) are the
- * cases the caller must be told to STOP on; 400, 413 and 422 are malformed
- * requests that no amount of waiting repairs.
+ * attached to one. Authentication (401), payment (402), policy (403) and a
+ * missing resource (404) are the cases the caller must be told to STOP on; 400,
+ * 413 and 422 are malformed requests that no amount of waiting repairs.
  *
- * This is the same set `ERROR_RULES` marks `pass: true` plus the three that earn
+ * This is the same set `ERROR_RULES` marks `pass: true` plus the FOUR that earn
  * a long account cooldown, and it is deliberately ONE list: a second hand-rolled
  * "is this retryable" test somewhere else is how a 401 starts advertising a
  * retry window that will never open.
+ *
+ * 404 was missing from this list while `errorConfig.js` gave it `COOLDOWN.long`
+ * right beside 401/402/403, so an unknown model answered `404 Not Found` with a
+ * `retry-after`. A model the account cannot reach is not created by waiting: the
+ * caller has to change the request or the provider settings. Adding it here does
+ * not change routing — `isDeterministicClientError(404)` was already true, so
+ * rotation to a different credential still runs; what stops is the pointless
+ * same-account replay of a request that failed for a non-transient reason.
  */
-export const NEVER_RETRY_STATUSES = new Set([400, 401, 402, 403, 413, 422]);
+export const NEVER_RETRY_STATUSES = new Set([400, 401, 402, 403, 404, 413, 422]);
 
 export function isRetryableStatus(statusCode) {
   return !NEVER_RETRY_STATUSES.has(Number(statusCode));
@@ -373,11 +381,17 @@ export function createErrorResult(statusCode, message, resetsAtMs, failureMetada
  * @returns {Response}
  */
 export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
-  const msg = `${message} (${retryAfterHuman})`;
   const headers = { "Content-Type": "application/json" };
   // Same gate as errorResponse, same reason. `retryAfter` here is a real lock
   // expiry, but a 401 or 402 is terminal no matter how truthful the instant is.
-  if (isRetryableStatus(statusCode)) {
+  const mayAdvertiseWait = isRetryableStatus(statusCode);
+  // The BODY is gated on the same fact as the header. Suffixing the human
+  // "(reset after 1m 53s)" unconditionally made a terminal fault contradict its
+  // own headers: a revoked credential came back with no Retry-After and prose
+  // promising it would recover on a timer, so an operator read a dead key as a
+  // transient outage. A caller that must stop is told nothing about waiting.
+  const msg = mayAdvertiseWait && retryAfterHuman ? `${message} (${retryAfterHuman})` : message;
+  if (mayAdvertiseWait) {
     const secs = retryAfterSeconds({ at: retryAfter });
     if (secs !== null) headers["Retry-After"] = String(secs);
   }

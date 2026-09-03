@@ -232,7 +232,14 @@ describe("handleVideoGet", () => {
     const res = await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
 
     expect(res.status).toBe(404);
-    expect(res.headers.get("retry-after")).toMatch(/^(59|60)$/);
+    // 404 is terminal, so the projected status carries NO Retry-After even though
+    // the account lock behind it has a real 60s expiry. This assertion used to
+    // require the header. A 404 tells the caller the thing it asked for is not
+    // there, and pairing that with "come back in 60s" produced a client that
+    // re-asked for a missing resource on a timer forever -- measured live, where
+    // an unreachable model answered `404 Not Found` with `retry-after: 120`.
+    // The reason and the status still project; only the false timer is gone.
+    expect(res.headers.get("retry-after")).toBeNull();
     await expect(res.json()).resolves.toMatchObject({
       error: { message: expect.stringContaining("selected video account unavailable") },
     });
