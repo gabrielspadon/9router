@@ -8,6 +8,13 @@ import { describe, it, beforeAll, afterAll, vi } from "vitest";
 const N_ITEMS = 500;
 const N_QUERIES = 200;
 
+// lowdb is the legacy store this benchmark measures SQLite against. It is not a
+// dependency of the app or of tests/package.json, only a reference point kept
+// for the migration, so an install without it is an absent optional tool rather
+// than a product failure. Probed once here so the comparison skips instead of
+// failing collection on a bare "Cannot find package 'lowdb'".
+const hasLowdb = await import("lowdb").then(() => true).catch(() => false);
+
 const originalDataDir = process.env.DATA_DIR;
 let tempSqlite, tempLowdb;
 let sqliteDb, lowDb;
@@ -25,6 +32,7 @@ async function bench(label, fn) {
 }
 
 beforeAll(async () => {
+  if (!hasLowdb) return;
   // SQLite setup
   tempSqlite = fs.mkdtempSync(path.join(os.tmpdir(), "tokenproxy-bench-sqlite-"));
   process.env.DATA_DIR = tempSqlite;
@@ -49,7 +57,7 @@ afterAll(() => {
   else process.env.DATA_DIR = originalDataDir;
 });
 
-describe("DB Benchmark — SQLite vs Lowdb", () => {
+describe.skipIf(!hasLowdb)("DB Benchmark — SQLite vs Lowdb", () => {
   it(`INSERT ${N_ITEMS} provider connections`, async () => {
     console.log(`\n[INSERT ${N_ITEMS}]`);
 
