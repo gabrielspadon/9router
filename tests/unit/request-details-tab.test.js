@@ -123,6 +123,24 @@ function getInputTokens(tokens) {
   return prompt < cache ? cache : prompt;
 }
 
+// Open a SQLite file with whichever driver this runtime actually has, in the
+// same better-sqlite3 -> node:sqlite order src/lib/db/driver.js already falls
+// back through. better-sqlite3 is a native addon whose prebuilt binary is only
+// loadable when it matches the running Node ABI (it is built for
+// NODE_MODULE_VERSION 141 / Node 25 here, while the host runs Node 24 / 137),
+// and the load is lazy inside the Database constructor rather than at require.
+// Pinning this assertion to that one driver made the test fail for a reason
+// that has nothing to do with backupDbLite, which is the thing under test.
+async function openSqliteForRead(file) {
+  try {
+    const Database = (await import("better-sqlite3")).default;
+    return new Database(file);
+  } catch {
+    const { DatabaseSync } = await import("node:sqlite");
+    return new DatabaseSync(file);
+  }
+}
+
 describe("backupDbLite — excludes requestDetails, keeps critical data", () => {
   it("backup file omits requestDetails rows but keeps other tables", async () => {
     const { backupDbLite } = await import("@/lib/db/backup.js");
@@ -133,8 +151,7 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     expect(fs.existsSync(dest)).toBe(true);
 
     // Open backup and assert requestDetails is empty, settings present
-    const Database = (await import("better-sqlite3")).default;
-    const bak = new Database(dest);
+    const bak = await openSqliteForRead(dest);
     try {
       // requestDetails is fully excluded — table must not exist in the backup
       const rdTable = bak.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requestDetails'").get();
