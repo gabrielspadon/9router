@@ -69,12 +69,17 @@ async function drainFor(piped, ms) {
   return seen;
 }
 
-describe("SSE keepalive (post-transform, pre-first-chunk only)", () => {
+describe("SSE keepalive (post-transform, every silent interval)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("emits pings post-transform while chunkCount is 0, stops at first chunk; translator input never sees a ping", async () => {
+  // Corrected contract (RECONCILIATION.md P1 "Continuous SSE liveness"): this
+  // case used to require pings to STOP at the first chunk, which left a client
+  // with no liveness signal across every mid-stream silence. They now continue
+  // through every silent interval and only a real downstream byte defers the
+  // next one.
+  it("emits pings post-transform during silence, before AND after the first chunk; translator input never sees a ping", async () => {
     const translatorInput = [];
     const downstream = [];
     let upstream;
@@ -114,18 +119,25 @@ describe("SSE keepalive (post-transform, pre-first-chunk only)", () => {
     expect(translatorInput.some((c) => c.includes(PING))).toBe(false);
     expect(translatorInput).toHaveLength(0);
 
-    // First real chunk stops the pings.
+    // A real chunk defers the next ping by one full interval, then silence
+    // resumes the heartbeat — the mid-stream case the old contract dropped.
     upstream.enqueue(encoder.encode("data: hello\n\n"));
-    await new Promise((r) => setTimeout(r, 150));
-    const helloIdx = downstream.findIndex((c) => c.includes("data: hello"));
+    const helloIdx = await (async () => {
+      for (let i = 0; i < 50 && !downstream.some((c) => c.includes("data: hello")); i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      return downstream.findIndex((c) => c.includes("data: hello"));
+    })();
     expect(helloIdx).toBeGreaterThan(-1);
-    const lastPingIdx = downstream
-      .map((c) => c.includes(PING))
-      .lastIndexOf(true);
-    expect(helloIdx).toBeGreaterThan(lastPingIdx);
+    // The chunk re-armed the timer, so the very next frame is not a ping.
+    expect(downstream[helloIdx + 1]?.includes(PING) ?? false).toBe(false);
+
+    await new Promise((r) => setTimeout(r, 200));
     expect(
-      downstream.slice(helloIdx).filter((c) => c.includes(PING)),
-    ).toHaveLength(0);
+      downstream.slice(helloIdx).filter((c) => c.includes(PING)).length,
+    ).toBeGreaterThanOrEqual(2);
+    // Still transport-only: the data chunk is the ONLY thing the translator saw.
+    expect(translatorInput.some((c) => c.includes(PING))).toBe(false);
     await reader.cancel().catch(() => {});
   });
 

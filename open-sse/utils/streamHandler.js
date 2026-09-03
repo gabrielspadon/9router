@@ -466,7 +466,7 @@ export function pipeWithDisconnect(
     firstChunkTimer = setTimeout(() => {
       firstChunkTimer = null;
       dbg(tag, `TTFT TIMEOUT ${ttftTimeoutMs}ms | no bytes received`);
-      clearKeepalive();
+      stopKeepalive();
       wrappedController.handleError(
         new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`),
       );
@@ -480,14 +480,67 @@ export function pipeWithDisconnect(
       stallTimer = null;
     }
   };
-  // SSE keepalive: emits ping frames downstream while the provider is silent
-  // (pre-TTFT). Mounted on the OUTBOUND side (after transformStream) so pings
-  // never enter the translator input — upstream see PR #3457's pre-tap version.
+  // SSE keepalive: emits ping frames downstream during EVERY silent interval,
+  // pre-TTFT and mid-stream alike. Three properties this arrangement owns:
+  //
+  //   1. A heartbeat is transport, never content. The timer is mounted on the
+  //      OUTBOUND side (after transformStream), so a ping is enqueued past the
+  //      translator and can never reach its input — upstream see PR #3457's
+  //      pre-tap version, which fed pings back through the translator.
+  //   2. A heartbeat is not provider progress. Only `upstreamTap` touches
+  //      `armStall`, `lastChunkAt` and `chunkCount`, and it sits UPSTREAM of
+  //      this timer, so no ping can reach it. A hung provider therefore still
+  //      trips the stall watchdog on schedule while the client keeps seeing
+  //      liveness — the two clocks are independent by construction, not by
+  //      convention.
+  //   3. A heartbeat cannot outlive the stream. `stopKeepalive` latches, so a
+  //      byte flushed by the translator after upstream EOF re-arms nothing.
+  //
+  // Re-armed after every downstream write (a self-rescheduling timeout, not an
+  // interval), so a ping fires only during genuine silence and never interleaves
+  // with real data.
+  const KEEPALIVE_FRAME = "event: ping\ndata: {}\n\n";
+  let keepaliveStopped = false;
+  let keepaliveController = null;
+  let heartbeatCount = 0;
+
   const clearKeepalive = () => {
     if (keepaliveTimer) {
-      clearInterval(keepaliveTimer);
+      clearTimeout(keepaliveTimer);
       keepaliveTimer = null;
     }
+  };
+  // Terminal: clears AND latches, so nothing downstream can resurrect the ping.
+  const stopKeepalive = () => {
+    keepaliveStopped = true;
+    clearKeepalive();
+  };
+  const armKeepalive = () => {
+    clearKeepalive();
+    if (keepaliveStopped || !(keepaliveMs > 0)) return;
+    keepaliveTimer = setTimeout(() => {
+      keepaliveTimer = null;
+      if (keepaliveStopped || !keepaliveController) return;
+      if (!streamController.isConnected()) return;
+      // Backpressure: a negative desiredSize means the queue has grown past the
+      // high-water mark because the client is not reading. Skip this beat rather
+      // than stacking bytes on a congested socket. A TransformStream readable
+      // sits at highWaterMark 0, so idle is exactly 0 and only a real backlog
+      // goes negative.
+      // ponytail: skip-a-beat, not a drain event — a readable controller exposes
+      // no drain signal, and the next arm retries one interval later.
+      if (!(keepaliveController.desiredSize < 0)) {
+        try {
+          keepaliveController.enqueue(new TextEncoder().encode(KEEPALIVE_FRAME));
+          heartbeatCount++;
+          dbg(tag, `keepalive ping #${heartbeatCount} (silence=${keepaliveMs}ms)`);
+        } catch {
+          stopKeepalive();
+          return;
+        }
+      }
+      armKeepalive();
+    }, keepaliveMs);
   };
   const armStall = () => {
     clearStall();
@@ -516,7 +569,7 @@ export function pipeWithDisconnect(
       );
       clearFirstChunk();
       clearStall();
-      clearKeepalive();
+      stopKeepalive();
       streamController.handleComplete();
     },
     handleError: (e) => {
@@ -526,7 +579,7 @@ export function pipeWithDisconnect(
       );
       clearFirstChunk();
       clearStall();
-      clearKeepalive();
+      stopKeepalive();
       if (terminalObserver && terminateWithTerminal?.(e)) return;
       streamController.handleError(e);
     },
@@ -537,7 +590,7 @@ export function pipeWithDisconnect(
       );
       clearFirstChunk();
       clearStall();
-      clearKeepalive();
+      stopKeepalive();
       streamController.handleDisconnect(r, {
         up: `${chunkCount}c/${totalBytes}b`,
         ...detail,
@@ -546,7 +599,7 @@ export function pipeWithDisconnect(
     abort: () => {
       clearFirstChunk();
       clearStall();
-      clearKeepalive();
+      stopKeepalive();
       streamController.abort();
     },
   };
@@ -585,7 +638,9 @@ export function pipeWithDisconnect(
         `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`,
       );
       clearStall();
-      clearKeepalive();
+      // Upstream EOF stops the UPSTREAM clock, but the translator may still
+      // flush buffered output downstream, so the heartbeat is left armed and
+      // the tap's own flush() latches it once that output is done.
     },
   });
 
@@ -593,27 +648,27 @@ export function pipeWithDisconnect(
     .pipeThrough(upstreamTap)
     .pipeThrough(transformStream)
     .pipeThrough(
+      // Downstream keepalive tap. It sees only TRANSLATED output, so re-arming
+      // on `transform` measures downstream silence — the interval the client
+      // actually experiences — while the upstream stall clock keeps measuring
+      // provider silence in `upstreamTap`, one stage earlier. Neither can move
+      // the other.
       new TransformStream({
         start(controller) {
-          if (keepaliveMs > 0) {
-            keepaliveTimer = setInterval(() => {
-              if (chunkCount === 0 && streamController.isConnected()) {
-                dbg(tag, `keepalive ping sent (silence=${Date.now() - t0}ms)`);
-                try {
-                  controller.enqueue(
-                    new TextEncoder().encode("event: ping\ndata: {}\n\n"),
-                  );
-                } catch {
-                  clearKeepalive();
-                }
-              } else {
-                clearKeepalive();
-              }
-            }, keepaliveMs);
-          }
+          keepaliveController = controller;
+          armKeepalive();
+        },
+        transform(chunk, controller) {
+          controller.enqueue(chunk);
+          // A real byte just went downstream: restart the silence window so a
+          // ping never interleaves with data mid-stream.
+          armKeepalive();
+        },
+        flush() {
+          stopKeepalive();
         },
         cancel() {
-          clearKeepalive();
+          stopKeepalive();
         },
       }),
     );
