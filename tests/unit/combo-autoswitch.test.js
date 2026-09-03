@@ -68,7 +68,11 @@ describe("reorderByCapabilities", () => {
   it("keeps order when no model matches", () => {
     const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
     const out = reorderByCapabilities(models, new Set(["vision"]));
-    expect(out).toBe(models);
+    // Order, not identity: reorderByCapabilities only returns the input array for
+    // the length<=1 / no-requirement guards, and otherwise always builds a new one
+    // through map/sort/map. toBe could not pass for any input that reaches the
+    // sort, so it was asserting something the stable-sort contract never offered.
+    expect(out).toStrictEqual(models);
   });
 
   it("single model -> unchanged", () => {
