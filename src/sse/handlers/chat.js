@@ -270,7 +270,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
-  const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
+  const bypassResponse = handleBypassRequest(body, modelStr, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
   // "auto" is a virtual id, not a model: pick a real one from the request and

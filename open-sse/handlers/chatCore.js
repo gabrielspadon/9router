@@ -274,7 +274,6 @@ export async function handleChatCore({
   const bypassResponse = handleBypassRequest(
     body,
     model,
-    userAgent,
     ccFilterNaming,
   );
   if (bypassResponse) return bypassResponse;

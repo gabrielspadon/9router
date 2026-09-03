@@ -5,11 +5,19 @@ import { SKIP_PATTERNS } from "../config/runtimeConfig.js";
 import { formatSSE } from "./stream.js";
 
 /**
- * Check for bypass patterns - return fake response without calling provider
- * Only works for Claude CLI requests
+ * Check for bypass patterns - return fake response without calling provider.
+ *
+ * Gated on the REQUEST'S OWN SHAPE, not on which client sent it: a literal
+ * "Warmup"/"count" probe, an assistant turn prefilled with just "{", or (when
+ * the caller enables ccFilterNaming) a system prompt carrying "isNewTopic" are
+ * all no-op bookkeeping calls that would otherwise burn a real provider call
+ * for a canned answer. Every pattern here matches on body content alone, so
+ * any harness sending the identical no-op shape gets the identical bypass —
+ * this used to also require a `claude-cli` user-agent, which gave one client
+ * an outcome (skip the provider, save the cost) that an equivalent request
+ * from any other harness could not get.
  */
-export function handleBypassRequest(body, model, userAgent = "", ccFilterNaming = false) {
-  if (!userAgent.includes("claude-cli")) return null;
+export function handleBypassRequest(body, model, ccFilterNaming = false) {
   if (!body.messages?.length) return null;
 
   const messages = body.messages;
