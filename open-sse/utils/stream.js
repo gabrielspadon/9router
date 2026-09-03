@@ -660,11 +660,25 @@ export function createSSEStream(options = {}) {
           openAIResponsesTerminalSeen = true;
         }
 
-        if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
+        // The sentinel belongs to the CLIENT protocol, which on the translate
+        // path is `sourceFormat` — the same rule the passthrough flush states at
+        // its own [DONE] gate above. An OpenAI-family client terminates on
+        // `data: [DONE]`, so it has to arrive whatever the upstream spoke. This
+        // used to fire only for the Responses sub-case, which left every stream
+        // whose upstream format differed from the client's — i.e. every
+        // claude-family model, the fleet's primary path — unterminated, and any
+        // OpenAI-protocol client waiting on the sentinel hung until timeout.
+        //
+        // An ALLOWLIST, not a denylist: Claude has no [DONE] in its wire
+        // protocol, Gemini rejects it with a 400, and Ollama speaks NDJSON, so a
+        // format added later gets no sentinel until it is known to want one.
+        const clientSpeaksOpenAI =
+          sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.OPENAI_RESPONSES;
+        if (clientSpeaksOpenAI && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
-          openAIResponsesDoneSent = true;
+          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           streamDoneSent = true;
         }
 
