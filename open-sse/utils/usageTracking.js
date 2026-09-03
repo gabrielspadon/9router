@@ -185,6 +185,75 @@ export function normalizeUsage(usage) {
   return normalized;
 }
 
+// Provider spellings for the two cache quantities. Cache READ is input served
+// from a warm cache; cache WRITE is input newly written INTO the cache. Both are
+// resolved HERE and nowhere else: canonicalizeUsage is the single normalization
+// point every persisted request, aggregate and cost computation reads through,
+// so a reader that re-derives a cache field from a raw alias is normalizing
+// twice and drifts the moment this table grows.
+//
+// Split by accounting convention, because that is what decides whether the cache
+// counts fold into prompt_tokens:
+//   INCLUSIVE — provider already counted the cache inside prompt/input tokens
+//               (OpenAI, Gemini). Pass through.
+//   EXCLUSIVE — provider reports cache BESIDE a prompt count that omits it
+//               (Anthropic). Fold both cache quantities into prompt_tokens.
+const CACHE_READ_INCLUSIVE_KEYS = ["cached_tokens"];
+const CACHE_READ_EXCLUSIVE_KEYS = ["cache_read_input_tokens", "cache_read_tokens"];
+// `cache_write_tokens` is the common spelling no reader handled, which silently
+// zeroed every cache write on the providers that use it.
+const CACHE_WRITE_KEYS = [
+  "cache_creation_input_tokens",
+  "cache_write_tokens",
+  "cache_write_input_tokens",
+  "cache_creation_tokens",
+];
+// Nested breakdowns carrying the same two quantities (Responses API, and
+// buildUsage()'s own OpenAI-forwarding shape).
+const CACHE_READ_NESTED = [
+  ["input_tokens_details", "cached_tokens"],
+  ["prompt_tokens_details", "cached_tokens"],
+];
+const CACHE_WRITE_NESTED = [
+  ["prompt_tokens_details", "cache_creation_tokens"],
+  ["input_tokens_details", "cache_creation_tokens"],
+];
+
+// First key that is actually present wins; absence is distinguished from zero so
+// the fold discriminator below can tell "provider omitted this" from "provider
+// reported none".
+function firstPresent(usage, keys, nested) {
+  for (const key of keys) {
+    if (usage[key] !== undefined && usage[key] !== null) return usage[key];
+  }
+  for (const [outer, inner] of nested) {
+    const value = usage[outer]?.[inner];
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the canonical cache read and cache write counts from any provider
+ * spelling, along with which accounting convention the input used.
+ *
+ * @param {object} usage
+ * @returns {{read: number|undefined, write: number|undefined, inclusive: boolean}}
+ */
+export function resolveCacheTokens(usage) {
+  const inclusiveRead = firstPresent(usage, CACHE_READ_INCLUSIVE_KEYS, CACHE_READ_NESTED);
+  const exclusiveRead = firstPresent(usage, CACHE_READ_EXCLUSIVE_KEYS, []);
+  const write = firstPresent(usage, CACHE_WRITE_KEYS, CACHE_WRITE_NESTED);
+  return {
+    read: inclusiveRead !== undefined ? inclusiveRead : exclusiveRead,
+    write,
+    // An inclusive read spelling is the marker that prompt_tokens already counts
+    // the cache. It is also what canonicalizeUsage's own output always carries,
+    // which is what makes re-running it idempotent.
+    inclusive: inclusiveRead !== undefined,
+  };
+}
+
 /**
  * Canonicalize usage into ONE storage/cost convention so token counts and cost
  * are consistent across providers:
@@ -215,34 +284,24 @@ export function canonicalizeUsage(usage) {
       ?? usage.output_tokens_details?.reasoning_tokens
       ?? usage.completion_tokens_details?.reasoning_tokens,
   );
-  // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
-  // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
-  // absent, so callers that pass a buildUsage() object through don't silently
-  // drop cache_creation.
-  const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);
+  // Every provider spelling of cache read and cache write resolves in ONE call.
+  // See resolveCacheTokens: this is the only site that reads a raw cache alias.
+  const cache = resolveCacheTokens(usage);
+  const cacheCreation = num(cache.write);
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
-  let cached;
+  let cached = num(cache.read);
 
-  // Claude path: prompt excludes cache; cache_read_input_tokens and/or
-  // cache_creation_input_tokens are separate. A cache-miss "first write" only
-  // carries cache_creation_input_tokens (no cache_read_input_tokens yet), so
-  // check both fields — otherwise a first-write request falls through to the
-  // OpenAI passthrough branch below and cache_creation never gets folded in.
-  // Guard on the absence of `cached_tokens`: our own canonical output always
-  // sets that key (even to 0), so re-running canonicalizeUsage on an already-
-  // folded result takes the passthrough branch instead of folding again.
-  if (usage.cached_tokens === undefined &&
-      (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined)) {
-    cached = num(usage.cache_read_input_tokens);
+  // Exclusive path (Anthropic): prompt omits the cache, so both cache
+  // quantities fold into it. A cache-miss "first write" reports only a write and
+  // no read, so the fold triggers on either quantity being present — otherwise a
+  // first-write request took the passthrough branch and its write was never
+  // folded in. `cache.inclusive` is false only when no inclusive spelling was
+  // present, and canonicalizeUsage's own output always sets `cached_tokens`
+  // (even to 0), which is what makes re-running it idempotent rather than
+  // folding a second time.
+  if (!cache.inclusive && (cache.read !== undefined || cache.write !== undefined)) {
     prompt = prompt + cached + cacheCreation;
-  } else {
-    // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    cached = num(
-      usage.cached_tokens
-        ?? usage.input_tokens_details?.cached_tokens
-        ?? usage.prompt_tokens_details?.cached_tokens,
-    );
   }
 
   const result = {

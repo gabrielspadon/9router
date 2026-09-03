@@ -1,4 +1,4 @@
-import { clampReasoningTokens } from "../../utils/usageTracking.js";
+import { clampReasoningTokens, resolveCacheTokens } from "../../utils/usageTracking.js";
 
 // Build OpenAI usage object. Caller computes prompt/completion/total (provider math).
 // Optional details added only when > 0 (matches existing claude/gemini/codex behavior).
@@ -119,12 +119,18 @@ export function toResponsesUsage(raw) {
     total_tokens: n(raw.total_tokens) || inputTokens + outputTokens,
   };
 
-  const cachedTokens =
-    n(raw.input_tokens_details?.cached_tokens) ||
-    n(raw.prompt_tokens_details?.cached_tokens) ||
-    n(raw.cached_tokens);
-  if (cachedTokens > 0) {
-    usage.input_tokens_details = { cached_tokens: cachedTokens };
+  // Cache read and cache write aliases resolve through the one shared
+  // normalizer (resolveCacheTokens, usageTracking.js) rather than a
+  // re-derivation here, so a provider spelling added there (e.g.
+  // cache_write_tokens) reaches this output without a second edit.
+  const cache = resolveCacheTokens(raw);
+  const cachedTokens = n(cache.read);
+  const cacheCreationTokens = n(cache.write);
+  if (cachedTokens > 0 || cacheCreationTokens > 0) {
+    usage.input_tokens_details = {};
+    if (cachedTokens > 0) usage.input_tokens_details.cached_tokens = cachedTokens;
+    if (cacheCreationTokens > 0)
+      usage.input_tokens_details.cache_creation_tokens = cacheCreationTokens;
   }
 
   const reasoningTokens =
