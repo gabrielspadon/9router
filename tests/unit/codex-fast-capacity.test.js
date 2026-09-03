@@ -42,11 +42,24 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("xhigh");
   });
 
-  it.each(["default", "unsupported"])("omits non-priority service tier %s", (serviceTier) => {
+  // `default` and `ultrafast` are first-class Codex tiers and now survive
+  // outbound verbatim; only a tier Codex does not define is dropped, because an
+  // unrecognized value answers routing_unsupported (see normalizeCodexServiceTier).
+  it.each(["default", "priority", "ultrafast"])("forwards supported service tier %s verbatim", (serviceTier) => {
     const body = new CodexExecutor().transformRequest("gpt-5.6-sol", {
       model: "gpt-5.6-sol",
       input: "hi",
       service_tier: serviceTier,
+    }, true, {});
+
+    expect(body.service_tier).toBe(serviceTier);
+  });
+
+  it("omits an unsupported service tier rather than remapping it", () => {
+    const body = new CodexExecutor().transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+      service_tier: "unsupported",
     }, true, {});
 
     expect(body).not.toHaveProperty("service_tier");
