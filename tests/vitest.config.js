@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 import { transformWithOxc } from "vite";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -21,6 +24,14 @@ export default defineConfig({
     },
   }],
   test: {
+    // DATA_DIR ISOLATION. src/lib/dataDir.js:16 falls back to ~/.tokenproxy when
+    // DATA_DIR is unset, so without this every DB-touching test wrote the LIVE
+    // production database: fixture connection ids (ok, out, conn-1, kilo-2) landed
+    // in quotaWindows and accountSwitches, and /api/admin/receipts reported them
+    // as real model_failure switches. DATA_DIR is read at import time, so it must
+    // be in the environment before any test module loads, which is what env does.
+    env: { DATA_DIR: mkdtempSync(join(tmpdir(), "tokenproxy-test-")) },
+
     // Node by default — most of the suite is handlers and translators. A test that
     // needs a DOM opts in per file with a `// @vitest-environment jsdom` docblock
     // on its first line (jsdom is pinned in tests/package.json).
