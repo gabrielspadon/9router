@@ -1,3 +1,5 @@
+import { detectClientTool } from "./clientDetector.js";
+
 /**
  * Tell a parent agent's request from a sub-agent's, and narrow a combo to the
  * model group the user assigned that role (#1092).
@@ -9,20 +11,36 @@
  * same key — the only thing that differs is the preamble the client puts in
  * front of it.
  *
- * So detection is deliberately narrow. It applies to Claude Code only, because
- * that is the client whose preamble is known; every other client is `null`,
- * meaning "no basis to decide" rather than "parent". And the whole feature is
- * inert until the user assigns groups, so a preamble that changes upstream
- * costs a lost optimisation, never a misrouted request.
+ * So detection is keyed off PREAMBLES_BY_CLIENT_TOOL below, one entry per
+ * harness whose sub-agent preamble is documented, using the same
+ * detectClientTool the rest of the gateway uses rather than a private string
+ * match. A client with no entry is `null`, meaning "no basis to decide"
+ * rather than "parent". And the whole feature is inert until the user assigns
+ * groups, so a preamble that changes upstream costs a lost optimisation,
+ * never a misrouted request.
+ *
+ * Only Claude Code is populated today, not because this router favours it,
+ * but because it is the one integrated harness with no OTHER way to route a
+ * sub-agent to a cheaper model: Codex, OpenCode and Grok CLI already carry a
+ * native, client-side subagent-model setting (their own `agents.subagent` /
+ * `agent.explorer` / `subagents.models` config, written by this app's own
+ * cli-tools settings routes) that picks a distinct model per role WITHOUT any
+ * server-side detection. Claude Code's Task-tool sub-agents inherit the
+ * parent's model with no equivalent per-role override, so the preamble is the
+ * only signal available for it. Adding another harness here means adding its
+ * own documented preamble, not touching the mechanism.
  */
 
-// The sub-agent preamble Claude Code puts in front of a Task-tool request. It
-// is a client string and will move; that is why an unmatched request is treated
-// as the parent, which is the pre-existing behaviour.
-const SUB_AGENT_PREAMBLES = [
-  /^you are an agent for claude code/i,
-  /^you are a sub-?agent/i,
-];
+// One entry per harness whose sub-agent preamble is documented. Add a
+// clientTool key here (see open-sse/utils/clientDetector.js) once another
+// harness's preamble is known — the detector already recognises the tool,
+// this table just needs to learn its wording.
+const PREAMBLES_BY_CLIENT_TOOL = {
+  claude: [
+    /^you are an agent for claude code/i,
+    /^you are a sub-?agent/i,
+  ],
+};
 
 function systemText(body) {
   const parts = [];
@@ -45,10 +63,12 @@ function systemText(body) {
  *   is known, so the caller leaves routing exactly as it was.
  */
 export function detectAgentRole(body, userAgent = "") {
-  if (!userAgent.includes("claude-cli")) return null;
+  const clientTool = detectClientTool({ "user-agent": userAgent }, {});
+  const preambles = clientTool && PREAMBLES_BY_CLIENT_TOOL[clientTool];
+  if (!preambles) return null;
   const text = systemText(body);
   if (!text) return "parent";
-  return SUB_AGENT_PREAMBLES.some((re) => re.test(text)) ? "sub" : "parent";
+  return preambles.some((re) => re.test(text)) ? "sub" : "parent";
 }
 
 /**

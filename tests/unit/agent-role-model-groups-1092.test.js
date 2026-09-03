@@ -83,3 +83,20 @@ describe("narrowing a combo to the role's group (#1092)", () => {
     expect(applyAgentRoleGroup(null, "sub", settings)).toBeNull();
   });
 });
+
+describe("detection goes through the shared clientTool detector (#1092)", () => {
+  // Any user-agent the canonical detector maps to "claude" reaches the same
+  // preamble table, not a private substring check re-implemented here — so a
+  // future Claude Code UA spelling that the detector already recognises works
+  // without this file changing.
+  it("still recognises Claude Code by its detector-mapped identity, not a private string", () => {
+    expect(detectAgentRole({ system: "You are an agent for Claude Code" }, "claude-code/1.0")).toBe("sub");
+  });
+
+  it("a client the detector maps to a different tool gets null, same as unknown", () => {
+    // codex-tui speaks a documented protocol too, but no Codex sub-agent
+    // preamble is in the table (#1092's own registry-vs-hardcode fix), so
+    // this stays "no basis to decide" rather than silently guessing "parent".
+    expect(detectAgentRole({ system: "You are an agent for Claude Code" }, "codex-tui/1.0")).toBeNull();
+  });
+});
