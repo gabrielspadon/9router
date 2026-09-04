@@ -171,6 +171,24 @@ function openAICompletionToClaudeMessage(responseBody) {
   if (content.length === 0) content.push({ type: "text", text: "" });
 
   const usage = responseBody.usage || {};
+  // prompt_tokens is INCLUSIVE of cached tokens (OpenAI convention), so an
+  // exclusive input_tokens must subtract the cache read/creation back out;
+  // counting the full prompt_tokens on top of the cache fields double-counts
+  // every cached token. When only input_tokens is present it is already
+  // exclusive and kept as-is.
+  const cache = claudeCacheUsage(usage);
+  const cacheRead = cache.cache_read_input_tokens ?? 0;
+  const cacheCreation = cache.cache_creation_input_tokens ?? 0;
+  const claudeUsage = {
+    input_tokens: usage?.prompt_tokens != null
+      ? Math.max(0, usage.prompt_tokens - cacheRead - cacheCreation)
+      : usage?.input_tokens || 0,
+    output_tokens: usage?.completion_tokens || usage?.output_tokens || 0,
+    // Present only when there is something to report, matching the streaming
+    // translator: a turn with no cache activity emits no cache fields at all,
+    // rather than a pair of zeros that reads as a measured cache miss.
+    ...cache,
+  };
   return {
     id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
     type: "message",
@@ -179,19 +197,7 @@ function openAICompletionToClaudeMessage(responseBody) {
     content,
     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
     stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-      // The streaming path already carries the cache split and the upstream's
-      // own price through to a Claude client (translator/response/openai-to-claude.js).
-      // The JSON path reported neither, so the same request billed differently
-      // depending only on whether the caller asked for a stream.
-      //
-      // Present only when there is something to report, matching the streaming
-      // translator: a turn with no cache activity emits no cache fields at all,
-      // rather than a pair of zeros that reads as a measured cache miss.
-      ...claudeCacheUsage(usage),
-    },
+    usage: claudeUsage,
   };
 }
 

@@ -388,23 +388,83 @@ function lastCacheableToolIndex(tools) {
   return -1;
 }
 
+// Client plans are kept verbatim only when complete and within Anthropic's
+// 4-breakpoint limit: valid means every block carries {type:"ephemeral"} with
+// ttl absent, "5m", or "1h". Otherwise returns null and the legacy
+// strip-and-re-anchor policy applies. Preserving valid client breakpoints is
+// what keeps the cache prefix stable per request; the fallback anchors alone
+// collapse every multi-breakpoint plan into one 5m tail.
+function clientCacheAnchors(body) {
+  const anchored = new Set();
+  let count = 0;
+  let valid = true;
+
+  const visit = (block) => {
+    if (!block || typeof block !== "object") return;
+    const cc = block.cache_control;
+    if (cc == null) return;
+    count += 1;
+    if (cc.type !== "ephemeral" || (cc.ttl !== undefined && cc.ttl !== "5m" && cc.ttl !== "1h")) {
+      valid = false;
+    } else {
+      anchored.add(block);
+    }
+  };
+
+  if (Array.isArray(body.system)) body.system.forEach(visit);
+  if (Array.isArray(body.tools)) body.tools.forEach(visit);
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (Array.isArray(msg.content)) msg.content.forEach(visit);
+    }
+  }
+
+  if (!valid || count === 0 || count > 4) return null;
+
+  // Backfilling the fallback tail anchors (system 1h, tool 1h, last assistant
+  // 5m) on positions the client left unanchored must keep the total at or
+  // under the 4-breakpoint ceiling, or the preserve is abandoned.
+  let fallbackNeeded = 0;
+  if (Array.isArray(body.system) && body.system.length > 0 && !anchored.has(body.system[body.system.length - 1])) fallbackNeeded += 1;
+  if (Array.isArray(body.tools)) {
+    const lastTool = lastCacheableToolIndex(body.tools);
+    if (lastTool >= 0 && !anchored.has(body.tools[lastTool])) fallbackNeeded += 1;
+  }
+  if (Array.isArray(body.messages)) {
+    for (let i = body.messages.length - 1; i >= 0; i--) {
+      const msg = body.messages[i];
+      if (msg.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
+      if (!msg.content.some(b => anchored.has(b))) fallbackNeeded += 1;
+      break;
+    }
+  }
+  if (count + fallbackNeeded > 4) return null;
+
+  return anchored;
+}
+
 export function anchorClaudeCache(body) {
   if (!body || typeof body !== "object") return body;
+  // Valid client breakpoints are kept verbatim (per-request cache-prefix
+  // stability); everything else gets the legacy single-anchor policy.
+  const keep = clientCacheAnchors(body);
 
   if (Array.isArray(body.system)) {
     const last = body.system.length - 1;
     body.system.forEach((block, i) => {
       if (typeof block !== "object" || block === null) return;
-      if (i === last) block.cache_control = { ...CACHE_CONTROL_1H };
-      else delete block.cache_control;
+      if (i === last) {
+        if (!keep || !block.cache_control) block.cache_control = { ...CACHE_CONTROL_1H };
+      } else if (!keep) delete block.cache_control;
     });
   }
 
   if (Array.isArray(body.tools)) {
     const last = lastCacheableToolIndex(body.tools);
     body.tools.forEach((tool, i) => {
-      if (i === last) tool.cache_control = { ...CACHE_CONTROL_1H };
-      else delete tool.cache_control;
+      if (i === last) {
+        if (!keep || !tool.cache_control) tool.cache_control = { ...CACHE_CONTROL_1H };
+      } else if (!keep) delete tool.cache_control;
     });
   }
 
@@ -413,11 +473,13 @@ export function anchorClaudeCache(body) {
     for (let i = body.messages.length - 1; i >= 0; i--) {
       const msg = body.messages[i];
       if (!Array.isArray(msg.content)) continue;
-      for (const block of msg.content) delete block.cache_control;
+      if (!keep) for (const block of msg.content) delete block.cache_control;
 
       // Prefer the last assistant turn: it ends a completed exchange, so the
       // prefix up to it stays byte-stable across the following requests.
       if (anchored || msg.role !== ROLE.ASSISTANT) continue;
+      // Client already anchored this turn — never add a second breakpoint.
+      if (keep && msg.content.some(b => keep.has(b))) { anchored = true; continue; }
       anchored = markLastCacheableBlock(msg);
     }
 
@@ -425,7 +487,9 @@ export function anchorClaudeCache(body) {
     // message instead, so the opening prompt is cached rather than paid twice.
     if (!anchored) {
       for (let i = body.messages.length - 1; i >= 0 && !anchored; i--) {
-        anchored = markLastCacheableBlock(body.messages[i]);
+        const msg = body.messages[i];
+        if (keep && Array.isArray(msg.content) && msg.content.some(b => keep.has(b))) { anchored = true; continue; }
+        anchored = markLastCacheableBlock(msg);
       }
     }
   }
@@ -473,7 +537,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   }
 
   // 1. System: drop empty text blocks, remove all cache_control, add only to
-  // last surviving block with ttl 1h.
+  // last surviving block with ttl 1h — UNLESS the client sent a complete,
+  // within-limit breakpoint plan, which is preserved verbatim for per-request
+  // cache-prefix stability.
   //
   // Messages are filtered by hasValidContent below; system blocks were not, so
   // an OpenAI client sending { role: "system", content: "" } produced a
@@ -486,8 +552,18 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     const blocks = body.system.filter(
       (block) => !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim())
     );
+    // Count after the empty-block filter: blocks that normalization drops must
+    // not weigh on the plan's validity.
+    const keepClientCache = blocks.length > 0 ? clientCacheAnchors({ ...body, system: blocks }) : null;
     if (blocks.length === 0) {
       delete body.system;
+    } else if (keepClientCache) {
+      body.system = blocks.map((block, i) => {
+        if (i === blocks.length - 1 && !block.cache_control) {
+          return { ...block, cache_control: { type: "ephemeral", ttl: "1h" } };
+        }
+        return block;
+      });
     } else {
       body.system = blocks.map((block, i) => {
         const { cache_control, ...rest } = block;
@@ -499,6 +575,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     }
   }
 
+  const keepClientCache = clientCacheAnchors(body);
+
   // 2. Messages: process in optimized passes
   if (body.messages && Array.isArray(body.messages)) {
     const len = body.messages.length;
@@ -508,8 +586,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     for (let i = 0; i < len; i++) {
       const msg = body.messages[i];
 
-      // Remove cache_control from content blocks
-      if (Array.isArray(msg.content)) {
+      // Remove cache_control from content blocks (legacy path only; a valid
+      // client plan survives verbatim)
+      if (!keepClientCache && Array.isArray(msg.content)) {
         for (const block of msg.content) {
           delete block.cache_control;
         }
@@ -543,12 +622,16 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
       if (msg.role === ROLE.ASSISTANT && Array.isArray(msg.content)) {
         // Add cache_control to last non-thinking block of first (from end) assistant with content
         // thinking/redacted_thinking blocks do not support cache_control
+        // In the client-preserve path, a turn the client already anchored is
+        // left untouched — never stack a second breakpoint on it.
         if (!lastAssistantProcessed && msg.content.length > 0) {
-          for (let j = msg.content.length - 1; j >= 0; j--) {
-            const block = msg.content[j];
-            if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.cache_control = { type: "ephemeral" };
-              break;
+          if (!(keepClientCache && msg.content.some(b => keepClientCache.has(b)))) {
+            for (let j = msg.content.length - 1; j >= 0; j--) {
+              const block = msg.content[j];
+              if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
+                block.cache_control = { type: "ephemeral" };
+                break;
+              }
             }
           }
           lastAssistantProcessed = true;
@@ -687,6 +770,14 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
     const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
+      // Client-preserve path: keep client anchors verbatim, backfill 1h only
+      // on an unanchored last cacheable tool.
+      if (keepClientCache) {
+        if (i === lastCacheable && !tool.cache_control) {
+          return { ...tool, cache_control: { type: "ephemeral", ttl: "1h" } };
+        }
+        return tool;
+      }
       const { cache_control, ...rest } = tool;
       if (i === lastCacheable) {
         return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
