@@ -1,5 +1,5 @@
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
-import { installGlobalProxyFetch } from "open-sse/utils/proxyFetch.js";
+import { installGlobalProxyFetch } from "../../../../open-sse/utils/proxyFetch.js";
 
 installGlobalProxyFetch();
 

@@ -20,8 +20,9 @@ import { detectUpstreamErrorContent } from "../../services/upstreamErrorContent.
 import { extractPanelText } from "../../services/combo.js";
 import { messageReasoningText, parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
-import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine, doneFields } from "./requestDetail.js";
+import { appendRequestLog, saveRequestDetail } from "../../../src/lib/usageDb.js";
+import { decide, req, reqSummary, RID_HEADER } from "../../../src/shared/observability/decide.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 import { restoreResponseJson } from "../../utils/privacyFilter.js";
@@ -636,7 +637,7 @@ function hasMultipleClassifierAlternatives(responseBody) {
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal, rid, route, fmt, sel }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const classifierMode = sourceFormat === FORMATS.CLAUDE
     && isClaudeClassifierRequest(body);
@@ -653,14 +654,17 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     pendingCleared = true;
     trackDone();
   };
+  const connPrefix = connectionId ? String(connectionId).slice(0, 8) : undefined;
   const bodyReadFailure = (error, context) => {
     trackDoneOnce();
     if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
     if (isBodyReadTimeoutError(error)) {
-      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
+      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
     }
     console.error(`[ChatCore] Failed to ${context} from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`);
+    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: String(context || "body-read").slice(0, 40) });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`, null, null, rid);
   };
 
   if (contentType.includes("text/event-stream")) {
@@ -818,8 +822,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true });
-  if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true, rid });
 
   if (classifierMode && (
     hasLegacyClassifierFunctionCall(responseBody)
@@ -843,9 +846,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       );
     } catch (err) {
       if (err instanceof ClaudeClassifierValidationError) {
+        reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
         return createErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+          null,
+          null,
+          rid,
         );
       }
       throw err;
@@ -922,6 +929,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (upstreamError) {
     appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (upstream error in content)` });
     log?.warn?.("CHATCORE", `${provider}/${model} returned HTTP 200 carrying an upstream error — treating as failure. ${upstreamError.reason}`);
+    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-content" });
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : upstreamError.reason,
@@ -937,10 +945,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     if (log?.warn) {
       log.warn("CHATCORE", `${provider}/${model} returned HTTP 200 with empty content (finish_reason=${translatedResponse?.choices?.[0]?.finish_reason || "unknown"}) — treating as failure, locking for ${Math.round(EMPTY_CONTENT_COOLDOWN_MS / 1000)}s`);
     }
+    decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
+    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Empty response content from ${provider}/${model}`,
       Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
+      null,
+      rid,
     );
   }
 
@@ -964,7 +976,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   const totalLatency = Date.now() - requestStartTime;
-  saveRequestDetail(buildRequestDetail({
+  const doneDetail = buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: totalLatency, total: totalLatency },
     tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
@@ -977,9 +989,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
     },
     pxpipe,
-    status: "success"
-  }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
-    console.error("[RequestDetail] Failed to save:", err.message);
+    status: "success",
+    rid,
+  }, { endpoint: clientRawRequest?.endpoint || null });
+  // saveRequestDetail mints detail.id synchronously (before its first await),
+  // so the REQ line below can carry row=.
+  saveRequestDetail(doneDetail).catch(() => {
+    decide("ACCT", "detail-write-failed", { rid, phase: "save" });
   });
 
   if (provider === "antigravity") {
@@ -993,6 +1009,17 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // Privacy filter (#2728): put the caller's own values back, over the
   // serialised body so text inside a tool call's `arguments` is covered too.
   // No filter (the default) returns the same string untouched.
+  // The one nominal per-request line (doc §3.3/3.4).
+  reqSummary("ok", {
+    rid,
+    conn: connPrefix,
+    route,
+    fmt,
+    sel,
+    row: doneDetail.id,
+    ...doneFields({ usage, latency: { ttft: totalLatency, total: totalLatency } }),
+  });
+
   return {
     success: true,
     response: new Response(restoreResponseJson(privacyFilter, JSON.stringify(translatedResponse)), {
@@ -1000,7 +1027,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       // user needs for a billing dispute does not depend on whether they asked
       // for a stream.
       headers: withGenerationIdHeader(
-        { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          ...(rid ? { [RID_HEADER]: rid } : {}),
+        },
         providerResponse,
       )
     })

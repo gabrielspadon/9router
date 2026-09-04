@@ -61,14 +61,19 @@ export const TRIGGERS = {
 const keep = (pin, reason) => ({
   action: 'keep',
   connectionId: pin?.connectionId ?? null,
+  to: pin?.connectionId ?? null,
   from: pin?.connectionId ?? null,
   trigger: null,
   reason,
 });
 
+// `to` mirrors `connectionId` so a printer reads one vocabulary across all
+// three actions. The module stays pure: it returns the verdict, it never
+// prints it (docs/logging-design.md step 3.2).
 const none = (reason) => ({
   action: 'none',
   connectionId: null,
+  to: null,
   from: null,
   trigger: null,
   reason,
@@ -77,6 +82,7 @@ const none = (reason) => ({
 const move = (from, to, trigger, reason) => ({
   action: 'repin',
   connectionId: to,
+  to: to ?? null,
   from: from ?? null,
   trigger,
   reason,
@@ -132,7 +138,7 @@ function restockedSincePin(pin, cohort, targetId, nowMs) {
  *   for this decision.
  * @returns {{
  *   action: 'keep'|'repin'|'none', connectionId: string|null,
- *   from: string|null, trigger: string|null, reason: string
+ *   to: string|null, from: string|null, trigger: string|null, reason: string
  * }}
  *   `repin` covers the first pin too (`from` null, trigger `initial-pin`), so a
  *   caller has one write path rather than two. `none` means nothing can serve

@@ -1,5 +1,6 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, MAX_RATE_LIMIT_COOLDOWN_MS } from "../config/errorConfig.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { RID_HEADER } from "../../src/shared/observability/decide.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -84,11 +85,11 @@ export function retryAfterSeconds({ at = null, ms = null } = {}, now = Date.now(
 export function errorResponse(statusCode, message, options = {}) {
   const body = buildErrorBody(statusCode, message);
   if (options.failurePhase) body.error.failure_phase = options.failurePhase;
-
   const headers = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*"
   };
+  if (options.rid) headers[RID_HEADER] = options.rid;
   // Gate first, compute second: a terminal status must not even carry a
   // computed wait, however real the number behind it is.
   if (options.retryAfter && isRetryableStatus(statusCode)) {
@@ -361,14 +362,14 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, failureMetadata?: object }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, failureMetadata) {
+export function createErrorResult(statusCode, message, resetsAtMs, failureMetadata, rid = null) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
     ...(failureMetadata ? { failureMetadata } : {}),
-    response: errorResponse(statusCode, message)
+    response: errorResponse(statusCode, message, rid ? { rid } : {})
   };
 }
 
@@ -380,8 +381,9 @@ export function createErrorResult(statusCode, message, resetsAtMs, failureMetada
  * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"
  * @returns {Response}
  */
-export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
+export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, options = {}) {
   const headers = { "Content-Type": "application/json" };
+  if (options.rid) headers[RID_HEADER] = options.rid;
   // Same gate as errorResponse, same reason. `retryAfter` here is a real lock
   // expiry, but a 401 or 402 is terminal no matter how truthful the instant is.
   const mayAdvertiseWait = isRetryableStatus(statusCode);

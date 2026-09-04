@@ -218,6 +218,7 @@ export function normalizeAccountWindows(windows) {
       remaining,
       limit,
       resetAt,
+      observedAt: parseResetAt(w.observedAt),
       confidence: typeof w.confidence === 'string' ? w.confidence : 'unknown',
     });
   }
@@ -280,6 +281,7 @@ function resolveWindows(structural, nowMs) {
 // not take the account offline either. Confidence is a BAND applied after the
 // evidence band; inside a band the reset keys below apply unchanged.
 const CONFIDENCE_BAND = { fresh: 0, stale: 1, unknown: 2 };
+const BAND_NAME = ['fresh', 'stale', 'unknown'];
 function bandOf(orderable) {
   if (orderable.length === 0) return CONFIDENCE_BAND.unknown;
   return orderable.reduce((worst, w) => Math.max(worst, CONFIDENCE_BAND[w.confidence] ?? 2), 0);
@@ -294,6 +296,36 @@ function evidenceBandOf(orderable, unreadable) {
   return unreadable > 0 ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Decision trace. rankAccounts stays pure: it RETURNS {cls, verdict, fields}
+// entries (docs/logging-design.md rows 18-24) and never imports
+// observability/decide.js. auth.js walks the trace and prints it.
+// ---------------------------------------------------------------------------
+
+// Evidence age, folded into alt tokens as a short duration (30m, 2h, 3d).
+function ageToken(observedAts, nowMs) {
+  const finite = observedAts.filter(Number.isFinite);
+  if (!finite.length || !Number.isFinite(nowMs)) return null;
+  const mins = Math.max(0, Math.round((nowMs - Math.max(...finite)) / 60_000));
+  if (mins <= 0) return null;
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+const soonestResetOf = (windows) => {
+  const resets = (windows || []).map((w) => w.resetAt).filter(Number.isFinite);
+  return resets.length ? new Date(Math.min(...resets)).toISOString() : null;
+};
+
+const minRemainingOf = (windows) => {
+  const rems = (windows || []).map((w) => w.remaining).filter(Number.isFinite);
+  return rems.length ? Math.min(...rems) : null;
+};
+
+// Shape fingerprint for the cohort gate (§1): comparing accounts whose window
+// sets differ is worse than not ranking them at all.
 function priorityOf(account) {
   const p = Number(account?.priority);
   return Number.isFinite(p) ? p : Number.POSITIVE_INFINITY;
@@ -322,6 +354,69 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
     throw new TypeError('rankAccounts requires an injected numeric or Date `now`');
   }
   const list = Array.isArray(accounts) ? accounts : [];
+
+  // Trace helpers, built from the same records the ordering reads so the
+  // printed line and the decision can never disagree. `id8` keeps a connection
+  // id short enough to sit on one log line.
+  const id8 = (v) => String(v ?? '').slice(0, 8);
+  const altToken = (r) => {
+    const band = BAND_NAME[r.band] ?? 'unknown';
+    const age = ageToken((r.windows || []).map((w) => w.observedAt), nowMs);
+    return `${id8(r.id)}:${band}${age ? `:${age}` : ''}`;
+  };
+  // Which ordering key actually decided, named by replaying the comparator
+  // against the runner-up. Reporting the key the sort USED, rather than the
+  // first key that differs on paper, is what keeps the printed line honest
+  // when two accounts tie on everything down to declaration order.
+  const decidedKey = (a, b) => {
+    if (a.usable !== b.usable) return 'eligibility';
+    // Completeness (how much we could read) and confidence (how fresh what we
+    // read is) are both the evidence axis, and the printed line has one name
+    // for it. Minting a second enum would split a key the log format cannot
+    // tell apart anyway.
+    if (a.evidenceBand !== b.evidenceBand || a.band !== b.band) return 'evidence-band';
+    if (a.bindingResetAt !== b.bindingResetAt) return 'reset-horizon';
+    if (a.soonestResetAt !== b.soonestResetAt) return 'reset-horizon';
+    if ((a.id === previousPinId) !== (b.id === previousPinId)) return 'pinned-continuity';
+    if (a.priority !== b.priority) return 'configured-priority';
+    return 'fallback-order';
+  };
+  const winTrace = (winner, all) => {
+    const runnerUp = all.find((r) => r.usable && r.id !== winner.id);
+    // Key order is the printed order (decide.js walks Object.keys), and the
+    // golden capture in tests/__fixtures__ is the format contract, so this is
+    // conn/key/win/alt exactly as §3.4 of docs/logging-design.md shows it.
+    // The winner's own confidence band is deliberately absent: `key` already
+    // says `evidence-band` whenever the band is what decided, and printing it
+    // unconditionally spends bytes on every nominal line to say `fresh`.
+    const fields = {
+      conn: id8(winner.id),
+      key: runnerUp ? decidedKey(winner, runnerUp) : 'fallback-order',
+      win: true,
+      alt: all.filter((r) => r.id !== winner.id).slice(0, 3).map(altToken),
+    };
+    const rem = minRemainingOf(winner.windows);
+    if (rem !== null) fields.rem = rem;
+    const reset = soonestResetOf(winner.windows);
+    if (reset) fields.reset = reset;
+    return { cls: 'SEL', verdict: 'win', fields };
+  };
+
+  // Row 19 of docs/logging-design.md still owes the operator the offending id
+  // and the reason a reading could not be used. It is no longer a GATE — the
+  // cohort shape check that used to refuse the whole pool is gone, and an
+  // account we cannot read is ranked last and still served — so this is a
+  // report emitted BESIDE the ordering verdict rather than instead of it.
+  // First offender only: the rest are named by their `alt` band tokens, and a
+  // per-account entry each would push the line past its byte budget.
+  const evidenceTrace = (all) => {
+    const bad = all.find((r) => !r.valid || r.unreadable > 0);
+    if (!bad) return [];
+    const why = bad.valid
+      ? String(bad.reason || '').replace(/^partial-evidence:/, '').split(',')[0]
+      : bad.reason;
+    return [{ cls: 'RANK', verdict: 'invalid-record', fields: { conn: id8(bad.id), why } }];
+  };
 
   const records = list.map((account, index) => {
     const structural = normalizeAccountWindows(account?.windows);
@@ -356,6 +451,7 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
     return {
       ranked: [], eligible: [], ineligible: [], winner: null,
       degraded: false, reason: 'empty-cohort',
+      trace: [{ cls: 'RANK', verdict: 'degraded', fields: { win: false, why: 'empty-cohort' } }],
     };
   }
 
@@ -380,6 +476,20 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
       winner: eligible[0] || null,
       degraded: true,
       reason: 'no-quota-evidence',
+      // Every record on this path has unreadable evidence by construction, so
+      // evidenceTrace always names one and its reason — strictly more than a
+      // generic `why=no-quota-evidence` would. The outcome line follows: a
+      // fallback order that still hands out a slot is a serve, not a refusal.
+      trace: [
+        ...evidenceTrace(ranked),
+        ...(eligible[0]
+          ? [winTrace(eligible[0], ranked)]
+          : [{
+              cls: 'RANK',
+              verdict: 'depleted',
+              fields: { win: false, alt: ranked.map(altToken), reset: null },
+            }]),
+      ],
     };
   }
 
@@ -413,6 +523,20 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
     winner: eligible[0] || null,
     degraded: false,
     reason: eligible.length === 0 ? 'all-depleted' : null,
+    trace: [
+      ...evidenceTrace(ranked),
+      ...(eligible[0]
+        ? [winTrace(eligible[0], ranked)]
+        : [{
+            cls: 'RANK',
+            verdict: 'depleted',
+            fields: {
+              win: false,
+              alt: ranked.map(altToken),
+              reset: soonestResetOf(ranked.flatMap((r) => r.windows)),
+            },
+          }]),
+    ],
   };
 }
 

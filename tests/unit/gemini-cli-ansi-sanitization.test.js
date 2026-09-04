@@ -8,6 +8,7 @@ vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
   buildRequestDetail: vi.fn((detail, extra = {}) => ({ ...detail, ...extra })),
   extractRequestConfig: vi.fn(() => ({})),
   formatDoneLine: vi.fn(() => "done"),
+  doneFields: vi.fn(() => ({ t: 1, in: 9, out: 5, cr: 0, cw: 0, ttft: 1 })),
   saveUsageStats: vi.fn(),
 }));
 

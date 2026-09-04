@@ -1,6 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { trackPendingRequest, appendRequestLog } from "../../src/lib/usageDb.js";
 import { CLAUDE_BLOCK } from "../translator/schema/index.js";
 import { PROVIDERS } from "../config/providers.js";
 import { canonicalEchoModel } from "../services/model.js";

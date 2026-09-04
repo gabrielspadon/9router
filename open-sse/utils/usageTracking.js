@@ -3,6 +3,7 @@
  */
 
 import { FORMATS } from "../translator/formats.js";
+import { decide } from "../../src/shared/observability/decide.js";
 
 // Legacy per-chunk usage console line; off by default (superseded by "📊 done")
 const DEBUG_USAGE = process.env.LOG_USAGE_VERBOSE === "1";
@@ -271,8 +272,17 @@ export function resolveCacheTokens(usage) {
  * @param {object} usage - a normalizeUsage()-shaped object
  * @returns {object|null} canonical token object, or null for invalid input
  */
-export function canonicalizeUsage(usage) {
+export function canonicalizeUsage(usage, ctx = null) {
   if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  // The `cache_write_tokens` spelling no reader handled once silently zeroed
+  // every cache write (doc row 66): say so when it shows up.
+  if (Object.prototype.hasOwnProperty.call(usage, "cache_write_tokens")) {
+    decide("ACCT", "alias-dropped", {
+      ...(ctx?.conn ? { conn: ctx.conn } : {}),
+      ...(ctx?.model ? { model: String(ctx.model).slice(0, 60) } : {}),
+      why: "cache_write_tokens",
+    });
+  }
 
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);

@@ -106,18 +106,17 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
       return;
     }
 
-    log.info("BG_TOKEN_REFRESH", "Refreshing due OAuth connections", {
-      due: due.length,
-      providers: [...new Set(due.map((c) => c.provider).filter(Boolean))],
-    });
+    // A tick that refreshed everything it meant to refresh is nominal and
+    // stays silent at INFO: one DEBUG summary below names the counts, and
+    // failures keep speaking through the per-connection CRED lines and the
+    // warn in the catch.
+    let refreshed = 0;
 
     await Promise.allSettled(
       due.map(async (conn) => {
         try {
           await refresh(conn);
-          log.info("BG_TOKEN_REFRESH", "Connection refresh finished", {
-            provider: conn.provider,
-          });
+          refreshed += 1;
         } catch (err) {
           log.warn("BG_TOKEN_REFRESH", "Connection refresh failed (swallowed)", {
             provider: conn?.provider,
@@ -126,6 +125,11 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
         }
       })
     );
+
+    log.debug("BG_TOKEN_REFRESH", "Connection refresh tick finished", {
+      due: due.length,
+      refreshed,
+    });
   } catch (err) {
     log.warn("BG_TOKEN_REFRESH", "Tick failed (swallowed)", {
       error: err?.message ?? String(err),

@@ -59,15 +59,31 @@ export function isAdminMutation(method) {
  *   rather than the requireLogin escape hatch PROTECTED_API_PATHS allows.
  * @param {boolean} facts.inference - a valid inference API key was presented.
  * @param {boolean} facts.loopback - isLocalRequest() would accept this caller.
- * @returns {null|{status: number, code: string, error: string}} null to allow.
+ * @returns {{allow: true, by: 'operator'|'inference'|'loopback'}|
+ *   {allow: false, status: number, code: string, error: string,
+ *    presented?: string, required?: string, mutation?: true}}
+ *   Allow carries `by`, the first condition in operator/inference/loopback
+ *   order that satisfied the check, so "a gate check passed with no key at
+ *   all" is visible in the log (design doc row 6). Refusals carry the
+ *   `presented` and `required` credential classes (rows 7-8) and `mutation:
+ *   true` on the loopback-binding refusal, whose peer classification only the
+ *   collector (holding the Request) can name. `presented: 'none'` means no
+ *   VALID credential — a revoked or unrecognized key lands there too.
+ *   `status`/`code`/`error` are the frozen admin ABI wire fields; they never
+ *   change here, and the collectors must not add them to a log line.
  */
 export function adminDecision({ authClass, mutating, operator, inference, loopback }) {
   if (authClass === 'inference') {
-    if (operator || inference || loopback) return null;
+    if (operator) return { allow: true, by: 'operator' };
+    if (inference) return { allow: true, by: 'inference' };
+    if (loopback) return { allow: true, by: 'loopback' };
     return {
+      allow: false,
       status: 401,
       code: 'unauthorized',
       error: 'An inference API key or a loopback origin is required for this endpoint.',
+      presented: 'none',
+      required: 'inference',
     };
   }
 
@@ -77,28 +93,36 @@ export function adminDecision({ authClass, mutating, operator, inference, loopba
   if (!operator) {
     return inference
       ? {
+          allow: false,
           status: 403,
           code: 'forbidden_class',
           error:
             'An operator credential is required. An inference API key does not satisfy this endpoint.',
+          presented: 'inference',
+          required: 'operator',
         }
       : {
+          allow: false,
           status: 401,
           code: 'unauthorized',
           error: 'An operator credential (CLI token or dashboard session) is required.',
+          presented: 'none',
+          required: 'operator',
         };
   }
 
   if (mutating && !loopback) {
     return {
+      allow: false,
       status: 403,
       code: 'forbidden_loopback',
       error:
         'State-changing admin endpoints are loopback-bound. Reach them through a tunnel that terminates as a loopback peer.',
+      mutation: true,
     };
   }
 
-  return null;
+  return { allow: true, by: 'operator' };
 }
 
 export function adminError(status, code, error, extra = null) {

@@ -443,6 +443,29 @@ function clientCacheAnchors(body) {
   return anchored;
 }
 
+/**
+ * Count cache_control blocks across system/tools/messages(+content), the same
+ * surface clientCacheAnchors walks. chatCore classifies XFORM.cache-keep vs
+ * XFORM.cache-legacy by comparing this count before and after translation.
+ */
+export function countCacheAnchors(body) {
+  if (!body || typeof body !== "object") return 0;
+  let count = 0;
+  const visit = (block) => {
+    if (!block || typeof block !== "object") return;
+    const cc = block.cache_control;
+    if (cc?.type === "ephemeral" && (cc.ttl === undefined || cc.ttl === "5m" || cc.ttl === "1h")) count += 1;
+  };
+  if (Array.isArray(body.system)) body.system.forEach(visit);
+  if (Array.isArray(body.tools)) body.tools.forEach(visit);
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (Array.isArray(msg.content)) msg.content.forEach(visit);
+    }
+  }
+  return count;
+}
+
 export function anchorClaudeCache(body) {
   if (!body || typeof body !== "object") return body;
   // Valid client breakpoints are kept verbatim (per-request cache-prefix

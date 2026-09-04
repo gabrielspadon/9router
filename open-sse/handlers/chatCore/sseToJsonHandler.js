@@ -9,7 +9,7 @@ import {
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine, doneFields } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { resolveResponsesToolCall } from "../../translator/response/openai-responses.js";
 import { stripJsonFence, unfenceJsonChoices, wantsJsonOutput } from "../../utils/jsonFence.js";
@@ -61,7 +61,8 @@ const CLASSIFIER_GEMINI_PART_FIELDS = new Set([
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
-import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
+import { saveRequestDetail, appendRequestLog } from "../../../src/lib/usageDb.js";
+import { decide, req, reqSummary, RID_HEADER } from "../../../src/shared/observability/decide.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -404,7 +405,7 @@ function assertClassifierGeminiSseLossless(rawSSE) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, reqTag, log, callerSignal }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, reqTag, log, callerSignal, rid, route, fmt, sel }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -419,15 +420,21 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     pendingCleared = true;
     trackDone();
   };
-  const bodyReadFailure = (error) => {
+  const connPrefix = connectionId ? String(connectionId).slice(0, 8) : undefined;
+  const bodyReadFailure = (error, context = "convert-sse-json") => {
     trackDoneOnce();
     if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
     if (isBodyReadTimeoutError(error)) {
-      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`);
+      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
     }
+    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: context.slice(0, 40) });
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Failed to convert streaming response to JSON",
+      null,
+      null,
+      rid,
     );
   };
 
@@ -451,7 +458,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   }
 
   const ctx = {
-    provider, model, connectionId,
+    provider, model, connectionId, rid,
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null
   };
@@ -526,15 +533,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       if (provider === "antigravity" && !hasUsefulOutput) {
         trackDoneOnce();
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+        decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
+        reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
       }
       trackDoneOnce();
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true });
-      if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true, rid });
 
       // Same cache-inclusive total for the recorded detail, so the DB and the
       // client-facing usage can never disagree.
@@ -546,13 +554,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const textContent = wantsJsonOutput(body) ? stripJsonFence(rawTextContent) : rawTextContent;
       const totalLatency = Date.now() - requestStartTime;
 
-      saveRequestDetail(buildRequestDetail({
+      const doneDetail = buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: inTokensForLog, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
-        status: "success"
-      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+        status: "success",
+        rid,
+      }, { endpoint: clientRawRequest?.endpoint || null });
+      // saveRequestDetail mints detail.id synchronously (before its first await).
+      saveRequestDetail(doneDetail).catch(() => {
+        decide("ACCT", "detail-write-failed", { rid, phase: "save-json" });
+      });
 
       if (provider === "antigravity") {
         await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
@@ -560,7 +573,25 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+        reqSummary("ok", {
+          rid,
+          conn: connPrefix,
+          route,
+          fmt,
+          sel,
+          row: doneDetail.id,
+          ...doneFields({ usage, latency: { ttft: totalLatency, total: totalLatency } }),
+        });
+        return {
+          success: true,
+          response: new Response(JSON.stringify(jsonResponse), {
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+              ...(rid ? { [RID_HEADER]: rid } : {}),
+            },
+          }),
+        };
       }
 
       // Build client-format response.
@@ -666,12 +697,34 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         );
       }
 
-      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      reqSummary("ok", {
+        rid,
+        conn: connPrefix,
+        route,
+        fmt,
+        sel,
+        row: doneDetail.id,
+        ...doneFields({ usage, latency: { ttft: totalLatency, total: totalLatency } }),
+      });
+      return {
+        success: true,
+        response: new Response(JSON.stringify(finalResp), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            ...(rid ? { [RID_HEADER]: rid } : {}),
+          },
+        }),
+      };
     } catch (err) {
       if (err instanceof ClaudeClassifierValidationError) {
+        reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
         return createErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+          null,
+          null,
+          rid,
         );
       }
       console.error("[ChatCore] Responses API SSE→JSON failed:", provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err);
@@ -687,18 +740,26 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     let parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       trackDoneOnce();
+      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "invalid-sse" });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
+        null,
+        null,
+        rid,
       );
     }
     if (parsed.error) {
       trackDoneOnce();
+      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-in-sse" });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity"
           ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
-          : parsed.error.message || "Upstream SSE stream failed"
+          : parsed.error.message || "Upstream SSE stream failed",
+        null,
+        null,
+        rid,
       );
     }
 
@@ -707,7 +768,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     if (provider === "antigravity" && !hasUsefulOutput) {
       trackDoneOnce();
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
+      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
     }
 
     trackDoneOnce();
@@ -715,11 +778,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     const usage = parsed.usage || {};
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true });
-    if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, silent: true, rid });
 
     const totalLatency = Date.now() - requestStartTime;
-    saveRequestDetail(buildRequestDetail({
+    const doneDetail = buildRequestDetail({
       ...ctx,
       latency: { ttft: totalLatency, total: totalLatency },
       tokens: usage,
@@ -728,8 +790,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
-      status: "success"
-    }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      status: "success",
+      rid,
+    }, { endpoint: clientRawRequest?.endpoint || null });
+    // saveRequestDetail mints detail.id synchronously (before its first await).
+    saveRequestDetail(doneDetail).catch(() => {
+      decide("ACCT", "detail-write-failed", { rid, phase: "save-json" });
+    });
 
     // Re-attach usage explicitly. This handler already HAS the correct usage — it is
     // the same object written to the usage DB, and for a cached Claude request that DB
@@ -779,12 +846,34 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
     }
 
-    return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    reqSummary("ok", {
+      rid,
+      conn: connPrefix,
+      route,
+      fmt,
+      sel,
+      row: doneDetail.id,
+      ...doneFields({ usage, latency: { ttft: totalLatency, total: totalLatency } }),
+    });
+    return {
+      success: true,
+      response: new Response(JSON.stringify(finalBody), {
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          ...(rid ? { [RID_HEADER]: rid } : {}),
+        },
+      }),
+    };
   } catch (err) {
     if (err instanceof ClaudeClassifierValidationError) {
+      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         CLAUDE_CLASSIFIER_ERROR_MESSAGE,
+        null,
+        null,
+        rid,
       );
     }
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : err);

@@ -155,7 +155,33 @@ describe("runBackgroundTokenRefreshTick", () => {
     expect(refreshConnection).not.toHaveBeenCalled();
   });
 
-  it("logs refresh progress without connection identifiers", async () => {
+  it("stays silent at INFO on a fully successful tick", async () => {
+    const completed = conn({
+      id: "connection-id-must-never-log-completed",
+      provider: "codex",
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const refreshConnection = vi.fn(async () => {});
+
+    const { runBackgroundTokenRefreshTick } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+
+    await runBackgroundTokenRefreshTick({
+      loadConnections: async () => [completed],
+      refreshConnection,
+    });
+
+    // A tick that refreshed everything it meant to refresh is nominal: no
+    // INFO narration, no warn. (The DEBUG summary is a separate test below.)
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("still names the provider on a failed refresh and never logs connection ids", async () => {
     const completed = conn({
       id: "connection-id-must-never-log-completed",
       provider: "codex",
@@ -182,8 +208,41 @@ describe("runBackgroundTokenRefreshTick", () => {
     const output = [...logSpy.mock.calls, ...warnSpy.mock.calls].flat().join(" ");
     expect(output).not.toContain(completed.id);
     expect(output).not.toContain(failed.id);
-    expect(output).toContain("codex");
     expect(output).toContain("grok-cli");
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("keeps exactly one DEBUG tick summary under LOG_LEVEL=DEBUG", async () => {
+    vi.stubEnv("LOG_LEVEL", "DEBUG");
+    vi.resetModules();
+    const completed = conn({ id: "c-ok", provider: "codex" });
+    const failed = conn({ id: "c-fail", provider: "grok-cli" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const refreshConnection = vi.fn(async (connection) => {
+      if (connection === failed) throw new Error("upstream rejected refresh");
+    });
+
+    const { runBackgroundTokenRefreshTick } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+
+    await runBackgroundTokenRefreshTick({
+      loadConnections: async () => [completed, failed],
+      refreshConnection,
+    });
+
+    const summaries = logSpy.mock.calls
+      .flat()
+      .filter((l) => l.includes("Connection refresh tick finished"));
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toContain('"due":2');
+    expect(summaries[0]).toContain('"refreshed":1');
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("swallows top-level load errors", async () => {

@@ -118,7 +118,12 @@ export function selectAndReserve({
 
   return runInTransaction(repos, () => {
     if (candidates.length === 0) {
-      return { unavailable: true, retryAfter: RETRY_AFTER_SECONDS, reason: 'no-accounts' };
+      return {
+        unavailable: true,
+        retryAfter: RETRY_AFTER_SECONDS,
+        reason: 'no-accounts',
+        trace: [{ cls: 'SEL', verdict: 'refused', fields: { why: 'no-accounts' } }],
+      };
     }
 
     // Rule 4: the pin is read INSIDE the transaction. Read outside it, a
@@ -127,7 +132,7 @@ export function selectAndReserve({
     const pin = typeof repos.getPin === 'function' ? repos.getPin({ sessionHash, model }) : null;
     const previousPinId = typeof pin?.connectionId === 'string' ? pin.connectionId : null;
 
-    const { ranked, eligible, degraded, reason: rankReason } = rankAccounts(candidates, { now: nowMs, previousPinId });
+    const { ranked, eligible, degraded, reason: rankReason, trace: rankingTrace } = rankAccounts(candidates, { now: nowMs, previousPinId });
 
     // Rule 4 (keep a healthy pin) AND rule 5 (atomically return to the
     // earliest account that restored while a later one was serving) are
@@ -137,6 +142,33 @@ export function selectAndReserve({
     // merely available all along, which is what keeps rule 5 from spraying a
     // session across every account that ever edges ahead on ranking.
     const repin = decideRepin({ pin, accounts: candidates, now: nowMs });
+    // The repin verdict as a trace entry, in the design's vocabulary. The
+    // scheduler never prints: auth.js walks `trace` and calls decide().
+    // pin-hit is NOMINAL (row 29: silent, carried to the caller for REQ sel=).
+    const id8 = (v) => String(v ?? '').slice(0, 8);
+    const SEL_TRIGGER = {
+      [TRIGGERS.INITIAL_PIN]: 'initial-pin',
+      [TRIGGERS.RESET]: 'quota-reset',
+      [TRIGGERS.UNAVAILABLE]: 'unavailable',
+    };
+    // action 'none' contributes nothing on the success path: a degraded
+    // cohort still serves from the fallback order, so a refusal line here
+    // would describe a refusal that never happened. The refusal entries are
+    // added at the two exits that actually refuse (below).
+    const repinTrace = repin.action === 'keep'
+      ? [{ cls: 'SEL', verdict: 'pin-hit', fields: { conn: id8(repin.to), why: repin.reason } }]
+      : repin.action === 'none'
+        ? []
+        : [{
+            cls: 'SEL',
+            verdict: repin.trigger === TRIGGERS.EXHAUSTION ? 'pin-expired' : 'repin',
+            fields: {
+              from: repin.from ? id8(repin.from) : 'none',
+              to: id8(repin.to),
+              trigger: SEL_TRIGGER[repin.trigger] ?? repin.trigger,
+              why: repin.reason,
+            },
+          }];
     // ELIGIBILITY IS NOT NEGOTIABLE, degraded or not. This read `degraded ?
     // ranked : eligible`, and `ranked` carries every record including the ones
     // whose quota is provably at its limit, so a pool whose accounts disagreed
@@ -171,15 +203,26 @@ export function selectAndReserve({
         // of them comes back. Handing that up is what lets the caller quote a
         // real reset instead of the one-second floor.
         earliestResetAt: earliestReset(candidates, nowMs),
+        trace: [
+          ...(rankingTrace || []),
+          ...repinTrace,
+          { cls: 'SEL', verdict: 'refused', fields: { why: 'none-eligible' } },
+        ],
       };
     }
 
     // Walk the ranked order and take the first slot that is actually free.
     // Reservation is what proves availability; a capacity READ followed by a
     // separate take is the over-admission this rule exists to prevent.
+    // Slot-walk skips are folded for the caller: who was tried and refused,
+    // max 3, the rest counted (docs/logging-design.md row 28).
+    const skipped = [];
     for (const record of preferred) {
       const lease = registry.reserve(record.id);
-      if (!lease) continue;
+      if (!lease) {
+        skipped.push(`${String(record.id).slice(0, 8)}:capacity`);
+        continue;
+      }
 
       const switched = previousPinId !== null && previousPinId !== record.id;
       const isFirstPin = previousPinId === null;
@@ -217,20 +260,63 @@ export function selectAndReserve({
           sessionHash,
           now: nowMs,
         });
-        if (typeof repos.recordSwitch === 'function') repos.recordSwitch(receipt);
+        if (typeof repos.recordSwitch === 'function') {
+          // The recorded row's id is what SEL.repin references as rcpt= — the
+          // receipt content lives in accountSwitches once, never duplicated
+          // into the log line.
+          const recorded = repos.recordSwitch(receipt);
+          if (recorded?.id) receipt = { ...receipt, id: recorded.id };
+        }
       }
+
+      const skippedTrace = skipped.length
+        ? [{
+            cls: 'SEL',
+            verdict: 'skipped',
+            fields: {
+              alt: skipped.slice(0, 3),
+              ...(skipped.length > 3 ? { more: skipped.length - 3 } : {}),
+            },
+          }]
+        : [];
 
       return {
         connection: record.account,
         lease,
         receipt,
         reason: isFirstPin ? 'first-pin' : switched ? 'repin' : 'pinned',
+        repin,
+        skipped,
+        trace: [...(rankingTrace || []), ...repinTrace, ...skippedTrace],
       };
     }
 
     // Every eligible account is at capacity. overlay-spec §4: this is a WAIT
     // condition with a nonzero retry-after, not a hard failure — the caller
     // queues and retries rather than seeing a 503 while entitlement is free.
-    return { unavailable: true, retryAfter: RETRY_AFTER_SECONDS, reason: 'at-capacity' };
+    return {
+      unavailable: true,
+      retryAfter: RETRY_AFTER_SECONDS,
+      reason: 'at-capacity',
+      trace: [
+        ...(rankingTrace || []),
+        ...repinTrace,
+        ...(skipped.length
+          ? [{
+              cls: 'SEL',
+              verdict: 'skipped',
+              fields: {
+                alt: skipped.slice(0, 3),
+                ...(skipped.length > 3 ? { more: skipped.length - 3 } : {}),
+              },
+            }]
+          : []),
+        {
+          cls: 'SEL',
+          verdict: 'refused',
+          fields: { why: repin.action === 'none' ? 'none-eligible' : 'lease-refused' },
+        },
+      ],
+    };
   });
 }

@@ -12,6 +12,7 @@ vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
   extractUsageFromResponse: vi.fn(() => ({})),
   saveUsageStats: vi.fn(),
   formatDoneLine: vi.fn(() => "done"),
+  doneFields: vi.fn(() => ({ t: 1, in: 9, out: 5, cr: 0, cw: 0, ttft: 1 })),
 }));
 
 const { handleNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
