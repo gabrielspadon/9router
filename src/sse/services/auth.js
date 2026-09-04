@@ -41,6 +41,7 @@ import {
 } from "./accountLeaseRegistry.js";
 import { effectiveCapacity } from "@/shared/utils/accountCapacity.js";
 import { toRankerWindows } from "@/shared/utils/quotaWindowBridge.js";
+import { buildSwitchReceipt } from "@/shared/utils/switchReceipt.js";
 import { putWindows } from "@/lib/db/repos/quotaWindowsRepo.js";
 import * as log from "../utils/logger.js";
 import { collectClientApiKeyCandidates } from "@/lib/auth/clientApiKey";
@@ -116,6 +117,71 @@ function resolveRoutingSessionHash(options, providerId) {
     .update(`${providerId}:${sessionId || "anonymous"}`)
     .digest("hex")
     .slice(0, 32);
+}
+
+/**
+ * Make an OPERATOR pin durable, the way selectAndReserve makes the scheduler's
+ * own choice durable.
+ *
+ * WHY THIS EXISTS. The operator branch below reserved a lease and returned,
+ * calling neither setPin nor touchPin, so every request an operator pinned on
+ * purpose -- a combo member, a same-request replay, an `x-connection-id` call --
+ * left sessionAffinity untouched. A session served entirely through that branch
+ * had no durable pin at all, and one that already had a pin could not tell a
+ * reused pin from a writer that was never reached. That is the provider-side
+ * prompt-cache locality the pin exists to protect, lost for exactly the traffic
+ * that asked for it.
+ *
+ * WHAT IT DOES NOT DO. It does not give the pin a vote. The operator named this
+ * account and it has already been chosen by the time this runs; the pin RECORDS
+ * that decision so later requests of the same session inherit it, and never
+ * overrules it. The three writes mirror accountScheduler.js:139-147 exactly: a
+ * first selection sets, a same-account reuse touches lastSeenAt and leaves
+ * pinnedAt where decideRepin re-ranks from, and a move off a live pin is a
+ * switch, so rule 8 gets its receipt. The `operator-pin` trigger keeps that
+ * receipt distinguishable from a ranker-driven `repin` in the audit log.
+ *
+ * READ AND WRITE INSIDE ONE TRANSACTION, for rule 4's reason: read outside it
+ * and a concurrent repin lands between the read and the write, leaving two
+ * answers to a question with one answer. The adapter is resolved BEFORE the
+ * transaction opens, because db.transaction(fn) is synchronous.
+ *
+ * FAILURE DIRECTION. Affinity is a locality optimisation, never an admission
+ * gate, and the lease is ALREADY held by the time this runs. A throw here would
+ * escape getProviderCredentials with a reserved slot nobody downstream knows
+ * about, which is the one leak this file otherwise guards against by hand. So a
+ * failed write is logged and swallowed: the request proceeds on the account the
+ * operator chose, and the session simply reads as new next time.
+ */
+async function persistOperatorPin({ sessionHash, model, connection, windows, nowMs }) {
+  const connectionId = connection?.id;
+  if (!sessionHash || !model || !connectionId) return null;
+  const at = new Date(nowMs).toISOString();
+  try {
+    const repos = await createSchedulerRepos({ now: nowMs });
+    return repos.transaction(() => {
+      const previousPinId = repos.getPin({ sessionHash, model })?.connectionId ?? null;
+      if (previousPinId === connectionId) {
+        repos.touchPin({ sessionHash, model, at });
+        return { reason: "pinned", receipt: null };
+      }
+      repos.setPin({ sessionHash, model, connectionId, at });
+      const trigger = previousPinId === null ? "first-pin" : "operator-pin";
+      const receipt = repos.recordSwitch(buildSwitchReceipt({
+        from: previousPinId,
+        to: connectionId,
+        windows: windows || [],
+        trigger,
+        model,
+        sessionHash,
+        now: nowMs,
+      }));
+      return { reason: trigger, receipt };
+    });
+  } catch (error) {
+    log.warn("AUTH", `operator pin not persisted: ${error?.message || error}`);
+    return null;
+  }
 }
 
 // Re-exported so a handler keeps ONE import for "select an account and give
@@ -484,6 +550,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           lastErrorCode: null,
           clientErrorStatus: null,
         };
+      }
+
+      // The slot is proven free and this account WILL serve the request, so the
+      // binding is real and gets recorded. Placed after the reservation on
+      // purpose: pinning ahead of it would bind a session to an account that
+      // refused it.
+      const pinned = await persistOperatorPin({
+        sessionHash: resolveRoutingSessionHash(options, providerId),
+        model: model || MODEL_ANY,
+        connection,
+        windows: windowsByConnection[connection.id],
+        nowMs,
+      });
+      if (pinned?.receipt) {
+        log.info(
+          "AUTH",
+          `${provider} | affinity ${pinned.reason} → ${connection.id?.slice(0, 8)}`
+          + ` from ${pinned.receipt.fromConnectionId?.slice(0, 8) || "none"}`
+        );
       }
     } else {
       // The scheduler decides: the ranker orders by expiring entitlement, the
