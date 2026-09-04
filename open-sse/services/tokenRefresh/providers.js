@@ -23,7 +23,8 @@ export function refreshProxyOptions(credentials) {
   };
 }
 
-import { dedupRefresh } from "./dedup.js";
+import { dedupRefresh, tokenFingerprint, chainPeers, connsLabel } from "./dedup.js";
+import { decide } from "../../../src/shared/observability/decide.js";
 
 // A refresh runs inline on the chat request that triggered it, so an upstream
 // that returns response headers and then goes silent held that request open for
@@ -124,20 +125,95 @@ function buildRefreshBody(profile, config, refreshToken) {
   return { format: "form", body: new URLSearchParams(payload) };
 }
 
+// ─── CRED decision points (docs/logging-design.md §2 rows 42-43, 46) ────────
+
+/** conn identity mirrors the getRefreshLockKey cascade in
+ *  oauthCredentialManager.js: refreshAccessToken sees the credential bag,
+ *  not the connection. 8-char prefix, same as the log schema. */
+function credConn(credentials, refreshToken) {
+  const id =
+    credentials?.connectionId ||
+    credentials?.id ||
+    credentials?.email ||
+    credentials?.name ||
+    refreshToken?.slice?.(-16) ||
+    "default";
+  return String(id).slice(0, 8);
+}
+
+// Per-connection refresh-token issue record: which fingerprint was issued
+// when. firstSeen seeds from the persisted refreshTokenIssuedAt field
+// (src/sse/services/tokenRefresh.js updateProviderCredentials), else the
+// first time this process saw the connection hold this fp. Bounded Map so
+// the registry cannot become the leak.
+const ISSUE_MAX = 512;
+const issueRecords = new Map();
+
+// chain-diverged fires at most once per (conn, held fp)
+const DIVERGED_MAX = 512;
+const divergedFired = new Set();
+
+function issueRecord(conn, fp0, credentials) {
+  const persistedMs = Date.parse(credentials?.refreshTokenIssuedAt || "");
+  const existing = issueRecords.get(conn);
+  let rec;
+  if (existing && existing.fp === fp0) {
+    rec = existing;
+    if (Number.isFinite(persistedMs) && persistedMs < rec.firstSeen) {
+      rec.firstSeen = persistedMs;
+    }
+  } else {
+    rec = { fp: fp0, firstSeen: Number.isFinite(persistedMs) ? persistedMs : Date.now() };
+  }
+  issueRecords.set(conn, rec);
+  if (issueRecords.size > ISSUE_MAX) {
+    issueRecords.delete(issueRecords.keys().next().value);
+  }
+  return rec;
+}
+
+/** Age of the issued token, rendered compactly: 41m / 3h / 2d. */
+export function formatIssueAge(firstSeen, now = Date.now()) {
+  const mins = Math.max(0, Math.round((now - firstSeen) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+/** Closed discriminator parsed from a provider error body. Never a free-form
+ *  provider message: the log carries the enum, not the payload (§3.3). */
+export function refreshFailureWhy(errorText) {
+  try {
+    const body = JSON.parse(errorText);
+    const err = body?.error ?? body;
+    if (err === "invalid_grant" || err === "invalid_client") return err;
+  } catch { /* not a JSON body — fall through */ }
+  return "http";
+}
+
 export async function refreshAccessToken(provider, refreshToken, credentials, log) {
   const config = PROVIDERS[provider];
   const profile = REFRESH_PROFILES[provider] || {};
   const url = resolveRefreshUrl(provider, config, profile);
+  const conn = credConn(credentials, refreshToken);
+  const prov = String(provider).slice(0, 8);
 
   if (!config || !url) {
+    decide("CRED", "no-refresh-path", { conn, prov, which: "url" });
     log?.warn?.("TOKEN_REFRESH", `No refresh URL configured for provider: ${provider}`);
     return null;
   }
 
   if (!refreshToken) {
+    decide("CRED", "no-refresh-path", { conn, prov, which: "token" });
     log?.warn?.("TOKEN_REFRESH", `No refresh token available for provider: ${provider}`);
     return null;
   }
+
+  const fp0 = tokenFingerprint(refreshToken);
+  const issued = issueRecord(conn, fp0, credentials);
+  const age = () => formatIssueAge(issued.firstSeen);
 
   const dedupKey = profile.dedupKey || provider;
 
@@ -153,6 +229,26 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
 
     if (!response.ok) {
       const errorText = await response.text();
+      const why = refreshFailureWhy(errorText);
+      decide("CRED", "refresh-failed", {
+        conn, prov, status: response.status, why, fp0, age: age(),
+      });
+      if (why === "invalid_grant" && credentials?.refreshTokenFp === fp0
+          && !!credentials?.refreshTokenIssuedAt) {
+        // The issuer rejected the exact token we were issued: someone else
+        // rotated this chain (docs/logging-design.md §1.5, §3.4).
+        const dk = `${conn}:${fp0}`;
+        if (!divergedFired.has(dk)) {
+          divergedFired.add(dk);
+          if (divergedFired.size > DIVERGED_MAX) {
+            divergedFired.delete(divergedFired.values().next().value);
+          }
+          decide("CRED", "chain-diverged", {
+            conn, prov, fp0, fp: "unknown", why: "issuer-rejected-held-token",
+            peers: connsLabel(chainPeers(fp0, conn)),
+          });
+        }
+      }
       log?.error?.("TOKEN_REFRESH", `Failed to refresh token for ${provider}`, {
         status: response.status,
         error: errorText,
@@ -168,6 +264,12 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       expiresIn: tokens.expires_in,
     });
 
+    const fp = tokenFingerprint(tokens.refresh_token || refreshToken);
+    if (fp !== fp0) {
+      decide("CRED", "rotated", { conn, prov, fp0, fp });
+      issueRecords.set(conn, { fp, firstSeen: Date.now() });
+    }
+
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || refreshToken,
@@ -175,12 +277,13 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       ...(profile.parse ? (profile.parse(tokens) || {}) : {}),
     };
   } catch (error) {
+    decide("CRED", "refresh-failed", { conn, prov, why: "network", fp0, age: age() });
     log?.error?.("TOKEN_REFRESH", `Error refreshing token for ${provider}`, {
       error: error.message,
     });
     return null;
   }
-  }, log);
+  }, log, conn);
 }
 
 // CLIProxyAPI DeviceFlowClient.RefreshToken: form body (no client_secret) + X-Msh-* headers

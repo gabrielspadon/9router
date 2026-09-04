@@ -1,6 +1,7 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { getProviderConnectionById, updateProviderConnection } from "../../lib/localDb.js";
+import { tokenFingerprint } from "open-sse/services/tokenRefresh/dedup.js";
 import {
   getProjectIdForConnection,
   removeConnection,
@@ -160,7 +161,18 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     const updates = {};
 
     if (newCredentials.accessToken)         updates.accessToken  = newCredentials.accessToken;
-    if (newCredentials.refreshToken)        updates.refreshToken = newCredentials.refreshToken;
+    if (newCredentials.refreshToken) {
+      updates.refreshToken = newCredentials.refreshToken;
+      // Additive issue record for CRED.age/chain-diverged
+      // (docs/logging-design.md §2 row 42): firstSeen/fp restart only on a
+      // real rotation, so an unchanged token keeps its original age.
+      const current = await getProviderConnectionById(connectionId);
+      if (!current?.refreshTokenIssuedAt
+          || (current.refreshToken && current.refreshToken !== newCredentials.refreshToken)) {
+        updates.refreshTokenIssuedAt = new Date().toISOString();
+        updates.refreshTokenFp = tokenFingerprint(newCredentials.refreshToken);
+      }
+    }
     if (newCredentials.idToken)             updates.idToken = newCredentials.idToken;
     if (newCredentials.lastRefreshAt)       updates.lastRefreshAt = newCredentials.lastRefreshAt;
     if (newCredentials.expiresAt)           updates.expiresAt = newCredentials.expiresAt;
