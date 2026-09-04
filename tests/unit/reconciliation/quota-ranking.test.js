@@ -174,15 +174,20 @@ describe('quotaRanking: eligibility requires headroom in EVERY known hard window
     expect(res.ineligible.map((r) => r.id)).toEqual(['b']);
   });
 
-  it('a cohort with no usable account degrades instead of picking one', () => {
+  it('reports every account depleted without calling it a refusal to rank', () => {
     const accounts = [
       { id: 'a', windows: [w('weekly (7d)', 0, 5000, iso(6 * DAY))] },
       { id: 'b', windows: [w('weekly (7d)', 0, 5000, iso(5 * DAY))] },
     ];
     const res = rankAccounts(accounts, { now: NOW });
-    expect(res.degraded).toBe(true);
-    expect(res.reason).toBe('cohort-all-depleted');
+    // Ranking RAN and eligibility answered: nothing has headroom. That is a
+    // different fact from `degraded`, which now means only "no account carried
+    // a deadline at all", and conflating the two is what let a caller read an
+    // empty eligible set as permission to fall back to list order.
+    expect(res.degraded).toBe(false);
+    expect(res.reason).toBe('all-depleted');
     expect(res.winner).toBeNull();
+    expect(res.eligible).toEqual([]);
     // Still retained as failover inventory (§10), never deactivated.
     expect(res.ranked).toHaveLength(2);
   });
@@ -242,17 +247,23 @@ describe('quotaRanking: null resetAt is not usable entitlement (overlay-spec §1
     expect(r.reason).toBe('bad-resetAt:weekly (7d)');
   });
 
-  it('degrades the whole cohort to previous-pin order when one member has a null resetAt', () => {
+  it('ranks a member with a null resetAt LAST instead of taking the pool down with it', () => {
     const accounts = [
       { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(6 * DAY))] },
       { id: 'b', windows: [w('weekly (7d)', 0, 5000, null)] },
     ];
     const res = rankAccounts(accounts, { now: NOW, previousPinId: 'a' });
-    expect(res.degraded).toBe(true);
-    expect(res.reason).toContain('bad-resetAt');
-    expect(res.winner).toBeNull();
-    // Fallback is previous-pin-first in original order, never an abort.
+    // The pool still ranks. An account we cannot read is a worse bet than one
+    // we can, so it sorts behind every readable account — but an evidence gap
+    // is not evidence of depletion, so it is never taken out of service, and
+    // it never drags a readable sibling out of ranking either.
+    expect(res.degraded).toBe(false);
+    expect(res.winner.id).toBe('a');
     expect(res.ranked.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(res.eligible.map((r) => r.id)).toEqual(['a', 'b']);
+    const b = res.ranked.find((r) => r.id === 'b');
+    expect(b.evidenceBand).toBe(2);
+    expect(b.reason).toContain('bad-resetAt');
   });
 
   it('rejects an unparseable resetAt on the same strict grounds', () => {
@@ -261,8 +272,13 @@ describe('quotaRanking: null resetAt is not usable entitlement (overlay-spec §1
   });
 });
 
-describe('quotaRanking: cohort gate and clock injection', () => {
-  it('degrades when window shapes differ across the cohort', () => {
+describe('quotaRanking: mixed window shapes and clock injection', () => {
+  it('ranks a mixed-shape pool on each account own binding window', () => {
+    // A reports one window, B reports two. This is not an anomaly, it is what
+    // a real pool looks like: plan tier and recent usage both change which
+    // windows a provider reports, and an account that has not touched its 5h
+    // window in the current period reports no 5h window at all. Requiring one
+    // shared shape refused to rank roughly a third of live switches.
     const accounts = [
       { id: 'a', windows: [w('weekly (7d)', 900, 5000, iso(3 * DAY))] },
       {
@@ -271,8 +287,30 @@ describe('quotaRanking: cohort gate and clock injection', () => {
       },
     ];
     const res = rankAccounts(accounts, { now: NOW });
+    expect(res.degraded).toBe(false);
+    // Both main quotas reset at 3d, so the binding key ties and the nearest
+    // deadline of any horizon decides: B holds 90 units that are gone in an
+    // hour, so B is what has to be spent first or lost.
+    expect(res.ranked.map((r) => r.bindingResetAt)).toEqual([
+      Date.parse(iso(3 * DAY)),
+      Date.parse(iso(3 * DAY)),
+    ]);
+    expect(res.eligible.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(res.winner.id).toBe('b');
+  });
+
+  it('degrades ONLY when no account anywhere carries a deadline', () => {
+    const res = rankAccounts([{ id: 'a', windows: [] }, { id: 'b', windows: [] }], {
+      now: NOW,
+      previousPinId: 'b',
+    });
     expect(res.degraded).toBe(true);
-    expect(res.reason).toBe('cohort-shape-mismatch');
+    expect(res.reason).toBe('no-quota-evidence');
+    // An ordering fallback, never an eligibility one: with no evidence there
+    // is nothing that could prove either account depleted, so both stay
+    // routable and the previous pin leads.
+    expect(res.eligible.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(res.winner.id).toBe('b');
   });
 
   it('short-circuits a single-member cohort with no ranking work', () => {

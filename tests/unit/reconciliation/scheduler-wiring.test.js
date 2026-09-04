@@ -306,7 +306,10 @@ describe('E1.1w: getProviderCredentials selects through the scheduler', () => {
     const repin = receipts[1];
     expect(repin.fromConnectionId).toBe('alpha');
     expect(repin.toConnectionId).toBe('beta');
-    expect(repin.trigger).toBe('repin');
+    // The vocabulary schema.js documents for this column, rather than the old
+    // 'repin', which said that the pin moved but never why. The pinned account
+    // left the candidate set entirely here, so 'unavailable' is the fact.
+    expect(repin.trigger).toBe('unavailable');
     expect(repin.model).toBe(MODEL);
     expect(repin.sessionHash).toBeTruthy();
 

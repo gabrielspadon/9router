@@ -1,5 +1,5 @@
 /**
- * Reset-aware repin decision — Account Scheduling Contract rules 4 and 5
+ * Repin decision — Account Scheduling Contract rules 4 and 5
  * (RECONCILIATION.md), the policy layer above the ranker.
  *
  * Pure. No DB imports, no clock reads: the caller injects `now`, so a repin
@@ -9,40 +9,45 @@
  * src/shared/utils/quotaRanking.js is the ONLY ranking authority here. This
  * module never orders accounts itself; it asks `rankAccounts` who is eligible
  * and who ranks ahead, and adds the one thing ranking cannot express: WHETHER a
- * healthy pin should move at all.
+ * pin should move at all.
  *
- * That distinction is the whole point. Ranking answers "which account would we
- * pick with no history", and asking it every turn is round-robin whenever the
- * evidence wobbles. Rule 4 keeps a pin until the account becomes unavailable,
- * an earlier account's quota resets, the operator drains it, or a
- * model-specific failure forces a move. So a healthy pin is surrendered only to
- * an account that RESTORED, never to one that merely edged ahead on ranking.
+ * THE POLICY, and why it changed (2026-09-04).
  *
- * "Restored" is decided by re-asking the ranker the same question at the moment
- * the pin was made: an account eligible now that was NOT eligible at `pinnedAt`
- * had a window reset while the session was living on a later account. That is
- * rule 5's trigger stated in terms of evidence rather than of remembered
- * events, which is what keeps this function pure.
+ * A switch is not free. Moving a live session to another account abandons that
+ * account's prompt-cache prefix, so the next request re-primes the whole
+ * conversation at full input price. The operator therefore pays cash for every
+ * switch, and the only switch worth paying for is one that buys entitlement we
+ * would otherwise have lost.
+ *
+ * So a HEALTHY pin is never surrendered. Not to an account that edged ahead on
+ * ranking, and not to an account that just reset either. The decision point is
+ * DEPLETION: when the pinned account can no longer serve, we choose again, and
+ * at that moment the ranker is asked fresh — which is what folds a
+ * just-restocked account back into the choice and puts it first if its own
+ * projected deadline lands before the next candidate's. That is rule 5's
+ * "return to the earliest restored account" read the way it maximizes
+ * entitlement: earliest by DEADLINE, since the deadline is what decides whose
+ * tokens get wasted, not by an operator-declared account order.
+ *
+ * The previous implementation did two things this one deliberately does not.
+ * It preempted a healthy pin whenever some account had become eligible since
+ * `pinnedAt`, which spent a cache re-prime on a session that was serving
+ * perfectly well. And it decided which account to move to by CONFIGURED
+ * PRIORITY, falling back to the account's index in the connection list when no
+ * priority was set — which is the common case, so "earliest restored" quietly
+ * meant "whichever restored account happens to sit higher in the DB listing".
+ * That contradicts rule 3, which fixes priority as a tie-break only, and it
+ * both refused genuine returns (a restocked account whose 5h window expires in
+ * an hour, sitting low in the list) and forced pointless ones (a restocked
+ * account with a week of runway, sitting high in the list).
+ *
+ * `pinnedAt` still has one job, and it is observability only: it labels a move
+ * that landed on an account which had restocked since the pin was made as
+ * `reset` rather than `exhaustion`, so the receipt says which of rule 5's two
+ * cases an incident review is looking at. It never decides the move.
  */
 
 import { rankAccounts } from './quotaRanking.js';
-
-// Operator-declared account order — Scheduling Contract rule 4's "a
-// higher-priority account's quota resets" and rule 5's "the EARLIEST restored
-// account". This is a different question from the ranker's urgency ordering,
-// which rule 3 fixes as expiring-entitlement-first with priority as a
-// tie-break only. Ranking answers "who should absorb load now"; this answers
-// "which account does a session belong to when several are available". Sorting
-// by it here is not a second ranker: eligibility and urgency both stay in
-// quotaRanking.js, and nothing below ever reads a window.
-function orderKeyOf(account, index) {
-  const p = Number(account?.priority);
-  return [Number.isFinite(p) ? p : Number.POSITIVE_INFINITY, index];
-}
-
-function earlierThan(a, b) {
-  return a[0] !== b[0] ? a[0] < b[0] : a[1] < b[1];
-}
 
 // Trigger vocabulary, shared with the accountSwitches table in
 // src/lib/db/schema.js so a decision and its receipt say the same word.
@@ -88,6 +93,30 @@ function toMs(value) {
 }
 
 /**
+ * Was `targetId` ineligible when this pin was made, and eligible now? Used
+ * ONLY to label the receipt: a move onto an account that restocked in the
+ * meantime is rule 5's return, and reads as `reset`; anything else is plain
+ * `exhaustion`. Any doubt resolves to false, because mislabelling a switch as a
+ * reset when it was not is worse than the reverse.
+ */
+function restockedSincePin(pin, cohort, targetId, nowMs) {
+  const pinnedAtMs = toMs(pin?.pinnedAt);
+  if (pinnedAtMs === null || pinnedAtMs > nowMs) return false;
+  try {
+    const atPin = rankAccounts(cohort, {
+      now: pinnedAtMs,
+      previousPinId: pin?.connectionId ?? null,
+    });
+    // A baseline with no evidence reads as "nothing was eligible back then",
+    // which would make every account look restored. Refuse to label.
+    if (atPin.degraded) return false;
+    return !atPin.eligible.some((r) => r.id === targetId);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Decide what happens to one session's pin.
  *
  * @param {{
@@ -117,7 +146,8 @@ export function decideRepin({ pin, accounts, now, unavailableIds = [] } = {}) {
 
   if (cohort.length === 0) return none('no-accounts');
 
-  const ranked = rankAccounts(cohort, { now, previousPinId: pinnedId });
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  const ranked = rankAccounts(cohort, { now: nowMs, previousPinId: pinnedId });
   const winner = ranked.winner?.id ?? null;
 
   // Checked before the degraded gate below, because stickiness to an account
@@ -129,50 +159,60 @@ export function decideRepin({ pin, accounts, now, unavailableIds = [] } = {}) {
       : none(ranked.reason || 'no-eligible-account');
   }
 
-  // A degraded cohort is a refusal to rank, not evidence that some other
-  // account is better. Rule 4's failure direction is previous-pin-first, and
-  // moving a session on a refusal to rank is the exact spray rule 5 forbids.
+  // A degraded pool means no account anywhere reported a deadline, so there is
+  // no urgency evidence to act on. Rule 4's failure direction is
+  // previous-pin-first, and moving a session on an absence of evidence is the
+  // exact spray rule 5 forbids. Note this is an ORDERING degradation only:
+  // rankAccounts still enforces eligibility, so `winner` below is never an
+  // account we know to be depleted.
   if (ranked.degraded) {
-    return pinnedId ? keep(pin, `ranking-degraded:${ranked.reason}`) : none(ranked.reason);
-  }
-  // Past this point the cohort ranked, so at least one account is usable and
-  // `winner` is non-null.
-
-  if (!pinnedId) return move(null, winner, TRIGGERS.INITIAL_PIN, 'no-existing-pin');
-
-  if (!ranked.eligible.some((r) => r.id === pinnedId)) {
-    return move(pinnedId, winner, TRIGGERS.EXHAUSTION, 'pinned-window-exhausted');
+    if (pinnedId) return keep(pin, `ranking-degraded:${ranked.reason}`);
+    return winner
+      ? move(null, winner, TRIGGERS.INITIAL_PIN, `no-existing-pin:${ranked.reason}`)
+      : none(ranked.reason);
   }
 
-  // From here the pin is healthy, so only a restore can take it.
-  const pinnedAtMs = toMs(pin?.pinnedAt);
-  if (pinnedAtMs === null) return keep(pin, 'pin-healthy-no-pinned-at');
-
-  const atPin = rankAccounts(cohort, { now: pinnedAtMs, previousPinId: pinnedId });
-  // A degraded counterfactual reads as "nothing was eligible back then", which
-  // would make every account look restored. Keep instead.
-  if (atPin.degraded) return keep(pin, 'pin-healthy-baseline-degraded');
-  const eligibleAtPin = new Set(atPin.eligible.map((r) => r.id));
-
-  // Rule 5, stated as a filter rather than a scan: of the accounts eligible NOW
-  // that were NOT eligible when this pin was made, keep only those EARLIER than
-  // the pin, and return to the earliest of them. Requiring the restore is what
-  // separates this from calling the ranker every turn — an earlier account that
-  // was available all along never takes the pin, so a healthy session cannot
-  // rotate. Requiring it to be earlier is what makes the move a return.
-  const order = new Map();
-  cohort.forEach((a, i) => order.set(a?.id, orderKeyOf(a, i)));
-  const pinnedOrder = order.get(pinnedId);
-
-  let target = null;
-  for (const record of ranked.eligible) {
-    if (record.id === pinnedId) continue;
-    if (eligibleAtPin.has(record.id)) continue; // available all along, no reset
-    const key = order.get(record.id);
-    if (!earlierThan(key, pinnedOrder)) continue; // a LATER account never pulls
-    if (target === null || earlierThan(key, order.get(target))) target = record.id;
+  if (!pinnedId) {
+    return winner
+      ? move(null, winner, TRIGGERS.INITIAL_PIN, 'no-existing-pin')
+      : none(ranked.reason || 'no-eligible-account');
   }
-  if (target) return move(pinnedId, target, TRIGGERS.RESET, 'earlier-account-restored');
 
-  return keep(pin, 'pin-healthy-no-earlier-restore');
+  // FAIL OPEN WHEN THE WHOLE POOL READS DEPLETED. Quota evidence is a
+  // snapshot, and for most providers a percentage-only one carried at
+  // `confidence: unknown` that can be hours old. Refusing the request on that
+  // reading is a self-inflicted outage: the upstream is the authority on
+  // whether it will serve, not our last snapshot of it. So hold the session
+  // where it is and let the provider answer. If it really is out, the 429
+  // cascade excludes it, the pool shrinks, and the caller ends up with the real
+  // rate-limit answer and a real reset time rather than one we guessed.
+  //
+  // This is the ONE case where the decision names an account the ranker calls
+  // ineligible, and it names exactly one: the pin. It is not a licence for the
+  // scheduler to walk the pool in list order, which is the failure this policy
+  // layer exists to prevent.
+  if (ranked.eligible.length === 0) {
+    return keep(pin, `all-depleted-holding-pin:${ranked.reason || 'all-depleted'}`);
+  }
+
+  // THE DECISION POINT. The pinned account still has headroom, so it keeps the
+  // session: no ranking outcome and no other account's reset takes a healthy
+  // pin, because the switch would cost a full cache re-prime and buy nothing.
+  if (ranked.eligible.some((r) => r.id === pinnedId)) {
+    return keep(pin, 'pin-healthy');
+  }
+
+  // The pinned account is depleted. Choose again from scratch: `winner` is the
+  // eligible account whose main-quota deadline lands soonest, which is exactly
+  // where an account that restocked while this session was living elsewhere
+  // belongs — ahead of the next candidate when its own deadline comes first,
+  // behind it when it does not.
+  if (!winner) return none(ranked.reason || 'no-eligible-account');
+  const returning = restockedSincePin(pin, cohort, winner, nowMs);
+  return move(
+    pinnedId,
+    winner,
+    returning ? TRIGGERS.RESET : TRIGGERS.EXHAUSTION,
+    returning ? 'pinned-window-exhausted:returning-to-restored' : 'pinned-window-exhausted',
+  );
 }
