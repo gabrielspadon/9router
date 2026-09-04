@@ -8,8 +8,8 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 // scopes its pushes by the same boundary these aggregates use and must not pull
 // the adapter chain in to do it.
 import { PERIOD_MS, periodCutoffIso } from "../../usagePeriod.js";
-import { canonicalizeUsage } from "open-sse/utils/usageTracking.js";
-import { KEY_ID_DISPLAY_CHARS } from "@/shared/utils/apiKey";
+import { canonicalizeUsage } from "../../../../open-sse/utils/usageTracking.js";
+import { KEY_ID_DISPLAY_CHARS } from "../../../shared/utils/apiKey.js";
 
 /**
  * A display form that distinguishes one key from another WITHOUT carrying the

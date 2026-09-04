@@ -33,7 +33,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
-import { decide, idPrefix, relativeReset, requestRid } from "@/shared/observability/decide.js";
+import { decide, idPrefix, relativeReset, requestRid, req } from "@/shared/observability/decide.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel,
@@ -846,6 +846,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         lastError = reason;
         lastStatus = peeked.upstreamError?.status || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} ${reason} → NEXT ACCOUNT`);
+        decide("UP", "failover", { rid, from: String(credentials.connectionId).slice(0, 8), to: "pool", why: String(reason).slice(0, 40) });
         await markAccountUnavailable(
           credentials.connectionId,
           HTTP_STATUS.BAD_GATEWAY,
@@ -871,6 +872,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         requestReplayAttempted = true;
         requestReplayConnectionId = credentials.connectionId;
         log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
+        decide("UP", "replay-overflow", { rid });
         continue;
       }
 
@@ -901,6 +903,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         // the real upstream response rather than rotating past the budget.
         if (maxAttempts && excludeConnectionIds.size + 1 >= maxAttempts) {
           log.warn("CHAT", `[${provider}/${model}] attempt ceiling ${maxAttempts} reached`);
+          decide("UP", "attempt-ceiling", { rid, attempts: maxAttempts });
           leaseHandedOff = true;
           return releaseAccountLeaseOnResponse(result.response, accountLease);
         }
@@ -921,14 +924,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           // Same account, immediate retry — cooldown was skipped for transient
           // errors, so this is a fast re-dispatch rather than a wait.
           log.warn("RETRY", `⇄ ACC:${credentials.connectionName} failed (${result.status}) attempt ${fails}/${ACCOUNT_RETRY_LIMIT} → RETRY SAME`);
+          decide("UP", "retry", { rid, conn: String(credentials.connectionId).slice(0, 8), attempt: fails, why: `status-${result.status}` });
           continue;
         }
         if (cooldownMs > SAME_ACCOUNT_RETRY_MAX_COOLDOWN_MS) {
           log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} locked ${Math.round(cooldownMs / 1000)}s (${result.status}) → NEXT ACCOUNT`);
+          decide("UP", "failover", { rid, from: String(credentials.connectionId).slice(0, 8), to: "pool", why: `locked-${Math.round(cooldownMs / 1000)}s` });
           excludeConnectionIds.add(credentials.connectionId);
           continue;
         }
         log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE after ${ACCOUNT_RETRY_LIMIT} tries (${result.status}) → NEXT ACCOUNT`);
+        decide("UP", "failover", { rid, from: String(credentials.connectionId).slice(0, 8), to: "pool", why: `unavailable-${result.status}` });
         excludeConnectionIds.add(credentials.connectionId);
         continue;
       }

@@ -5,7 +5,7 @@ import {
   decryptZedAccessToken,
   fetchZedAuthenticatedUser,
   resolveZedOrganizationId,
-} from "open-sse/shared/zedAuth.js";
+} from "../../../../open-sse/shared/zedAuth.js";
 
 // Zed — RSA keypair native-app flow (NOT OAuth). prepareConfig generates a fresh
 // keypair; buildAuthUrl returns the native_app_signin URL; exchangeToken decrypts

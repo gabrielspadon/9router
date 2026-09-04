@@ -2,6 +2,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const { pathToFileURL } = require('url');
 
 const origCreate = http.createServer.bind(http);
@@ -283,6 +284,39 @@ function isClientDisconnect(err, req, res) {
   return Boolean(req?.aborted || req?.destroyed || res?.destroyed);
 }
 
+    // One LOG.boot line after the server binds (docs/logging-design.md). Every
+// field is best-effort: nothing here may throw into boot. decide.js is ESM,
+// this file is CJS, hence the dynamic import wrapped in its own try.
+async function emitBootLine() {
+  try {
+    const { decide } = await import(
+      pathToFileURL(path.join(__dirname, 'src/shared/observability/decide.js')).href
+    );
+    let sha = 'unknown';
+    for (const candidate of [path.join(__dirname, 'BUILD_SHA'), path.join(__dirname, 'cli', 'BUILD_SHA')]) {
+      try {
+        const text = fs.readFileSync(candidate, 'utf8').trim();
+        if (text) { sha = text.slice(0, 12); break; }
+      } catch { /* try the next candidate */ }
+    }
+    let version = 'unknown';
+    try {
+      version = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || 'unknown';
+    } catch { /* keep unknown */ }
+    const [nodeMajor, nodeMinor] = process.versions.node.split('.');
+    const dataDir = process.platform === 'win32'
+      ? path.join(process.env.APPDATA || '', 'tokenproxy')
+      : path.join(os.homedir(), '.tokenproxy');
+    decide('LOG', 'boot', {
+      sha,
+      version: String(version).slice(0, 60),
+      node: `${nodeMajor}.${nodeMinor}`,
+      db: path.basename(dataDir).replace(/^\./, '') || 'unknown',
+      logdecisions: process.env.TOKENPROXY_LOG_DECISIONS ? 'on' : 'off',
+    });
+  } catch { /* boot logging must never throw */ }
+}
+
 // Wrap Next standalone HTTP server: derive client IP from the TCP socket
 // (unspoofable) and strip client-supplied forwarding headers so downstream
 // rate-limiting keys on the real peer address instead of attacker-controlled XFF.
@@ -363,6 +397,7 @@ http.createServer = (...args) => {
     socket.destroy();
   });
   server.once('listening', () => {
+    emitBootLine();
     startBackgroundTokenRefreshFromCustomServer();
   });
   const origEmit = server.emit;
@@ -380,7 +415,8 @@ http.createServer = (...args) => {
     }
     const chunks = [head];
     let received = head.length;
-    const serve = () => {
+
+const serve = () => {
       // Replay the upgraded request through the existing HTTP/1.1 handler.
       const replay = new http.IncomingMessage(socket);
       Object.assign(replay, {

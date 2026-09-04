@@ -10,6 +10,7 @@ import { FORMATS } from "../translator/formats.js";
 import {
   normalizeClaudePassthrough,
   anchorClaudeCache,
+  countCacheAnchors,
 } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -37,8 +38,8 @@ import {
   appendRequestLog,
   saveRequestDetail,
   trackActiveSession,
-} from "@/lib/usageDb.js";
-import { nextRid } from "@/shared/observability/decide.js";
+} from "../../src/lib/usageDb.js";
+import { decide, nextRid, req, notePath, RID_HEADER } from "../../src/shared/observability/decide.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import {
@@ -271,6 +272,7 @@ export async function handleChatCore({
   // which is why the live journal shows a 🟢 DONE landing before the 🟡 that
   // started it. The emoji stays for the operator's own eye.
   const rid = requestId || nextRid();
+  const connPrefix = connectionId ? String(connectionId).slice(0, 8) : undefined;
   const reqTag = rid ? `${emojiTag} rid=${rid}`.trim() : emojiTag;
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
@@ -605,41 +607,6 @@ export async function handleChatCore({
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
-  // Request line: one correlated summary (fmt + thinking + counts + account)
-  if (log?.line) {
-    const clientModel = clientRawRequest?.body?.model || `${provider}/${model}`;
-    const msgN =
-      translatedBody.messages?.length ||
-      translatedBody.input?.length ||
-      translatedBody.contents?.length ||
-      body.messages?.length ||
-      body.input?.length ||
-      0;
-    const toolN = translatedBody.tools?.length || body.tools?.length || 0;
-    const fmtStr = passthrough
-      ? `FMT: ${sourceFormat} (passthrough)`
-      : `FMT: ${sourceFormat}→${targetFormat}`;
-    const showThinking =
-      provider !== "grok-cli" || supportsGrokCliReasoningEffort(model);
-    const think = showThinking
-      ? log.fmtThink?.(extractThinking(translatedBody))
-      : null;
-    const acc =
-      credentials?.connectionName ||
-      credentials?.connectionId?.slice(0, 8) ||
-      "-";
-    const parts = [
-      `POST ${clientModel} → ${provider}/${model}`,
-      fmtStr,
-      stream ? "STREAM" : "JSON",
-      `${msgN} MSG`,
-    ];
-    if (toolN) parts.push(`${toolN} TOOL`);
-    if (think) parts.push(`THINK:${think}`);
-    parts.push(`ACC:${acc}`);
-    log.line(reqTag, "▶", parts.join(" · "));
-  }
-
   // TTS models don't support tool messages/function calling
   if (getModelType(alias, model) === "tts" && translatedBody.messages) {
     translatedBody.messages = translatedBody.messages.filter(
@@ -751,12 +718,22 @@ export async function handleChatCore({
       `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`,
     );
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
+      const phantomBefore = headroomDiagnostics?.before?.bodyBytes || 0;
+      const phantomAfter = headroomDiagnostics?.after?.bodyBytes || 0;
+      decide("XFORM", "headroom-phantom", {
+        rid,
+        delta: headroomStats.tokens_saved,
+        shrunk_pct: phantomBefore > 0 ? Math.round(((phantomBefore - phantomAfter) / phantomBefore) * 1000) / 10 : 0,
+      });
       log?.warn?.(
         "HEADROOM",
         `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`,
       );
     }
-  } else if (tokenSaverEnabled)
+  } else if (tokenSaverEnabled) {
+    // Folded fork (docs/logging-design.md row 52): a path code on the REQ
+    // line, not its own line.
+    notePath(rid, "XFORM.headroom-skip");
     // Gating this warn on headroomEnabled meant the ONE case a user needs told
     // about, the toggle being off while the dashboard reads Running because the
     // proxy answers, was the case that logged nothing at all (#1956). Say why in
@@ -765,6 +742,7 @@ export async function handleChatCore({
       "HEADROOM",
       `skipped: ${headroomEnabled ? (headroomDiagnostics.reason || "compression unavailable") : "disabled in settings"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`,
     );
+  }
 
   // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
@@ -840,7 +818,12 @@ export async function handleChatCore({
     if (Array.isArray(translatedBody.tools)) {
       translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
     }
+    const anchorsBefore = countCacheAnchors(body);
     anchorClaudeCache(translatedBody);
+    // Path codes (doc §2 XFORM rows): client multi-anchor plan survived
+    // translation vs the re-anchor fallback.
+    const anchorsAfter = countCacheAnchors(translatedBody);
+    notePath(rid, anchorsBefore >= 2 && anchorsAfter >= anchorsBefore ? "XFORM.cache-keep" : "XFORM.cache-legacy");
   }
 
   const executor = getExecutor(provider);
@@ -932,20 +915,26 @@ export async function handleChatCore({
         },
         pxpipe: pxpipeSummary,
         status: "error",
+        rid,
       }),
     ).catch(() => {});
 
     if (error.name === "AbortError") {
       streamController.handleError(isAntigravity ? new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE) : error);
-      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted");
+      req("failed", { rid, conn: connPrefix, status: 499, why: "aborted" });
+      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted", null, null, rid);
     }
     const errMsg = isAntigravity
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
       : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (isBodyReadTimeoutError(error)) {
+      req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
       return createErrorResult(
         HTTP_STATUS.GATEWAY_TIMEOUT,
         isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream response body timed out",
+        null,
+        null,
+        rid,
       );
     }
     if (log?.errorLine) {
@@ -955,7 +944,8 @@ export async function handleChatCore({
         `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${!isAntigravity && error.stack ? `\n    ${error.stack}` : ""}`,
       );
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.BAD_GATEWAY, why: "transport" });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, null, null, rid);
   };
   try {
     const result = await executor.execute({
@@ -1139,6 +1129,10 @@ export async function handleChatCore({
               finalBody,
               requestStartTime,
               connectionId,
+              rid,
+              route: `${clientRawRequest?.body?.model || body?.model || "?"}>${provider}/${model}`,
+              fmt: `${sourceFormat}>${targetFormat}`,
+              sel: credentials?.selection?.verdict,
               apiKey,
               clientRawRequest,
               onRequestSuccess,
@@ -1252,6 +1246,7 @@ export async function handleChatCore({
         response: { error: sinkMessage, status: safeStatusCode, thinking: null },
         pxpipe: pxpipeSummary,
         status: "error",
+        rid,
       }),
     ).catch(() => {});
 
@@ -1267,7 +1262,8 @@ export async function handleChatCore({
       );
     }
     reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
-    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata);
+    req("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream" });
+    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata, rid);
   }
 
   const sharedCtx = {
@@ -1279,6 +1275,10 @@ export async function handleChatCore({
     finalBody,
     requestStartTime,
     connectionId,
+    rid,
+    route: `${clientRawRequest?.body?.model || body?.model || "?"}>${provider}/${model}`,
+    fmt: `${sourceFormat}>${targetFormat}`,
+    sel: credentials?.selection?.verdict,
     apiKey,
     clientRawRequest,
     onRequestSuccess,
