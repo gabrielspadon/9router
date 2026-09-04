@@ -267,8 +267,6 @@ The `ai-dotfiles` migration should be mechanical once TokenProxy exposes the req
 | Affinity | One client session remains on one healthy account across turns and process restart. No round-robin switch occurs. |
 | Atomic admission | Parallel selection at the final slot admits exactly one request. Every reservation is released on success, error, abort, and disconnect. |
 | High parallelism | At least 80 concurrent isolated HTTP requests complete or wait under configured account limits without a local admission 503, starvation, leaked lease, or cross-session monopoly. |
-| Workflow accounting | A workflow declaring 180 logical agents reserves only its active batch. Another session can acquire capacity while future waves remain unstarted. |
-| Nested delegation | A child can spawn an allowed child through normal routing up to the configured depth. A disallowed lane or malformed identity still fails closed. |
 | Tier fidelity | Captured outbound Codex requests preserve `default`, `priority`, and `ultrafast` byte-for-byte. The audit receipt records the chosen tier. |
 | Cache truth | Provider aliases for cache reads and writes produce identical canonical request, account, daily, and cost totals. Account switching is visible beside cache loss. |
 | Pre-TTFT silence | Downstream heartbeats keep the client connection alive while the upstream has not produced data. The TTFT watchdog still fires at its deadline. |
@@ -280,6 +278,40 @@ The `ai-dotfiles` migration should be mechanical once TokenProxy exposes the req
 | Harness cutover | Claude Code, Codex, OpenCode, Kimi, and Hermes each traverse the thin edge into TokenProxy and receive a terminally valid response from an isolated fake provider. |
 
 Live paid-provider probes are outside the automatic suite. They require an explicit operator choice of account and tier. A green fake-provider test does not prove upstream capacity, and an upstream capacity warning does not prove a local routing defect.
+
+### Retired rows
+
+Two rows were retired on 2026-09-03, so the acceptance denominator is 14 rather
+than 16. Both are kept here verbatim rather than deleted, because a row that
+vanishes from a table is indistinguishable from a row that failed.
+
+- `Workflow accounting` — "A workflow declaring 180 logical agents reserves only
+  its active batch. Another session can acquire capacity while future waves
+  remain unstarted."
+  - Capability it tested: host-level agent admission in `ai-dotfiles`, meaning
+    the reservation ledger kept by `shared/bin/agent-admission.py` against the
+    `budgets` block of `shared/routing.json`.
+  - Withdrawn by: `6c8e9ac1 refactor(hooks): remove the host admission broker and
+    affinity injector`.
+  - Kept withdrawn by: `ai-dotfiles tests/routing-test.sh:172`, which fails the
+    suite if `budgets` returns to the registry.
+  - Revives when: an admission broker is reintroduced. The row returns with the
+    capability, and the denominator returns to 15.
+
+- `Nested delegation` — "A child can spawn an allowed child through normal
+  routing up to the configured depth. A disallowed lane or malformed identity
+  still fails closed."
+  - Capability it tested: the harness depth budget `max_subagent_spawn_depth`,
+    enforced by `shared/bin/agent-admission.py`.
+  - Withdrawn by: `6c8e9ac1`, the same commit.
+  - Kept withdrawn by: `ai-dotfiles tests/routing-test.sh:172`.
+  - Revives when: a depth budget and its enforcer return. The row returns, and
+    the denominator returns to 16.
+
+Neither row was re-pointed at a substitute predicate. Rewriting either as a
+TokenProxy check would have scored a gateway behaviour under a name that means
+host admission, which is a false green wearing a retired row's title. The full
+receipt is `ai-dotfiles gates/evidence/e1-acceptance-row-scope-6c8e9ac1.md`.
 
 ## Exclusions
 
