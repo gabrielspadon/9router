@@ -130,6 +130,7 @@ export function normalizeAccountWindows(windows) {
       remaining,
       limit,
       resetAt,
+      observedAt: parseResetAt(w.observedAt),
       confidence: typeof w.confidence === 'string' ? w.confidence : 'unknown',
     });
   }
@@ -164,9 +165,38 @@ function isUsable(general, nowMs) {
 // not take the account offline either. Confidence is a BAND applied at ordering
 // key 1; inside a band overlay-spec §1's five keys apply unchanged.
 const CONFIDENCE_BAND = { fresh: 0, stale: 1, unknown: 2 };
+const BAND_NAME = ['fresh', 'stale', 'unknown'];
 function bandOf(general) {
   return general.reduce((worst, w) => Math.max(worst, CONFIDENCE_BAND[w.confidence] ?? 2), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Decision trace. rankAccounts stays pure: it RETURNS {cls, verdict, fields}
+// entries (docs/logging-design.md rows 18-24) and never imports
+// observability/decide.js. auth.js walks the trace and prints it.
+// ---------------------------------------------------------------------------
+
+// Evidence age, folded into alt tokens as a short duration (30m, 2h, 3d).
+function ageToken(observedAts, nowMs) {
+  const finite = observedAts.filter(Number.isFinite);
+  if (!finite.length || !Number.isFinite(nowMs)) return null;
+  const mins = Math.max(0, Math.round((nowMs - Math.max(...finite)) / 60_000));
+  if (mins <= 0) return null;
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+const soonestResetOf = (windows) => {
+  const resets = (windows || []).map((w) => w.resetAt).filter(Number.isFinite);
+  return resets.length ? new Date(Math.min(...resets)).toISOString() : null;
+};
+
+const minRemainingOf = (windows) => {
+  const rems = (windows || []).map((w) => w.remaining).filter(Number.isFinite);
+  return rems.length ? Math.min(...rems) : null;
+};
 
 // Shape fingerprint for the cohort gate (§1): comparing accounts whose window
 // sets differ is worse than not ranking them at all.
@@ -229,6 +259,39 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
   // that reports no usage at all (most of them) on a single-account install
   // therefore served nothing. Refusing to rank is not evidence of
   // unusability, whether the cohort holds one member or ten.
+  // Trace helpers, built from the same records the decision runs on. Every
+  // token is an id prefix, an enum, or a short duration, so a printed line
+  // stays inside the design's value contract without any work here.
+  const id8 = (v) => String(v ?? '').slice(0, 8);
+  const altToken = (r) => {
+    const band = BAND_NAME[r.band] ?? 'unknown';
+    const age = ageToken((r.windows || []).map((w) => w.observedAt), nowMs);
+    return `${id8(r.id)}:${band}${age ? `:${age}` : ''}`;
+  };
+  // The first sort key on which two records differ — the name of the ordering
+  // key that actually decided between them (mirrors the comparator below).
+  const decidedKey = (a, b) => {
+    if (a.usable !== b.usable || a.band !== b.band) return 'evidence-band';
+    const n = Math.min(a.windows.length, b.windows.length);
+    for (let i = 0; i < n; i += 1) if (a.windows[i].resetAt !== b.windows[i].resetAt) return 'reset-horizon';
+    if ((a.id === previousPinId) !== (b.id === previousPinId)) return 'pinned-continuity';
+    if (a.priority !== b.priority) return 'configured-priority';
+    return 'fallback-order';
+  };
+  const winTrace = (winner, ranked) => {
+    const fields = {
+      conn: id8(winner.id),
+      key: ranked.find((r) => r.usable && r.id !== winner.id) ? decidedKey(winner, ranked.find((r) => r.usable && r.id !== winner.id)) : 'fallback-order',
+      win: true,
+      alt: ranked.filter((r) => r.valid && r.id !== winner.id).slice(0, 3).map(altToken),
+    };
+    const rem = minRemainingOf(winner.windows);
+    if (rem !== null) fields.rem = rem;
+    const reset = soonestResetOf(winner.windows);
+    if (reset) fields.reset = reset;
+    return { cls: 'SEL', verdict: 'win', fields };
+  };
+
   if (records.length <= 1) {
     const only = records[0] || null;
     if (only && !only.valid) {
@@ -239,15 +302,43 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
         winner: null,
         degraded: true,
         reason: `invalid-record:${only.id}:${only.reason}`,
+        trace: [{ cls: 'RANK', verdict: 'invalid-record', fields: { conn: id8(only.id), why: only.reason } }],
+      };
+    }
+    if (!only) {
+      return {
+        ranked: records,
+        eligible: [],
+        ineligible: [],
+        winner: null,
+        degraded: false,
+        reason: 'empty-cohort',
+        trace: [{ cls: 'RANK', verdict: 'degraded', fields: { win: false, why: 'empty-cohort' } }],
+      };
+    }
+    if (!only.usable) {
+      return {
+        ranked: records,
+        eligible: [],
+        ineligible: [only],
+        winner: null,
+        degraded: false,
+        reason: null,
+        trace: [{
+          cls: 'RANK',
+          verdict: 'depleted',
+          fields: { win: false, alt: [altToken(only)], reset: soonestResetOf(only.windows) },
+        }],
       };
     }
     return {
       ranked: records,
-      eligible: only && only.usable ? [only] : [],
-      ineligible: only && !only.usable ? [only] : [],
-      winner: only && only.usable ? only : null,
+      eligible: [only],
+      ineligible: [],
+      winner: only,
       degraded: false,
-      reason: records.length === 0 ? 'empty-cohort' : null,
+      reason: null,
+      trace: [winTrace(only, records)],
     };
   }
 
@@ -272,10 +363,13 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
       winner: null,
       degraded: true,
       reason: `invalid-record:${invalid.id}:${invalid.reason}`,
+      trace: [{ cls: 'RANK', verdict: 'invalid-record', fields: { win: false, conn: id8(invalid.id), why: invalid.reason } }],
     };
   }
   const shapes = new Set(records.map((r) => shapeKey(r.windows)));
   if (shapes.size > 1) {
+    const a = records[0];
+    const b = records.find((r) => shapeKey(r.windows) !== shapeKey(a.windows));
     return {
       ranked: fallback(),
       eligible: [],
@@ -283,6 +377,11 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
       winner: null,
       degraded: true,
       reason: 'cohort-shape-mismatch',
+      trace: [{
+        cls: 'RANK',
+        verdict: 'shape-mismatch',
+        fields: { win: false, conn: id8(a.id), a: shapeKey(a.windows), b: shapeKey(b.windows) },
+      }],
     };
   }
   if (!records.some((r) => r.usable)) {
@@ -293,6 +392,11 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
       winner: null,
       degraded: true,
       reason: 'cohort-all-depleted',
+      trace: [{
+        cls: 'RANK',
+        verdict: 'depleted',
+        fields: { win: false, alt: records.map(altToken), reset: soonestResetOf(records.flatMap((r) => r.windows)) },
+      }],
     };
   }
 
@@ -325,13 +429,15 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
   });
 
   const eligible = ranked.filter((r) => r.usable);
+  const winner = eligible[0] || null;
   return {
     ranked,
     eligible,
     ineligible: ranked.filter((r) => !r.usable),
-    winner: eligible[0] || null,
+    winner,
     degraded: false,
     reason: null,
+    trace: winner ? [winTrace(winner, ranked)] : [],
   };
 }
 

@@ -2,6 +2,7 @@ import { hasValidCliToken, isLocalRequest } from "@/dashboardGuard";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { resolveClientApiKey } from "@/lib/auth/clientApiKey";
 import { validateApiKey } from "@/lib/db/repos/apiKeysRepo.js";
+import { logAdminAuthz } from "./authzLog.js";
 import { adminAuthClass, adminDecision, adminError, isAdminMutation } from "./policy.js";
 
 /**
@@ -53,14 +54,16 @@ export async function requireAdmin(request) {
   const authClass = adminAuthClass(pathOf(request));
   const mutating = isAdminMutation(request.method);
   const operator = await isOperator(request);
-  const denial = adminDecision({
-    authClass,
-    mutating,
-    operator,
-    // Only asked when it can still change the answer: an operator is already
-    // past the class check, and validating a key is a database round trip.
-    inference: operator ? false : await hasInferenceKey(request),
-    loopback: isLocalRequest(request),
-  });
-  return denial ? adminError(denial.status, denial.code, denial.error) : null;
+  // Only asked when it can still change the answer: an operator is already
+  // past the class check, and validating a key is a database round trip.
+  const inference = operator ? false : await hasInferenceKey(request);
+  const loopback = isLocalRequest(request);
+  const decision = adminDecision({ authClass, mutating, operator, inference, loopback });
+  logAdminAuthz(
+    request,
+    { authClass, mutating, operator, inference, loopback, pathname: pathOf(request) },
+    decision
+  );
+  if (!decision || decision.allow) return null;
+  return adminError(decision.status, decision.code, decision.error);
 }

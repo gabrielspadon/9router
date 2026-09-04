@@ -251,10 +251,10 @@ describe("chat.js admission refusal (the 73% line)", () => {
     expect(line).toBeDefined();
     expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:]{8}Z ADM\.ratelimited rid=[0-9a-f]{8} /);
     expect(line).toMatch(/ key=ip:[0-9a-f]{8} /);       // the caller, not the address
-    expect(line).toContain("limit=60/60s");             // the limit
-    expect(line).toContain("win=60s");                  // the window
+    expect(line).toContain("limit=60/60s");             // the limit, window inside it
+    expect(line).not.toContain("win=");                 // no separate window field
     expect(line).toMatch(/ reset=\+(\d+s|\d+m|\d+h\d+m)/); // the reset, relatively
-    expect(line).toContain("why=client-window");
+    expect(line).toContain("why=ip-window");
     expect(line).not.toContain(ip);                     // never the raw identity
 
     // The old line was one per refusal. This one folds: 60 more refusals cost 5.

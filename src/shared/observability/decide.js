@@ -27,8 +27,16 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { redactSecretsText } from 'open-sse/utils/redact.js';
-import { DATA_DIR } from '@/lib/dataDir.js';
+// RELATIVE, not 'open-sse/...': this module is also reached from plain-node
+// open-sse importers (tokenRefresh/dedup.js), where the bare 'open-sse'
+// specifier does not resolve. redact.js imports nothing, so the chain stays
+// dependency-free.
+import { redactSecretsText } from '../../../open-sse/utils/redact.js';
+// RELATIVE, not '@/': open-sse modules (tokenRefresh/dedup.js and friends) emit
+// through this file and must stay importable under plain node — the
+// open-sse-plain-node-imports test forbids the '@/'' alias on this path, and
+// dataDir.js itself imports only node builtins.
+import { DATA_DIR } from '../../lib/dataDir.js';
 
 /**
  * The closed verdict vocabulary, one frozen list per class. A verdict that is
