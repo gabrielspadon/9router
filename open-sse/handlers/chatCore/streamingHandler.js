@@ -537,7 +537,8 @@ function notifyTerminalVerificationSuccess(callback, connectionId, log) {
  *   rotation for the *next* request (see chat.js), which is what actually
  *   gets a retried request routed to a different backend.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat, rid, route, fmt, sel, notifyTerminalVerificationSuccess: notifyTerminal }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat, rid, route, fmt, sel, notifyTerminalVerificationSuccess: notifyTerminal,
+  saverFields = {} }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   // One-shot finalization guard shared by onStreamComplete (flush/cancel paths)
@@ -611,9 +612,9 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     // an aborted/interrupted completion is REQ.failed — exactly one, never both.
     if (usage?.estimated) decide("STREAM", "usage-estimated", { rid, conn: connPrefix(), why: "provider-omitted-usage" });
     if (aborted) {
-      reqSummary("failed", { rid, conn: connPrefix(), route, fmt, sel, status: 499, why: "aborted" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix(), route, fmt, sel, status: 499, why: "aborted" });
     } else {
-      reqSummary("ok", { rid, conn: connPrefix(), route, fmt, sel, row: streamDetailId, ...doneFields({ usage, latency }) });
+      reqSummary("ok", { ...saverFields, rid, conn: connPrefix(), route, fmt, sel, row: streamDetailId, ...doneFields({ usage, latency }) });
     }
 
     if (!contentObj?.content?.trim?.() && !contentObj?.thinking?.trim?.() && !hasOutputTokens(usage)) {
@@ -667,8 +668,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, label: "STREAM USAGE (interrupted)", silent: true });
     }
     if (log?.line) log.line(reqTag, "✗", `INTERRUPTED ${reason || "unknown"}`);
-    reqSummary("failed", {
-      rid,
+    reqSummary("failed", { ...saverFields, rid,
       conn: connPrefix(),
       route,
       fmt,

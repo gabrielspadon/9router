@@ -181,6 +181,38 @@ export function stripContinuityFields(body, provider, model, log) {
   return body;
 }
 
+// REQ ce= cache-epoch collector: sid -> { body: serialized final pre-dispatch
+// body, at: ms }. Bounded the same way decide.js bounds its path collector:
+// cap 2048, TTL 30 min, LRU eviction, one trim pass per insert.
+const CE_CAP = 2048;
+const CE_TTL_MS = 30 * 60 * 1000;
+const ceBodies = new Map();
+
+function commonPrefixBytes(a, b) {
+  const ba = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  const n = Math.min(ba.length, bb.length);
+  let i = 0;
+  while (i < n && ba[i] === bb[i]) i++;
+  return i;
+}
+
+function trackCacheEpoch(sid, serialized) {
+  const now = Date.now();
+  let ce;
+  const prev = ceBodies.get(sid);
+  if (prev && now - prev.at <= CE_TTL_MS) ce = commonPrefixBytes(prev.body, serialized);
+  ceBodies.delete(sid);
+  ceBodies.set(sid, { body: serialized, at: now });
+  if (ceBodies.size > CE_CAP) {
+    for (const key of ceBodies.keys()) {
+      ceBodies.delete(key);
+      if (ceBodies.size <= CE_CAP * 0.9) break;
+    }
+  }
+  return ce;
+}
+
 export async function handleChatCore({
   requestId,
   body,
@@ -217,6 +249,7 @@ export async function handleChatCore({
   pxpipeTransform,
   onPxpipeEvent,
   onTokenSaverEvent,
+  sid,
   sourceFormatOverride,
   providerThinking,
   connectTimeout,
@@ -615,6 +648,38 @@ export async function handleChatCore({
     delete translatedBody.tools;
   }
 
+  // Token-saver byte ledger: whole-body per-stage deltas serialized once per
+  // stage boundary. Feeds REQ save=/save_tok=, the XFORM.saver-guard anomaly
+  // line, bytesSaved on the saver event rows, and the honest growth check.
+  // Off entirely when no saver will run, so a saver-free request pays nothing.
+  const saverWillRun = Boolean(
+    pxpipeEnabled ||
+      (tokenSaverEnabled &&
+        (rtkEnabled ||
+          headroomEnabled ||
+          cavemanEnabled ||
+          ponytailEnabled ||
+          memorySettings)),
+  );
+  const saverStages = [];
+  const saverPrev = saverWillRun
+    ? { bytes: Buffer.byteLength(JSON.stringify(translatedBody)) }
+    : null;
+  const saverEntryBytes = saverPrev ? saverPrev.bytes : 0;
+  const measureSaverStage = (stage, ran) => {
+    if (!saverPrev || !ran) return;
+    const at = Buffer.byteLength(JSON.stringify(translatedBody));
+    if (at !== saverPrev.bytes) {
+      saverStages.push({
+        stage,
+        delta: at - saverPrev.bytes,
+        in: saverPrev.bytes,
+        out: at,
+      });
+    }
+    saverPrev.bytes = at;
+  };
+
   // RTK: compress tool_result content.
   //
   // compressMessages rewrites message content IN PLACE, and on the passthrough
@@ -632,23 +697,12 @@ export async function handleChatCore({
   );
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
-  try {
-    if (tokenSaverEnabled && rtkStats?.hits?.length) {
-      const evt = {
-        saver: "rtk",
-        applied: true,
-        appliedCount: rtkStats.hits.length,
-        charsBefore: rtkStats.bytesBefore,
-        charsAfter: rtkStats.bytesAfter,
-        charsSaved: Math.max(
-          0,
-          (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0),
-        ),
-      };
-      if (typeof onTokenSaverEvent === "function") onTokenSaverEvent(evt);
-    }
-  } catch {
-    /* stats must not break requests */
+  measureSaverStage("rtk", rtkWillRun);
+  // Row emission for every saver is deferred to just after the anchor stage
+  // below, where the whole-body delta and the final-body cache epoch are both
+  // known; the path code speaks here where the stage ran.
+  if (tokenSaverEnabled && rtkStats?.hits?.length) {
+    notePath(rid, "XFORM.rtk-applied");
   }
 
   // Privacy filter (#2728): pseudonymise emails and operator terms in the
@@ -691,26 +745,15 @@ export async function handleChatCore({
   });
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
-  // Headroom aggregate event: only after bodyBytes actually shrank (diagnostics.after populated)
-  try {
-    if (
-      tokenSaverEnabled &&
-      Number.isFinite(headroomStats?.tokens_saved) &&
-      headroomDiagnostics?.after
-    ) {
-      const evt = {
-        saver: "headroom",
-        applied: true,
-        tokensBefore: headroomStats.tokens_before,
-        tokensAfter: headroomStats.tokens_after,
-        tokensSaved: headroomStats.tokens_saved,
-        bodyBytesBefore: headroomDiagnostics.before?.bodyBytes,
-        bodyBytesAfter: headroomDiagnostics.after?.bodyBytes,
-      };
-      if (typeof onTokenSaverEvent === "function") onTokenSaverEvent(evt);
-    }
-  } catch {
-    /* stats must not break requests */
+  measureSaverStage("headroom", tokenSaverEnabled && headroomEnabled);
+  if (
+    tokenSaverEnabled &&
+    Number.isFinite(headroomStats?.tokens_saved) &&
+    headroomDiagnostics?.after
+  ) {
+    // Row emission deferred past the anchor stage, where the whole-body
+    // delta and the final-body cache epoch are both known (same as RTK).
+    notePath(rid, "XFORM.headroom-applied");
   }
   if (headroomLine) {
     log?.info?.(
@@ -751,13 +794,20 @@ export async function handleChatCore({
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
+    notePath(rid, "XFORM.injected");
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
+    notePath(rid, "XFORM.injected");
   }
+  measureSaverStage(
+    "inject",
+    tokenSaverEnabled &&
+      ((cavemanEnabled && cavemanLevel) || (ponytailEnabled && ponytailLevel)),
+  );
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
@@ -780,6 +830,7 @@ export async function handleChatCore({
       /* stats must not break requests */
     }
   }
+  measureSaverStage("pxpipe", pxpipeEnabled);
 
   // Memory & Context Optimizer (Tool & Media Pruning, Compaction, Cache Anchoring, Handoffs)
   if (tokenSaverEnabled && memorySettings) {
@@ -792,14 +843,17 @@ export async function handleChatCore({
       xf.push(
         `TOOL-PRUNE:~${Math.round(memRes.stats.toolPruning.savedChars / 4)}t`,
       );
+      notePath(rid, "XFORM.mem-pruned");
     }
     if (memRes.stats?.mediaPruning?.applied) {
       xf.push(`MEDIA-PRUNE:${memRes.stats.mediaPruning.savedItems}`);
     }
     if (memRes.stats?.compaction?.applied) {
       xf.push(`COMPACT:${memRes.stats.compaction.savedTokens}t`);
+      notePath(rid, "XFORM.compact-applied");
     }
   }
+  measureSaverStage("mem", tokenSaverEnabled && memorySettings);
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
 
@@ -824,6 +878,89 @@ export async function handleChatCore({
     // translation vs the re-anchor fallback.
     const anchorsAfter = countCacheAnchors(translatedBody);
     notePath(rid, anchorsBefore >= 2 && anchorsAfter >= anchorsBefore ? "XFORM.cache-keep" : "XFORM.cache-legacy");
+  }
+
+  // REQ save=/save_tok=/ce=: per-saver byte deltas (negative = saved, positive
+  // growth reported honestly) plus the cache-epoch prefix this request shares
+  // with its session's previous final pre-dispatch body. savers off -> silent.
+  const saverFields = {};
+  if (saverStages.length) {
+    saverFields.save = saverStages
+      .map((st) => `${st.stage}:${st.delta}`)
+      .join(",");
+    saverFields.save_tok = Math.round(
+      saverStages.reduce((a, st) => a + st.delta, 0) / 4,
+    );
+    for (const st of saverStages) {
+      // Phantom-growth anomaly, the inverse of the headroom phantom saver:
+      // a saver that grows the body by more than 5% of entry bytes is a bug,
+      // not a saver. Speak once per (rid, stage) — one request, one line.
+      // The inject stage is exempt: prompt injection ADDS the style text on
+      // purpose, and on small bodies that intentional addition trips the
+      // threshold — the guard is for compressors that were supposed to shrink.
+      if (st.stage !== "inject" && st.delta > saverEntryBytes * 0.05) {
+        decide("XFORM", "saver-guard", {
+          rid,
+          stage: st.stage,
+          in: st.in,
+          out: st.out,
+        });
+      }
+    }
+  }
+  if (sid) {
+    const ce = trackCacheEpoch(sid, JSON.stringify(translatedBody));
+    if (ce !== undefined) saverFields.ce = ce;
+  }
+
+  // Token-saver aggregate rows, one per saver that ran. Emitted here — after
+  // every saver stage and the anchor — so each row carries the whole-body
+  // bytesSaved/saveTokEst and the final-body cache epoch (ce), not just the
+  // per-tool char/token figures. Unit discipline (chars vs tokens vs bytes)
+  // lives in src/lib/tokenSaver/events.js; fields absent when unknown.
+  const saverStageDelta = (name) =>
+    saverStages.find((st) => st.stage === name)?.delta;
+  try {
+    if (tokenSaverEnabled && rtkStats?.hits?.length) {
+      const bytesSaved = saverStageDelta("rtk");
+      onTokenSaverEvent?.({
+        saver: "rtk",
+        applied: true,
+        appliedCount: rtkStats.hits.length,
+        charsBefore: rtkStats.bytesBefore,
+        charsAfter: rtkStats.bytesAfter,
+        charsSaved: Math.max(
+          0,
+          (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0),
+        ),
+        bytesSaved,
+        saveTokEst:
+          bytesSaved === undefined ? undefined : Math.round(bytesSaved / 4),
+        ce: saverFields.ce,
+      });
+    }
+    if (
+      tokenSaverEnabled &&
+      Number.isFinite(headroomStats?.tokens_saved) &&
+      headroomDiagnostics?.after
+    ) {
+      const bytesSaved = saverStageDelta("headroom");
+      onTokenSaverEvent?.({
+        saver: "headroom",
+        applied: true,
+        tokensBefore: headroomStats.tokens_before,
+        tokensAfter: headroomStats.tokens_after,
+        tokensSaved: headroomStats.tokens_saved,
+        bodyBytesBefore: headroomDiagnostics.before?.bodyBytes,
+        bodyBytesAfter: headroomDiagnostics.after?.bodyBytes,
+        bytesSaved,
+        saveTokEst:
+          bytesSaved === undefined ? undefined : Math.round(bytesSaved / 4),
+        ce: saverFields.ce,
+      });
+    }
+  } catch {
+    /* stats must not break requests */
   }
 
   const executor = getExecutor(provider);
@@ -1140,6 +1277,7 @@ export async function handleChatCore({
               onValidationRequired,
               notifyTerminalVerificationSuccess,
               pxpipe: pxpipeSummary,
+              saverFields,
               privacyFilter,
               callerSignal,
               reqTag,
@@ -1262,7 +1400,7 @@ export async function handleChatCore({
       );
     }
     reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
-    req("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream" });
+    req("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream", ...saverFields });
     return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata, rid);
   }
 
@@ -1287,6 +1425,7 @@ export async function handleChatCore({
     notifyTerminalVerificationSuccess,
     onEmptyStream,
     pxpipe: pxpipeSummary,
+    saverFields,
     privacyFilter,
     callerSignal,
     reqTag,

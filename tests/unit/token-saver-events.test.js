@@ -116,6 +116,55 @@ describe("tokenSaver event store", () => {
     expect(Number.isFinite(rows2[rows2.length - 1].ts)).toBe(true);
   });
 
+  it("persists signed bytesSaved/saveTokEst and ce on saver rows", async () => {
+    const mod = await loadModule();
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({
+      saver: "rtk",
+      applied: true,
+      appliedCount: 2,
+      charsBefore: 10000,
+      charsAfter: 2000,
+      charsSaved: 8000,
+      bytesSaved: -8400,
+      saveTokEst: -2100,
+      ce: 12345,
+    });
+    const rows = mod.readTokenSaverEvents();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].bytesSaved).toBe(-8400);
+    expect(rows[0].saveTokEst).toBe(-2100);
+    expect(rows[0].ce).toBe(12345);
+    // chars fields are kept alongside the byte fields
+    expect(rows[0].charsSaved).toBe(8000);
+    // growth is reported, never clamped away (phantom-growth lesson)
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({ saver: "headroom", applied: true, tokensSaved: 0, bytesSaved: 512, saveTokEst: 128 });
+    const rows2 = mod.readTokenSaverEvents();
+    expect(rows2[1].bytesSaved).toBe(512);
+  });
+
+  it("drops non-finite/overflowing bytesSaved, saveTokEst and ce", async () => {
+    const mod = await loadModule();
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({
+      saver: "rtk",
+      applied: true,
+      bytesSaved: "not-a-number",
+      saveTokEst: Number.POSITIVE_INFINITY,
+      ce: "wide",
+    });
+    const rows = mod.readTokenSaverEvents();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty("bytesSaved");
+    expect(rows[0]).not.toHaveProperty("saveTokEst");
+    expect(rows[0]).not.toHaveProperty("ce");
+    // a negative prefix count is a byte count underflow, not a delta: it
+    // clamps to 0 like every other metric in this store
+    mod.appendTokenSaverEvent({ saver: "rtk", applied: true, ce: -5 });
+    expect(mod.readTokenSaverEvents()[1].ce).toBe(0);
+  });
+
   it("rotates at 5MB keeping exactly one .1 backup (seam-driven)", async () => {
     const mod = await loadModule();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenproxy-tsrotate-"));

@@ -464,15 +464,19 @@ function takePath(rid, nowMs = Date.now()) {
   const entry = paths.get(rid);
   if (!entry) return null;
   paths.delete(rid);
-  // The list is dropped from the TAIL to fit the value cap, not truncated
-  // mid-string: the earliest forks are the ones a reader needs first.
+  // The list is dropped from the TAIL to fit, not truncated mid-string: the
+  // earliest forks are the ones a reader needs first. Path codes are
+  // machine-generated CLASS.verdict tokens (no free text, no leak channel),
+  // so the render budget is wider than the free-text value cap — five saver
+  // codes plus cache-keep/legacy must survive to make save=/path= auditable.
+  const PATH_RENDER_MAX = 120;
   let codes = entry.codes;
   const render = (list) => list.join(',');
-  while (codes.length > 1 && render(codes).length > MAX_VALUE_CHARS) {
+  while (codes.length > 1 && render(codes).length > PATH_RENDER_MAX) {
     codes = codes.slice(0, -1);
   }
   const joined = render(codes);
-  return joined.length > MAX_VALUE_CHARS ? null : joined;
+  return joined.length > PATH_RENDER_MAX ? null : joined;
 }
 
 /**

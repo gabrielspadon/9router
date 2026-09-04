@@ -637,7 +637,7 @@ function hasMultipleClassifierAlternatives(responseBody) {
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal, rid, route, fmt, sel }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal, rid, route, fmt, sel, saverFields = {} }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const classifierMode = sourceFormat === FORMATS.CLAUDE
     && isClaudeClassifierRequest(body);
@@ -659,11 +659,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     trackDoneOnce();
     if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
     if (isBodyReadTimeoutError(error)) {
-      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
       return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
     }
     console.error(`[ChatCore] Failed to ${context} from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
-    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: String(context || "body-read").slice(0, 40) });
+    reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: String(context || "body-read").slice(0, 40) });
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`, null, null, rid);
   };
 
@@ -846,7 +846,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       );
     } catch (err) {
       if (err instanceof ClaudeClassifierValidationError) {
-        reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
+        reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
         return createErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           CLAUDE_CLASSIFIER_ERROR_MESSAGE,
@@ -929,7 +929,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (upstreamError) {
     appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (upstream error in content)` });
     log?.warn?.("CHATCORE", `${provider}/${model} returned HTTP 200 carrying an upstream error — treating as failure. ${upstreamError.reason}`);
-    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-content" });
+    reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-content" });
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : upstreamError.reason,
@@ -946,7 +946,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       log.warn("CHATCORE", `${provider}/${model} returned HTTP 200 with empty content (finish_reason=${translatedResponse?.choices?.[0]?.finish_reason || "unknown"}) — treating as failure, locking for ${Math.round(EMPTY_CONTENT_COOLDOWN_MS / 1000)}s`);
     }
     decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
-    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
+    reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Empty response content from ${provider}/${model}`,
@@ -1010,8 +1010,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // serialised body so text inside a tool call's `arguments` is covered too.
   // No filter (the default) returns the same string untouched.
   // The one nominal per-request line (doc §3.3/3.4).
-  reqSummary("ok", {
-    rid,
+  reqSummary("ok", { ...saverFields, rid,
     conn: connPrefix,
     route,
     fmt,

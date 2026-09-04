@@ -757,6 +757,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         pxpipeTransform: comboTokenSaver.pxpipeEnabled ? await getPxpipeTransform() : null,
         onPxpipeEvent: appendPxpipeEvent,
         onTokenSaverEvent: appendTokenSaverEvent,
+        // 8-char session prefix for REQ ce= cache-epoch telemetry; idPrefix
+        // returns null when selection carried no client-derived session.
+        sid: idPrefix(credentials.sessionHash),
         providerThinking,
         connectTimeout,
         codexFastMode: chatSettings.providerStrategies?.codex?.fastMode === true,
