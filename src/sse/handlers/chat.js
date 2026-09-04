@@ -26,7 +26,7 @@ import { detectAgentRole, applyAgentRoleGroup } from "open-sse/utils/agentRole.j
 import { refuseDisallowedModel } from "@/sse/services/modelAccess.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { isRequestReplayBufferError } from "open-sse/services/accountFallback.js";
+import { isRequestReplayBufferError, formatRetryAfter } from "open-sse/services/accountFallback.js";
 import { peekStreamForContent } from "open-sse/utils/streamContent.js";
 import { getActiveRequests } from "@/lib/usageDb.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -553,6 +553,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const failCountByConn = new Map();
   let lastError = null;
   let lastStatus = null;
+  // The reset an UPSTREAM told us about during this request's cascade. A real
+  // 429 carries a real reset time; selection can only project one from an
+  // aging snapshot, so when both exist the provider's own answer wins.
+  let lastResetsAtMs = null;
   // Envoy request-buffer overflow (507): retry the SAME account once — the
   // failure is upstream buffering, not the account, and other accounts may not
   // hold the credential state the retry needs.
@@ -644,10 +648,33 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // All accounts unavailable
       if (!credentials || credentials.allRateLimited) {
         if (credentials?.allRateLimited) {
-          const errorMsg = credentials.lastError || "Unavailable";
-          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+          let errorMsg = credentials.lastError || "Unavailable";
+          let status = credentials.clientErrorStatus
+            ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          let retryAfter = credentials.retryAfter;
+          let retryAfterHuman = credentials.retryAfterHuman;
+          // THE CASCADE ALREADY HEARD THE TRUTH. If an upstream answered 429
+          // earlier in this same request, that is a statement from the provider
+          // about its own quota, complete with a reset time. Selection's answer
+          // is a projection off a percentage snapshot that can be hours old,
+          // and it used to overwrite the real one: a caller the provider had
+          // told "429, back at 20:00Z" was handed the synthesized answer
+          // instead, so it never waited the right amount.
+          if (lastStatus === HTTP_STATUS.RATE_LIMITED && status !== HTTP_STATUS.RATE_LIMITED) {
+            status = HTTP_STATUS.RATE_LIMITED;
+            if (lastError) errorMsg = lastError;
+          }
+          if (lastResetsAtMs && lastResetsAtMs > Date.now()) {
+            retryAfter = new Date(lastResetsAtMs).toISOString();
+            retryAfterHuman = formatRetryAfter(retryAfter);
+          }
+          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} [${status}] (${retryAfterHuman})`);
+          return unavailableResponse(
+            status,
+            `[${provider}/${model}] ${errorMsg}`,
+            retryAfter,
+            retryAfterHuman,
+          );
         }
         if (excludeConnectionIds.size === 0) {
           log.warn("AUTH", `No active credentials for provider: ${provider}`);
@@ -872,6 +899,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
             || (result.status === HTTP_STATUS.RATE_LIMITED && lastStatus !== HTTP_STATUS.RATE_LIMITED)) {
           lastError = result.error;
           lastStatus = result.status;
+          if (Number.isFinite(Number(result.resetsAtMs))) lastResetsAtMs = Number(result.resetsAtMs);
         }
         // The caller capped how many accounts this request may spend. Hand back
         // the real upstream response rather than rotating past the budget.

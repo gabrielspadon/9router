@@ -695,3 +695,137 @@ describe('E1.1w: the persisted session identity is a HASH (W4)', () => {
     expect(pins[0].sessionHash).toMatch(/^[0-9a-f]{32}$/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The live-pool regressions. Every fixture below is the shape the RTX seam
+// actually reported on 2026-09-04, when quota ranking was inert on a ten-
+// account Claude pool and the receipts recorded `cohort-degraded` for a third
+// of all switches.
+// ---------------------------------------------------------------------------
+
+/**
+ * A percentage-scale snapshot carrying MORE THAN ONE window, which is what a
+ * real provider reports and what the old cohort gate could not tolerate.
+ * `windows` is a list of [key, remainingPercentage, resetOffsetMs].
+ */
+function multiSnapshot(windows, { fetchedAt = iso(0) } = {}) {
+  return {
+    windows: windows.map(([key, remainingPercentage, resetOffsetMs]) => ({
+      key,
+      remainingPercentage,
+      resetAt: iso(resetOffsetMs),
+      unlimited: false,
+    })),
+    fetchedAt,
+  };
+}
+
+describe('E1.1w: a mixed-shape pool still ranks, and never serves a depleted account', () => {
+  it('skips a depleted account that sits first in the list and takes the soonest deadline', async () => {
+    // THE PRODUCTION BUG. These three accounts report three different window
+    // shapes, which used to trip the cohort gate: rankAccounts returned
+    // `degraded` with an empty eligible set, and selectAndReserve then walked
+    // `ranked` — the raw connection-list order — and reserved whatever came
+    // first. Here that is `beta`, whose 5h window is at zero. The request went
+    // upstream, came back 429, and the pool was walked one wasted call at a
+    // time.
+    dbMocks.getProviderConnections.mockResolvedValue([
+      connection('beta', {
+        key: FAKE_KEY_B,
+        snapshot: multiSnapshot([['session (5h)', 0, HOUR], ['weekly (7d)', 50, 3 * 24 * HOUR]]),
+      }),
+      connection('alpha', {
+        key: FAKE_KEY_A,
+        snapshot: multiSnapshot([['session (5h)', 80, 5 * HOUR]]),
+      }),
+      connection('gamma', {
+        key: FAKE_KEY_A,
+        snapshot: multiSnapshot([['weekly (7d)', 40, 2 * 24 * HOUR]]),
+      }),
+    ]);
+
+    const picked = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+
+    // alpha, because its binding window is the 5h one and it expires in five
+    // hours; gamma's binding window is a weekly that runs for two more days.
+    // beta is excluded outright: its 5h window has nothing left.
+    expect(picked?.connectionId).toBe('alpha');
+    expect(picked.allRateLimited).toBeUndefined();
+    leases.releaseAccountLease(picked.accountLease);
+
+    // And the receipt says the pin was made on purpose, not on a refusal.
+    const triggers = rows('SELECT trigger FROM accountSwitches').map((r) => r.trigger);
+    expect(triggers).toEqual(['first-pin']);
+  });
+
+  it('answers 429 with the earliest real reset once nothing in the pool has headroom', async () => {
+    // The other half of the operator contract: a 429 is owed to the caller
+    // only when no account can serve, and it has to carry the time the first
+    // window actually comes back. This branch used to answer 503 with a flat
+    // one-second floor, so a client retried straight into the same exhausted
+    // pool and kept doing it until a window rolled over hours later.
+    dbMocks.getProviderConnections.mockResolvedValue([
+      connection('alpha', {
+        key: FAKE_KEY_A,
+        snapshot: multiSnapshot([['session (5h)', 0, 5 * HOUR]]),
+      }),
+      connection('beta', {
+        key: FAKE_KEY_B,
+        snapshot: multiSnapshot([['session (5h)', 0, 3 * HOUR]]),
+      }),
+    ]);
+
+    const answer = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+
+    expect(answer?.allRateLimited).toBe(true);
+    expect(answer.clientErrorStatus).toBe(429);
+    expect(answer.lastErrorCode).toBe(429);
+    // beta's window is the first one back, so that is the instant quoted.
+    expect(answer.retryAfter).toBe(iso(3 * HOUR));
+    expect(answer.lastError).toContain('no-eligible-account');
+    // Nothing was reserved, so no slot is stranded.
+    expect(leases._getLeaseRegistry().inFlight('alpha')).toBe(0);
+    expect(leases._getLeaseRegistry().inFlight('beta')).toBe(0);
+  });
+
+  it('holds a session on its own depleted account rather than refusing on a stale reading', async () => {
+    // Quota evidence is a percentage snapshot at `confidence: unknown` that can
+    // be hours old, so "everything reads depleted" is not proof that nothing
+    // will serve. With a pin in hand the session stays where it is and lets the
+    // upstream be the authority; the 429 cascade above is what turns a real
+    // refusal into a real answer.
+    dbMocks.getProviderConnections.mockResolvedValue([
+      connection('alpha', {
+        key: FAKE_KEY_A,
+        snapshot: multiSnapshot([['session (5h)', 60, HOUR]]),
+      }),
+      connection('beta', {
+        key: FAKE_KEY_B,
+        snapshot: multiSnapshot([['session (5h)', 60, 5 * HOUR]]),
+      }),
+    ]);
+    const first = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+    expect(first.connectionId).toBe('alpha');
+    leases.releaseAccountLease(first.accountLease);
+
+    // Both accounts now read empty, with resets still in the future.
+    dbMocks.getProviderConnections.mockResolvedValue([
+      connection('alpha', {
+        key: FAKE_KEY_A,
+        snapshot: multiSnapshot([['session (5h)', 0, HOUR]]),
+      }),
+      connection('beta', {
+        key: FAKE_KEY_B,
+        snapshot: multiSnapshot([['session (5h)', 0, 5 * HOUR]]),
+      }),
+    ]);
+    const second = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions());
+
+    expect(second?.connectionId).toBe('alpha');
+    expect(second.allRateLimited).toBeUndefined();
+    leases.releaseAccountLease(second.accountLease);
+    // Held, not moved: no second receipt.
+    const triggers = rows('SELECT trigger FROM accountSwitches').map((r) => r.trigger);
+    expect(triggers).toEqual(['first-pin']);
+  });
+});
