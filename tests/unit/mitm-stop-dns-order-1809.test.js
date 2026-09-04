@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const managerPath = fileURLToPath(new URL('../../src/mitm/manager.js', import.meta.url));
@@ -15,13 +18,20 @@ const dnsConfigPath = fileURLToPath(new URL('../../src/mitm/dns/dnsConfig.js', i
 // scope, so it is exercised in a child process with its dnsConfig dependency
 // injected into require.cache, the same shape the other MITM tests here use.
 function runStop({ removalSucceeds = true, writePidFile = true } = {}) {
-  const script = `
+  // The child used to mkdtemp its own DATA_DIR and never remove it, so every
+  // call left a tokenproxy-mitm-stop-* tree behind holding logs/ and mitm/.
+  // Six calls per run, and /tmp here has no age-based reaper, so they
+  // accumulated indefinitely. The parent owns the directory now and removes it
+  // in `finally`, which also covers the spawn throwing before the child runs.
+  const root = mkdtempSync(join(tmpdir(), 'tokenproxy-mitm-stop-'));
+  try {
+    const script = `
     const fs = require("node:fs");
     const os = require("node:os");
     const path = require("node:path");
     const out = process.stdout.write.bind(process.stdout);
 
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tokenproxy-mitm-stop-"));
+    const root = ${JSON.stringify(root)};
     process.env.DATA_DIR = root;
 
     const events = [];
@@ -69,10 +79,13 @@ function runStop({ removalSucceeds = true, writePidFile = true } = {}) {
       .then(() => out(JSON.stringify({ events, threw: null })))
       .catch((e) => out(JSON.stringify({ events, threw: e.message })));
   `;
-  const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
-  expect(result.stderr).toBe('');
-  expect(result.status).toBe(0);
-  return JSON.parse(result.stdout);
+    const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    return JSON.parse(result.stdout);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 describe('stopServer removes the DNS redirect before it kills the listener (#1809)', () => {
