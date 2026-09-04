@@ -149,6 +149,24 @@ export const QUOTA_AUTOPING_CONFIG = {
   },
 };
 
+// What the warming toggle promises, per provider. A two-branch ternary in the
+// row component described a 5h Claude window on every provider that was not
+// Codex, which is wrong for per-model and weekly metering.
+export const QUOTA_AUTOPING_TOOLTIPS = {
+  claude:
+    "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.",
+  codex:
+    "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota.",
+  antigravity:
+    "Antigravity meters per model, so this pokes each quota family in turn the moment its window resets.",
+  kimi:
+    "Auto-sends a tiny request the moment the Ratelimit or Weekly window resets, so the next window starts counting right away.",
+};
+
+export const quotaAutoPingTooltip = (provider) =>
+  QUOTA_AUTOPING_TOOLTIPS[provider] ||
+  "Auto-sends a tiny request the moment a quota window resets, so the next window starts counting right away.";
+
 // provider id -> settings key. The dashboard used to carry its own hardcoded
 // copy of this map holding only claude and codex, so antigravity was configured
 // here, scheduled here, and had no button anywhere in the UI. Derived now, so a

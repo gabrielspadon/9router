@@ -16,7 +16,7 @@ import {
   reconcileWarmOutcome,
 } from '@/shared/services/quotaWindowWarm.js';
 import { CLAUDE_CLI_SPOOF_HEADERS } from 'open-sse/providers/shared.js';
-import { PROVIDER_MODELS, PROVIDERS } from 'open-sse/providers/index.js';
+import { getModelsByProviderId } from 'open-sse/config/providerModels.js';
 import { proxyAwareFetch } from 'open-sse/utils/proxyFetch.js';
 import {
   resolveConnectionProxyConfig,
@@ -141,10 +141,7 @@ function snapshotOwner(conn, deps) {
 // The models this fork routes for Claude, cheapest last so the ping costs as
 // little as possible when the configured one is refused.
 export function claudePingCandidates(providerConfig) {
-  // PROVIDER_MODELS is keyed by the registry ALIAS where one exists, and the
-  // Claude entry aliases to "cc", so keying on the provider id alone finds
-  // nothing and the walk would have no candidates at all.
-  const registry = (PROVIDER_MODELS.cc || PROVIDER_MODELS.claude || [])
+  const registry = getModelsByProviderId('claude')
     .map((m) => m?.id)
     .filter(Boolean);
   const cheapestFirst = [
@@ -418,8 +415,7 @@ async function sendAntigravityPing(connection, providerConfig, proxyOptions, dep
 // vendors. Falls back to the last registry entry, which is conventionally the
 // smallest, and then to whatever the provider config named.
 export function cheapestPingModel(provider, providerConfig = {}) {
-  const alias = PROVIDERS?.[provider]?.alias;
-  const registry = (PROVIDER_MODELS[provider] || (alias && PROVIDER_MODELS[alias]) || [])
+  const registry = getModelsByProviderId(provider)
     .map((m) => m?.id)
     .filter(Boolean);
   const small = /(haiku|mini|flash|lite|nano|small|tiny|turbo|air|8b|4b|1\.5b)/i;

@@ -5,7 +5,12 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
-import { getHotReloadConfig } from "@/shared/constants/config";
+import {
+  getHotReloadConfig,
+  QUOTA_AUTOPING_SETTINGS_KEY_BY_PROVIDER as AUTO_PING_SETTINGS_KEYS,
+  quotaAutoPingTooltip as autoPingTooltip,
+  quotaAutoPingSupportsAuthType,
+} from "@/shared/constants/config";
 import {
   parseQuotaData,
   isQuotaCollectionDepleted,
@@ -65,15 +70,6 @@ const KIRO_METHOD_LABELS = {
   api_key: "API Key",
 };
 
-const AUTO_PING_SETTINGS_KEYS = {
-  claude: "claudeAutoPing",
-  codex: "codexAutoPing",
-};
-
-const AUTO_PING_TOOLTIPS = {
-  claude: "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.",
-  codex: "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota.",
-};
 
 function kiroMethodLabel(conn) {
   const m = conn.providerSpecificData?.authMethod;
@@ -1271,8 +1267,8 @@ export default function ProviderLimits() {
                         </Tooltip>
                       </>
                     )}
-                    {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
-                      <Tooltip text={AUTO_PING_TOOLTIPS[conn.provider]}>
+                    {quotaAutoPingSupportsAuthType(conn.provider, conn.authType) && (
+                      <Tooltip text={autoPingTooltip(conn.provider)}>
                         <Button
                           variant="bare" size="icon"
                           type="button"
