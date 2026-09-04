@@ -200,7 +200,12 @@ function hhmmss(ms) {
   return new Date(ms).toISOString().slice(11, 19);
 }
 
-function scalar(value) {
+// Path folds are machine-generated CLASS.verdict tokens joined by commas —
+// never free text — so they render under a wider cap than free-text values.
+// takePath() already bounds them; this is the backstop at the same width.
+const PATH_VALUE_CHARS = 120;
+
+function scalar(value, key = null) {
   if (value === null || value === undefined) return null;
   const t = typeof value;
   if (t === 'boolean') return value ? 'true' : 'false';
@@ -208,9 +213,10 @@ function scalar(value) {
   if (t === 'bigint') return String(value);
   if (t !== 'string') return '[non-scalar]';
   if (value === '') return null;
+  const cap = key === 'path' ? PATH_VALUE_CHARS : MAX_VALUE_CHARS;
   const safe = redactSecretsText(value)
     .replace(/[\s\u0000-\u001f\u007f]+/g, '_');
-  return safe.length > MAX_VALUE_CHARS ? `${safe.slice(0, MAX_VALUE_CHARS)}…` : safe;
+  return safe.length > cap ? `${safe.slice(0, cap)}…` : safe;
 }
 
 function orderedEntries(fields) {
@@ -220,7 +226,7 @@ function orderedEntries(fields) {
   const push = (k) => {
     if (seen.has(k) || !Object.hasOwn(fields, k)) return;
     seen.add(k);
-    const v = scalar(fields[k]);
+    const v = scalar(fields[k], k);
     if (v !== null) out.push([k, v]);
   };
   for (const k of LEAD_KEYS) push(k);
