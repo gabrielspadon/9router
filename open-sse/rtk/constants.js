@@ -43,6 +43,13 @@ export const SMART_TRUNCATE_MIN_LINES = 250;   // only kick in above this
 // readNumbered (files with "  N|content" lines, e.g. Cursor read_file)
 export const READ_NUMBERED_MIN_HIT_RATIO = 0.7;
 
+// elide: size-based catch-all for oversized unstructured blobs (NOT sniffed;
+// wired in index.js only after autoDetectFilter returns no match)
+export const ELIDE_MIN_CHARS = 4000;         // only above this
+export const ELIDE_HEAD_CHARS = 1500;        // head kept verbatim
+export const ELIDE_TAIL_CHARS = 1000;        // tail kept verbatim
+export const ELIDE_NEWLINE_WINDOW = 100;     // newline-boundary preference radius
+
 // Filter name strings (Rust parity + JS extras)
 export const FILTERS = {
   GIT_DIFF: "git-diff",

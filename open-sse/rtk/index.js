@@ -1,6 +1,7 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Injected at the top of translateRequest (before any format translation)
-import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, ELIDE_MIN_CHARS } from "./constants.js";
+import { elide } from "./filters/elide.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
@@ -149,7 +150,10 @@ function compressText(text, stats, shape) {
     return text;
   }
 
-  const fn = autoDetectFilter(text);
+  const fn = autoDetectFilter(text)
+    // Size-based catch-all, NOT part of the sniffing chain: elide is tried
+    // only when no structured filter claimed the block.
+    || (text.length > ELIDE_MIN_CHARS ? elide : null);
   if (!fn) {
     stats.bytesAfter += bytesIn;
     return text;

@@ -87,12 +87,16 @@ describe("prose containing the word 'commit' is not git-log", () => {
 describe("smart-truncate: single-line 1 MiB blob", () => {
   const input = "Z".repeat(1_000_000);
 
-  it("is left byte-identical: no structure to truncate, under RAW_CAP", () => {
+  it("matches no structured filter, so the size-based elide catch-all fires: head+tail kept with an integrity marker", () => {
     const body = wrapTool(input);
-    const before = structuredClone(body);
     const stats = compressMessages(body, true);
-    expect(stats.hits.length).toBe(0);
-    expect(JSON.stringify(body)).toBe(JSON.stringify(before));
+    expect(stats.hits.map((h) => h.filter)).toEqual(["elide"]);
+    const out = body.messages[0].content;
+    expect(out).toContain("[elided ");
+    expect(out).toContain("head+tail preserved by tokenproxy");
+    expect(out.slice(0, 1500)).toBe(input.slice(0, 1500)); // head verbatim
+    expect(out.slice(-1000)).toBe(input.slice(-1000));     // tail verbatim
+    expect(out.length).toBeLessThan(input.length);
   });
 });
 
