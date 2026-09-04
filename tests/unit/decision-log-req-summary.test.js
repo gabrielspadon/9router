@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 // Wave 2 of docs/logging-design.md: the REQ one-liner, its rid<->ledger join,
@@ -473,6 +475,9 @@ describe("detail-write ACCT phases on the non-stream handlers", () => {
 describe("LOG.boot (custom-server)", () => {
   it("emits a boot line with sha/version/node/db/logdecisions and never throws", () => {
     const serverDir = path.resolve(__dirname, "../..");
+    // A child boot must not write into the real ~/.tokenproxy sink: point
+    // DATA_DIR at a scratch dir and expect db= to name it.
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tp-boot-"));
     const child = spawnSync(
       process.execPath,
       [
@@ -483,15 +488,16 @@ describe("LOG.boot (custom-server)", () => {
          const s = http.createServer((req, res) => { res.writeHead(404); res.end('{}'); });
          s.listen(0, () => setTimeout(() => process.exit(0), 800));`,
       ],
-      { encoding: "utf8", timeout: 20000, env: { ...process.env, TOKENPROXY_LOG_DECISIONS: "1" } }
+      { encoding: "utf8", timeout: 20000, env: { ...process.env, TOKENPROXY_LOG_DECISIONS: "1", DATA_DIR: scratch } }
     );
     expect(child.error).toBeUndefined();
     const boot = child.stdout.split("\n").filter((l) => l.includes("LOG.boot"));
     expect(boot).toHaveLength(1);
-    expect(boot[0]).toContain("sha=unknown");
+    // sha resolves BUILD_SHA when the pack wrote one, 'unknown' in a bare checkout.
+    expect(boot[0]).toMatch(/sha=([0-9a-f]{12}|unknown)/);
     expect(boot[0]).toMatch(/version=\S+/);
     expect(boot[0]).toMatch(/node=\d+\.\d+/);
-    expect(boot[0]).toContain("db=tokenproxy");
+    expect(boot[0]).toContain(`db=${path.basename(scratch)}`);
     expect(boot[0]).toContain("logdecisions=on");
   });
 });

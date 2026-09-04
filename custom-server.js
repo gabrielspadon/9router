@@ -285,13 +285,18 @@ function isClientDisconnect(err, req, res) {
 }
 
     // One LOG.boot line after the server binds (docs/logging-design.md). Every
-// field is best-effort: nothing here may throw into boot. decide.js is ESM,
-// this file is CJS, hence the dynamic import wrapped in its own try.
+// field is best-effort: nothing here may throw into boot.
+//
+// This file is CJS and OUTSIDE the webpack bundle, so it cannot reach the
+// bundled decide.js — and `src/` is not on disk in the published standalone
+// (the comment above initializeApp says so), which makes a dynamic import of
+// the source file a silent no-op in production. The line is therefore emitted
+// here with the same format and written straight to the same two sinks
+// (console for journald/dashboard, decisions.ndjson for file grep). All
+// values are self-generated scalars, so the shared redaction chokepoint has
+// nothing to add; whitespace is still flattened defensively.
 async function emitBootLine() {
   try {
-    const { decide } = await import(
-      pathToFileURL(path.join(__dirname, 'src/shared/observability/decide.js')).href
-    );
     let sha = 'unknown';
     for (const candidate of [path.join(__dirname, 'BUILD_SHA'), path.join(__dirname, 'cli', 'BUILD_SHA')]) {
       try {
@@ -307,13 +312,22 @@ async function emitBootLine() {
     const dataDir = process.platform === 'win32'
       ? path.join(process.env.APPDATA || '', 'tokenproxy')
       : path.join(os.homedir(), '.tokenproxy');
-    decide('LOG', 'boot', {
+    const fields = {
       sha,
       version: String(version).slice(0, 60),
       node: `${nodeMajor}.${nodeMinor}`,
-      db: path.basename(dataDir).replace(/^\./, '') || 'unknown',
-      logdecisions: process.env.TOKENPROXY_LOG_DECISIONS ? 'on' : 'off',
-    });
+      db: path.basename(process.env.DATA_DIR || dataDir).replace(/^\./, '') || 'unknown',
+      logdecisions: process.env.TOKENPROXY_LOG_DECISIONS === 'off' ? 'off' : 'on',
+    };
+    const scalar = (v) => String(v).replace(/[\s -]+/g, '_').slice(0, 60);
+    const line = `${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')} LOG.boot `
+      + Object.entries(fields).map(([k, v]) => `${k}=${scalar(v)}`).join(' ');
+    console.log(line);
+    try {
+      const sink = path.join(process.env.DATA_DIR || dataDir, 'logs', 'decisions.ndjson');
+      fs.mkdirSync(path.dirname(sink), { recursive: true, mode: 0o700 });
+      fs.appendFileSync(sink, JSON.stringify({ ts: new Date().toISOString(), cls: 'LOG', verdict: 'boot', ...fields }) + '\n', { mode: 0o600 });
+    } catch { /* the ndjson sink is best-effort; the journal line already carries it */ }
   } catch { /* boot logging must never throw */ }
 }
 
