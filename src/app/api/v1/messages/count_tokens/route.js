@@ -11,6 +11,38 @@ export async function OPTIONS() {
   return new Response(null, { headers: CORS_HEADERS });
 }
 
+// A media block costs roughly its pixel count in tokens, not its encoded
+// length. A 1 MB base64 screenshot is about 1,600 tokens and about 1,400,000
+// characters, so counting it by length reported it as ~350,000 tokens — three
+// orders of magnitude out, and enough on its own to convince a client that a
+// conversation carrying two screenshots had filled a million-token window.
+// Clients call this endpoint to decide when to compact, so the overcount made
+// them compact almost immediately on any session with images in it. Charged
+// flat instead: wrong by a factor of two at worst rather than a thousand.
+const MEDIA_TOKENS = 1600;
+const CHARS_PER_TOKEN = 4;
+const MEDIA_CHARS = MEDIA_TOKENS * CHARS_PER_TOKEN;
+
+function isMediaBlock(block) {
+  if (!block || typeof block !== "object") return false;
+  const t = block.type;
+  return (
+    t === "image"
+    || t === "image_url"
+    || t === "input_image"
+    || t === "input_audio"
+    || t === "audio"
+    || t === "input_video"
+    || t === "video"
+    || t === "document"
+    || t === "file"
+    || Boolean(block.source?.data)
+    || Boolean(block.source?.url)
+    || Boolean(block.inlineData?.mimeType)
+    || Boolean(block.fileData?.mimeType)
+  );
+}
+
 function countValueChars(value) {
   if (value == null) return 0;
   if (typeof value === "string") return value.length;
@@ -21,6 +53,9 @@ function countValueChars(value) {
     return value.reduce((total, item) => total + countValueChars(item), 0);
   }
   if (typeof value === "object") {
+    // Checked before the recursion, so a media block nested inside a
+    // tool_result is charged flat rather than walked down to its base64.
+    if (isMediaBlock(value)) return MEDIA_CHARS;
     return Object.entries(value).reduce((total, [key, item]) => {
       return total + key.length + countValueChars(item);
     }, 0);
@@ -32,6 +67,7 @@ function countContentBlockChars(block) {
   if (block == null) return 0;
   if (typeof block === "string") return block.length;
   if (typeof block !== "object") return countValueChars(block);
+  if (isMediaBlock(block)) return MEDIA_CHARS;
 
   switch (block.type) {
     case "text":
@@ -66,7 +102,7 @@ export function estimateAnthropicInputTokens(body = {}) {
     totalChars += countMessageChars(msg);
   }
 
-  return Math.ceil(totalChars / 4);
+  return Math.ceil(totalChars / CHARS_PER_TOKEN);
 }
 
 /**
