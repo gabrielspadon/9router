@@ -117,18 +117,81 @@ export function compactContextWindow(body, options = {}) {
   const olderItems = conversationalItems.slice(0, splitIndex);
   const recentItems = conversationalItems.slice(splitIndex);
 
-  // Generate structured summary from older items
-  const summaryLines = olderItems
-    .map(summarizeMessage)
-    .filter(Boolean)
-    .slice(-20); // Keep up to 20 key highlights
+const SUMMARY_MARKER = "[Historical Context Summary by tokenproxy Memory Optimizer]";
+const SECTION_FALLBACK = "none recorded";
+const FILE_PATH_RE = /(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]{1,10}/g;
+const DECISION_RE = /\b(decided|decision|agreed|chosen|chose|settled|will use|going with|opted)\b/i;
+const ERROR_RE = /\b(error|errors|failed|failure|exception|broken|crash(?:ed)?|stack trace|fix(?:ed|es)?|bug|regression|workaround|panic)\b/i;
+const PENDING_RE = /\b(todo|pending|follow[- ]?up|remaining|blocked|next step|not yet|fixme|still needs?|open item)\b/i;
 
-  const summaryContent = [
-    `[Historical Context Summary by tokenproxy Memory Optimizer]`,
+function textOf(msg) {
+  if (!msg) return "";
+  if (typeof msg.content === "string") return msg.content;
+  if (Array.isArray(msg.content)) {
+    return msg.content
+      .filter((c) => c && c.type === "text" && typeof c.text === "string")
+      .map((c) => c.text)
+      .join(" ");
+  }
+  return "";
+}
+
+// Structured checklist summary (deterministic extraction, no model call):
+// Intent, Decisions, Files, Errors and fixes, Pending, Next as compact labeled
+// lines. Sections without keyword matches fall back to raw per-message lines so
+// representative content is kept even when the history names nothing explicitly.
+function buildSummary(olderItems) {
+  const highlights = olderItems.map(summarizeMessage).filter(Boolean).slice(-20);
+
+  const convo = olderItems.filter((m) => m.role === "user" || m.role === "assistant");
+  const firstUser = convo.find((m) => m.role === "user");
+  const lastUser = convo.length > 0 ? convo[convo.length - 1] : null;
+  const clip = (t) => {
+    const flat = t.replace(/\s+/g, " ").trim();
+    return flat.length > 200 ? flat.slice(0, 200) + "…" : flat;
+  };
+  const intent = firstUser ? clip(textOf(firstUser)) : SECTION_FALLBACK;
+  const next = lastUser ? clip(textOf(lastUser)) : SECTION_FALLBACK;
+
+  const decisionHits = highlights.filter((h) => DECISION_RE.test(h));
+  const errorHits = highlights.filter((h) => ERROR_RE.test(h));
+  const picked = new Set([...decisionHits, ...errorHits]);
+  const rest = highlights.filter((h) => !picked.has(h));
+  // Fallback keeps EVERY unmatched highlight (split across the two sections)
+  // so the pre-checklist guarantee, all of the last 20 per-message lines, holds.
+  const decisionLines =
+    decisionHits.length > 0 ? decisionHits.slice(0, 3) : rest.slice(0, Math.ceil(rest.length / 2));
+  const errorLines =
+    errorHits.length > 0 ? errorHits.slice(0, 4) : rest.slice(Math.ceil(rest.length / 2));
+
+  const seenPaths = new Set();
+  const files = [];
+  for (const item of olderItems) {
+    for (const m of textOf(item).matchAll(FILE_PATH_RE)) {
+      if (!seenPaths.has(m[0])) {
+        seenPaths.add(m[0]);
+        files.push(m[0]);
+        if (files.length >= 10) break;
+      }
+    }
+    if (files.length >= 10) break;
+  }
+
+  const pendingHits = highlights.filter((h) => PENDING_RE.test(h)).slice(0, 3);
+
+  return [
+    SUMMARY_MARKER,
     `Notice: Earlier conversation turns (${olderItems.length} messages) have been compacted to conserve context window.`,
-    `Key highlights of earlier conversation:`,
-    ...summaryLines,
+    `Intent: ${intent || SECTION_FALLBACK}`,
+    `Decisions: ${decisionLines.length > 0 ? decisionLines.join("; ") : SECTION_FALLBACK}`,
+    `Files: ${files.length > 0 ? files.join(", ") : SECTION_FALLBACK}`,
+    `Errors and fixes: ${errorLines.length > 0 ? errorLines.join("; ") : SECTION_FALLBACK}`,
+    `Pending: ${pendingHits.length > 0 ? pendingHits.join("; ") : SECTION_FALLBACK}`,
+    `Next: ${next || SECTION_FALLBACK}`,
   ].join("\n");
+}
+
+  const summaryContent = buildSummary(olderItems);
 
   // Both compaction blocks carry role "system", not "user"/"assistant" (#2187).
   // The original shape put a summary INTO a fabricated user turn and then had

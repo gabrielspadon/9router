@@ -56,7 +56,10 @@ export const VERDICTS = Object.freeze({
   LEASE: Object.freeze(['refused', 'ungated', 'double-release']),
   CRED: Object.freeze(['refresh-failed', 'rotated', 'same', 'chain-diverged', 'dedup-reuse', 'no-refresh-path']),
   LOCK: Object.freeze(['applied', 'permanent', 'monthly-reset', 'clamped']),
-  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy']),
+  // rtk-applied/headroom-applied/mem-pruned/compact-applied/injected are the
+  // token-saver path codes: folded into REQ.ok's path= (and save= carries the
+  // measured bytes), so a saver never costs a line on the nominal path.
+  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy', 'rtk-applied', 'headroom-applied', 'mem-pruned', 'compact-applied', 'injected', 'saver-guard']),
   UP: Object.freeze(['retry', 'failover', 'attempt-ceiling', 'replay-overflow']),
   STREAM: Object.freeze(['stalled', 'empty', 'non-sse', 'terminal-synthesized', 'usage-estimated', 'detail-pending']),
   ACCT: Object.freeze(['detail-write-failed', 'alias-dropped']),
@@ -197,7 +200,12 @@ function hhmmss(ms) {
   return new Date(ms).toISOString().slice(11, 19);
 }
 
-function scalar(value) {
+// Path folds are machine-generated CLASS.verdict tokens joined by commas —
+// never free text — so they render under a wider cap than free-text values.
+// takePath() already bounds them; this is the backstop at the same width.
+const PATH_VALUE_CHARS = 120;
+
+function scalar(value, key = null) {
   if (value === null || value === undefined) return null;
   const t = typeof value;
   if (t === 'boolean') return value ? 'true' : 'false';
@@ -205,9 +213,10 @@ function scalar(value) {
   if (t === 'bigint') return String(value);
   if (t !== 'string') return '[non-scalar]';
   if (value === '') return null;
+  const cap = key === 'path' ? PATH_VALUE_CHARS : MAX_VALUE_CHARS;
   const safe = redactSecretsText(value)
     .replace(/[\s\u0000-\u001f\u007f]+/g, '_');
-  return safe.length > MAX_VALUE_CHARS ? `${safe.slice(0, MAX_VALUE_CHARS)}…` : safe;
+  return safe.length > cap ? `${safe.slice(0, cap)}…` : safe;
 }
 
 function orderedEntries(fields) {
@@ -217,7 +226,7 @@ function orderedEntries(fields) {
   const push = (k) => {
     if (seen.has(k) || !Object.hasOwn(fields, k)) return;
     seen.add(k);
-    const v = scalar(fields[k]);
+    const v = scalar(fields[k], k);
     if (v !== null) out.push([k, v]);
   };
   for (const k of LEAD_KEYS) push(k);
@@ -461,15 +470,19 @@ function takePath(rid, nowMs = Date.now()) {
   const entry = paths.get(rid);
   if (!entry) return null;
   paths.delete(rid);
-  // The list is dropped from the TAIL to fit the value cap, not truncated
-  // mid-string: the earliest forks are the ones a reader needs first.
+  // The list is dropped from the TAIL to fit, not truncated mid-string: the
+  // earliest forks are the ones a reader needs first. Path codes are
+  // machine-generated CLASS.verdict tokens (no free text, no leak channel),
+  // so the render budget is wider than the free-text value cap — five saver
+  // codes plus cache-keep/legacy must survive to make save=/path= auditable.
+  const PATH_RENDER_MAX = 120;
   let codes = entry.codes;
   const render = (list) => list.join(',');
-  while (codes.length > 1 && render(codes).length > MAX_VALUE_CHARS) {
+  while (codes.length > 1 && render(codes).length > PATH_RENDER_MAX) {
     codes = codes.slice(0, -1);
   }
   const joined = render(codes);
-  return joined.length > MAX_VALUE_CHARS ? null : joined;
+  return joined.length > PATH_RENDER_MAX ? null : joined;
 }
 
 /**

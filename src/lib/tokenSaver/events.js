@@ -6,6 +6,9 @@ import { DATA_DIR } from "@/lib/dataDir.js";
 //   rtk      → characters (JavaScript string lengths)
 //   headroom → proxy-reported tokens (+ true TextEncoder body bytes from diagnostics)
 //   pxpipe   → estimated tokens (proxy-reported, suffix Est upstream)
+//   bytesSaved/saveTokEst → signed whole-body serialized bytes (negative =
+//     saved) and the ~4 chars/token estimate off it; `ce` → cache-epoch
+//     prefix bytes shared with the session's previous final body.
 // No prompts/messages/tools/identity/format/reason-text ever reach disk:
 // strict allowlist below, unknown fields silently dropped.
 
@@ -60,6 +63,15 @@ function clampMetric(value, { integer = false } = {}) {
   return v < 0 ? 0 : v;
 }
 
+// Signed variant: saver deltas are negative when bytes were saved, and the
+// phantom-growth lesson says growth must be reported, never clamped away.
+function clampSignedInt(value) {
+  if (value === undefined || value === null) return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.round(n);
+}
+
 // Single Node process: JS is single threaded and appends below are synchronous,
 // so concurrent requests serialize naturally — no lock needed. Fail-open everywhere.
 function rotateIfNeeded() {
@@ -99,6 +111,13 @@ export function appendTokenSaverEvent(event) {
       const v = clampMetric(event[key]);
       if (v !== undefined) row[key] = v;
     }
+    for (const key of ["bytesSaved", "saveTokEst"]) {
+      const v = clampSignedInt(event[key]);
+      if (v !== undefined) row[key] = v;
+    }
+    // ce is a byte count, never a delta: nonnegative, integer.
+    const ce = clampMetric(event.ce, { integer: true });
+    if (ce !== undefined) row.ce = ce;
     const images = clampMetric(event.imageCount, { integer: true });
     if (images !== undefined) row.imageCount = images;
     const dur = clampMetric(event.durationMs);

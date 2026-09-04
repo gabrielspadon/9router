@@ -819,6 +819,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         resolutionKind: proxyOptions.resolutionKind,
       },
       connectionId: connection.id,
+      // Session identity the selection already resolved for routing affinity;
+      // chat.js prefixes it into the `sid` used by REQ ce= cache-epoch
+      // telemetry. Additive: absent rather than recomputed when resolution
+      // found nothing client-derived.
+      sessionHash: resolveRoutingSessionHash(options, providerId),
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,

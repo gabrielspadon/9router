@@ -274,6 +274,90 @@ function isResponsesInstructionItem(item) {
   return isMessage && RESPONSES_INSTRUCTION_ROLES.has(item.role);
 }
 
+// Responses input item types that have a Chat projection slot in the request
+// translator (openaiResponsesToOpenAIRequest).
+const RESPONSES_PROJECTED_ITEM_TYPES = new Set([
+  "message",
+  "function_call",
+  "custom_tool_call",
+  "function_call_output",
+  "custom_tool_call_output",
+  "additional_tools",
+  "namespace",
+  "reasoning",
+]);
+
+// hh-rsp-1: fail-safe — any Responses item that would be LOST in the
+// projection/rebuild round trip silently disappears from body.input when a
+// real shrink is committed. Detect before dispatch so compression skips the
+// whole request instead of deleting the item.
+function findResponsesProjectionLoss(input) {
+  if (!Array.isArray(input)) return null;
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (isResponsesInstructionItem(item)) continue; // restored untouched after rebuild
+    if (typeof item.type === "string" && !RESPONSES_PROJECTED_ITEM_TYPES.has(item.type)) {
+      return `skipped: responses item type '${item.type}' has no chat projection — headroom not applied`;
+    }
+    if (typeof item.type !== "string" && item.role == null) {
+      return "skipped: untyped responses item has no chat projection — headroom not applied";
+    }
+    if (item.type === "message" || (typeof item.type !== "string" && typeof item.role === "string")) {
+      // Message items whose content projects to nothing vanish on the way
+      // back (the translator only re-emits non-empty content).
+      const content = item.content;
+      const vanishes = Array.isArray(content)
+        ? content.length === 0 || !content.some((p) => p && typeof p === "object" && ((typeof p.text === "string" && p.text.length > 0) || p.type === "input_image" || p.image_url != null))
+        : typeof content !== "string" || content.length === 0;
+      if (vanishes) {
+        return "skipped: responses message item with empty content has no chat projection — headroom not applied";
+      }
+    }
+    if ((item.type === "function_call" || item.type === "custom_tool_call")
+      && (typeof item.name !== "string" || item.name.trim() === "")) {
+      return `skipped: ${item.type} item without a name has no chat projection — headroom not applied`;
+    }
+  }
+  return null;
+}
+
+// hh-rsp-2: message-item fields with no Chat projection slot (name on the
+// item, cache_control on content parts) are dropped on round-trip; the
+// cache_control loss silently disables prompt caching. Re-attach them from
+// the original input by position after the rebuild. If positions or part
+// shapes no longer align, the fields cannot be preserved — fail safe and
+// skip the whole request.
+function restoreResponsesMessageItemExtras(originalInput, rebuiltInput) {
+  if (!Array.isArray(originalInput) || !Array.isArray(rebuiltInput)) return { ok: true };
+  for (let i = 0; i < originalInput.length; i++) {
+    const orig = originalInput[i];
+    if (!orig || typeof orig !== "object" || Array.isArray(orig)) continue;
+    const isMessage = orig.type === "message" || (typeof orig.type !== "string" && typeof orig.role === "string");
+    if (!isMessage || isResponsesInstructionItem(orig)) continue;
+    const needsName = typeof orig.name === "string" && orig.name.length > 0;
+    const origParts = Array.isArray(orig.content) ? orig.content : null;
+    const needsCacheControl = !!origParts?.some((p) => p && typeof p === "object" && p.cache_control != null);
+    if (!needsName && !needsCacheControl) continue;
+    const rebuilt = rebuiltInput[i];
+    if (!rebuilt || typeof rebuilt !== "object" || Array.isArray(rebuilt) || rebuilt.type !== "message") {
+      return { ok: false, reason: "skipped: responses item reshaped - name/cache_control cannot be preserved — headroom not applied" };
+    }
+    if (needsName) rebuilt.name = orig.name;
+    if (needsCacheControl) {
+      if (!Array.isArray(rebuilt.content) || rebuilt.content.length !== origParts.length) {
+        return { ok: false, reason: "skipped: responses content parts reshaped - cache_control cannot be preserved — headroom not applied" };
+      }
+      for (let j = 0; j < origParts.length; j++) {
+        const origPart = origParts[j];
+        if (origPart && typeof origPart === "object" && origPart.cache_control != null && rebuilt.content[j]) {
+          rebuilt.content[j].cache_control = origPart.cache_control;
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 // Put the untouched instruction items back where they started. The rebuilt input
 // holds only the non-instruction items, in their original order, so walking the
 // original and drawing from the rebuilt one restores every position exactly.
@@ -645,6 +729,33 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
           return null;
         }
       }
+      // hh-cld-1: pairing identity, same positions pattern as the OpenAI
+      // guard (validateOpenAIMessageShape) — every tool_use block's id must
+      // appear as a tool_result's tool_use_id and vice versa.
+      const claudeToolUseIds = new Map();
+      const claudeToolResultIds = new Map();
+      const claudeCandidateUseIds = new Map();
+      const claudeCandidateResultIds = new Map();
+      const collectClaudePairingIds = (blocks, useMap, resultMap) => {
+        if (!Array.isArray(blocks)) return;
+        for (const part of blocks) {
+          if (part?.type === "tool_use" && typeof part?.id === "string") useMap.set(part.id, useMap.size);
+          else if (part?.type === "tool_result" && typeof part?.tool_use_id === "string") resultMap.set(part.tool_use_id, resultMap.size);
+        }
+      };
+      for (let i = 0; i < sourceMessages.length; i++) {
+        collectClaudePairingIds(sourceMessages[i]?.content, claudeToolUseIds, claudeToolResultIds);
+        collectClaudePairingIds(compressed[i]?.content, claudeCandidateUseIds, claudeCandidateResultIds);
+      }
+      const claudePairingMismatch =
+        claudeToolUseIds.size !== claudeCandidateUseIds.size ||
+        claudeToolResultIds.size !== claudeCandidateResultIds.size ||
+        [...claudeToolUseIds].some(([id, pos]) => claudeCandidateUseIds.get(id) !== pos) ||
+        [...claudeToolResultIds].some(([id, pos]) => claudeCandidateResultIds.get(id) !== pos);
+      if (claudePairingMismatch) {
+        setDiagnostic(diagnostics, "tool pairing identity");
+        return null;
+      }
       // Byte-gain guard — candidate bytes compared to before snapshot.
       const candidateBytes = jsonBytes({ ...body, messages: compressed });
       const beforeBytes = diagnostics?.before?.bodyBytes ?? jsonBytes(body);
@@ -665,6 +776,13 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         setDiagnostic(diagnostics, "skipped: openai-responses tool/reasoning input is not safe to compress");
         return null;
       }
+      // hh-rsp-1: fail-safe — skip before dispatch when any item would be
+      // lost in projection/rebuild (e.g. empty-content message items).
+      const projectionLoss = findResponsesProjectionLoss(body.input);
+      if (projectionLoss) {
+        setDiagnostic(diagnostics, projectionLoss);
+        return null;
+      }
       const oai = openaiResponsesToOpenAIRequest(model, body, false);
       if (!Array.isArray(oai?.messages)) {
         setDiagnostic(diagnostics, "openai-responses request did not translate to messages[]");
@@ -683,6 +801,13 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         : candidateResponses.input;
       if (!mergedInput) {
         setDiagnostic(diagnostics, "Responses round trip did not preserve input items");
+        return null;
+      }
+      // hh-rsp-2: restore name / cache_control lost in the round trip;
+      // skip the request if they cannot be re-attached safely.
+      const extrasRestore = restoreResponsesMessageItemExtras(body.input, mergedInput);
+      if (!extrasRestore.ok) {
+        setDiagnostic(diagnostics, extrasRestore.reason);
         return null;
       }
       const beforeBytes = diagnostics?.before?.bodyBytes ?? jsonBytes(body);

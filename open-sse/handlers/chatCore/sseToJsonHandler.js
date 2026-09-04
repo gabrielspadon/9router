@@ -405,7 +405,7 @@ function assertClassifierGeminiSseLossless(rawSSE) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, reqTag, log, callerSignal, rid, route, fmt, sel }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, reqTag, log, callerSignal, rid, route, fmt, sel, saverFields = {} }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -425,10 +425,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     trackDoneOnce();
     if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
     if (isBodyReadTimeoutError(error)) {
-      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
       return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
     }
-    reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: context.slice(0, 40) });
+    reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: context.slice(0, 40) });
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Failed to convert streaming response to JSON",
@@ -534,7 +534,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         trackDoneOnce();
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
         decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
-        reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
+        reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
       }
       trackDoneOnce();
@@ -573,8 +573,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        reqSummary("ok", {
-          rid,
+        reqSummary("ok", { ...saverFields, rid,
           conn: connPrefix,
           route,
           fmt,
@@ -697,8 +696,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         );
       }
 
-      reqSummary("ok", {
-        rid,
+      reqSummary("ok", { ...saverFields, rid,
         conn: connPrefix,
         route,
         fmt,
@@ -718,7 +716,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       };
     } catch (err) {
       if (err instanceof ClaudeClassifierValidationError) {
-        reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
+        reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
         return createErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           CLAUDE_CLASSIFIER_ERROR_MESSAGE,
@@ -740,7 +738,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     let parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       trackDoneOnce();
-      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "invalid-sse" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "invalid-sse" });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
@@ -751,7 +749,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     }
     if (parsed.error) {
       trackDoneOnce();
-      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-in-sse" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-in-sse" });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity"
@@ -769,7 +767,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       trackDoneOnce();
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
       decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
-      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
     }
 
@@ -846,8 +844,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       await notifyTerminalVerificationSuccess(notifyTerminal, connectionId, log);
     }
 
-    reqSummary("ok", {
-      rid,
+    reqSummary("ok", { ...saverFields, rid,
       conn: connPrefix,
       route,
       fmt,
@@ -867,7 +864,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     };
   } catch (err) {
     if (err instanceof ClaudeClassifierValidationError) {
-      reqSummary("failed", { rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         CLAUDE_CLASSIFIER_ERROR_MESSAGE,

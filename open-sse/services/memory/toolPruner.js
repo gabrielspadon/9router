@@ -30,6 +30,13 @@
 const DEFAULT_MAX_CHARS = 800;
 const DEFAULT_KEEP_TURNS = 2;
 
+// Error results are evidence, not bulk: rtk/index.js:8-13 never compresses
+// is_error/isError/status:'error' tool results, and neither does this pruner.
+function isErrorFlagged(node) {
+  if (!node || typeof node !== "object") return false;
+  return node.is_error === true || node.isError === true || node.status === "error";
+}
+
 // Truncation caps, generous to tight. A tier is applied to every historical
 // tool turn, oldest first, and the next tier is only reached if the overflow
 // is still not covered. The last tier is the old flat default, which is now
@@ -127,6 +134,7 @@ function truncateMessageTools(msg, maxChars) {
   let savedChars = 0;
   let count = 0;
   if (!msg) return { savedChars, count };
+  if (isErrorFlagged(msg)) return { savedChars, count };
 
   const take = (res) => {
     if (!res.truncated) return false;
@@ -145,7 +153,7 @@ function truncateMessageTools(msg, maxChars) {
   // 2. OpenAI tool role with array content
   if (msg.role === "tool" && Array.isArray(msg.content)) {
     for (const part of msg.content) {
-      if (part && part.type === "text" && typeof part.text === "string") {
+      if (part && !isErrorFlagged(part) && part.type === "text" && typeof part.text === "string") {
         const res = truncateText(part.text, maxChars);
         if (take(res)) part.text = res.text;
       }
@@ -160,7 +168,7 @@ function truncateMessageTools(msg, maxChars) {
       if (take(res)) msg.output = res.text;
     } else if (Array.isArray(msg.output)) {
       for (const part of msg.output) {
-        if (part && part.type === "input_text" && typeof part.text === "string") {
+        if (part && !isErrorFlagged(part) && part.type === "input_text" && typeof part.text === "string") {
           const res = truncateText(part.text, maxChars);
           if (take(res)) part.text = res.text;
         }
@@ -173,12 +181,13 @@ function truncateMessageTools(msg, maxChars) {
   if (Array.isArray(msg.content)) {
     for (const block of msg.content) {
       if (!block || block.type !== "tool_result") continue;
+      if (isErrorFlagged(block)) continue;
       if (typeof block.content === "string") {
         const res = truncateText(block.content, maxChars);
         if (take(res)) block.content = res.text;
       } else if (Array.isArray(block.content)) {
         for (const sub of block.content) {
-          if (sub && sub.type === "text" && typeof sub.text === "string") {
+          if (sub && !isErrorFlagged(sub) && sub.type === "text" && typeof sub.text === "string") {
             const res = truncateText(sub.text, maxChars);
             if (take(res)) sub.text = res.text;
           }
@@ -191,6 +200,7 @@ function truncateMessageTools(msg, maxChars) {
   // 5. Gemini format: parts with functionResponse
   if (Array.isArray(msg.parts)) {
     for (const part of msg.parts) {
+      if (isErrorFlagged(part)) continue;
       if (!part?.functionResponse?.response) continue;
       const resp = part.functionResponse.response;
       if (typeof resp !== "object") continue;

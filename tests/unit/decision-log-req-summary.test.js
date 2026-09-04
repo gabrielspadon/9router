@@ -84,6 +84,7 @@ import {
 import { handleNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
 import { handleForcedSSEToJson } from "../../open-sse/handlers/chatCore/sseToJsonHandler.js";
 import { handleChatCore } from "../../open-sse/handlers/chatCore.js";
+import { compressMessages } from "../../open-sse/rtk/index.js";
 import { getModelInfo } from "../../open-sse/config/models.js";
 
 const AT = Date.parse("2026-09-04T00:00:00.000Z");
@@ -499,6 +500,70 @@ describe("LOG.boot (custom-server)", () => {
     expect(boot[0]).toMatch(/node=\d+\.\d+/);
     expect(boot[0]).toContain(`db=${path.basename(scratch)}`);
     expect(boot[0]).toContain("logdecisions=on");
+  });
+});
+
+describe("REQ.ok save=/ce= with a composed saver pipeline", () => {
+  // The RTK mock (wired above as vi.fn(() => null)) stands in for the real
+  // compressor: it shrinks message text in place and reports honest
+  // before/after char counts with one hit, exactly like compressMessages.
+  const shrinkRtk = () =>
+    compressMessages.mockImplementation((body, enabled) => {
+      if (!enabled || !body?.messages) return null;
+      const bytesBefore = JSON.stringify(body).length;
+      for (const m of body.messages) {
+        if (typeof m.content === "string") m.content = "hi";
+      }
+      const bytesAfter = JSON.stringify(body).length;
+      return { hits: ["m0"], bytesBefore, bytesAfter };
+    });
+
+  it("save=/save_tok= appear with the rtk stage delta; ce= silent on first sight of a sid", async () => {
+    shrinkRtk();
+    const result = await handleChatCore(
+      baseArgs({ requestId: "saver-0001", rtkEnabled: true, sid: "cesess-01" })
+    );
+    await result.response.text();
+    const reqs = reqLines();
+    expect(reqs).toHaveLength(1);
+    // "hello" → "hi" is a 3-byte shrink; save_tok rounds /4 toward -1.
+    expect(reqs[0]).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z REQ\.ok rid=saver-0001 conn=test-con save=rtk:-3 save_tok=-1 route=gpt-4o>openai\/gpt-4o fmt=openai>openai row=row-123 t=\d+ in=8 out=4 cr=0 cw=0 ttft=\d+( path=\S+)?$/
+    );
+    // first request of the session: no previous body to compare against
+    expect(reqs[0]).not.toContain("ce=");
+    // the rtk path code speaks where the stage ran
+    expect(reqs[0]).toMatch(/path=\S*XFORM\.rtk-applied\S*$/);
+  });
+
+  it("ce= reports the shared prefix on a repeat request of the same sid", async () => {
+    shrinkRtk();
+    const first = await handleChatCore(
+      baseArgs({ requestId: "saver-0002", rtkEnabled: true, sid: "cesess-02" })
+    );
+    await first.response.text();
+    const second = await handleChatCore(
+      baseArgs({ requestId: "saver-0003", rtkEnabled: true, sid: "cesess-02" })
+    );
+    await second.response.text();
+    const reqs = reqLines();
+    expect(reqs).toHaveLength(2);
+    const ce = reqs[1].match(/ ce=(\d+)/);
+    expect(ce).toBeTruthy();
+    // identical request bodies share everything but the tail after RTK
+    // already ran on the stored body; the prefix must be a large, positive
+    // share of the body, not zero
+    expect(Number(ce[1])).toBeGreaterThan(50);
+  });
+
+  it("no saver running keeps the line byte-identical to the pre-telemetry shape", async () => {
+    const result = await handleChatCore(baseArgs({ requestId: "saver-0004" }));
+    await result.response.text();
+    const reqs = reqLines();
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0]).not.toContain("save=");
+    expect(reqs[0]).not.toContain("save_tok=");
+    expect(reqs[0]).not.toContain("ce=");
   });
 });
 

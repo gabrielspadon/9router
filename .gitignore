@@ -157,3 +157,6 @@ README.*.md
 
 # Build provenance stamp, written by cli/scripts/build-cli.js at pack time.
 cli/BUILD_SHA
+
+# packed CLI releases land here during local builds
+/tokenproxy-*.tgz
