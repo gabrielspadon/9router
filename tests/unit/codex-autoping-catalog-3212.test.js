@@ -5,7 +5,7 @@
 // verify-providers.mjs cannot see any of this, so the wiring is proven here at
 // runtime: the catalog GET actually happens, its choice actually reaches the
 // executor, and the fallbacks land where they should.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('open-sse/index.js', () => ({}), { virtual: true });
 
@@ -149,6 +149,14 @@ describe('codex auto-ping model selection is wired (#3212)', () => {
     vi.clearAllMocks();
     delete global.__quotaAutoPing;
 
+    // The window fixtures below are absolute timestamps, and whether a window
+    // reads as running or as long-elapsed is now decided against the clock. An
+    // unpinned clock makes every one of them stale by however long ago this
+    // file was written, so the tick warms a cold window instead of exercising
+    // the slide path these tests are about.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T16:30:00.000Z'));
+
     ({ getCodexUsage } = await import('open-sse/services/usage/codex.js'));
     ({ runQuotaAutoPingTick } = await import('../../src/shared/services/quotaAutoPing.js'));
 
@@ -166,6 +174,10 @@ describe('codex auto-ping model selection is wired (#3212)', () => {
       })),
     };
     state = { running: false, resetCache: {}, failureCache: {} };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("pings the live catalog's model, not the configured one", async () => {

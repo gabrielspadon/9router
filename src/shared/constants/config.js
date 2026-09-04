@@ -72,13 +72,33 @@ const ANTIGRAVITY_QUOTA_MODELS = ["gemini-3.5-flash-extra-low", "gpt-oss-120b-me
 // Quota auto-ping: keep 5h windows warm by sending a tiny request right after reset.
 export const QUOTA_AUTOPING_CONFIG = {
   tickIntervalMs: 60000,                // scheduler tick
-  pingLeadMs: 5000,                     // fire once reset passes (within tolerance)
   refreshAheadMs: 300000,               // refetch usage when within 5min of reset
   failureCooldownMs: 900000,            // avoid failed ping spam while upstream/auth is unhealthy
+  // WARMING BRAKES. A family that will never be reported by a given plan looks
+  // permanently cold, so the interval keeps that from costing a request every
+  // tick, and the unstarted backoff drops a family we warmed without effect to
+  // one attempt per period. See src/shared/services/quotaWindowWarm.js.
+  minWarmIntervalMs: 600000,
+  warmIntervalDivisor: 12,              // a 5h window admits an attempt every 25min
+  unstartedBackoffPeriods: 1,
+  // The clock has to be SEEN to start: a 2xx only says the request was
+  // accepted, not that the provider counted it against a window. The check is
+  // the NEXT tick's usage read rather than a sleep after the request, so this
+  // is the grace period before a family that is still not reporting counts as
+  // never having started. Two ticks, because usage endpoints lag metering.
+  warmVerifyAfterMs: 120000,
   providers: {
     claude: {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
-      quotaKey: "session (5h)",         // quota key returned by usage handler
+      quotaKey: "session (5h)",         // the governing window, for reporting
+      // EVERY family this provider meters, not just the governing one. Naming
+      // only "session (5h)" meant the 7d window was never kept rolling, and —
+      // worse — an ABSENT window is invisible without an expected set to
+      // compare the payload against, which is exactly the state an idle
+      // account is in. Claude also reports per-model weekly windows; those are
+      // picked up dynamically once seen, so they need no entry here.
+      expectedWindows: ["session (5h)", "weekly (7d)"],
+      authTypes: ["oauth"],
       pingModel: "claude-haiku-4-5-20251001",
       pingText: "hi",
       pingMaxTokens: 1,
@@ -86,9 +106,13 @@ export const QUOTA_AUTOPING_CONFIG = {
     codex: {
       settingsKey: "codexAutoPing",
       quotaKey: "session",
-      pingWhenResetAtSlides: true,
+      expectedWindows: ["session"],
+      authTypes: ["oauth"],
+      // Codex reports a session window with a FUTURE reset even while idle and
+      // pushes that reset forward as time passes, so one reading cannot tell an
+      // idle window from a running one. A reset that moved this far since the
+      // previous tick has been sliding, which means nothing was counted.
       resetAtDriftMs: 30000,
-      minPingIntervalMs: 600000,
       skipWhenBlockingQuotaExhausted: true,
       // Free and Plus Codex accounts both expose gpt-5.5; avoid fallback probes that waste requests.
       pingModel: "gpt-5.5",
@@ -97,19 +121,52 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingReasoningEffort: "none",
     },
     antigravity: {
-      // Opt-in like the other two: absent settings read OFF, so this scheduler
+      // Opt-in like the others: absent settings read OFF, so this scheduler
       // makes no real request until an operator turns it on per connection.
       settingsKey: "antigravityAutoPing",
       // Antigravity meters per MODEL rather than by one named window, so this is
       // a SET of quota keys — one per family — not a single literal.
       quotaKeys: ANTIGRAVITY_QUOTA_MODELS,
-      // Both families can share a reset timestamp, so every family is poked on
-      // the same rollover; 10min stops a second poke while usage settles.
-      minPingIntervalMs: 600000,
+      expectedWindows: ANTIGRAVITY_QUOTA_MODELS,
+      authTypes: ["oauth"],
+      // Per-model metering is the one case where one request cannot warm every
+      // family, so each is poked in turn.
+      pingPerWindow: true,
+      pingText: "hi",
+      pingMaxTokens: 1,
+    },
+    kimi: {
+      settingsKey: "kimiAutoPing",
+      // Kimi names its windows "Ratelimit" and "Weekly", neither of which
+      // carries a parseable duration, so their periods are declared rather
+      // than inferred.
+      expectedWindows: ["Ratelimit", "Weekly"],
+      windowPeriodsMs: { Ratelimit: 18000000, Weekly: 604800000 },
+      authTypes: ["oauth", "api_key"],
       pingText: "hi",
       pingMaxTokens: 1,
     },
   },
+};
+
+// provider id -> settings key. The dashboard used to carry its own hardcoded
+// copy of this map holding only claude and codex, so antigravity was configured
+// here, scheduled here, and had no button anywhere in the UI. Derived now, so a
+// provider added above is reachable.
+export const QUOTA_AUTOPING_SETTINGS_KEY_BY_PROVIDER = Object.fromEntries(
+  Object.entries(QUOTA_AUTOPING_CONFIG.providers)
+    .filter(([, cfg]) => cfg.settingsKey)
+    .map(([id, cfg]) => [id, cfg.settingsKey])
+);
+
+// Which credential kinds a provider's warming can drive. The dashboard gated
+// the button on `authType === "oauth"` for every provider, which is right for
+// the OAuth three and wrong for a provider metered on an API key.
+export const quotaAutoPingSupportsAuthType = (provider, authType) => {
+  const cfg = QUOTA_AUTOPING_CONFIG.providers[provider];
+  if (!cfg) return false;
+  const allowed = cfg.authTypes || ["oauth"];
+  return allowed.includes(authType);
 };
 
 // Every settings key the auto-ping scheduler recognises, derived from the table
