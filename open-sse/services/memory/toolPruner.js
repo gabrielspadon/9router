@@ -13,6 +13,13 @@
 const DEFAULT_MAX_CHARS = 800;
 const DEFAULT_KEEP_TURNS = 2;
 
+// Error results are evidence, not bulk: rtk/index.js:8-13 never compresses
+// is_error/isError/status:'error' tool results, and neither does this pruner.
+function isErrorFlagged(node) {
+  if (!node || typeof node !== "object") return false;
+  return node.is_error === true || node.isError === true || node.status === "error";
+}
+
 /**
  * Truncate a single text block if it exceeds maxChars
  * @param {string} text
@@ -136,6 +143,7 @@ export function pruneHistoricalTools(body, options = {}) {
     if (!historicalToolIndices.has(i)) continue;
     const msg = items[i];
     if (!msg) continue;
+    if (isErrorFlagged(msg)) continue;
 
     // 1. OpenAI tool/function role with string content
     if ((msg.role === "tool" || msg.role === "function") && typeof msg.content === "string") {
@@ -151,7 +159,7 @@ export function pruneHistoricalTools(body, options = {}) {
     // 2. OpenAI tool role with array content
     if (msg.role === "tool" && Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part && part.type === "text" && typeof part.text === "string") {
+        if (part && !isErrorFlagged(part) && part.type === "text" && typeof part.text === "string") {
           const res = truncateText(part.text, maxHistoricalChars);
           if (res.truncated) {
             part.text = res.text;
@@ -174,7 +182,7 @@ export function pruneHistoricalTools(body, options = {}) {
         }
       } else if (Array.isArray(msg.output)) {
         for (const part of msg.output) {
-          if (part && part.type === "input_text" && typeof part.text === "string") {
+          if (part && !isErrorFlagged(part) && part.type === "input_text" && typeof part.text === "string") {
             const res = truncateText(part.text, maxHistoricalChars);
             if (res.truncated) {
               part.text = res.text;
@@ -191,6 +199,7 @@ export function pruneHistoricalTools(body, options = {}) {
     if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block && block.type === "tool_result") {
+          if (isErrorFlagged(block)) continue;
           if (typeof block.content === "string") {
             const res = truncateText(block.content, maxHistoricalChars);
             if (res.truncated) {
@@ -200,7 +209,7 @@ export function pruneHistoricalTools(body, options = {}) {
             }
           } else if (Array.isArray(block.content)) {
             for (const sub of block.content) {
-              if (sub && sub.type === "text" && typeof sub.text === "string") {
+              if (sub && !isErrorFlagged(sub) && sub.type === "text" && typeof sub.text === "string") {
                 const res = truncateText(sub.text, maxHistoricalChars);
                 if (res.truncated) {
                   sub.text = res.text;
@@ -218,7 +227,7 @@ export function pruneHistoricalTools(body, options = {}) {
     // 5. Gemini format: parts with functionResponse
     if (Array.isArray(msg.parts)) {
       for (const part of msg.parts) {
-        if (part?.functionResponse?.response) {
+        if (part && !isErrorFlagged(part) && part?.functionResponse?.response) {
           const resp = part.functionResponse.response;
           if (typeof resp === "object") {
             const jsonStr = JSON.stringify(resp);

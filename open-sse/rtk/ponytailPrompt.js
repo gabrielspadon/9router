@@ -19,8 +19,15 @@ const SHARED_NOT_LAZY = "Never simplify away: input validation at trust boundari
 
 const SHARED_PERSISTENCE = "ACTIVE EVERY RESPONSE. No drift back to over-building. Still active if unsure.";
 
+// Shared boundary blocks, mirrored from cavemanPrompts.js: every level carries
+// them (no-invented-abbreviations, preserve-language).
+const SHARED_NO_INVENTED_ABBREV = "No invented abbreviations. Standard well-known tech acronyms (DB, API, HTTP, URL, JSON, ID, OS, CPU) OK. Names of code symbols, function names, API names, error strings: keep verbatim.";
+
+const SHARED_PRESERVE_LANGUAGE = "Preserve the user's dominant language. User wrote Vietnamese, reply Vietnamese. User wrote English, reply English. Code identifiers, error strings, file paths, commands: keep in their original form regardless of language.";
+
 export const PONYTAIL_PROMPTS = {
   [PONYTAIL_LEVELS.LITE]: [
+    "Ponytail level: lite.",
     SHARED_PERSONA,
     "Lite: build what's asked, but name the lazier alternative in one line. User picks.",
     SHARED_LADDER,
@@ -28,9 +35,12 @@ export const PONYTAIL_PROMPTS = {
     SHARED_OUTPUT,
     SHARED_NOT_LAZY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
   ].join(" "),
 
   [PONYTAIL_LEVELS.FULL]: [
+    "Ponytail level: full.",
     SHARED_PERSONA,
     "Full: the ladder enforced. Stdlib and native first. Shortest diff, shortest explanation.",
     SHARED_LADDER,
@@ -38,9 +48,12 @@ export const PONYTAIL_PROMPTS = {
     SHARED_OUTPUT,
     SHARED_NOT_LAZY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
   ].join(" "),
 
   [PONYTAIL_LEVELS.ULTRA]: [
+    "Ponytail level: ultra.",
     SHARED_PERSONA,
     "Ultra: YAGNI extremist. Deletion before addition. Ship the one-liner and challenge the rest of the requirement in the same response.",
     SHARED_LADDER,
@@ -48,5 +61,7 @@ export const PONYTAIL_PROMPTS = {
     SHARED_OUTPUT,
     SHARED_NOT_LAZY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
   ].join(" "),
 };

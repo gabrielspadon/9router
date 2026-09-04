@@ -152,5 +152,14 @@ function injectGeminiSystem(body, prompt) {
     sys.parts.push({ text: prompt });
     return;
   }
+  if (typeof sys === "string") {
+    // String-typed systemInstruction: coerce to parts, preserving the
+    // original text, and dedup against the serialized existing instruction.
+    if (isPromptAlreadyInjected(sys, prompt)) return;
+    target[key] = sys
+      ? { parts: [{ text: sys }, { text: prompt }] }
+      : { parts: [{ text: prompt }] };
+    return;
+  }
   target[key] = { parts: [{ text: prompt }] };
 }
