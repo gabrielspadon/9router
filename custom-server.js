@@ -298,7 +298,7 @@ function isClientDisconnect(err, req, res) {
 async function emitBootLine() {
   try {
     let sha = 'unknown';
-    for (const candidate of [path.join(__dirname, 'BUILD_SHA'), path.join(__dirname, 'cli', 'BUILD_SHA')]) {
+    for (const candidate of [path.join(__dirname, 'BUILD_SHA'), path.join(__dirname, 'cli', 'BUILD_SHA'), path.join(__dirname, '..', 'BUILD_SHA')]) {
       try {
         const text = fs.readFileSync(candidate, 'utf8').trim();
         if (text) { sha = text.slice(0, 12); break; }
