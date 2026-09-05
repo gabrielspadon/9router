@@ -51,7 +51,7 @@ function sanitize(entry) {
   const out = { sid: entry.sid };
   const rid = typeof entry.rid === "string" ? entry.rid : "";
   if (rid && /^[0-9a-f]{1,32}$/.test(rid)) out.rid = rid.slice(0, 8);
-  for (const key of ["ctxTokens", "ceBytes"]) {
+  for (const key of ["ctxTokens", "ctxTokensActual", "ceBytes"]) {
     const v = clampInt(entry[key]);
     if (v !== undefined) out[key] = v;
   }
@@ -118,7 +118,20 @@ export function writeContextStatus(sid, fields = {}) {
     // retry once from a fresh read so the update is never lost silently.
     const applyOnce = () => {
       const entries = readAll();
-      const next = sanitize({ ...fields, sid, updatedAt: new Date().toISOString() });
+      // Merge over the session's existing entry: the pre-dispatch write
+      // carries the estimate and the cache epoch, the post-response write
+      // carries only what the provider reported, and a reader needs both.
+      const existing = entries.find((e) => e.sid === sid) || {};
+      // A completion write belongs to one request. When a newer request of
+      // the same session has already written its own row, a late completion
+      // for the older one is dropped rather than merged over it, or the row
+      // would carry one request's estimate beside another's billed size.
+      if (
+        fields.ctxTokensActual !== undefined &&
+        existing.rid && fields.rid &&
+        existing.rid !== String(fields.rid).slice(0, 8)
+      ) return;
+      const next = sanitize({ ...existing, ...fields, sid, updatedAt: new Date().toISOString() });
       const rest = entries.filter((e) => e.sid !== sid);
       rest.push(next);
       while (rest.length > MAX_ENTRIES) rest.shift();
