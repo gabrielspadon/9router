@@ -199,15 +199,17 @@ describe('toolPruner: pressure is progressive and stops when it is enough', () =
 
   it('uses only the gentlest tier it needs, and escalates when it must', () => {
     // Turns bigger than the first cap, so the first cap can actually bite.
-    // A small overflow is covered by it alone and nothing tighter is reached.
+    // The walk is age-major: the oldest result is cut to the gentlest cap
+    // that covers what is owed, so a deficit the first cap covers on one
+    // result reaches nothing tighter and touches nothing newer.
     const small = session(60, 30_000);
     const smallRes = pruneHistoricalTools(small, {
       budgetAware: true,
-      deficitChars: 20_000,
+      deficitChars: 8_000,
     });
     expect(smallRes.tiersUsed).toBe(1);
-    expect(smallRes.savedChars).toBeGreaterThanOrEqual(20_000);
-    // Two turns were enough, so the other 38 historical turns are whole.
+    expect(smallRes.savedChars).toBeGreaterThanOrEqual(8_000);
+    // One turn was enough, so every other historical turn is whole.
     const whole = small.messages
       .filter((m) => m.role === 'tool')
       .filter((m) => m.content.length === 30_000).length;
