@@ -262,4 +262,37 @@ describe("tokenSaver event store", () => {
     mod.__setTokenSaverEventsDirForTest(path.join(TMP, "does-not-exist"));
     expect(mod.readTokenSaverEvents()).toEqual([]);
   });
+
+  it("SEC-5a: chmod-corrects a loose events file to 0600 on open", async () => {
+    const mod = await loadModule();
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    // a file created under an older loose build
+    fs.writeFileSync(path.join(TMP, "events.jsonl"), "", { mode: 0o644 });
+    fs.chmodSync(path.join(TMP, "events.jsonl"), 0o644);
+    mod.appendTokenSaverEvent({ saver: "rtk", applied: true, charsSaved: 1 });
+    expect(fs.statSync(path.join(TMP, "events.jsonl")).mode & 0o777).toBe(0o600);
+    // a fresh file is created tight, not loose
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "tokenproxy-tsmode-"));
+    try {
+      mod.__setTokenSaverEventsDirForTest(dir2);
+      mod.appendTokenSaverEvent({ saver: "rtk", applied: true, charsSaved: 1 });
+      expect(fs.statSync(path.join(dir2, "events.jsonl")).mode & 0o777).toBe(0o600);
+    } finally {
+      fs.rmSync(dir2, { recursive: true, force: true });
+    }
+  });
+
+  it("T-F4: non-applied rows count as bypassed, never as errors", async () => {
+    const mod = await loadModule();
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    // failure reasons never reach this store (the reason allowlist drops
+    // "timeout"; saver failures bypass the sink entirely), so a row that did
+    // not apply is a bypass, and errors stays honestly 0
+    mod.appendTokenSaverEvent({ saver: "rtk", applied: true, charsSaved: 5 });
+    mod.appendTokenSaverEvent({ saver: "pxpipe", applied: false, reason: "timeout" });
+    const stats = mod.getTokenSaverStats();
+    expect(stats.windows.all.applied).toBe(1);
+    expect(stats.windows.all.bypassed).toBe(1);
+    expect(stats.windows.all.errors).toBe(0);
+  });
 });

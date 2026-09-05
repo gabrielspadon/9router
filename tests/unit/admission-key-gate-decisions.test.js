@@ -99,4 +99,20 @@ describe("chat.js API-key gate", () => {
     expect(warnLines.join(" ")).not.toContain("AUTH");
     expect(coreMocks.handleChatCore).not.toHaveBeenCalled();
   });
+
+  it("D-10: the key-gate refusal also emits REQ.refused with the same rid as the ADM line", async () => {
+    const res = await handleChat(chatRequest());
+    expect(res.status).toBe(401);
+    const admLine = lines.find((l) => l.includes("ADM.key-required"));
+    const refused = lines.find((l) => l.includes("REQ.refused"));
+    expect(refused).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:]{8}Z REQ\.refused rid=[0-9a-f]{8} why=key-required$/);
+    expect(refused).toContain(admLine.match(/rid=[0-9a-f]{8}/)[0]);
+  });
+
+  it("D-10: a presented-but-invalid key gets REQ.refused why=key-invalid", async () => {
+    const res = await handleChat(chatRequest({ authorization: "Bearer sk-bad-000" }));
+    expect(res.status).toBe(401);
+    const refused = lines.find((l) => l.includes("REQ.refused"));
+    expect(refused).toMatch(/REQ\.refused rid=[0-9a-f]{8} why=key-invalid$/);
+  });
 });

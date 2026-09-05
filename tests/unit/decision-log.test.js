@@ -119,7 +119,17 @@ describe("repeat folding", () => {
   it("names how many occurrences a folded line stands for, and when the run began", () => {
     for (let n = 0; n < 4; n++) decide("LEASE", "refused", { conn: "c", why: "at-limit" }, AT + n * 1000);
     expect(lines.at(-1)).toContain("rep=2");
-    expect(lines.at(-1)).toContain("first=18:09:09");
+    expect(lines.at(-1)).toContain("first=0903-18:09:09"); // D-7: MMdd-hh:mm:ss
+  });
+
+  it("D-6: never folds across a change in status", () => {
+    const base = { conn: "c", why: "http-error" };
+    for (let n = 0; n < 40; n++) decide("UP", "failover", { ...base, status: 400 }, AT);
+    const before = lines.length;
+    decide("UP", "failover", { ...base, status: 500 }, AT);
+    expect(lines.length).toBe(before + 1);
+    expect(lines.at(-1)).toContain("status=500");
+    expect(lines.at(-1)).not.toContain("rep=");
   });
 
   it("forces a roll-up once an hour so a slow burn cannot go quiet", () => {
@@ -139,6 +149,29 @@ describe("storm backstop", () => {
     for (let n = 0; n < 400; n++) decide("UP", "failover", { conn: `c${n}`, why: "upstream-5xx" }, AT);
     expect(lines.length).toBeLessThanOrEqual(__decide.STORM_LIMIT + 1);
     expect(lines.at(-1)).toContain("LOG.throttled why=storm-backstop");
+  });
+
+  it("D-1: counts folded lines, not decide() calls — 300 identical calls emit 9 and never trip it", () => {
+    for (let n = 0; n < 300; n++) decide("UP", "failover", { conn: "c", why: "upstream-5xx" }, AT);
+    expect(lines.filter((l) => l.includes("UP.failover"))).toHaveLength(9); // 1,2,4,8,16,32,64,128,256
+    expect(lines.some((l) => l.includes("LOG.throttled"))).toBe(false);
+  });
+
+  it("D-8: storm-throttled occurrences still enter foldState, so the post-resume rep is whole", () => {
+    // Trip the backstop: 200 distinct-bucket emissions inside one window.
+    for (let n = 0; n < 200; n++) decide("UP", "failover", { conn: `c${n}`, why: "upstream-5xx" }, AT);
+    // 100 identical occurrences while throttled: recorded, not emitted.
+    for (let n = 0; n < 100; n++) decide("SEL", "refused", { conn: "c", why: "at-limit" }, AT);
+    expect(lines.filter((l) => l.includes("SEL.refused"))).toHaveLength(0);
+    // The window closes: this call flushes LOG.resumed and resets the backstop.
+    lines.length = 0;
+    decide("UP", "failover", { conn: "cx", why: "upstream-5xx" }, AT + 61_000);
+    expect(lines.some((l) => l.includes("LOG.resumed"))).toBe(true);
+    // 28 more occurrences bring the bucket to n=128, its next scheduled emit.
+    for (let n = 0; n < 28; n++) decide("SEL", "refused", { conn: "c", why: "at-limit" }, AT + 61_000);
+    const repLine = lines.find((l) => l.includes("SEL.refused"));
+    expect(repLine).toBeDefined();
+    expect(repLine).toContain("rep=64"); // 128-64: the throttled 65..100 are inside it
   });
 
   it("never throttles the nominal REQ line, which is one per request already", () => {
@@ -174,6 +207,13 @@ describe("request id", () => {
       expect(readRid(req2)).toMatch(/^[0-9a-f]{8}$/);
       expect(readRid(req2)).not.toContain(" ");
     }
+  });
+});
+
+describe("field keys", () => {
+  it("SEC-4: keys outside the k=v grammar never reach the line", () => {
+    const line = formatLine("UP", "failover", { rid: "a", "bad key": "v", "x=y": "v", ok_key: "v" }, AT);
+    expect(line).toBe("2026-09-03T18:09:07Z UP.failover rid=a ok_key=v");
   });
 });
 
@@ -262,7 +302,26 @@ describe("chat.js admission refusal (the 73% line)", () => {
     for (let n = 0; n < 60; n++) await handleChat(make());
     const emitted = lines.filter((l) => l.includes("ADM.ratelimited"));
     expect(emitted.length).toBeLessThanOrEqual(6);
-    expect(emitted.at(-1)).toMatch(/ rep=\d+ first=[\d:]{8}$/);
+    expect(emitted.at(-1)).toMatch(/ rep=\d+ first=\d{4}-[\d:]{8}$/); // D-7
+  });
+
+  it("D-10: the rate-limit refusal emits REQ.refused carrying the same rid", async () => {
+    const { handleChat, __rateLimiter } = await import("@/sse/handlers/chat.js");
+    __rateLimiter.reset();
+    const ip = "203.0.113.9";
+    for (let n = 0; n < 60; n++) __rateLimiter.isRateLimited(ip);
+    lines.length = 0;
+
+    const res = await handleChat(new Request("http://localhost:20128/v1/chat/completions", {
+      method: "POST",
+      headers: { "x-forwarded-for": ip, "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-fable-5", messages: [] }),
+    }));
+    expect(res.status).toBe(429);
+    const line = lines.find((l) => l.includes("REQ.refused"));
+    expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:]{8}Z REQ\.refused rid=[0-9a-f]{8} why=rate-limited$/);
+    const admLine = lines.find((l) => l.includes("ADM.ratelimited"));
+    expect(line).toContain(admLine.match(/rid=[0-9a-f]{8}/)[0]);
   });
 
   it("no longer writes the reasonless warn it replaced", async () => {

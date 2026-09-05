@@ -343,6 +343,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
   const strictPreferredConnection = Boolean(preferredConnectionId) && options?.strictPreferredConnection === true;
   // Resolve aliases before queue acquisition so alias and canonical requests share one lock.
   const providerId = resolveProviderId(provider);
+  // P-F4: resolveRoutingSessionHash was computed three times per request
+  // (operator pin, scheduler selection, return). It is a pure function of
+  // options/providerId, so compute it once, ahead of the serialized queue.
+  const routingSessionHash = resolveRoutingSessionHash(options, providerId);
   const currentQueue = providerSelectionQueues.get(providerId) || Promise.resolve();
   let releaseQueue;
   const nextQueue = new Promise(resolve => { releaseQueue = resolve; });
@@ -644,7 +648,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       }
       const pinned = await persistOperatorPin({
-        sessionHash: resolveRoutingSessionHash(options, providerId),
+        sessionHash: routingSessionHash,
         model: model || MODEL_ANY,
         connection,
         windows: windowsByConnection[connection.id],
@@ -670,7 +674,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       //
       // The adapter is resolved BEFORE selectAndReserve opens its transaction,
       // because db.transaction(fn) is synchronous (schedulerRepos.js).
-      const sessionHash = resolveRoutingSessionHash(options, providerId);
+      const sessionHash = routingSessionHash;
       const repos = await createSchedulerRepos({ now: nowMs });
       const decision = selectAndReserve({
         sessionHash,
@@ -792,7 +796,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // chat.js prefixes it into the `sid` used by REQ ce= cache-epoch
       // telemetry. Additive: absent rather than recomputed when resolution
       // found nothing client-derived.
-      sessionHash: resolveRoutingSessionHash(options, providerId),
+      sessionHash: routingSessionHash,
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,

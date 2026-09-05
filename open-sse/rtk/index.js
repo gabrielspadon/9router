@@ -9,8 +9,11 @@ import { safeApply } from "./applyFilter.js";
 // content-array item is still evidence; the block-level isErrorToolResult
 // only sees the enclosing node, so each item must be checked before
 // compressing. Covers all three flag spellings seen across formats.
+// R-F2: error:true (strict boolean) and status:'failed' are failure flags in
+// the wild (e.g. some executor shapes) and join the vocabulary.
 function isErrorItem(item) {
-  return !!item && (item.is_error === true || item.isError === true || item.status === "error");
+  return !!item && (item.is_error === true || item.isError === true || item.error === true ||
+    item.status === "error" || item.status === "failed");
 }
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
@@ -23,7 +26,8 @@ function isErrorItem(item) {
 // error result reached the compressor through the other three.
 function isErrorToolResult(node) {
   if (!node || typeof node !== "object") return false;
-  return node.is_error === true || node.isError === true || node.status === "error";
+  return node.is_error === true || node.isError === true || node.error === true ||
+    node.status === "error" || node.status === "failed";
 }
 
 export function compressMessages(body, enabled) {

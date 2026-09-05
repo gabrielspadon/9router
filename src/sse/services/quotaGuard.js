@@ -31,6 +31,11 @@ const LIVE_FETCH_TIMEOUT_MS = 3000;
 // key: connectionId -> { snapshot, fetchedAt }
 const memoryCache = new Map();
 
+// P-F2: one in-flight live refresh per connection. Concurrent cache misses
+// share a single fetch instead of each stalling the selection queue on its
+// own up-to-3s provider call.
+const inFlightRefreshes = new Map();
+
 function freshSnapshot(snapshot, fetchedAt) {
   if (!snapshot || !fetchedAt) return null;
   const ts = typeof fetchedAt === "number" ? fetchedAt : new Date(fetchedAt).getTime();
@@ -51,6 +56,16 @@ function readSnapshot(connection) {
     if (s) return s;
   }
   return null;
+}
+
+// P-F2: the stale-but-usable answer. Anything we have is better than holding
+// the admission queue for a live fetch, so a TTL-expired snapshot still gates
+// (isQuotaPaused auto-recovers a window past its resetAt) while a refresh
+// catches up in the background.
+function staleSnapshot(connection) {
+  const cached = memoryCache.get(connection.id);
+  if (cached?.snapshot) return cached.snapshot;
+  return connection.lastQuotaSnapshot || null;
 }
 
 function snapshotOwner(connection) {
@@ -97,6 +112,28 @@ function storeSnapshot(connectionId, snapshot) {
   updateProviderConnection(connectionId, { lastQuotaSnapshot: snapshot }).catch(() => {});
 }
 
+// Run one live fetch and, when it produced a usable snapshot, warm both caches.
+// Fail-open is preserved by the caller: a rejection here never pauses anything.
+async function runLiveRefresh(connection, proxyOptions) {
+  const fetched = await fetchLiveSnapshot(connection, proxyOptions);
+  if (fetched?.snapshot?.kind === "required-unavailable") return fetched;
+  if (fetched?.snapshot) storeSnapshot(connection.id, fetched.snapshot);
+  return fetched;
+}
+
+// Deduped per connection: the first miss starts the fetch, every concurrent
+// miss (and the background revalidator) awaits the same promise.
+function scheduleRefresh(connection, proxyOptions) {
+  let p = inFlightRefreshes.get(connection.id);
+  if (!p) {
+    p = runLiveRefresh(connection, proxyOptions).finally(() => {
+      if (inFlightRefreshes.get(connection.id) === p) inFlightRefreshes.delete(connection.id);
+    });
+    inFlightRefreshes.set(connection.id, p);
+  }
+  return p;
+}
+
 /**
  * Decide whether an account should be skipped for routing due to low quota.
  *
@@ -132,27 +169,36 @@ export async function evaluateQuota(connection) {
   let snapshot = readSnapshot(connection);
   let rawUsage = null;
   if (!snapshot) {
-    try {
-      const fetched = await fetchLiveSnapshot(connection, proxyOptions);
-      if (fetched?.snapshot?.kind === "required-unavailable") {
-        return {
-          paused: false,
-          reason: "required-proxy-unavailable",
-          code: "required_proxy_unavailable",
-          snapshot: null,
-          rawUsage: null,
-        };
+    const stale = staleSnapshot(connection);
+    if (stale) {
+      // P-F2: serve the stale snapshot now, refresh asynchronously. The next
+      // request sees fresh evidence; this one never waits on the provider.
+      snapshot = stale;
+      scheduleRefresh(connection, proxyOptions).catch(() => {});
+    } else {
+      // No evidence anywhere: one deduped live fetch, awaited — the only case
+      // an admission still waits on the provider, and only the first one in.
+      try {
+        const fetched = await scheduleRefresh(connection, proxyOptions);
+        if (fetched?.snapshot?.kind === "required-unavailable") {
+          return {
+            paused: false,
+            reason: "required-proxy-unavailable",
+            code: "required_proxy_unavailable",
+            snapshot: null,
+            rawUsage: null,
+          };
+        }
+        snapshot = fetched?.snapshot ?? null;
+        // Only carried alongside the snapshot it produced: a null snapshot means
+        // deriveQuotaSnapshot found no usable quotas in it, and pairing it with
+        // a DIFFERENT (persisted) snapshot below would mislabel stale evidence
+        // as fresh.
+        rawUsage = snapshot ? fetched?.rawUsage ?? null : null;
+      } catch {
+        snapshot = null;
       }
-      snapshot = fetched?.snapshot ?? null;
-      // Only carried alongside the snapshot it produced: a null snapshot means
-      // deriveQuotaSnapshot found no usable quotas in it, and pairing it with
-      // a DIFFERENT (persisted) snapshot below would mislabel stale evidence
-      // as fresh.
-      rawUsage = snapshot ? fetched?.rawUsage ?? null : null;
-    } catch {
-      snapshot = null;
     }
-    if (snapshot) storeSnapshot(connection.id, snapshot);
   }
 
   const paused = isQuotaPaused({ ...connection, lastQuotaSnapshot: snapshot });
@@ -174,5 +220,8 @@ export { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 // Exposed for tests / cache invalidation.
 export function _clearQuotaCache(connectionId) {
   if (connectionId) memoryCache.delete(connectionId);
-  else memoryCache.clear();
+  else {
+    memoryCache.clear();
+    inFlightRefreshes.clear();
+  }
 }

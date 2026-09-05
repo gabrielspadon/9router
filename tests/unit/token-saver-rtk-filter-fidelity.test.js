@@ -150,3 +150,49 @@ describe("DEFECT D-min-1: quoted (non-ASCII) git-diff path becomes 'unknown'", (
     expect(body.messages[0].content).not.toContain("unknown");
   });
 });
+
+// R-F4: the quote-strip in gitDiff mangled C-quoted diff --git lines: stray
+// backslashes from \" and \\ escapes survived, an embedded ' b/' in a name
+// shifted the split, and the header relied on luck. The filter now parses the
+// quoted pair explicitly and keeps octal escapes verbatim.
+describe("R-F4: quoted diff --git pairs", () => {
+  // Fat hunk: compressText skips blobs under MIN_COMPRESS_SIZE (500), and a
+  // too-small input would make the assertions vacuous.
+  const hunk = (n = 60) =>
+    [
+      "index 1111111..2222222 100644",
+      "@@ -1,60 +1,60 @@",
+      ...Array.from({ length: n }, (_, i) => [` context ${i}`, `-old ${i}`, `+new ${i}`]).flat(),
+    ].join("\n");
+
+  it("unescapes \\\" and \\\\ inside a quoted pair and keeps an embedded ' b/' in the name", () => {
+    const name = 'src/weird "quoted" b/name.ts';
+    const input = `diff --git "a/${name.replace(/"/g, '\\"')}" "b/${name.replace(/"/g, '\\"')}"\n${hunk()}`;
+    expect(input.length).toBeGreaterThan(500);
+    const body = wrapTool(input);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.map((h) => h.filter)).toEqual(["git-diff"]);
+    expect(body.messages[0].content).toContain(name);
+    expect(body.messages[0].content).not.toContain("unknown");
+    expect(body.messages[0].content).not.toMatch(/\\"/); // no stray backslash escapes left
+  });
+
+  it("keeps octal-escaped (core.quotePath) names verbatim, including the escapes", () => {
+    const input = 'diff --git "a/src/f\\303\\274.ts" "b/src/f\\303\\274.ts"\n' + hunk();
+    expect(input.length).toBeGreaterThan(500);
+    const body = wrapTool(input);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.map((h) => h.filter)).toEqual(["git-diff"]);
+    expect(body.messages[0].content).toContain("src/f\\303\\274.ts");
+    expect(body.messages[0].content).not.toContain("unknown");
+  });
+
+  it("unquoted common case is unchanged", () => {
+    const input = "diff --git a/src/plain.ts b/src/plain.ts\n" + hunk();
+    expect(input.length).toBeGreaterThan(500);
+    const body = wrapTool(input);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.map((h) => h.filter)).toEqual(["git-diff"]);
+    expect(body.messages[0].content).toContain("src/plain.ts");
+  });
+});

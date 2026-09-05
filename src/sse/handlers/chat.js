@@ -33,7 +33,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
-import { decide, idPrefix, relativeReset, requestRid, req } from "@/shared/observability/decide.js";
+import { decide, idPrefix, relativeReset, requestRid, req, reqSummary } from "@/shared/observability/decide.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel,
@@ -176,6 +176,9 @@ export async function handleChat(request, clientRawRequest = null, options = {})
       reset: relativeReset(resetAt),
       why: apiKey ? "api-key-window" : rateLimitKey === "anonymous" ? "anon-window" : "ip-window",
     });
+    // D-10: VERDICTS.REQ.refused had no emitters — the refusal IS the request's
+    // summary line.
+    reqSummary("refused", { rid, why: "rate-limited" });
     return errorResponse(HTTP_STATUS.RATE_LIMITED, "Too many requests, please slow down", {
       retryAfter: { at: resetAt },
       failurePhase: "admission",
@@ -239,6 +242,8 @@ export async function handleChat(request, clientRawRequest = null, options = {})
         source: requireApiKeySource,
         presented: presentedApiKey ? true : false,
       });
+      // D-10: the key-gate refusal is the whole request — it gets REQ.refused.
+      reqSummary("refused", { rid, why: presentedApiKey ? "key-invalid" : "key-required" });
       const message = presentedApiKey ? "Invalid API key" : "Missing API key";
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, message);
     }

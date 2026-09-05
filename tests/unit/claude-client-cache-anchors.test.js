@@ -217,3 +217,82 @@ describe("client cache_control preservation", () => {
     expect(out.messages[2].content[1].cache_control).toEqual(ANCHOR_5M);
   });
 });
+
+describe("adversarial-review cache anchor regressions", () => {
+  it("F1: abandons a 4-anchor plan when the first-turn tail fallback would add a 5th breakpoint", () => {
+    // No assistant turn: anchorClaudeCache's first-turn fallback anchors the
+    // final user message. clientCacheAnchors used to count the fallback only
+    // against the last ASSISTANT message (none here), so it preserved the
+    // plan and the fallback shipped a 5th breakpoint → Anthropic 400.
+    const body = {
+      system: [{ type: "text", text: "sys", cache_control: { ...ANCHOR_1H } }],
+      tools: [{ name: "t", description: "d", input_schema: { type: "object" }, cache_control: { ...ANCHOR_1H } }],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "q1", cache_control: { ...ANCHOR_5M } }] },
+        { role: "user", content: [{ type: "text", text: "q2", cache_control: { ...ANCHOR_5M } }] },
+        { role: "user", content: [{ type: "text", text: "q3" }] },
+      ],
+    };
+    const out = anchorClaudeCache(body);
+    const anchors = anchoredBlocks(out);
+    // legacy strip-and-re-anchor: system tail 1h, tool tail 1h, final message 5m
+    expect(anchors).toHaveLength(3);
+    expect(out.messages[0].content[0].cache_control).toBeUndefined();
+    expect(out.messages[1].content[0].cache_control).toBeUndefined();
+    expect(out.messages[2].content[0].cache_control).toEqual(ANCHOR_5M);
+  });
+
+  it("F2: forces legacy re-anchor when a thinking block carries cache_control", () => {
+    // The code's own rule (:357) says thinking blocks never accept
+    // cache_control; preserving a client anchor on one is a deterministic 400.
+    const body = {
+      system: [{ type: "text", text: "sys", cache_control: { ...ANCHOR_1H } }],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "q" }] },
+        { role: "assistant", content: [
+          { type: "thinking", thinking: "hmm", signature: "sig", cache_control: { ...ANCHOR_5M } },
+          { type: "text", text: "a" },
+        ] },
+      ],
+    };
+    const out = anchorClaudeCache(body);
+    expect(out.messages[1].content[0].cache_control).toBeUndefined();
+    // legacy policy re-anchors the last non-thinking block of the assistant turn
+    expect(out.messages[1].content[1].cache_control).toEqual(ANCHOR_5M);
+    expect(anchoredBlocks(out)).toHaveLength(2);
+  });
+
+  it("F3: forces legacy re-anchor when a defer_loading tool carries cache_control", () => {
+    // Anthropic refuses a tool that both defers loading and carries a cache
+    // anchor (#3567); preserving the client anchor resurrects that 400.
+    const body = {
+      tools: [{ name: "mcp_tool", description: "d", input_schema: { type: "object" }, defer_loading: true, cache_control: { ...ANCHOR_1H } }],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "q" }] },
+        { role: "assistant", content: [{ type: "text", text: "a" }] },
+      ],
+    };
+    const out = anchorClaudeCache(body);
+    // every tool defers → no tool anchor at all, and the client's is stripped
+    expect(out.tools[0].cache_control).toBeUndefined();
+    expect(out.messages[1].content[0].cache_control).toEqual(ANCHOR_5M);
+  });
+
+  it("F4: prepareClaudeRequest alone anchors the final message on a first turn with no assistant", () => {
+    // anchorClaudeCache adds a 5m tail anchor on the last message when no
+    // assistant exists; Pass 2 used to add nothing, so executors calling
+    // prepareClaudeRequest outside chatCore shipped no message anchor at all.
+    const body = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "q1" }] },
+        { role: "user", content: [{ type: "text", text: "q2" }] },
+      ],
+    };
+    const out = prepareClaudeRequest(body, "anthropic", "key");
+    // consecutive user turns are merged by applyAssistantPrefillPolicy before
+    // Pass 2, so the tail anchor lands on the last block of the merged message
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0].content[0].cache_control).toBeUndefined();
+    expect(out.messages[0].content[1].cache_control).toEqual(ANCHOR_5M);
+  });
+});

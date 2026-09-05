@@ -74,6 +74,14 @@ function clampSignedInt(value) {
 
 // Single Node process: JS is single threaded and appends below are synchronous,
 // so concurrent requests serialize naturally — no lock needed. Fail-open everywhere.
+// SEC-5a: a file created under an older loose build is corrected to 0600 on
+// the next open. Best-effort: a chmod failure must never break the sink.
+function chmod600(file) {
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch { /* best-effort */ }
+}
+
 function rotateIfNeeded() {
   try {
     const file = eventsFile();
@@ -88,6 +96,7 @@ function rotateIfNeeded() {
       fs.unlinkSync(rotatedFile());
     } catch { /* no backup yet */ }
     fs.renameSync(file, rotatedFile());
+    chmod600(rotatedFile());
   } catch { /* rotation is best-effort */ }
 }
 
@@ -126,6 +135,7 @@ export function appendTokenSaverEvent(event) {
     ensureDir();
     rotateIfNeeded();
     fs.appendFileSync(eventsFile(), `${JSON.stringify(row)}\n`);
+    chmod600(eventsFile());
   } catch { /* stats must never break the request path */ }
 }
 
@@ -155,6 +165,8 @@ function emptyWindow() {
     requests: 0,
     applied: 0,
     bypassed: 0,
+    // T-F4: no producer persists failure rows (saver failures bypass the
+    // event sink entirely), so this stays 0; kept for the dashboard contract.
     errors: 0,
     // rtk — characters
     charsReduced: 0,
@@ -172,7 +184,6 @@ function emptyWindow() {
 function addTo(window, row) {
   window.requests++;
   if (row.applied) window.applied++;
-  else if (row.reason === "transform_error" || row.reason === "timeout") window.errors++;
   else window.bypassed++;
   if (row.saver === "rtk") window.charsReduced += row.charsSaved || 0;
   if (row.saver === "headroom") {

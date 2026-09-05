@@ -279,3 +279,61 @@ describe("token-saver tool pruner: evidence and cache metadata", () => {
     expect(body.messages[2].cache_control).toEqual({ type: "ephemeral" });
   });
 });
+
+// R-F5: a historical result already rewritten by rtk's elide filter carries an
+// integrity marker; re-truncating it would destroy the marker. It is kept
+// verbatim, like error evidence.
+describe("R-F5: rtk-elided historical results keep their integrity marker", () => {
+  const HMAC_MARKER = "head-data\n[elided 12000 chars · hmac 1a2b3c4d · head+tail preserved by tokenproxy]\ntail-data";
+  const SHA_MARKER = "head-data\n[elided 12000 chars · sha 1a2b3c4d · head+tail preserved by tokenproxy]\ntail-data";
+
+  it("OpenAI string content carrying an hmac elide marker is kept verbatim; the healthy neighbor prunes", () => {
+    const body = {
+      messages: [toolResult(HMAC_MARKER + "x".repeat(3000)), toolResult(bigText("recent"))],
+    };
+    const snapshot = body.messages[0].content;
+    const res = pruneHistoricalTools(body, { keepRecentTurns: 0, maxHistoricalChars: 800 });
+
+    expect(body.messages[0].content).toBe(snapshot);   // elided result untouched
+    expect(body.messages[0].content).not.toMatch(NOTICE_RE);
+    expect(body.messages[1].content).toMatch(NOTICE_RE); // neighbor still pruned
+    expect(res.count).toBe(1);
+  });
+
+  it("Claude array-form part carrying a sha-era elide marker is kept verbatim", () => {
+    const body = {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_el", content: [{ type: "text", text: SHA_MARKER + "y".repeat(3000) }] }],
+        },
+        { role: "assistant", content: [{ type: "tool_use", id: "toolu_el", name: "Bash", input: {} }] },
+        {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_ok", content: [{ type: "text", text: bigText("recent") }] }],
+        },
+        { role: "assistant", content: [{ type: "tool_use", id: "toolu_ok", name: "Bash", input: {} }] },
+      ],
+    };
+    const snapshot = body.messages[0].content[0].content[0].text;
+    const res = pruneHistoricalTools(body, { keepRecentTurns: 0, maxHistoricalChars: 800 });
+
+    expect(body.messages[0].content[0].content[0].text).toBe(snapshot);
+    expect(body.messages[2].content[0].content[0].text).toMatch(NOTICE_RE);
+    expect(res.count).toBe(1);
+  });
+
+  it("Responses function_call_output carrying an elide marker is kept verbatim", () => {
+    const body = {
+      messages: [
+        { type: "function_call_output", call_id: "c_el", output: HMAC_MARKER + "z".repeat(3000) },
+        { type: "function_call_output", call_id: "c_ok", output: bigText("recent") },
+      ],
+    };
+    const snapshot = body.messages[0].output;
+    pruneHistoricalTools(body, { keepRecentTurns: 0, maxHistoricalChars: 800 });
+
+    expect(body.messages[0].output).toBe(snapshot);
+    expect(body.messages[1].output).toMatch(NOTICE_RE);
+  });
+});

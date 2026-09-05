@@ -25,11 +25,20 @@ export function gitDiff(diff, maxLines = 500) {
       if (currentFile && (added > 0 || removed > 0)) {
         result.push(`  +${added} -${removed}`);
       }
-      // core.quotePath quotes non-ASCII paths: diff --git "a/x" "b/x";
-      // strip the quotes so the " b/" split still recovers the real name
-      const normalized = line.split('"').join("");
-      const parts = normalized.split(" b/");
-      currentFile = parts.length > 1 ? parts.slice(1).join(" b/") : "unknown";
+      // R-F4: core.quotePath emits the pair as C-quoted strings
+      // ("a/x\"y" "b/x\"y", octal escapes for non-ASCII). Parse the quoted
+      // pair first: the old quote-strip left stray backslashes from \" and
+      // \\ escapes and mis-split names containing ' b/'. Octal escapes
+      // (\303\274) stay verbatim. Unquoted lines keep the normalized split.
+      const quotedPair = line.match(/^diff --git "(?:a\/(.+))" "(?:b\/(.+))"\r?$/);
+      if (quotedPair) {
+        // Unescape only \" and \\; octal \ddd sequences pass through untouched.
+        currentFile = quotedPair[1].replace(/\\(["\\])/g, "$1");
+      } else {
+        const normalized = line.split('"').join("");
+        const parts = normalized.split(" b/");
+        currentFile = parts.length > 1 ? parts.slice(1).join(" b/") : "unknown";
+      }
       result.push(`\n${currentFile}`);
       added = 0;
       removed = 0;
