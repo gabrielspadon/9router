@@ -163,6 +163,12 @@ const memorySettings = {
   memoryToolPruningEnabled: true,
   memoryMaxToolTurnsKeepFull: 1,
   memoryMaxHistoricalToolChars: 800,
+  // Pruning is demand-driven (toolPruner.js): with no overflow the history is
+  // left alone. A window this small puts these bodies over budget so the pruner
+  // runs, which is the behaviour these assertions are about. Tighter than the
+  // sibling suites because headroom shrinks the body before memory measures it,
+  // so a 2000-token window left a deficit too small to clear the -3000 floor.
+  memoryContextWindowOverride: 1000,
   memoryMediaPruningEnabled: false,
   memoryHandoffEnabled: false,
   memoryContextCompactionEnabled: false,

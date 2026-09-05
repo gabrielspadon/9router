@@ -10,14 +10,36 @@
  * touched by anything here.
  *
  * The invariant, in one line: burn the entitlement that is about to be wasted
- * first, and never let a short window's reset order override a longer window
- * that is actually binding. Configured priority breaks ties only.
+ * first, ordered by the subscription's MAIN quota (its longest horizon, the one
+ * that actually constrains the plan) rather than by whichever short window
+ * happens to reset next. Configured priority breaks ties only.
  *
  * Window records use the contract's normalized shape, which is also the
  * `quotaWindows` table shape in src/lib/db/schema.js:
  *   { scope, remaining, limit, resetAt, observedAt, confidence }
  * `remaining` and `limit` are absolute units. A percentage cannot compare
  * headroom across a 5h window of 300 units and a 30d window of 90,000.
+ *
+ * PER-ACCOUNT EVIDENCE, NOT A COHORT SHAPE (2026-09-04). This module used to
+ * refuse to rank unless every account in the cohort reported the byte-identical
+ * set of window names, and to fail one account closed for one unreadable
+ * window. On a real pool neither holds: ten Claude connections on the same
+ * provider reported four different shapes (weekly-only, session+weekly,
+ * session-only, and no evidence at all), because plan tier and recent usage
+ * both change which windows a provider bothers to report, and an account that
+ * has not touched its 5h window in the current period reports no 5h window at
+ * all. The gate therefore fired on roughly a third of live switches, and the
+ * receipts recorded it: `trigger = cohort-degraded`, with the pool walked in
+ * connection-list order. Worse, the degraded path handed the caller
+ * `eligible: []` while still offering every record in `ranked`, so the
+ * scheduler selected accounts whose quota was provably at its limit and paid a
+ * 429 to find out.
+ *
+ * So: each account is ranked on ITS OWN windows, missing or unreadable evidence
+ * ranks an account last without taking it out of service, and hard eligibility
+ * is enforced on every path there is. `degraded` now means only "no account
+ * anywhere had orderable evidence", and even then nothing ineligible is
+ * offered, because there is nothing left to be ineligible against.
  */
 
 // Horizon in milliseconds, keyed by the parenthetical duration a provider
@@ -52,6 +74,11 @@ const SCOPED_MARKERS = /\b(per[-_ ]?model|per[-_ ]?feature|model|feature|tool|ag
 
 const GENERAL_NAMES = /\b(session|rate[-_ ]?limit|hourly|daily|weekly|monthly|annual|yearly)\b/i;
 
+// Below this a "horizon" is the 1 ms unknown-shape fallback, not a period. Both
+// forward projection and reset ordering need a real period to mean anything, so
+// a window this short is carried as unreadable rather than trusted.
+const MIN_REAL_HORIZON_MS = 60_000;
+
 /**
  * Horizon of a window in milliseconds. A parenthetical duration wins over the
  * bare name so `session (5h)` is 5h and not the 1 ms unknown fallback.
@@ -75,8 +102,7 @@ export function windowHorizonMs(scope) {
 
 /**
  * GENERAL (whole-account entitlement, ranked) vs SCOPED (sub-quota, ignored)
- * vs null (neither vocabulary — fails this one account closed, never the
- * provider).
+ * vs null (neither vocabulary — carried as unreadable, never fatal).
  */
 export function classifyWindow(scope) {
   const name = String(scope ?? '').trim();
@@ -88,9 +114,6 @@ export function classifyWindow(scope) {
 }
 
 function parseResetAt(value) {
-  // Strict per overlay-spec §1's stated conflict resolution: a general window
-  // with no parseable reset evidence is NOT usable entitlement. An account
-  // earns its rank from evidence, never from an evidence gap.
   if (typeof value !== 'string' || value.trim() === '') return null;
   const t = Date.parse(value);
   return Number.isFinite(t) ? t : null;
@@ -102,27 +125,92 @@ function finiteNonNegative(v) {
 }
 
 /**
- * Normalize one account's raw windows into ranked general windows.
- * Returns { ok: false, reason } when the account falls out of ranking; the
- * caller keeps it as failover inventory rather than deleting it (§10).
+ * Project a recorded reset forward onto the period that is running NOW.
+ *
+ * A window whose recorded `resetAt` has already elapsed has replenished, and
+ * the recorded instant is then the WRONG ordering key: it is the smallest
+ * number in the pool, so a just-replenished account sorted to the very front
+ * as though its entitlement were the most urgent there is, when in truth it had
+ * just been handed a fresh period and was the LEAST urgent. Projecting the
+ * instant forward by whole horizons puts the account where its real next
+ * deadline belongs.
+ *
+ * Returns null when there is no real period to project by, which is the
+ * caller's signal to treat the reading as unreadable rather than to invent a
+ * deadline for it.
+ *
+ * @param {number} resetAt - recorded reset, epoch ms
+ * @param {number} horizonMs
+ * @param {number} nowMs
+ * @returns {number|null}
+ */
+export function effectiveResetAt(resetAt, horizonMs, nowMs) {
+  if (!Number.isFinite(resetAt) || !Number.isFinite(nowMs)) return null;
+  if (resetAt > nowMs) return resetAt;
+  if (!Number.isFinite(horizonMs) || horizonMs < MIN_REAL_HORIZON_MS) return null;
+  const periods = Math.floor((nowMs - resetAt) / horizonMs) + 1;
+  return resetAt + periods * horizonMs;
+}
+
+/**
+ * Normalize one account's raw windows into general windows, structurally.
+ *
+ * Now-independent on purpose: projection and eligibility both need `now` and
+ * both live in rankAccounts, so this stays reproducible from the rows alone.
+ *
+ * One unreadable window no longer fails the account. It is counted, and the
+ * count is what drops the account behind every fully-readable one at ordering
+ * key 1 — a connection we cannot fully read is a worse bet than one we can, and
+ * it is not a connection we are entitled to take out of service.
+ *
+ * @returns {{ok: true, windows: Array<object>, unreadable: number,
+ *   reasons: Array<string>} | {ok: false, reason: string, unreadable: number,
+ *   reasons: Array<string>}}
  */
 export function normalizeAccountWindows(windows) {
   if (!Array.isArray(windows) || windows.length === 0) {
-    return { ok: false, reason: 'no-windows' };
+    return { ok: false, reason: 'no-windows', unreadable: 0, reasons: [], blocked: false };
   }
   const general = [];
+  const reasons = [];
+  let unreadable = 0;
+  // A window that positively states a ceiling of zero or less is not an
+  // unreadable window, it is a statement that this account has no entitlement
+  // in that window at all. Failing open on it would route traffic to an
+  // account the provider has told us cannot serve. Kept separate from
+  // `unreadable`, which is an absence of evidence rather than evidence of
+  // absence, and which must never take an account out of service.
+  let blocked = false;
   for (const w of windows) {
-    if (!w || typeof w !== 'object') return { ok: false, reason: 'malformed-window' };
+    if (!w || typeof w !== 'object') {
+      unreadable += 1;
+      reasons.push('malformed-window');
+      continue;
+    }
     const kind = classifyWindow(w.scope);
-    if (kind === null) return { ok: false, reason: `unclassifiable-scope:${w.scope}` };
+    if (kind === null) {
+      unreadable += 1;
+      reasons.push(`unclassifiable-scope:${w.scope}`);
+      continue;
+    }
     if (kind === 'scoped') continue;
 
     const remaining = finiteNonNegative(w.remaining);
-    if (remaining === null) return { ok: false, reason: `bad-remaining:${w.scope}` };
     const limit = finiteNonNegative(w.limit);
-    if (limit === null || limit <= 0) return { ok: false, reason: `bad-limit:${w.scope}` };
+    const declaredLimit = Number(w.limit);
     const resetAt = parseResetAt(w.resetAt);
-    if (resetAt === null) return { ok: false, reason: `bad-resetAt:${w.scope}` };
+    if (Number.isFinite(declaredLimit) && declaredLimit <= 0) {
+      blocked = true;
+      reasons.push(`bad-limit:${w.scope}`);
+      continue;
+    }
+    if (remaining === null || limit === null || limit <= 0 || resetAt === null) {
+      unreadable += 1;
+      if (remaining === null) reasons.push(`bad-remaining:${w.scope}`);
+      if (limit === null || limit <= 0) reasons.push(`bad-limit:${w.scope}`);
+      if (resetAt === null) reasons.push(`bad-resetAt:${w.scope}`);
+      continue;
+    }
 
     general.push({
       scope: String(w.scope),
@@ -134,40 +222,78 @@ export function normalizeAccountWindows(windows) {
       confidence: typeof w.confidence === 'string' ? w.confidence : 'unknown',
     });
   }
-  if (general.length === 0) return { ok: false, reason: 'no-general-windows' };
+  if (general.length === 0) {
+    // Name the actual defect when there is one. "no-general-windows" is true
+    // but useless on a connection whose single window had an unparseable reset:
+    // the operator needs to know WHICH reading is broken, and `reasons[0]` is
+    // the first one we could not read.
+    return {
+      ok: false, reason: reasons[0] ?? 'no-general-windows', unreadable, reasons, blocked,
+    };
+  }
 
-  // Longest horizon first. The array of resetAt values in this order is the
-  // ranking key: the longest window is compared first, so a constraining 30d
-  // window can never be overridden by a 5h window's sooner reset.
+  // Longest horizon first. The head of this array is the subscription's MAIN
+  // quota — the branch that actually constrains the plan — and it is the
+  // primary deadline key, so a constraining 30d window can never be overridden
+  // by a 5h window's sooner reset.
   general.sort((a, b) => b.horizonMs - a.horizonMs || a.scope.localeCompare(b.scope));
-  return { ok: true, windows: general };
+  return { ok: true, windows: general, unreadable, reasons, blocked };
 }
 
-// Eligibility, Scheduling Contract rule 2: every KNOWN hard window must have
-// headroom. A window at or past its limit is a hard stop for the account.
-//
-// `nowMs` is load-bearing, not decoration. A window whose resetAt has already
-// elapsed has replenished, so the depleted reading is stale evidence about a
-// window that no longer exists. Without this, an account that just reset stays
-// permanently ineligible until someone re-fetches usage, and rule 5's
-// "atomically return to the earliest restored account" can never fire.
-// The spec's predicate is `used < total`. In the normalized absolute-unit shape
-// that is exactly `remaining > 0`, since used == limit - remaining. Adding a
-// `remaining < limit` clause translates the OTHER side of the comparison too
-// and silently encodes `used > 0`, which makes a never-touched account with
-// full headroom permanently ineligible — the single most usable account there
-// is. Keep the predicate on one operand.
-function isUsable(general, nowMs) {
-  return general.every((w) => w.resetAt <= nowMs || w.remaining > 0);
+/**
+ * Resolve one account's structural windows against `nowMs`.
+ *
+ * `orderable` holds the windows that carry a real deadline, longest horizon
+ * first. A window whose recorded reset has elapsed and whose horizon is unknown
+ * cannot be projected, so it is expired evidence: it neither orders the account
+ * nor holds it back, and it counts as unreadable.
+ */
+function resolveWindows(structural, nowMs) {
+  const orderable = [];
+  let unreadable = structural.unreadable ?? 0;
+  let usable = !structural.blocked;
+
+  for (const w of structural.ok ? structural.windows : []) {
+    const effective = effectiveResetAt(w.resetAt, w.horizonMs, nowMs);
+    if (effective === null) {
+      unreadable += 1;
+      continue;
+    }
+    const replenished = w.resetAt <= nowMs;
+    // Eligibility, Scheduling Contract rule 2: every KNOWN hard window must
+    // have headroom. A replenished window has a whole fresh period, so the
+    // depleted reading that predates its reset is stale evidence about a period
+    // that no longer exists. The spec's predicate is `used < total`, which in
+    // absolute units is exactly `remaining > 0` — adding a `remaining < limit`
+    // clause would silently also encode `used > 0` and make a never-touched
+    // account with full headroom permanently ineligible, the single most usable
+    // account there is. Keep it on one operand.
+    const effectiveRemaining = replenished ? w.limit : w.remaining;
+    if (effectiveRemaining <= 0) usable = false;
+    orderable.push({ ...w, effectiveResetAt: effective, effectiveRemaining, replenished });
+  }
+
+  orderable.sort((a, b) => b.horizonMs - a.horizonMs || a.scope.localeCompare(b.scope));
+  return { orderable, unreadable, usable };
 }
 
 // Rule 2: unknown evidence must not outrank fresh known evidence, but it must
-// not take the account offline either. Confidence is a BAND applied at ordering
-// key 1; inside a band overlay-spec §1's five keys apply unchanged.
+// not take the account offline either. Confidence is a BAND applied after the
+// evidence band; inside a band the reset keys below apply unchanged.
 const CONFIDENCE_BAND = { fresh: 0, stale: 1, unknown: 2 };
 const BAND_NAME = ['fresh', 'stale', 'unknown'];
-function bandOf(general) {
-  return general.reduce((worst, w) => Math.max(worst, CONFIDENCE_BAND[w.confidence] ?? 2), 0);
+function bandOf(orderable) {
+  if (orderable.length === 0) return CONFIDENCE_BAND.unknown;
+  return orderable.reduce((worst, w) => Math.max(worst, CONFIDENCE_BAND[w.confidence] ?? 2), 0);
+}
+
+// Ordering key 1. Evidence completeness replaces the old cohort shape gate:
+// instead of refusing to rank a mixed pool, an account we can read fully goes
+// ahead of one we can read partly, which goes ahead of one we cannot read at
+// all. Nothing here makes an account ineligible.
+function evidenceBandOf(orderable, unreadable) {
+  if (orderable.length === 0) return 2;
+  return unreadable > 0 ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,10 +326,6 @@ const minRemainingOf = (windows) => {
 
 // Shape fingerprint for the cohort gate (§1): comparing accounts whose window
 // sets differ is worse than not ranking them at all.
-function shapeKey(general) {
-  return general.map((w) => `${w.horizonMs}:${w.scope}`).join('|');
-}
-
 function priorityOf(account) {
   const p = Number(account?.priority);
   return Number.isFinite(p) ? p : Number.POSITIVE_INFINITY;
@@ -219,10 +341,12 @@ function priorityOf(account) {
  *   ranked: Array<object>, eligible: Array<object>, ineligible: Array<object>,
  *   winner: object|null, degraded: boolean, reason: string|null
  * }}
- *   `degraded` true means the cohort gate refused to rank and the result is the
- *   previous-pin-first fallback in original order. Every account is present in
- *   `ranked` either way, because a non-winning account stays failover
- *   inventory (§10) rather than being deactivated.
+ *   `degraded` true means no account carried orderable quota evidence, so the
+ *   order is previous-pin-then-priority rather than deadline-driven. It does
+ *   NOT relax eligibility: `eligible` is authoritative on every path, and a
+ *   caller must never reach into `ranked` to find something to send. Every
+ *   account is present in `ranked` either way, because a non-winning account
+ *   stays failover inventory (§10) rather than being deactivated.
  */
 export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
@@ -231,59 +355,45 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
   }
   const list = Array.isArray(accounts) ? accounts : [];
 
-  const records = list.map((account, index) => {
-    const norm = normalizeAccountWindows(account?.windows);
-    return {
-      id: account?.id,
-      account,
-      index,
-      priority: priorityOf(account),
-      windows: norm.ok ? norm.windows : [],
-      valid: norm.ok,
-      reason: norm.ok ? null : norm.reason,
-      usable: norm.ok ? isUsable(norm.windows, nowMs) : false,
-      band: norm.ok ? bandOf(norm.windows) : CONFIDENCE_BAND.unknown,
-    };
-  });
-
-  // A single-member cohort short-circuits: there is nothing to compare it
-  // against, so its own validity decides eligibility and no ranking runs.
-  //
-  // An INVALID solo record degrades rather than reporting a clean empty
-  // eligible set, which is the same failure direction the cohort gate below
-  // takes for the identical evidence. Without this the arity decided the
-  // outcome: two accounts with no quota evidence degrade to previous-pin-first
-  // and both stay routable, while ONE account with no quota evidence returned
-  // `degraded: false` with nothing eligible, which a caller reads as "ranking
-  // ran and this account is not usable" and refuses the request. A provider
-  // that reports no usage at all (most of them) on a single-account install
-  // therefore served nothing. Refusing to rank is not evidence of
-  // unusability, whether the cohort holds one member or ten.
-  // Trace helpers, built from the same records the decision runs on. Every
-  // token is an id prefix, an enum, or a short duration, so a printed line
-  // stays inside the design's value contract without any work here.
+  // Trace helpers, built from the same records the ordering reads so the
+  // printed line and the decision can never disagree. `id8` keeps a connection
+  // id short enough to sit on one log line.
   const id8 = (v) => String(v ?? '').slice(0, 8);
   const altToken = (r) => {
     const band = BAND_NAME[r.band] ?? 'unknown';
     const age = ageToken((r.windows || []).map((w) => w.observedAt), nowMs);
     return `${id8(r.id)}:${band}${age ? `:${age}` : ''}`;
   };
-  // The first sort key on which two records differ — the name of the ordering
-  // key that actually decided between them (mirrors the comparator below).
+  // Which ordering key actually decided, named by replaying the comparator
+  // against the runner-up. Reporting the key the sort USED, rather than the
+  // first key that differs on paper, is what keeps the printed line honest
+  // when two accounts tie on everything down to declaration order.
   const decidedKey = (a, b) => {
-    if (a.usable !== b.usable || a.band !== b.band) return 'evidence-band';
-    const n = Math.min(a.windows.length, b.windows.length);
-    for (let i = 0; i < n; i += 1) if (a.windows[i].resetAt !== b.windows[i].resetAt) return 'reset-horizon';
+    if (a.usable !== b.usable) return 'eligibility';
+    // Completeness (how much we could read) and confidence (how fresh what we
+    // read is) are both the evidence axis, and the printed line has one name
+    // for it. Minting a second enum would split a key the log format cannot
+    // tell apart anyway.
+    if (a.evidenceBand !== b.evidenceBand || a.band !== b.band) return 'evidence-band';
+    if (a.bindingResetAt !== b.bindingResetAt) return 'reset-horizon';
+    if (a.soonestResetAt !== b.soonestResetAt) return 'reset-horizon';
     if ((a.id === previousPinId) !== (b.id === previousPinId)) return 'pinned-continuity';
     if (a.priority !== b.priority) return 'configured-priority';
     return 'fallback-order';
   };
-  const winTrace = (winner, ranked) => {
+  const winTrace = (winner, all) => {
+    const runnerUp = all.find((r) => r.usable && r.id !== winner.id);
+    // Key order is the printed order (decide.js walks Object.keys), and the
+    // golden capture in tests/__fixtures__ is the format contract, so this is
+    // conn/key/win/alt exactly as §3.4 of docs/logging-design.md shows it.
+    // The winner's own confidence band is deliberately absent: `key` already
+    // says `evidence-band` whenever the band is what decided, and printing it
+    // unconditionally spends bytes on every nominal line to say `fresh`.
     const fields = {
       conn: id8(winner.id),
-      key: ranked.find((r) => r.usable && r.id !== winner.id) ? decidedKey(winner, ranked.find((r) => r.usable && r.id !== winner.id)) : 'fallback-order',
+      key: runnerUp ? decidedKey(winner, runnerUp) : 'fallback-order',
       win: true,
-      alt: ranked.filter((r) => r.valid && r.id !== winner.id).slice(0, 3).map(altToken),
+      alt: all.filter((r) => r.id !== winner.id).slice(0, 3).map(altToken),
     };
     const rem = minRemainingOf(winner.windows);
     if (rem !== null) fields.rem = rem;
@@ -292,159 +402,148 @@ export function rankAccounts(accounts, { now, previousPinId = null } = {}) {
     return { cls: 'SEL', verdict: 'win', fields };
   };
 
-  if (records.length <= 1) {
-    const only = records[0] || null;
-    if (only && !only.valid) {
-      return {
-        ranked: records,
-        eligible: [],
-        ineligible: records,
-        winner: null,
-        degraded: true,
-        reason: `invalid-record:${only.id}:${only.reason}`,
-        trace: [{ cls: 'RANK', verdict: 'invalid-record', fields: { conn: id8(only.id), why: only.reason } }],
-      };
-    }
-    if (!only) {
-      return {
-        ranked: records,
-        eligible: [],
-        ineligible: [],
-        winner: null,
-        degraded: false,
-        reason: 'empty-cohort',
-        trace: [{ cls: 'RANK', verdict: 'degraded', fields: { win: false, why: 'empty-cohort' } }],
-      };
-    }
-    if (!only.usable) {
-      return {
-        ranked: records,
-        eligible: [],
-        ineligible: [only],
-        winner: null,
-        degraded: false,
-        reason: null,
-        trace: [{
-          cls: 'RANK',
-          verdict: 'depleted',
-          fields: { win: false, alt: [altToken(only)], reset: soonestResetOf(only.windows) },
-        }],
-      };
-    }
-    return {
-      ranked: records,
-      eligible: [only],
-      ineligible: [],
-      winner: only,
-      degraded: false,
-      reason: null,
-      trace: [winTrace(only, records)],
-    };
-  }
-
-  const fallback = () => {
-    const ordered = [...records].sort((a, b) => {
-      const ap = a.id === previousPinId ? 0 : 1;
-      const bp = b.id === previousPinId ? 0 : 1;
-      return ap - bp || a.index - b.index;
-    });
-    return ordered;
+  // Row 19 of docs/logging-design.md still owes the operator the offending id
+  // and the reason a reading could not be used. It is no longer a GATE — the
+  // cohort shape check that used to refuse the whole pool is gone, and an
+  // account we cannot read is ranked last and still served — so this is a
+  // report emitted BESIDE the ordering verdict rather than instead of it.
+  // First offender only: the rest are named by their `alt` band tokens, and a
+  // per-account entry each would push the line past its byte budget.
+  const evidenceTrace = (all) => {
+    const bad = all.find((r) => !r.valid || r.unreadable > 0);
+    if (!bad) return [];
+    const why = bad.valid
+      ? String(bad.reason || '').replace(/^partial-evidence:/, '').split(',')[0]
+      : bad.reason;
+    return [{ cls: 'RANK', verdict: 'invalid-record', fields: { conn: id8(bad.id), why } }];
   };
 
-  // Cohort gate: every record valid, one shared window shape, at least one
-  // usable. Any miss degrades the whole group to previous-pin stickiness
-  // rather than aborting the request (§1 failure direction).
-  const invalid = records.find((r) => !r.valid);
-  if (invalid) {
+  const records = list.map((account, index) => {
+    const structural = normalizeAccountWindows(account?.windows);
+    const { orderable, unreadable, usable } = resolveWindows(structural, nowMs);
     return {
-      ranked: fallback(),
-      eligible: [],
-      ineligible: records.filter((r) => !r.valid || !r.usable),
-      winner: null,
-      degraded: true,
-      reason: `invalid-record:${invalid.id}:${invalid.reason}`,
-      trace: [{ cls: 'RANK', verdict: 'invalid-record', fields: { win: false, conn: id8(invalid.id), why: invalid.reason } }],
+      id: account?.id,
+      account,
+      index,
+      priority: priorityOf(account),
+      windows: orderable,
+      // `valid` and `reason` are diagnostics now, never gates: an account with
+      // no readable window is ranked last and still served.
+      valid: structural.ok,
+      reason: structural.ok
+        ? (unreadable > 0 ? `partial-evidence:${structural.reasons.join(',')}` : null)
+        : structural.reason,
+      unreadable,
+      usable,
+      evidenceBand: evidenceBandOf(orderable, unreadable),
+      band: bandOf(orderable),
+      // The subscription's main-quota deadline, and the nearest deadline of any
+      // kind. Infinity when there is no orderable evidence, which parks the
+      // account behind everything that has a real deadline.
+      bindingResetAt: orderable.length ? orderable[0].effectiveResetAt : Number.POSITIVE_INFINITY,
+      soonestResetAt: orderable.length
+        ? Math.min(...orderable.map((w) => w.effectiveResetAt))
+        : Number.POSITIVE_INFINITY,
     };
-  }
-  const shapes = new Set(records.map((r) => shapeKey(r.windows)));
-  if (shapes.size > 1) {
-    const a = records[0];
-    const b = records.find((r) => shapeKey(r.windows) !== shapeKey(a.windows));
+  });
+
+  if (records.length === 0) {
     return {
-      ranked: fallback(),
-      eligible: [],
-      ineligible: [],
-      winner: null,
-      degraded: true,
-      reason: 'cohort-shape-mismatch',
-      trace: [{
-        cls: 'RANK',
-        verdict: 'shape-mismatch',
-        fields: { win: false, conn: id8(a.id), a: shapeKey(a.windows), b: shapeKey(b.windows) },
-      }],
-    };
-  }
-  if (!records.some((r) => r.usable)) {
-    return {
-      ranked: fallback(),
-      eligible: [],
-      ineligible: [...records],
-      winner: null,
-      degraded: true,
-      reason: 'cohort-all-depleted',
-      trace: [{
-        cls: 'RANK',
-        verdict: 'depleted',
-        fields: { win: false, alt: records.map(altToken), reset: soonestResetOf(records.flatMap((r) => r.windows)) },
-      }],
+      ranked: [], eligible: [], ineligible: [], winner: null,
+      degraded: false, reason: 'empty-cohort',
+      trace: [{ cls: 'RANK', verdict: 'degraded', fields: { win: false, why: 'empty-cohort' } }],
     };
   }
 
-  // Five ordering keys, in order (§1):
-  //   0. usable before depleted, then confidence band (rule 2: unknown never
-  //      outranks fresh known evidence, but never goes offline either)
-  //   2. resetAt array, longest horizon first, compared element by element —
-  //      the account whose LONGEST window resets soonest wins, so entitlement
-  //      about to be wasted is spent first
-  //   3. previous pin (stickiness; never round-robin)
-  //   4. configured priority, lowest wins, missing = unbounded — TIE-BREAK ONLY
-  //   5. original index, so the sort is total and therefore deterministic
-  const ranked = [...records].sort((a, b) => {
-    if (a.usable !== b.usable) return a.usable ? -1 : 1;
-    if (a.band !== b.band) return a.band - b.band;
-
-    const n = Math.min(a.windows.length, b.windows.length);
-    for (let i = 0; i < n; i += 1) {
-      const d = a.windows[i].resetAt - b.windows[i].resetAt;
-      if (d !== 0) return d;
-    }
-    if (a.windows.length !== b.windows.length) return a.windows.length - b.windows.length;
-
+  const stickyThenDeclared = (a, b) => {
     const ap = a.id === previousPinId ? 0 : 1;
     const bp = b.id === previousPinId ? 0 : 1;
-    if (ap !== bp) return ap - bp;
+    return ap - bp || (a.priority - b.priority) || (a.index - b.index);
+  };
 
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return a.index - b.index;
+  // Nothing anywhere carries a deadline, so there is no urgency to order by.
+  // Previous-pin-then-priority is the §1 failure direction, and it is an
+  // ORDERING fallback only — every record here is `usable`, because a record
+  // with no readable window has nothing that could prove it depleted.
+  const anyEvidence = records.some((r) => r.windows.length > 0);
+  if (!anyEvidence) {
+    const ranked = [...records].sort(stickyThenDeclared);
+    const eligible = ranked.filter((r) => r.usable);
+    return {
+      ranked,
+      eligible,
+      ineligible: ranked.filter((r) => !r.usable),
+      winner: eligible[0] || null,
+      degraded: true,
+      reason: 'no-quota-evidence',
+      // Every record on this path has unreadable evidence by construction, so
+      // evidenceTrace always names one and its reason — strictly more than a
+      // generic `why=no-quota-evidence` would. The outcome line follows: a
+      // fallback order that still hands out a slot is a serve, not a refusal.
+      trace: [
+        ...evidenceTrace(ranked),
+        ...(eligible[0]
+          ? [winTrace(eligible[0], ranked)]
+          : [{
+              cls: 'RANK',
+              verdict: 'depleted',
+              fields: { win: false, alt: ranked.map(altToken), reset: null },
+            }]),
+      ],
+    };
+  }
+
+  // Ordering keys, in order:
+  //   0. usable before depleted
+  //   1. evidence completeness (full read, partial read, no read)
+  //   2. confidence band (rule 2: unknown never outranks fresh known evidence,
+  //      but never goes offline either)
+  //   3. the MAIN quota's projected reset, soonest first — the subscription
+  //      branch that constrains the plan, so entitlement about to be wasted is
+  //      spent first and a short window cannot overspend a longer one
+  //   4. the nearest deadline of any horizon, soonest first — immediate
+  //      pressure, once the main quotas tie
+  //   5. previous pin (stickiness; never round-robin)
+  //   6. configured priority, lowest wins, missing = unbounded — TIE-BREAK ONLY
+  //   7. original index, so the sort is total and therefore deterministic
+  const ranked = [...records].sort((a, b) => {
+    if (a.usable !== b.usable) return a.usable ? -1 : 1;
+    if (a.evidenceBand !== b.evidenceBand) return a.evidenceBand - b.evidenceBand;
+    if (a.band !== b.band) return a.band - b.band;
+    if (a.bindingResetAt !== b.bindingResetAt) return a.bindingResetAt - b.bindingResetAt;
+    if (a.soonestResetAt !== b.soonestResetAt) return a.soonestResetAt - b.soonestResetAt;
+    return stickyThenDeclared(a, b);
   });
 
   const eligible = ranked.filter((r) => r.usable);
-  const winner = eligible[0] || null;
   return {
     ranked,
     eligible,
     ineligible: ranked.filter((r) => !r.usable),
-    winner,
+    winner: eligible[0] || null,
     degraded: false,
-    reason: null,
-    trace: winner ? [winTrace(winner, ranked)] : [],
+    reason: eligible.length === 0 ? 'all-depleted' : null,
+    trace: [
+      ...evidenceTrace(ranked),
+      ...(eligible[0]
+        ? [winTrace(eligible[0], ranked)]
+        : [{
+            cls: 'RANK',
+            verdict: 'depleted',
+            fields: {
+              win: false,
+              alt: ranked.map(altToken),
+              reset: soonestResetOf(ranked.flatMap((r) => r.windows)),
+            },
+          }]),
+    ],
   };
 }
 
 /**
- * Convenience wrapper: the winning account id, or null when the cohort
- * degraded or nothing is eligible. Callers that need the reason or the
- * failover inventory use rankAccounts directly.
+ * Convenience wrapper: the winning account id, or null when nothing is
+ * eligible. Callers that need the reason or the failover inventory use
+ * rankAccounts directly.
  */
 export function selectAccount(accounts, options) {
   return rankAccounts(accounts, options).winner?.id ?? null;

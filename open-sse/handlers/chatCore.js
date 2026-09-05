@@ -88,6 +88,10 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
+// Imported from contextBudget directly rather than through the memory index:
+// several suites mock that index wholesale, and a re-export would make the
+// Headroom gate disappear (undefined is not callable) in every one of them.
+import { measureContextPressure } from "../services/memory/contextBudget.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
 import { projectClientModelStatus } from "../config/modelErrorClassifier.js";
@@ -772,7 +776,18 @@ export async function handleChatCore({
   measureSaverStage("privacy", privacyRan);
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
+  //
+  // The measurement is taken here and passed down; headroom.js owns the gate
+  // and the reason it exists. Inside the budget the body is left exactly as the
+  // client sent it, so the prompt prefix stays byte-identical turn to turn and
+  // the provider's cache keeps hitting.
   const headroomDiagnostics = {};
+  const headroomPressure = headroomEnabled
+    ? measureContextPressure(translatedBody, {
+        contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
+        settings: memorySettings || undefined,
+      })
+    : null;
   const headroomStats = await compressWithHeadroom(translatedBody, {
     enabled: tokenSaverEnabled && headroomEnabled,
     url: headroomUrl,
@@ -780,6 +795,7 @@ export async function handleChatCore({
     format: finalFormat,
     compressUserMessages: headroomCompressUserMessages,
     timeoutMs: headroomTimeoutMs,
+    contextPressure: headroomPressure,
     diagnostics: headroomDiagnostics,
   });
   const headroomLine = formatHeadroomLog(headroomStats);
@@ -873,11 +889,28 @@ export async function handleChatCore({
 
   // Memory & Context Optimizer (Tool & Media Pruning, Compaction, Cache Anchoring, Handoffs)
   if (tokenSaverEnabled && memorySettings) {
+    // THE MODEL'S OWN WINDOW decides when history has to be cut, and the
+    // capability table already knows it (1,000,000 for the Opus and Sonnet 5
+    // class, and a conservative default for anything it has not heard of).
+    // Without this the memory pipeline ran on fixed thresholds and pruned a
+    // conversation occupying 3% of its window.
+    const memoryCaps = getCapabilitiesForModel(provider, upstreamModel);
     const memRes = await applyMemoryEnhancements(translatedBody, {
       settings: memorySettings,
       targetFormat: finalFormat,
+      contextWindow: memoryCaps?.contextWindow ?? null,
       log,
     });
+    const memBudget = memRes.stats?.budget;
+    if (memBudget) {
+      // The occupancy line, on every request. It is the only way to see from a
+      // journal that a session is actually using the window it pays for, and
+      // it is what made the old behavior visible in the first place.
+      xf.push(
+        `CTX:${Math.round(memBudget.projectedAfter / 1000)}k`
+        + `/${Math.round(memBudget.limit / 1000)}k`,
+      );
+    }
     if (memRes.stats?.toolPruning?.applied) {
       xf.push(
         `TOOL-PRUNE:~${Math.round(memRes.stats.toolPruning.savedChars / 4)}t`,

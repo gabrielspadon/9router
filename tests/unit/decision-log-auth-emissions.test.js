@@ -304,18 +304,25 @@ describe('auth.js selection emissions', () => {
     ]);
     quotaMocks.evaluateQuota.mockImplementation(async (c) => ({ paused: false, reason: 'ok', snapshot: c.lastQuotaSnapshot }));
     const picked = await auth.getProviderCredentials(PROVIDER, null, MODEL, clientOptions('sess-refused'));
-    // A fully depleted cohort degrades the ranking, but the scheduler's
-    // fallback order still serves an account — so the log shows the depleted
-    // verdict, NOT a refusal that never happened.
-    expect(picked.allRateLimited).toBeUndefined();
-    expect(picked.connectionId).toBeDefined();
+    // Both accounts read remaining=0 against a window that has not reset yet,
+    // so there is nothing to serve. The degraded path used to hand one out
+    // anyway — `eligible` was empty while `ranked` still offered every record —
+    // and the caller paid a 429 to discover what the ranking already knew.
+    // Since b09a9277 eligibility is authoritative on every path, so a pool with
+    // no headroom refuses, and the refusal carries the earliest projected reset
+    // as its retry-after instead of a flat one-second floor.
+    expect(picked.allRateLimited).toBe(true);
+    expect(picked.connectionId).toBeUndefined();
+    expect(picked.retryAfter).toMatch(/^\d{4}-/);
 
     const depleted = findLine('RANK.depleted');
     expect(depleted).toContain('win=false');
     expect(depleted).toContain('alt=conn_ddd:unknown,conn_eee:unknown');
     expect(depleted).toMatch(/reset=\d{4}-/);
-    expect(emitted().some((l) => l.includes('SEL.refused'))).toBe(false);
-    leases.releaseAccountLease(picked.accountLease);
+    // And the refusal is now printed under its own name, which is what this
+    // test was always called after.
+    const refused = findLine('SEL.refused');
+    expect(refused).toBeDefined();
   });
 
   it('omits rid when no log context was threaded (background selection)', async () => {

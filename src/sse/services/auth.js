@@ -63,6 +63,9 @@ export function _getProviderSelectionQueueSize() {
 // retry-after, so a caller is never told to retry with no delay hint at all.
 // Mirrors accountScheduler.js's own RETRY_AFTER_SECONDS.
 const SCHEDULER_RETRY_AFTER_SECONDS = 1;
+// Local, so this module does not take a dependency on the handler's status
+// table just to name one code.
+const HTTP_STATUS_RATE_LIMITED = 429;
 
 // The affinity table is keyed by (sessionHash, model) and both are NOT NULL, so
 // a request that names no model still needs a key. A sentinel rather than the
@@ -700,16 +703,44 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
 
       if (decision?.unavailable) {
-        const retryAt = new Date(nowMs + (decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS) * 1000).toISOString();
+        // TWO DIFFERENT FACTS WEAR THIS SHAPE, and telling them apart is what
+        // stops a client spinning at one request per second.
+        //
+        // `at-capacity` is a CONCURRENCY wait: the pool has entitlement, it
+        // just has no free slot this instant. One second is the right answer
+        // and 503 is the right status, because the condition clears on its own
+        // in well under a second.
+        //
+        // Every other refusal is the pool being out of ENTITLEMENT, and that is
+        // a 429 whose honest retry-after is the earliest projected window reset
+        // — which the ranker already computed and handed up as
+        // `earliestResetAt`. This branch used to answer 503 with a flat
+        // one-second floor for both, so a caller told "come back in a second"
+        // retried straight into an exhausted pool and kept doing it until a
+        // window rolled over hours later. The operator sees that as the proxy
+        // hammering accounts that had nothing left to give.
+        const capacityWait = decision.reason === 'at-capacity';
+        const retryAt = !capacityWait && decision.earliestResetAt
+          ? decision.earliestResetAt
+          : new Date(nowMs + (decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS) * 1000).toISOString();
         printTrace(decision.trace);
-        log.info("AUTH", `${provider} | scheduler: ${decision.reason}, caller should retry`);
+        log.info(
+          "AUTH",
+          `${provider} | scheduler: ${decision.reason}`
+          + `${decision.degraded ? " (no quota evidence)" : ""}`
+          + ` | caller should retry at ${retryAt}`
+        );
         return {
           allRateLimited: true,
           retryAfter: retryAt,
-          retryAfterHuman: `${decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS}s`,
+          retryAfterHuman: capacityWait
+            ? `${decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS}s`
+            : formatRetryAfter(retryAt),
           lastError: `No account available (${decision.reason})`,
-          lastErrorCode: null,
-          clientErrorStatus: null,
+          // 429 is the truth an exhausted pool owes the caller. A capacity wait
+          // is not a rate limit, so it keeps the 503 the caller already reads.
+          lastErrorCode: capacityWait ? null : HTTP_STATUS_RATE_LIMITED,
+          clientErrorStatus: capacityWait ? null : HTTP_STATUS_RATE_LIMITED,
         };
       }
 

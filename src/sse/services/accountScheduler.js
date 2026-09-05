@@ -22,7 +22,11 @@
  * Neither rule is restated here.
  */
 
-import { rankAccounts } from '@/shared/utils/quotaRanking.js';
+import {
+  rankAccounts,
+  normalizeAccountWindows,
+  effectiveResetAt,
+} from '@/shared/utils/quotaRanking.js';
 import { buildSwitchReceipt } from '@/shared/utils/switchReceipt.js';
 import { decideRepin, TRIGGERS } from '@/shared/utils/repinPolicy.js';
 
@@ -39,6 +43,26 @@ function runInTransaction(repos, fn) {
     throw new TypeError('selectAndReserve requires an injected repos.transaction(fn)');
   }
   return repos.transaction(fn);
+}
+
+/**
+ * The soonest projected reset across a candidate set, as an ISO string, or null
+ * when no candidate carries a readable deadline. This is the honest answer to
+ * "when should the caller come back" once every account is depleted; the
+ * one-second admission floor is for a capacity wait, not for an empty pool.
+ */
+function earliestReset(candidates, nowMs) {
+  let soonest = null;
+  for (const account of candidates) {
+    const norm = normalizeAccountWindows(account?.windows);
+    if (!norm.ok) continue;
+    for (const w of norm.windows) {
+      const at = effectiveResetAt(w.resetAt, w.horizonMs, nowMs);
+      if (at === null) continue;
+      if (soonest === null || at < soonest) soonest = at;
+    }
+  }
+  return soonest === null ? null : new Date(soonest).toISOString();
 }
 
 /**
@@ -108,7 +132,7 @@ export function selectAndReserve({
     const pin = typeof repos.getPin === 'function' ? repos.getPin({ sessionHash, model }) : null;
     const previousPinId = typeof pin?.connectionId === 'string' ? pin.connectionId : null;
 
-    const { ranked, eligible, degraded, trace: rankingTrace } = rankAccounts(candidates, { now: nowMs, previousPinId });
+    const { ranked, eligible, degraded, reason: rankReason, trace: rankingTrace } = rankAccounts(candidates, { now: nowMs, previousPinId });
 
     // Rule 4 (keep a healthy pin) AND rule 5 (atomically return to the
     // earliest account that restored while a later one was serving) are
@@ -145,18 +169,40 @@ export function selectAndReserve({
               why: repin.reason,
             },
           }];
-    const order = degraded ? ranked : eligible;
+    // ELIGIBILITY IS NOT NEGOTIABLE, degraded or not. This read `degraded ?
+    // ranked : eligible`, and `ranked` carries every record including the ones
+    // whose quota is provably at its limit, so a pool whose accounts disagreed
+    // about window shape (the common case: ten Claude connections reported four
+    // shapes) selected depleted accounts and paid a 429 to discover it.
+    // rankAccounts now degrades ORDERING only and still answers `eligible`
+    // truthfully, so there is one list to walk.
+    const order = eligible;
     const decidedId = repin.connectionId;
-    const decided = decidedId ? order.find((r) => r.id === decidedId) ?? null : null;
+    // The policy layer may NAME one account the ranker calls ineligible: the
+    // all-depleted hold, where every reading says depleted and the pin is held
+    // so the upstream — not an aging snapshot — decides. That is a decision
+    // about one specific account, so it is looked up in `ranked` only after
+    // `eligible` misses, and everything else that gets tried still comes from
+    // `eligible`. The old code took `ranked` wholesale whenever the pool
+    // degraded, which is how list order replaced quota order.
+    const decided = decidedId
+      ? order.find((r) => r.id === decidedId) ?? ranked.find((r) => r.id === decidedId) ?? null
+      : null;
     const preferred = decided
       ? [decided, ...order.filter((r) => r.id !== decidedId)]
       : order;
 
     if (preferred.length === 0) {
+      const detail = rankReason ? `:${rankReason}` : '';
       return {
         unavailable: true,
         retryAfter: RETRY_AFTER_SECONDS,
-        reason: 'no-eligible-account',
+        reason: `no-eligible-account${detail}`,
+        degraded,
+        // Every account is out of headroom, and the ranker knows when the first
+        // of them comes back. Handing that up is what lets the caller quote a
+        // real reset instead of the one-second floor.
+        earliestResetAt: earliestReset(candidates, nowMs),
         trace: [
           ...(rankingTrace || []),
           ...repinTrace,
@@ -209,7 +255,7 @@ export function selectAndReserve({
           from: previousPinId,
           to: record.id,
           windows: record.account?.windows ?? [],
-          trigger: isFirstPin ? 'first-pin' : degraded ? 'cohort-degraded' : 'repin',
+          trigger: isFirstPin ? 'first-pin' : repin.trigger || TRIGGERS.EXHAUSTION,
           model,
           sessionHash,
           now: nowMs,

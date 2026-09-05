@@ -209,7 +209,14 @@ describe("quota auto-ping", () => {
     await runQuotaAutoPingTick(deps, state);
 
     expect(deps.getExecutor).not.toHaveBeenCalled();
-    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+    // The brake held, so nothing was PINGED. A write recording that the
+    // previous warm never started the clock is bookkeeping, not a ping, and it
+    // is what puts this family on the slow backoff — so assert on the ping
+    // fields rather than on the connection never being written at all.
+    for (const [, patch] of deps.updateProviderConnection.mock.calls) {
+      expect(patch).not.toHaveProperty("lastPingAt");
+      expect(patch).not.toHaveProperty("lastPingedResetAt");
+    }
   });
 
   it("does not ping Codex just because reported usage is zero", async () => {

@@ -50,9 +50,9 @@ describe("connections row decrypt cache (P-F1)", () => {
       provider: "claude", authType: "apikey", name: "pf1-b", apiKey: "sk-pf1b",
     });
     await repo.getProviderConnectionById(conn.id); // warm
-    await repo.updateProviderConnection(conn.id, { apiKey: "sk-pf1b-rotated" });
+    await repo.updateProviderConnection(conn.id, { apiKey: "sk-pf1b-v2" });
     const reread = await repo.getProviderConnectionById(conn.id);
-    expect(reread.apiKey).toBe("sk-pf1b-rotated");
+    expect(reread.apiKey).toBe("sk-pf1b-v2");
   });
 
   it("a foreign direct-DB write busts the cache too", async () => {

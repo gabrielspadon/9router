@@ -50,9 +50,10 @@ describe('decideRepin exposes trigger/reason/from/to for every outcome', () => {
     const r = decideRepin({ pin: pin('conn_gone01'), accounts: [depleted], now: NOW });
     expect(r.action).toBe('none');
     expect(r.to).toBeNull();
-    // A solo depleted record degrades to no winner and no reason; the policy
-    // then names the exit itself.
-    expect(r.reason).toBe('no-eligible-account');
+    // Per-account ranking (b09a9277) reports WHY nothing can serve instead of
+    // degrading to a bare no-winner, so the ranker's reason survives to here
+    // rather than the policy having to name a generic exit.
+    expect(r.reason).toBe('all-depleted');
   });
 
   it('degraded cohort with a fallback winner keeps the pin', () => {
@@ -90,31 +91,30 @@ describe('decideRepin exposes trigger/reason/from/to for every outcome', () => {
     });
   });
 
-  it('earlier account restored -> repin on reset; healthy pin otherwise keeps', () => {
-    // Rule 5's input: b is EARLIER in operator order and reads as exhausted in
-    // the counterfactual ranking at pinnedAt (remaining 0, reset still future
-    // then) but replenished now (resetAt already elapsed) — a genuine restore,
-    // not an account that was available all along. a is the LATER pinned
-    // account, still healthy. The pin moves back to the earliest restored.
+  it('a healthy pin is held even when an earlier account has restocked', () => {
+    // This used to preempt a healthy pin the moment any earlier account became
+    // eligible again. Every switch abandons the pinned account's prompt-cache
+    // prefix, so the next request re-primes the whole conversation at full
+    // input price: the operator pays cash to leave a session that was serving
+    // perfectly well. Since b09a9277 a healthy pin is kept, full stop, and the
+    // choice is re-made only when the pinned account can no longer serve.
     const restored = loaded('conn_bbbbbbbb', [w(0, iso(-1 * HOUR))], { priority: 0 });
     const a = loaded('conn_aaaaaaaa', [w(100, iso(5 * HOUR))], { priority: 1 });
-    const old = iso(-2 * HOUR);
-    const moved = decideRepin({
-      pin: { connectionId: 'conn_aaaaaaaa', pinnedAt: old },
+    const held = decideRepin({
+      pin: { connectionId: 'conn_aaaaaaaa', pinnedAt: iso(-2 * HOUR) },
       accounts: [a, restored],
       now: NOW,
     });
-    expect(moved).toMatchObject({
-      action: 'repin',
-      from: 'conn_aaaaaaaa',
-      to: 'conn_bbbbbbbb',
-      trigger: TRIGGERS.RESET,
-      reason: 'earlier-account-restored',
+    expect(held).toMatchObject({
+      action: 'keep',
+      to: 'conn_aaaaaaaa',
+      trigger: null,
+      reason: 'pin-healthy',
     });
 
     const kept = decideRepin({ pin: pin('conn_aaaaaaaa'), accounts: [healthy(), other()], now: NOW });
     expect(kept.action).toBe('keep');
-    expect(kept.reason).toBe('pin-healthy-no-earlier-restore');
+    expect(kept.reason).toBe('pin-healthy');
     expect(kept.to).toBe('conn_aaaaaaaa');
   });
 

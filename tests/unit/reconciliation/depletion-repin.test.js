@@ -129,78 +129,138 @@ describe('sequential depletion: one, then two, then three', () => {
       now: NOW + 3 * HOUR,
     });
     expect(d.action).toBe('keep');
-    expect(d.reason).toMatch(/cohort-all-depleted/);
+    expect(d.reason).toMatch(/all-depleted/);
   });
 });
 
-describe('reset-aware repin: return to the earliest restored account', () => {
-  it('returns to two when two resets while the session is on three', () => {
+describe('reset-aware repin: the decision point is depletion, and earliest means deadline', () => {
+  // WHAT CHANGED, AND WHY (2026-09-04). Two rules used to live here that no
+  // longer do.
+  //
+  // The first preempted a HEALTHY pin as soon as any account had become
+  // eligible since `pinnedAt`. A switch abandons the pinned account's
+  // prompt-cache prefix, so the next request re-primes the whole conversation
+  // at full input price: the operator pays cash for a session that was serving
+  // perfectly well. So a healthy pin is now kept, full stop, and the choice is
+  // re-made only when the pinned account can no longer serve.
+  //
+  // The second decided WHERE to move by configured priority, falling back to
+  // the account's index in the connection list when no priority was set — the
+  // common case, so "the earliest restored account" quietly meant "whichever
+  // restored account sits higher in the DB listing". That contradicts rule 3,
+  // which fixes priority as a tie-break only, and it got the answer wrong in
+  // both directions: it refused a return to a restocked account whose window
+  // expires within the hour, and forced one onto a restocked account with a
+  // week of runway. Earliest now means earliest DEADLINE, because the deadline
+  // is what decides whose tokens get wasted.
+
+  it('keeps a healthy pin even when another account has restocked', () => {
     const at = NOW + 6.5 * HOUR;
-    // Two is eligible now only because its reset has passed; it was NOT
-    // eligible when the pin was made. One is still depleted at this clock.
-    expect(rankAccounts(TWO_RESTORED, { now: at }).eligible.map((r) => r.id)).toEqual([
-      'two',
+    // Two is eligible now only because its reset passed; it was NOT eligible
+    // when the pin was made, so the old policy called this a restore and moved.
+    expect(rankAccounts(TWO_RESTORED, { now: NOW + 2 * HOUR }).eligible.map((r) => r.id)).toEqual([
       'three',
     ]);
-    expect(
-      rankAccounts(TWO_RESTORED, { now: NOW + 2 * HOUR }).eligible.map((r) => r.id)
-    ).toEqual(['three']);
-
-    expect(
-      decideRepin({
-        pin: { connectionId: 'three', pinnedAt: iso(2 * HOUR) },
-        accounts: TWO_RESTORED,
-        now: at,
-      })
-    ).toMatchObject({
-      action: 'repin',
-      from: 'three',
-      connectionId: 'two',
-      trigger: TRIGGERS.RESET,
-      reason: 'earlier-account-restored',
-    });
-  });
-
-  it('returns to one when one resets next, taking the earliest restored account', () => {
-    const at = NOW + 8.5 * HOUR;
-    expect(
-      decideRepin({
-        pin: { connectionId: 'two', pinnedAt: iso(6.5 * HOUR) },
-        accounts: ONE_RESTORED,
-        now: at,
-      })
-    ).toMatchObject({
-      action: 'repin',
-      from: 'two',
-      connectionId: 'one',
-      trigger: TRIGGERS.RESET,
-    });
-  });
-
-  it('repins once per restore, then holds on the same evidence', () => {
-    const first = decideRepin({
+    expect(rankAccounts(TWO_RESTORED, { now: at }).eligible.map((r) => r.id)).toEqual([
+      'three',
+      'two',
+    ]);
+    const d = decideRepin({
       pin: { connectionId: 'three', pinnedAt: iso(2 * HOUR) },
       accounts: TWO_RESTORED,
-      now: NOW + 6.5 * HOUR,
+      now: at,
     });
-    expect(first.connectionId).toBe('two');
-    // The repin restamps pinnedAt, so two is eligible in its own baseline and
-    // the same snapshot cannot fire a second move.
-    const pin = { connectionId: 'two', pinnedAt: iso(6.5 * HOUR) };
-    for (let i = 1; i <= 5; i += 1) {
-      const again = decideRepin({
+    expect(d.action).toBe('keep');
+    expect(d.connectionId).toBe('three');
+    expect(d.reason).toBe('pin-healthy');
+  });
+
+  it('ranks a just-replenished account by its NEW deadline, not its stale one', () => {
+    // The bug this pins. Two replenished at 6h, so its recorded resetAt is in
+    // the PAST and was the smallest number in the pool — which sorted the
+    // account that had just been handed a fresh five-hour period to the very
+    // front, as the most urgent entitlement there is. It is the least urgent:
+    // its next deadline is 11h. Three holds 200 units that expire at 7h, so
+    // three is what has to be spent first or lost.
+    const at = NOW + 6.5 * HOUR;
+    const ranked = rankAccounts(TWO_RESTORED, { now: at }).ranked;
+    const byId = Object.fromEntries(ranked.map((r) => [r.id, r]));
+    expect(byId.two.bindingResetAt).toBe(Date.parse(iso(11 * HOUR)));
+    expect(byId.three.bindingResetAt).toBe(Date.parse(iso(7 * HOUR)));
+    // A replenished window reads as its full ceiling, not its stale remaining.
+    expect(byId.two.windows[0].effectiveRemaining).toBe(LIMIT);
+    expect(byId.two.windows[0].replenished).toBe(true);
+    expect(rankAccounts(TWO_RESTORED, { now: at }).winner.id).toBe('three');
+  });
+
+  it('returns to a restocked account when its deadline lands first', () => {
+    // The case the operator described. The session is on B. A was depleted when
+    // the pin was made and has since restocked, so A's fresh period runs to
+    // 8.5h. C has been available all along and its window runs to 8.8h. B is
+    // now out. A's deadline comes first, so the session goes back to A and the
+    // receipt says so.
+    const a = acct('a', 1, 0, 3.5 * HOUR);
+    const b = acct('b', 2, 0, 7 * HOUR);
+    const c = acct('c', 3, LIMIT, 8.8 * HOUR);
+    const at = NOW + 4 * HOUR;
+    expect(rankAccounts([a, b, c], { now: at }).eligible.map((r) => r.id)).toEqual(['a', 'c']);
+    expect(
+      decideRepin({
+        pin: { connectionId: 'b', pinnedAt: iso(0) },
+        accounts: [a, b, c],
+        now: at,
+      })
+    ).toMatchObject({
+      action: 'repin',
+      from: 'b',
+      connectionId: 'a',
+      trigger: TRIGGERS.RESET,
+      reason: 'pinned-window-exhausted:returning-to-restored',
+    });
+  });
+
+  it('does NOT return to a restocked account whose deadline lands later', () => {
+    // Same shape, one number moved: C now runs out at 5h, ahead of the
+    // restocked A at 8.5h. Going back to A would waste C's hour, so the session
+    // takes C and the receipt calls it plain exhaustion rather than a return.
+    // The old policy moved to A here purely because A sat first in the list.
+    const a = acct('a', 1, 0, 3.5 * HOUR);
+    const b = acct('b', 2, 0, 7 * HOUR);
+    const c = acct('c', 3, LIMIT, 5 * HOUR);
+    const at = NOW + 4 * HOUR;
+    expect(rankAccounts([a, b, c], { now: at }).eligible.map((r) => r.id)).toEqual(['c', 'a']);
+    expect(
+      decideRepin({
+        pin: { connectionId: 'b', pinnedAt: iso(0) },
+        accounts: [a, b, c],
+        now: at,
+      })
+    ).toMatchObject({
+      action: 'repin',
+      from: 'b',
+      connectionId: 'c',
+      trigger: TRIGGERS.EXHAUSTION,
+      reason: 'pinned-window-exhausted',
+    });
+  });
+
+  it('holds one pin across many requests on unchanged evidence', () => {
+    // No round-robin and no drift: the same evidence must produce the same
+    // answer every time it is asked, or a settled session pays a cache
+    // re-prime for nothing.
+    const pin = { connectionId: 'three', pinnedAt: iso(2 * HOUR) };
+    for (let i = 0; i <= 5; i += 1) {
+      const d = decideRepin({
         pin,
         accounts: TWO_RESTORED,
         now: NOW + 6.5 * HOUR + i * 60_000,
       });
-      expect(again.action).toBe('keep');
-      expect(again.connectionId).toBe('two');
+      expect(d.action).toBe('keep');
+      expect(d.connectionId).toBe('three');
     }
   });
 
-  it('never lets a LATER account pull a session off an earlier one', () => {
-    // Three restores while the session sits on one. Rule 5 is a RETURN to an
-    // earlier account, so a later restore is not a repin trigger at all.
+  it('never lets another account pull a session off a healthy one', () => {
     const accounts = [one(100, 13 * HOUR), two(150, 11 * HOUR), three(0, 10 * HOUR)];
     const d = decideRepin({
       pin: { connectionId: 'one', pinnedAt: iso(8.5 * HOUR) },
@@ -212,8 +272,8 @@ describe('reset-aware repin: return to the earliest restored account', () => {
     expect(d.trigger).toBeNull();
   });
 
-  it('does not repin to an earlier account that was available all along', () => {
-    // One outranks three and is eligible, but nothing reset — this is the
+  it('does not repin to an account that was available all along', () => {
+    // One outranks three and is eligible, but three is healthy — this is the
     // anti-spray assertion, and it is what separates the policy from simply
     // calling the ranker on every request.
     expect(selectAccount(ALL_FRESH, { now: NOW + HOUR })).toBe('one');
@@ -224,12 +284,12 @@ describe('reset-aware repin: return to the earliest restored account', () => {
     });
     expect(d.action).toBe('keep');
     expect(d.connectionId).toBe('three');
-    expect(d.reason).toBe('pin-healthy-no-earlier-restore');
+    expect(d.reason).toBe('pin-healthy');
   });
 
-  it('does not move on a degraded cohort — a refusal to rank is not evidence', () => {
-    // Mismatched window shapes trip the cohort gate. Rule 4's failure direction
-    // is previous-pin-first, so the pin survives instead of being re-decided.
+  it('ranks a mixed-shape pool instead of refusing, and still holds the pin', () => {
+    // Mismatched window shapes used to trip a cohort gate that refused to rank
+    // the whole pool. They are now ranked on each account own binding window.
     const mismatched = [
       one(LIMIT, 5 * HOUR),
       {
@@ -241,7 +301,11 @@ describe('reset-aware repin: return to the earliest restored account', () => {
         ],
       },
     ];
-    expect(rankAccounts(mismatched, { now: NOW }).degraded).toBe(true);
+    const res = rankAccounts(mismatched, { now: NOW });
+    expect(res.degraded).toBe(false);
+    // One binding window is the 5h at 5h; three binding window is the WEEKLY at
+    // 6d, because the longest horizon is the branch that constrains the plan.
+    expect(res.eligible.map((r) => r.id)).toEqual(['one', 'three']);
     const d = decideRepin({
       pin: { connectionId: 'three', pinnedAt: iso(0) },
       accounts: mismatched,
@@ -249,31 +313,18 @@ describe('reset-aware repin: return to the earliest restored account', () => {
     });
     expect(d.action).toBe('keep');
     expect(d.connectionId).toBe('three');
-    expect(d.reason).toMatch(/^ranking-degraded:/);
   });
 
-  it('leaves a drained account immediately, without waiting for a reset', () => {
+  it('holds the pin when no account carries any deadline at all', () => {
+    const blind = [{ id: 'one', windows: [] }, { id: 'three', windows: [] }];
+    expect(rankAccounts(blind, { now: NOW }).degraded).toBe(true);
     const d = decideRepin({
-      pin: { connectionId: 'two', pinnedAt: iso(0) },
-      accounts: ALL_FRESH,
+      pin: { connectionId: 'three', pinnedAt: iso(0) },
+      accounts: blind,
       now: NOW,
-      unavailableIds: ['two'],
     });
-    expect(d).toMatchObject({
-      action: 'repin',
-      from: 'two',
-      connectionId: 'one',
-      trigger: TRIGGERS.UNAVAILABLE,
-    });
-  });
-
-  it('is deterministic — the same snapshot always yields the same decision', () => {
-    const args = {
-      pin: { connectionId: 'three', pinnedAt: iso(2 * HOUR) },
-      accounts: TWO_RESTORED,
-      now: NOW + 6.5 * HOUR,
-    };
-    const once = decideRepin(args);
-    for (let i = 0; i < 5; i += 1) expect(decideRepin(args)).toEqual(once);
+    expect(d.action).toBe('keep');
+    expect(d.connectionId).toBe('three');
+    expect(d.reason).toMatch(/ranking-degraded/);
   });
 });

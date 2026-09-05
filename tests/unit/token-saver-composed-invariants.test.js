@@ -173,6 +173,10 @@ const memorySettings = {
   memoryToolPruningEnabled: true,
   memoryMaxToolTurnsKeepFull: 0, // every tool turn is historical: exercises the is_error skip
   memoryMaxHistoricalToolChars: 800,
+  // Pruning is demand-driven (toolPruner.js): with no overflow the history is
+  // left alone. A window this small puts these bodies over budget so the pruner
+  // runs, which is the behaviour these assertions are about.
+  memoryContextWindowOverride: 2000,
   memoryMediaPruningEnabled: false,
   memoryHandoffEnabled: false,
   memoryCompactionEnabled: true,

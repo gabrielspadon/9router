@@ -186,6 +186,24 @@ function buildCliPackage() {
     console.log(`✅ Version already synced: ${cliPkg.version}\n`);
   }
 
+  // Step 0a: stamp the commit this artifact is built from, BEFORE the Next
+  // build. next.config.mjs reads cli/BUILD_SHA to inline TP_BUILD_SHA into the
+  // bundle, so stamping afterwards baked the PREVIOUS pack's sha into /api/version
+  // and the sidebar while the package root reported the current one. An absent
+  // stamp is a true "provenance unknown", which is what a verifier must see
+  // rather than a placeholder it would have to trust, so a non-checkout removes
+  // the file instead of writing a filler.
+  console.log("0\uFE0Fa\u20E3  Stamping build provenance...");
+  try {
+    const sha = execSync("git rev-parse HEAD", { cwd: cliDir, encoding: "utf8" }).trim();
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`unexpected rev-parse output: ${sha}`);
+    fs.writeFileSync(path.join(cliDir, "BUILD_SHA"), sha + "\n");
+    console.log(`\u2705 BUILD_SHA ${sha.slice(0, 8)}\n`);
+  } catch (error) {
+    fs.rmSync(path.join(cliDir, "BUILD_SHA"), { force: true });
+    console.log("\u26A0\uFE0F  not a git checkout, BUILD_SHA omitted\n");
+  }
+
   // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
   fs.rmSync(buildDistDir, { recursive: true, force: true });
   console.log("1️⃣  Building Next.js app...");
@@ -390,23 +408,6 @@ function buildCliPackage() {
   } catch (error) {
     console.error("❌ MITM build failed");
     process.exit(1);
-  }
-
-  // Step 9: stamp the commit this artifact was built from. An installed CLI
-  // otherwise carries only a version, and 0.0.1 cannot distinguish one local
-  // build from another or from a registry package of the same version. Written
-  // only when the build really is a git checkout: an absent stamp is a true
-  // "provenance unknown", which is what a verifier must see rather than a
-  // placeholder it would have to trust.
-  console.log("9\uFE0F\u20E3  Stamping build provenance...");
-  try {
-    const sha = execSync("git rev-parse HEAD", { cwd: cliDir, encoding: "utf8" }).trim();
-    if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`unexpected rev-parse output: ${sha}`);
-    fs.writeFileSync(path.join(cliDir, "BUILD_SHA"), sha + "\n");
-    console.log(`\u2705 BUILD_SHA ${sha.slice(0, 8)}\n`);
-  } catch (error) {
-    fs.rmSync(path.join(cliDir, "BUILD_SHA"), { force: true });
-    console.log("\u26A0\uFE0F  not a git checkout, BUILD_SHA omitted\n");
   }
 
   console.log("✨ CLI package build completed!");

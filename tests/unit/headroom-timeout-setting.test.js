@@ -119,9 +119,15 @@ describe("handleChatCore threads the timeout to the compression call", () => {
     resetHeadroomCircuitBreaker();
   });
 
+  // Headroom is gated on context pressure (rtk/headroom.js), so a one-word
+  // fixture never reaches the fetch whose timeout this suite is measuring. The
+  // window override is a real operator setting and is what makes the body over
+  // budget without building one past the 256 KB payload cap.
+  const OVER_BUDGET = { memoryContextWindowOverride: 20_000 };
+
   const run = (headroomTimeoutMs) =>
     handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "x".repeat(120_000) }] },
       modelInfo: { provider: "openai", model: "gpt-4o" },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn() },
@@ -130,6 +136,7 @@ describe("handleChatCore threads the timeout to the compression call", () => {
       headroomUrl: "http://localhost:8787",
       headroomCompressUserMessages: false,
       headroomTimeoutMs,
+      memorySettings: OVER_BUDGET,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,

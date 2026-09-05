@@ -127,14 +127,16 @@ describe('selectAndReserve trace', () => {
     expect(refused.at(-1).fields.why).toBe('lease-refused');
   });
 
-  it('a degraded cohort that still serves emits no refusal: the fallback order is a serve, not a refuse', () => {
-    // Shape mismatch degrades ranking, but the fallback order still hands out
-    // a slot — SEL.refused would describe a refusal that never happened.
+  it('a mixed-shape cohort serves and emits no refusal', () => {
+    // The cohort shape gate is gone (b09a9277): a pool whose accounts report
+    // different window sets is the ordinary live case, each account is ranked
+    // on its own binding deadline, and the result is a win. SEL.refused would
+    // describe a refusal that never happened either way.
     const mismatched = connection('conn_bbbbbbbb', { windows: [{ scope: 'weekly (7d)', remaining: 100, limit: 1000, resetAt: iso(2 * HOUR), observedAt: iso(0), confidence: 'fresh' }] });
     const decision = selectAndReserve(args({ accounts: [healthyA(), mismatched] }));
     expect(decision.unavailable).toBeUndefined();
     expect(decision.trace.some((e) => e.verdict === 'refused')).toBe(false);
-    expect(decision.trace[0].verdict).toBe('shape-mismatch');
+    expect(decision.trace[0].verdict).toBe('win');
   });
 
   it('names the one connection tried and refused before the walk succeeded', () => {
@@ -157,7 +159,9 @@ describe('selectAndReserve trace', () => {
 
     const depleted = connection('conn_aaaaaaaa', { windows: [w(0, iso(1 * HOUR))] });
     const decision = selectAndReserve(args({ accounts: [depleted] }));
-    expect(decision.reason).toBe('no-eligible-account');
+    // The ranker's own reason is appended, so an operator reading the refusal
+    // knows WHY nothing was eligible rather than only that nothing was.
+    expect(decision.reason).toBe('no-eligible-account:all-depleted');
     const refused = decision.trace.find((e) => e.verdict === 'refused');
     expect(refused.fields.why).toBe('none-eligible');
     // The ranking's depleted verdict rides the same trace.

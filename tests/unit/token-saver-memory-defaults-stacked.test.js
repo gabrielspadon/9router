@@ -103,6 +103,10 @@ describe("token-saver stacked order: RTK compress -> applyMemoryEnhancements (co
         memoryHandoffEnabled: false,
         memoryMaxToolTurnsKeepFull: 2,
         memoryMaxHistoricalToolChars: 800,
+        // Pruning is demand-driven now (toolPruner.js): with no overflow the
+        // history is left alone. A window this small puts the body over budget
+        // so the pruner actually runs, which is what this test is about.
+        memoryContextWindowOverride: 2000,
       },
       targetFormat: "claude",
     });
