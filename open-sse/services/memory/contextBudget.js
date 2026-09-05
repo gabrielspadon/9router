@@ -32,10 +32,13 @@
  * reproducible from what it was handed.
  */
 
-// Characters per token. Deliberately on the low side for prose, because the
-// traffic this shapes is code and JSON, where tokens are shorter than in
-// English and a per-character estimate that assumes 4 will undercount.
-export const CHARS_PER_TOKEN = 3.8;
+// Characters per token before per-session calibration. Measured through the
+// live gateway on Haiku: 3.47 and 2.63 on two synthetic tool-heavy sessions,
+// about 2.3 on a live code-and-JSON Opus session; the previous 3.8 sat above
+// every measurement and read a session as smaller than the provider did.
+// Only the first request of a session runs on this constant; after that the
+// calibration factor (calibrationFactor below) tracks the provider's count.
+export const CHARS_PER_TOKEN = 3.2;
 
 // The window to assume when nothing knows better. Matches the engine's own
 // DEFAULT_CAPABILITIES so a model this table has never heard of is not

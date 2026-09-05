@@ -110,9 +110,19 @@ function extractLastUserMessage(body) {
   return "";
 }
 
-function extractPinnedNames(body, alwaysInclude = []) {
+function extractPinnedNames(body, alwaysInclude = [], tools = []) {
   const pinned = new Set(alwaysInclude);
   pinned.add("ToolSearch"); // Claude Code harness deferred-schema mechanism
+  // A client's native tools (anything not namespaced mcp__server__name) are
+  // the ones the model calls on nearly every turn, and their schemas are
+  // small. Leaving them to the relevance pick meant the first Bash or Read
+  // call appended the tool to the disclosed list, and every append rewrites
+  // the whole cached prefix (measured live: 7 of 18 turns re-primed).
+  // Disclosure trims the MCP catalogue, which is where the bulk is.
+  for (const t of tools) {
+    const n = getToolName(t);
+    if (n && !n.startsWith("mcp__")) pinned.add(n);
+  }
 
   for (const msg of body?.messages || []) {
     // OpenAI format
@@ -210,7 +220,7 @@ export function disclosureTools(tools, body, sessionKey, config = {}) {
 
   if (!sessionKey) {
     // No session anchor — return first maxTools, respecting pinned
-    const pinned = extractPinnedNames(body, alwaysInclude);
+    const pinned = extractPinnedNames(body, alwaysInclude, tools);
     const pinnedTools = tools.filter((t) => pinned.has(getToolName(t)));
     const rest = tools.filter((t) => !pinned.has(getToolName(t)));
     const selected = [...pinnedTools, ...rest].slice(0, maxTools);
@@ -221,7 +231,7 @@ export function disclosureTools(tools, body, sessionKey, config = {}) {
 
   const entry = getOrBuildEntry(sessionKey, tools);
   const byName = new Map(tools.map((t) => [getToolName(t), t]));
-  const pinned = extractPinnedNames(body, alwaysInclude);
+  const pinned = extractPinnedNames(body, alwaysInclude, tools);
 
   // 1. Everything this session already disclosed, in the order it was
   //    disclosed, minus tools the catalogue no longer carries.
