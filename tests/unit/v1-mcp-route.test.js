@@ -129,6 +129,7 @@ describe("POST /api/v1/mcp JSON-RPC", () => {
       sid: openaiSid,
       rid: "a1b2c3d4",
       ctxTokens: 51234,
+      ctxTokensActual: null,
       saveBytes: -3200,
       ceBytes: 8192,
       compactHint: true,

@@ -30,7 +30,7 @@ const SID_RE = /^[a-f0-9]{8}$/;
 const CONTEXT_STATUS_TOOL = {
   name: "context_status",
   description:
-    "TokenProxy per-session context telemetry: ctxTokens, saveBytes, ceBytes, compactHint for the session identified by the request bearer credential.",
+    "TokenProxy per-session context telemetry for the session identified by the request bearer credential. ctxTokensActual is the prompt size the provider billed on the last completed request (input + cache read + cache creation) and is the number to size against; ctxTokens is the gateway's byte-based estimate of the last dispatched body; saveBytes is what the savers cut; ceBytes is how much of the previous request's prefix the last one reproduced; compactHint is true when that prefix was rewritten by more than half.",
   inputSchema: {
     type: "object",
     properties: {
@@ -139,6 +139,7 @@ function statusResult(entry) {
           sid: entry.sid,
           rid: entry.rid ?? null,
           ctxTokens: entry.ctxTokens ?? null,
+          ctxTokensActual: entry.ctxTokensActual ?? null,
           saveBytes: entry.saveBytes ?? null,
           ceBytes: entry.ceBytes ?? null,
           compactHint: entry.compactHint === true,
@@ -150,6 +151,7 @@ function statusResult(entry) {
       sid: entry.sid,
       rid: entry.rid ?? null,
       ctxTokens: entry.ctxTokens ?? null,
+      ctxTokensActual: entry.ctxTokensActual ?? null,
       saveBytes: entry.saveBytes ?? null,
       ceBytes: entry.ceBytes ?? null,
       compactHint: entry.compactHint === true,

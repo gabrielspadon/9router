@@ -10,6 +10,7 @@
 // Deterministic: no randomness, no clock. Pure function, plain-node importable.
 
 import { ELIDE_MARKER_RE } from "../rtk/filters/elide.js";
+import { textKey } from "../services/memory/sessionMemo.js";
 
 const PLACEHOLDER_OPEN = '[tokenproxy: earlier turn about "';
 const PLACEHOLDER_CLOSE = '" compressed, low relevance to the current query]';
@@ -74,22 +75,46 @@ function historicalBoundary(messages, keepRecentTurns) {
   return messages.length;
 }
 
+/**
+ * Compress low-relevance historical text blocks.
+ *
+ * Two inputs decide what gets compressed: the query (this turn's user text)
+ * and `memo`, the set of block keys this SESSION already compressed on an
+ * earlier turn. Blocks in the memo are compressed again whatever the query
+ * says, and blocks compressed now are added to it, so the decision is sticky
+ * and the prefix the provider cached keeps matching. Without the memo the
+ * same historical turn flipped between placeholder and full text from one
+ * request to the next (a tool_result turn has no query, so the stage sat
+ * out), which rewrote the whole cached prefix twice per tool round.
+ *
+ * `scoreNew` false applies only the memo: chatCore passes it while the
+ * request fits its context budget, so a conversation that is not under
+ * pressure loses nothing new.
+ *
+ * Never grows a block (a placeholder longer than the text it replaces is
+ * skipped) and never re-compresses its own placeholder, so applying the
+ * function to its output is a fixed point.
+ */
 function compressPrefixByQuery(messages, options = {}) {
   const query = options.query == null ? "" : String(options.query);
   const keepRecentTurns = options.keepRecentTurns == null ? 2 : options.keepRecentTurns;
   const threshold = options.threshold == null ? DEFAULT_THRESHOLD : options.threshold;
   const previewChars = options.previewChars == null ? 60 : options.previewChars;
+  const memo = options.memo instanceof Set ? options.memo : null;
+  const scoreNew = options.scoreNew !== false;
 
   const queryTerms = tokenize(query).filter((term) => term.length >= 3);
   const failOpen = { messages, compressed: 0, notes: [], notesTruncated: false };
   if (!Array.isArray(messages) || messages.length === 0) return failOpen;
-  if (queryTerms.length < 3) return failOpen;
+  const canScore = scoreNew && queryTerms.length >= 3;
+  if (!canScore && !memo?.size) return failOpen;
 
   const boundary = historicalBoundary(messages, keepRecentTurns);
   if (boundary >= messages.length) return failOpen;
 
   let newMessages = null;
   let compressed = 0;
+  let added = 0;
   const notes = [];
   let notesTruncated = false;
 
@@ -99,16 +124,34 @@ function compressPrefixByQuery(messages, options = {}) {
   // toolPruner and the compactor's summarizeMessage).
   const hasElideMarker = (text) =>
     typeof text === "string" && ELIDE_MARKER_RE.test(text);
+  const isPlaceholder = (text) =>
+    typeof text === "string" && text.startsWith(PLACEHOLDER_OPEN);
+
+  // Decide one block: memo hit, or a fresh score below threshold. Returns
+  // the placeholder or null when the block stays.
+  const decide = (text) => {
+    if (hasElideMarker(text) || isPlaceholder(text)) return null;
+    const key = memo ? textKey(text) : null;
+    let compress = memo?.has(key) || false;
+    if (!compress && canScore) {
+      const score = blockScore(text, queryTerms, new Set(tokenize(text)));
+      compress = score < threshold;
+    }
+    if (!compress) return null;
+    const placeholder = placeholderFor(text, previewChars);
+    if (placeholder.length >= text.length) return null;
+    if (memo && !memo.has(key)) { memo.add(key); added++; }
+    else if (!memo) added++;
+    return placeholder;
+  };
 
   const replaceStringContent = (msg, i) => {
-    if (hasElideMarker(msg.content)) return msg;
-    const score = blockScore(msg.content, queryTerms, new Set(tokenize(msg.content)));
-    if (score >= threshold) return msg;
-    const preview = flattenPreview(msg.content, previewChars);
-    if (notes.length < MAX_NOTES) notes.push({ turn: i, preview });
+    const placeholder = decide(msg.content);
+    if (placeholder === null) return msg;
+    if (notes.length < MAX_NOTES) notes.push({ turn: i, preview: flattenPreview(msg.content, previewChars) });
     else notesTruncated = true;
     compressed++;
-    return { ...msg, content: placeholderFor(msg.content, previewChars) };
+    return { ...msg, content: placeholder };
   };
 
   const replaceBlockContent = (msg, i) => {
@@ -117,11 +160,9 @@ function compressPrefixByQuery(messages, options = {}) {
     for (let j = 0; j < blocks.length; j++) {
       const block = blocks[j];
       if (!block || block.type !== "text" || typeof block.text !== "string") continue;
-      if (hasElideMarker(block.text)) continue;
-      const score = blockScore(block.text, queryTerms, new Set(tokenize(block.text)));
-      if (score >= threshold) continue;
-      const preview = flattenPreview(block.text, previewChars);
-      if (notes.length < MAX_NOTES) notes.push({ turn: i, preview });
+      const placeholder = decide(block.text);
+      if (placeholder === null) continue;
+      if (notes.length < MAX_NOTES) notes.push({ turn: i, preview: flattenPreview(block.text, previewChars) });
       else notesTruncated = true;
       compressed++;
       if (!newMsg) {
@@ -129,7 +170,7 @@ function compressPrefixByQuery(messages, options = {}) {
         if (!newMessages) newMessages = messages.slice();
         newMessages[i] = newMsg;
       }
-      newMsg.content[j] = { ...block, text: placeholderFor(block.text, previewChars) };
+      newMsg.content[j] = { ...block, text: placeholder };
     }
     return newMsg || msg;
   };
@@ -148,8 +189,10 @@ function compressPrefixByQuery(messages, options = {}) {
     }
   }
 
-  if (!newMessages) return { messages, compressed: 0, notes: [], notesTruncated: false };
-  return { messages: newMessages, compressed, notes, notesTruncated };
+  if (!newMessages) return { messages, compressed: 0, added: 0, notes: [], notesTruncated: false };
+  // `added` counts decisions taken on THIS call (not memo replays): when it
+  // is zero the output is what the previous turn already sent.
+  return { messages: newMessages, compressed, added, notes, notesTruncated };
 }
 
 export { compressPrefixByQuery };

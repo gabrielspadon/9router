@@ -32,10 +32,13 @@
  * reproducible from what it was handed.
  */
 
-// Characters per token. Deliberately on the low side for prose, because the
-// traffic this shapes is code and JSON, where tokens are shorter than in
-// English and a per-character estimate that assumes 4 will undercount.
-export const CHARS_PER_TOKEN = 3.8;
+// Characters per token before per-session calibration. Measured through the
+// live gateway on Haiku: 3.47 and 2.63 on two synthetic tool-heavy sessions,
+// about 2.3 on a live code-and-JSON Opus session; the previous 3.8 sat above
+// every measurement and read a session as smaller than the provider did.
+// Only the first request of a session runs on this constant; after that the
+// calibration factor (calibrationFactor below) tracks the provider's count.
+export const CHARS_PER_TOKEN = 3.2;
 
 // The window to assume when nothing knows better. Matches the engine's own
 // DEFAULT_CAPABILITIES so a model this table has never heard of is not
@@ -179,6 +182,19 @@ export function resolveContextBudget({ contextWindow, settings = {} } = {}) {
   return { limit, reserve, budget, target };
 }
 
+// A per-session correction to the character estimate: the provider's own
+// prompt count for the last completed request divided by what this module
+// estimated for the same body. The 3.8 chars-per-token constant measured
+// 3.47 on a synthetic prose-and-tool-output session and near 2.3 on a live
+// code-and-JSON heavy Opus session, so an uncalibrated estimate can sit 10%
+// to 40% under the number the window is actually enforced against. Bounded
+// so one odd response cannot swing the budget by an order of magnitude.
+export function calibrationFactor(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.min(4, Math.max(0.5, n));
+}
+
 /**
  * How far over budget one request is, and how much has to go.
  *
@@ -187,9 +203,10 @@ export function resolveContextBudget({ contextWindow, settings = {} } = {}) {
  *   `deficitTokens` is measured against `target`, not `budget`: a prune that
  *   lands exactly on the trigger re-fires next turn.
  */
-export function measureContextPressure(body, { contextWindow, settings } = {}) {
+export function measureContextPressure(body, { contextWindow, settings, calibration } = {}) {
   const { limit, reserve, budget, target } = resolveContextBudget({ contextWindow, settings });
-  const projected = estimateRequestTokens(body);
+  const cal = calibrationFactor(calibration);
+  const projected = Math.ceil(estimateRequestTokens(body) * cal);
   const over = projected > budget;
   const deficitTokens = over ? projected - target : 0;
   return {
@@ -200,6 +217,9 @@ export function measureContextPressure(body, { contextWindow, settings } = {}) {
     target,
     over,
     deficitTokens,
-    deficitChars: Math.ceil(deficitTokens * CHARS_PER_TOKEN),
+    calibration: cal,
+    // Characters per CALIBRATED token, so a deficit in tokens the provider
+    // would count converts to the characters that actually have to go.
+    deficitChars: Math.ceil(deficitTokens * (CHARS_PER_TOKEN / cal)),
   };
 }

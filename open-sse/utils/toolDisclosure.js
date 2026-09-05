@@ -1,9 +1,10 @@
 /**
- * Progressive tool disclosure: BM25-based per-turn tool selection.
+ * Progressive tool disclosure: BM25-based, session-sticky tool selection.
  *
- * Maintains a session-level index (keyed by connectionId) so schemas are
- * parsed and tokenized once per session, not once per turn. The index is
- * rebuilt only when the tool name set changes.
+ * Maintains a session-level index (keyed by the session key chatCore passes:
+ * connection plus client session id) so schemas are parsed and tokenized
+ * once per session, not once per turn. The index is rebuilt only when the
+ * tool name set changes; the disclosed list survives that rebuild.
  *
  * Config shape:
  *   maxTools   number  – top-K tools to keep after scoring (default 20)
@@ -109,9 +110,19 @@ function extractLastUserMessage(body) {
   return "";
 }
 
-function extractPinnedNames(body, alwaysInclude = []) {
+function extractPinnedNames(body, alwaysInclude = [], tools = []) {
   const pinned = new Set(alwaysInclude);
   pinned.add("ToolSearch"); // Claude Code harness deferred-schema mechanism
+  // A client's native tools (anything not namespaced mcp__server__name) are
+  // the ones the model calls on nearly every turn, and their schemas are
+  // small. Leaving them to the relevance pick meant the first Bash or Read
+  // call appended the tool to the disclosed list, and every append rewrites
+  // the whole cached prefix (measured live: 7 of 18 turns re-primed).
+  // Disclosure trims the MCP catalogue, which is where the bulk is.
+  for (const t of tools) {
+    const n = getToolName(t);
+    if (n && !n.startsWith("mcp__")) pinned.add(n);
+  }
 
   for (const msg of body?.messages || []) {
     // OpenAI format
@@ -132,7 +143,7 @@ function extractPinnedNames(body, alwaysInclude = []) {
   return pinned;
 }
 
-// Session cache: connectionId → { toolSetId, index, tools, lastSeen }
+// Session cache: sessionKey → { toolSetId, index, tools, lastSeen, disclosed, selected }
 const _cache = new Map();
 const MAX_CACHE_SIZE = 500;
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -155,26 +166,50 @@ function pruneCache() {
   }
 }
 
-function getOrBuildEntry(connectionId, tools) {
+function getOrBuildEntry(sessionKey, tools) {
   const toolSetId = getToolSetId(tools);
-  const cached = _cache.get(connectionId);
+  const cached = _cache.get(sessionKey);
   if (cached && cached.toolSetId === toolSetId) {
     cached.lastSeen = Date.now();
     return cached;
   }
   pruneCache();
-  const entry = { toolSetId, index: buildIndex(tools), tools, lastSeen: Date.now() };
-  _cache.set(connectionId, entry);
+  // A catalogue change mid-session (a client that loads a deferred schema)
+  // rebuilds the index but keeps what the session already disclosed: those
+  // tools are in the provider's cached prefix and dropping them would
+  // rewrite it.
+  const entry = {
+    toolSetId,
+    index: buildIndex(tools),
+    tools,
+    lastSeen: Date.now(),
+    disclosed: cached?.disclosed || [],
+    selected: cached?.selected || false,
+  };
+  _cache.set(sessionKey, entry);
   return entry;
 }
 
 /**
- * Select the most relevant tools for the current turn via BM25.
+ * Select the tools a turn sees. Session-sticky and append-only.
+ *
+ * Anthropic hashes the prompt prefix in the order tools, system, messages,
+ * so a tool list that differs from the previous request by one entry
+ * invalidates the cache for the ENTIRE prompt. Re-running BM25 on every
+ * turn against that turn's user message did exactly that: measured on a
+ * 64-tool session, every turn reordered 15-23 names and dropped up to 16,
+ * and on the live gateway an 800k-token session paid a full cache re-prime
+ * per request. So the relevance selection runs ONCE per session, on its
+ * first request, and after that the disclosed list only ever grows: a tool
+ * the history has called or a forced tool_choice names is appended, nothing
+ * is removed, and the order never changes. A session that starts with a
+ * weak query discloses fewer tools and keeps that room for pinned additions
+ * rather than topping up with later, cache-breaking BM25 picks.
  *
  * Returns { tools: Tool[], stats: { before, after, stripped } | null }
  * Returns stats=null when no filtering occurred (pass-through).
  */
-export function disclosureTools(tools, body, connectionId, config = {}) {
+export function disclosureTools(tools, body, sessionKey, config = {}) {
   if (!Array.isArray(tools) || tools.length === 0) return { tools, stats: null };
 
   const maxTools = config.maxTools ?? 20;
@@ -183,9 +218,9 @@ export function disclosureTools(tools, body, connectionId, config = {}) {
 
   if (tools.length <= maxTools) return { tools, stats: null };
 
-  if (!connectionId) {
+  if (!sessionKey) {
     // No session anchor — return first maxTools, respecting pinned
-    const pinned = extractPinnedNames(body, alwaysInclude);
+    const pinned = extractPinnedNames(body, alwaysInclude, tools);
     const pinnedTools = tools.filter((t) => pinned.has(getToolName(t)));
     const rest = tools.filter((t) => !pinned.has(getToolName(t)));
     const selected = [...pinnedTools, ...rest].slice(0, maxTools);
@@ -194,47 +229,50 @@ export function disclosureTools(tools, body, connectionId, config = {}) {
     return { tools: selected, stats };
   }
 
-  const { index } = getOrBuildEntry(connectionId, tools);
-  const pinned = extractPinnedNames(body, alwaysInclude);
-  const query = extractLastUserMessage(body);
-  const queryTokens = tokenize(query);
+  const entry = getOrBuildEntry(sessionKey, tools);
+  const byName = new Map(tools.map((t) => [getToolName(t), t]));
+  const pinned = extractPinnedNames(body, alwaysInclude, tools);
 
-  const allPinnedTools = [];
-  const candidates = [];
-  for (let i = 0; i < tools.length; i++) {
-    if (pinned.has(getToolName(tools[i]))) {
-      allPinnedTools.push({ tool: tools[i], score: Infinity });
-    } else {
-      candidates.push({ tool: tools[i], i });
+  // 1. Everything this session already disclosed, in the order it was
+  //    disclosed, minus tools the catalogue no longer carries.
+  const names = entry.disclosed.filter((n) => byName.has(n));
+  const have = new Set(names);
+  // 2. Pinned tools the list does not hold yet, appended (a called tool has
+  //    to stay visible whatever the cap says).
+  for (const n of pinned) if (byName.has(n) && !have.has(n)) { names.push(n); have.add(n); }
+  // 3. The one-time relevance pick, on the session's first request only.
+  let added = 0;
+  if (!entry.selected) {
+    entry.selected = true;
+    const budget = Math.max(0, maxTools - names.length);
+    const candidates = [];
+    for (let i = 0; i < tools.length; i++) {
+      if (!have.has(getToolName(tools[i]))) candidates.push({ tool: tools[i], i });
     }
+    const queryTokens = tokenize(extractLastUserMessage(body));
+    let topK;
+    if (queryTokens.length === 0) {
+      topK = candidates.slice(0, budget);
+    } else {
+      const scores = bm25Scores(entry.index, queryTokens);
+      candidates.sort((a, b) => (scores[b.i] || 0) - (scores[a.i] || 0));
+      topK = candidates.filter((c) => (scores[c.i] || 0) > minScore).slice(0, budget);
+    }
+    for (const c of topK) { names.push(getToolName(c.tool)); added++; }
   }
+  entry.disclosed = names;
 
-  // Cap pinned set so long agentic sessions can't exhaust the entire budget.
-  const pinnedTools = allPinnedTools.slice(0, maxTools);
-  const budget = Math.max(0, maxTools - pinnedTools.length);
-
-  let topK;
-  if (queryTokens.length === 0) {
-    topK = candidates.slice(0, budget).map((c) => c.tool);
-  } else {
-    const scores = bm25Scores(index, queryTokens);
-    candidates.sort((a, b) => (scores[b.i] || 0) - (scores[a.i] || 0));
-    topK = candidates
-      .filter((c) => (scores[c.i] || 0) > minScore)
-      .slice(0, budget)
-      .map((c) => c.tool);
-  }
-
-  const selected = [...pinnedTools.map((x) => x.tool), ...topK];
-  const strippedSet = new Set(selected.map(getToolName));
+  const selected = names.map((n) => byName.get(n));
+  const strippedSet = new Set(names);
   const stats = {
     before: tools.length,
     after: selected.length,
     stripped: tools.length - selected.length,
-    keptNames: selected.map(getToolName),
+    added,
+    keptNames: names.slice(),
     strippedNames: tools.filter((t) => !strippedSet.has(getToolName(t))).map(getToolName),
   };
-  _recordStats({ connectionId, ...stats });
+  _recordStats({ connectionId: sessionKey, ...stats });
   return { tools: selected, stats };
 }
 

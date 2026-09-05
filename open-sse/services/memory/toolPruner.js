@@ -291,7 +291,20 @@ export function pruneHistoricalTools(body, options = {}) {
     // Every tool result falls inside the protected recent window.
     return idle;
   }
-  const historical = toolIndices.slice(0, toolIndices.length - protectTurns);
+  // Under a budget the historical region grows in STEPS of half the
+  // protected window rather than by one result per turn. "The last N tool
+  // turns" is counted from the end, so a result that was protected on one
+  // request is historical on the next; while older results cannot cover the
+  // deficit the walk cuts it immediately and the prefix is rewritten from
+  // that point on every request. Batching the boundary makes that rewrite
+  // happen once per N/2 tool turns instead.
+  let historicalCount = toolIndices.length - protectTurns;
+  if (budgetAware) {
+    const step = Math.max(1, Math.floor(protectTurns / 2));
+    historicalCount = Math.floor(historicalCount / step) * step;
+    if (historicalCount <= 0) return idle;
+  }
+  const historical = toolIndices.slice(0, historicalCount);
 
   let totalSavedChars = 0;
   let prunedCount = 0;
@@ -314,25 +327,44 @@ export function pruneHistoricalTools(body, options = {}) {
     };
   }
 
-  // TIERED PATH. Oldest first, generous cap first, and stop as soon as the
-  // overflow is covered. Each tier is a strictly tighter cap, so a turn already
-  // trimmed by an earlier tier is only revisited when the overflow survived it —
-  // which is what makes the pressure progressive instead of a step function.
+  // TIERED PATH, AGE-MAJOR. Oldest result first; that result is cut to the
+  // gentlest cap that covers what is still owed, or to the tightest cap when
+  // none does, and only then is the next-oldest result looked at. The walk
+  // stops as soon as the overflow is covered.
+  //
+  // It used to be tier-major: one cap across every historical result, then
+  // the next tighter cap across all of them again. That was gentler on any
+  // single result but not monotone from one request to the next: a result
+  // that had just aged into the historical region absorbed part of the
+  // deficit at the first cap, the second pass then reached fewer OLD results,
+  // and those flipped back from a tight cap to a loose one. Every such flip
+  // rewrote the provider's cached prefix from the oldest turn onward
+  // (measured: 7 of 10 over-budget transitions). Age-major, the cut state is
+  // a prefix of one fixed sequence of (result, cap) steps, new results only
+  // append to that sequence, and a larger deficit only extends the prefix, so
+  // the bytes before the newest cut never change. Each cut is computed from
+  // the result's ORIGINAL text so the marker it writes does not depend on a
+  // previous cut.
   let remaining = deficitChars;
   let tiersUsed = 0;
   const caps = Array.isArray(tiers) && tiers.length ? tiers : PRESSURE_TIERS;
 
-  for (const cap of caps) {
+  for (const i of historical) {
     if (remaining <= 0) break;
-    tiersUsed += 1;
-    for (const i of historical) {
-      if (remaining <= 0) break;
-      const res = truncateMessageTools(items[i], cap);
-      if (res.savedChars > 0) {
-        totalSavedChars += res.savedChars;
-        prunedCount += res.count;
-        remaining -= res.savedChars;
-      }
+    const msg = items[i];
+    let chosen = -1;
+    for (let c = 0; c < caps.length; c++) {
+      chosen = c;
+      const probe = truncateMessageTools(structuredClone(msg), caps[c]);
+      if (probe.savedChars >= remaining) break;
+    }
+    if (chosen < 0) continue;
+    const res = truncateMessageTools(msg, caps[chosen]);
+    if (res.savedChars > 0) {
+      totalSavedChars += res.savedChars;
+      prunedCount += res.count;
+      remaining -= res.savedChars;
+      tiersUsed = Math.max(tiersUsed, chosen + 1);
     }
   }
 

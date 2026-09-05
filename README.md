@@ -103,13 +103,26 @@ instead of failing the request.
 Token savers run before dispatch and are all fail-open, so an error inside one
 leaves the request untouched rather than breaking it.
 
-RTK rewrites bulky tool results in place and deliberately skips results already
-marked as errors, so a failure trace reaches the model intact. Caveman and
-Ponytail inject system prompts that shorten model prose and model code
-respectively. Headroom and PXPIPE are optional external compressors reached over
-HTTP, each behind a timeout and a circuit breaker. A context and memory layer
-prunes old tool output and media from long conversations and compacts them past
-a token threshold while keeping a configurable number of recent turns.
+The savers run in two halves, in a fixed order, because the provider caches
+the prompt prefix and a stage that reshapes history differently from one turn
+to the next throws that cache away.
+
+The first half is deterministic and runs on every request: tool schema
+distillation, historical thinking strip, RTK, the privacy filter and the
+Caveman and Ponytail style prompts. RTK rewrites bulky tool results in place
+and deliberately skips results already marked as errors, so a failure trace
+reaches the model intact. Tool disclosure picks a tool subset once per client
+session and only ever appends to it after that.
+
+The second half runs only when the request no longer fits the model's window
+less a reserve, and climbs a ladder from least loss to most: historical media
+placeholders, oldest tool results trimmed only as far as the overflow needs,
+Headroom on the oldest slice of the history, query-aware compression, pair
+dropping, embedding reorder, and (opt-in) summarising compaction. Every
+decision a rung takes is remembered for the session and replayed on later
+turns, so a prune buys many turns of a byte-identical prefix rather than one.
+Headroom and PXPIPE are external compressors reached over HTTP, each behind a
+timeout and a circuit breaker.
 
 Sending the header `X-TokenProxy-Token-Saver: off` bypasses every one of them
 for a single request.

@@ -543,13 +543,27 @@ function takePath(rid, nowMs = Date.now()) {
  * counts only the non-nominal classes. Carries `path=` when the request took
  * non-default forks that folded instead of speaking.
  */
+// Listeners see every REQ summary after it is written. chatCore uses one to
+// hand a completed request's provider-reported prompt size back to the
+// session's context-status entry; a listener that throws is dropped for that
+// call, never the line.
+const reqListeners = new Set();
+export function onReqSummary(fn) {
+  reqListeners.add(fn);
+  return () => reqListeners.delete(fn);
+}
+
 export function reqSummary(verdict, fields = {}, nowMs = Date.now()) {
   const rid = typeof fields?.rid === 'string' ? fields.rid : null;
   if (rid) {
     const path = takePath(rid, nowMs);
     if (path) fields = { ...fields, path };
   }
-  return req(verdict, fields, nowMs);
+  const out = req(verdict, fields, nowMs);
+  for (const fn of reqListeners) {
+    try { fn(verdict, fields); } catch { /* telemetry never breaks the request */ }
+  }
+  return out;
 }
 
 // Test seam: folding and the backstop are process-wide singletons, so a suite

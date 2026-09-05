@@ -732,7 +732,12 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
   try {
     const sizeSnapshot = captureSizeSnapshot(body);
     if (diagnostics) diagnostics.before = sizeSnapshot;
-    if (sizeSnapshot.bodyBytes > MAX_COMPRESS_BODY_BYTES) {
+    // The Claude branch below compresses a bounded slice of the oldest
+    // messages instead of skipping: under the context-pressure gate above a
+    // Claude body is by definition near its window, so on a 1M-token model
+    // it is 3-4 MB and the whole-body cap made this stage unreachable exactly
+    // when it was allowed to run. Every other shape keeps the skip.
+    if (sizeSnapshot.bodyBytes > MAX_COMPRESS_BODY_BYTES && format !== "claude") {
       setDiagnostic(diagnostics, `skipped: payload too large (${sizeSnapshot.bodyBytes}B > ${MAX_COMPRESS_BODY_BYTES}B limit)`);
       return null;
     }
@@ -746,11 +751,31 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
     // double-bill on the response and risk losing them on a lossy round-trip.
     // ponytail: OpenAI pivot helpers kept for legacy consumers, direct path is canonical.
     if (format === "claude") {
-      const sourceMessages = Array.isArray(body?.messages) ? body.messages : null;
-      if (!sourceMessages) {
+      const allMessages = Array.isArray(body?.messages) ? body.messages : null;
+      if (!allMessages) {
         setDiagnostic(diagnostics, "unsupported claude request shape");
         return null;
       }
+      // Oldest-first slice under the size cap, never the last two turns. The
+      // slice is a pure function of the history's head, so consecutive turns
+      // send the proxy the same input and (it is deterministic) get the same
+      // output back: the compressed prefix stays byte-identical turn to turn.
+      let sliceEnd = allMessages.length;
+      if (jsonBytes(allMessages) > MAX_COMPRESS_BODY_BYTES) {
+        let acc = 2;
+        sliceEnd = 0;
+        for (let i = 0; i < allMessages.length - 2; i++) {
+          const next = acc + jsonBytes(allMessages[i]) + 1;
+          if (next > MAX_COMPRESS_BODY_BYTES) break;
+          acc = next;
+          sliceEnd = i + 1;
+        }
+        if (sliceEnd < 2) {
+          setDiagnostic(diagnostics, `skipped: no message slice fits under ${MAX_COMPRESS_BODY_BYTES}B`);
+          return null;
+        }
+      }
+      const sourceMessages = allMessages.slice(0, sliceEnd);
       const data = await callCompress(url, sourceMessages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
       // Validate response preserves identity (count + ordered roles) before commit.
@@ -795,14 +820,18 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         setDiagnostic(diagnostics, "tool pairing identity");
         return null;
       }
-      // Byte-gain guard — candidate bytes compared to before snapshot.
-      const candidateBytes = jsonBytes({ ...body, messages: compressed });
-      const beforeBytes = diagnostics?.before?.bodyBytes ?? jsonBytes(body);
+      // Byte-gain guard — candidate bytes compared to before snapshot. On a
+      // sliced body the guard reads the slice: a 5% cut of the head is real
+      // even when it is 1% of the whole request.
+      const merged = sliceEnd < allMessages.length ? [...compressed, ...allMessages.slice(sliceEnd)] : compressed;
+      const candidateBytes = sliceEnd < allMessages.length ? jsonBytes(compressed) : jsonBytes({ ...body, messages: merged });
+      const beforeBytes = sliceEnd < allMessages.length ? jsonBytes(sourceMessages) : (diagnostics?.before?.bodyBytes ?? jsonBytes(body));
       if (candidateBytes >= beforeBytes * 0.95) {
         setDiagnostic(diagnostics, "phantom savings — keeping original (>95% size)");
         return null;
       }
-      body.messages = compressed; // system + tools preserved locally, untouched
+      if (sliceEnd < allMessages.length && diagnostics) diagnostics.sliced = { messages: sliceEnd, of: allMessages.length };
+      body.messages = merged; // system + tools preserved locally, untouched
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }
