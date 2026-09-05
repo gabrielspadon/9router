@@ -25,6 +25,16 @@ const SHARED_PATH_FAILURE_MARKERS = [
   "eai_again",
   "etimedout",
   "und_err_connect_timeout",
+  // OUR OWN response-header deadline (responseHeaderTimeout.js). It fires on
+  // this host's path to the provider and on how long that provider takes to
+  // send headers, never on which credential asked, so every key in the pool
+  // hits it identically. Undici's UND_ERR_CONNECT_TIMEOUT above is a DIFFERENT
+  // error -- it never fires once a socket is established -- so matching that
+  // code alone left our own timeout falling through to the 5s transient
+  // cooldown, writing LOCK.applied against a healthy account and draining the
+  // pool one key per attempt. Matched on the message because
+  // formatProviderError renders `[502]: <message>` and drops error.code.
+  "upstream response headers exceeded",
 ];
 
 /** True when the failure belongs to the provider or the network path, not the key. */
