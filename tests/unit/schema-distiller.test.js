@@ -154,3 +154,56 @@ describe("distillToolSchemas", () => {
     expect(tools[0].function.description).toBe("fn");
   });
 });
+
+describe("property names colliding with STRIP_KEYS", () => {
+  function collisionTool({ pad = 9000 } = {}) {
+    return {
+      name: "collide",
+      description: "d",
+      input_schema: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            title: "InnerTitle",
+            default: "z".repeat(pad),
+            description: "a property   named title",
+          },
+          default: { type: "integer", examples: [1, 2] },
+          example: { type: "boolean", default: true },
+          examples: { type: "array", items: { type: "string", title: "Item" } },
+        },
+        required: ["title", "default", "example", "examples"],
+      },
+    };
+  }
+
+  it("keeps properties named title/default/example/examples, strips keywords inside their values", () => {
+    const { tools, savedBytes } = distillToolSchemas([collisionTool()]);
+    expect(savedBytes).toBeGreaterThan(0);
+    const schema = tools[0].input_schema;
+    // property names survive
+    expect(Object.keys(schema.properties).sort()).toEqual(["default", "example", "examples", "title"]);
+    expect(schema.required).toEqual(["title", "default", "example", "examples"]);
+    // keyword stripping still applies inside each property value
+    expect(schema.properties.title.default).toBeUndefined();
+    expect(schema.properties.title.title).toBeUndefined();
+    expect(schema.properties.title.description).toBe("a property named title");
+    expect(schema.properties.default.examples).toBeUndefined();
+    expect(schema.properties.example.default).toBeUndefined();
+    expect(schema.properties.examples.items.title).toBeUndefined();
+    expect(schema.properties.examples.type).toBe("array");
+  });
+
+  it("name-map protection nests through arrays and $defs", () => {
+    const tool = collisionTool();
+    tool.input_schema.$defs = {
+      default: { type: "object", properties: { example: { type: "string", default: "q".repeat(9000) } } },
+    };
+    const { tools } = distillToolSchemas([tool]);
+    const defs = tools[0].input_schema.$defs;
+    expect(defs.default.type).toBe("object");
+    expect(defs.default.properties.example.type).toBe("string");
+    expect(defs.default.properties.example.default).toBeUndefined();
+  });
+});

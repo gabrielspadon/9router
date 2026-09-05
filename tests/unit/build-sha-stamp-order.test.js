@@ -39,6 +39,20 @@ describe("BUILD_SHA is stamped before the bundle is built", () => {
     expect(buildCli).not.toMatch(/BUILD_SHA[\s\S]{0,200}"unknown"/);
   });
 
+  it("git HEAD wins over the stamp files when a .git dir exists (worktree freshness)", () => {
+    // The stamp files are the standalone/no-git fallback; in a checkout they
+    // go stale, so rev-parse must run first and the file reads second.
+    const gitTry = nextConfig.indexOf('existsSync(join(projectRoot, ".git"))');
+    const fileRead = nextConfig.indexOf('join(projectRoot, "cli", "BUILD_SHA")');
+    expect(gitTry).toBeGreaterThan(-1);
+    expect(fileRead).toBeGreaterThan(-1);
+    expect(gitTry).toBeLessThan(fileRead);
+  });
+
+  it("slices an env-provided sha to 12 chars like every other path", () => {
+    expect(nextConfig).toContain("process.env.TOKENPROXY_BUILD_SHA.slice(0, 12)");
+  });
+
   it("stamps exactly once, so no later write can shadow the pre-build one", () => {
     const writes = buildCli.match(/writeFileSync\(path\.join\(cliDir, "BUILD_SHA"\)/g) || [];
     expect(writes).toHaveLength(1);

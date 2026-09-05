@@ -246,13 +246,15 @@ describe("POST /api/v1/mcp JSON-RPC", () => {
     expect(res.status).toBe(401);
   });
 
-  it("anonymous caller (no session headers) still resolves against the anonymous namespace", async () => {
-    const sid = (() => {
+  it("anonymous caller (no session headers) gets isError, never another caller's anonymous entry", async () => {
+    // The anonymous namespace is shared across callers: a freshest-anonymous
+    // read would leak one session's telemetry to an unrelated caller.
+    const anonSid = (() => {
       const hash = createHash("sha256").update("openai:anonymous").digest("hex").slice(0, 32);
       return createHash("sha256").update(hash).digest("hex").slice(0, 8);
     })();
     mcpMocks.readContextStatus.mockImplementation((s) =>
-      s === sid ? { ...SAMPLE_ENTRY, sid } : null,
+      s === anonSid ? { ...SAMPLE_ENTRY, sid: anonSid } : null,
     );
     const res = await POST(
       rpcRequest(
@@ -261,7 +263,27 @@ describe("POST /api/v1/mcp JSON-RPC", () => {
       ),
     );
     const body = await res.json();
-    expect(body.result.isError).toBe(false);
-    expect(body.result.structuredContent.sid).toBe(sid);
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toContain("No context telemetry");
+    // the anonymous-namespace hash must never be read as "your own"
+    expect(mcpMocks.readContextStatus).not.toHaveBeenCalledWith(anonSid);
+  });
+
+  it("notifications/cancelled (id null) is a 202 no-op, no JSON-RPC reply", async () => {
+    const res = await POST(
+      rpcRequest({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 4 } }),
+    );
+    expect(res.status).toBe(202);
+    expect(res.headers.get("content-type")).toBeNull();
+  });
+
+  it("a notifications/* method WITH an id is not a notification: method-not-found", async () => {
+    const res = await POST(
+      rpcRequest({ jsonrpc: "2.0", id: 14, method: "notifications/cancelled" }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe(-32601);
+    expect(body.id).toBe(14);
   });
 });

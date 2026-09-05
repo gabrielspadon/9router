@@ -132,6 +132,12 @@ export function appendTokenSaverEvent(event) {
     const dur = clampMetric(event.durationMs);
     if (dur !== undefined) row.durationMs = dur;
     if (REASONS.has(event.reason)) row.reason = event.reason;
+    // 8-hex request id: rows are emitted once per account-fallback ATTEMPT,
+    // so a retried request writes one row per attempt sharing its rid. Valid
+    // rid passes through normalized lowercase; anything else is dropped.
+    if (typeof event.rid === "string" && /^[0-9a-f]{8}$/i.test(event.rid)) {
+      row.rid = event.rid.toLowerCase();
+    }
     ensureDir();
     rotateIfNeeded();
     fs.appendFileSync(eventsFile(), `${JSON.stringify(row)}\n`);
@@ -180,9 +186,10 @@ function emptyWindow() {
     avgMs: 0,
     // per-stage (per-saver) savings: signed bytesSaved summed per saver;
     // a row without bytesSaved still counts in requests/applied but adds 0
-    stages: Object.fromEntries(
-      [...SAVERS].map((s) => [s, { requests: 0, applied: 0, bytesSaved: 0 }])
-    ),
+    // Sparse per-stage map: created on first sight by addTo. Pre-populating
+    // every saver left permanent all-zero rows and made the dashboard's
+    // "No saver activity yet today." state unreachable.
+    stages: {},
   };
 }
 
@@ -190,8 +197,10 @@ function addTo(window, row) {
   window.requests++;
   if (row.applied) window.applied++;
   else window.bypassed++;
-  const stage = window.stages[row.saver];
-  if (stage) {
+  // First sight of a known saver creates its stage object; unknown savers
+  // (rows written by a newer build) are skipped, not hallucinated.
+  if (SAVERS.has(row.saver)) {
+    const stage = (window.stages[row.saver] ||= { requests: 0, applied: 0, bytesSaved: 0 });
     stage.requests++;
     if (row.applied) stage.applied++;
     if (Number.isFinite(row.bytesSaved)) stage.bytesSaved += row.bytesSaved;
@@ -264,7 +273,16 @@ export function getTokenSaverStats({ sinceMs, timelineDays = 30, recentLimit = 1
     });
   }
 
+  // Fallback retries emit one row per attempt with the same rid: aggregate
+  // each (rid, saver) pair once per pass, first occurrence wins. Rows without
+  // a rid aggregate as before.
+  const seenRidSaver = new Set();
   for (const row of rows) {
+    if (typeof row.rid === "string" && /^[0-9a-f]{8}$/.test(row.rid)) {
+      const key = `${row.rid}:${row.saver}`;
+      if (seenRidSaver.has(key)) continue;
+      seenRidSaver.add(key);
+    }
     const ts = row.ts || 0;
     addTo(windows.all, row);
     if (ts >= startOfToday) addTo(windows.today, row);

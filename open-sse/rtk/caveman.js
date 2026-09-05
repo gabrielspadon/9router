@@ -5,5 +5,7 @@ import { injectSystemPrompt } from "./systemInject.js";
 import { CAVEMAN_PROMPTS } from "./cavemanPrompts.js";
 
 export function injectCaveman(body, format, level) {
-  injectSystemPrompt(body, format, CAVEMAN_PROMPTS[level]);
+  // Pass through injectSystemPrompt's changed-body report: callers gate
+  // "injected" notes and flags on the body actually having changed.
+  return injectSystemPrompt(body, format, CAVEMAN_PROMPTS[level]);
 }

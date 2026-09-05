@@ -126,6 +126,8 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/proxy",
   "/api/headroom/status",
   "/api/token-saver/stats",
+  // sibling telemetry plane: a requireLogin=false toggle must not expose it remotely
+  "/api/context-status",
   "/api/pxpipe",
 ];
 

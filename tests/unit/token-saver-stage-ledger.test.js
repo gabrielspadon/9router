@@ -23,8 +23,8 @@ const STATS_WITH_STAGES = {
       proxyTokensSaved: 0,
       bodyBytesReduced: 0,
       stages: {
-        rtk: { bytesSaved: -13201, count: 13 },
-        inject: { bytesSaved: 3952, count: 1 },
+        rtk: { requests: 13, applied: 13, bytesSaved: -13201 },
+        inject: { requests: 1, applied: 1, bytesSaved: 3952 },
       },
     },
   },
@@ -95,12 +95,12 @@ describe("token-saver per-stage savings ledger", () => {
 
     const rtkRow = rows.find((r) => r.textContent.includes("RTK"));
     expect(rtkRow).toBeDefined();
-    expect(rtkRow.textContent).toContain("-12.9 KB"); // savings, one-decimal KB
+    expect(rtkRow.textContent).toContain("\u221212.9 KB"); // savings, one-decimal KB, U+2212 minus
     expect(rtkRow.textContent).toContain("13");
 
     const injectRow = rows.find((r) => r.textContent.includes("Prompt inject"));
     expect(injectRow).toBeDefined();
-    expect(injectRow.textContent).toContain("+3,952");
+    expect(injectRow.textContent).toContain("+3.9 KB");
     expect(injectRow.textContent).toContain("1");
     // growth (positive bytesSaved) is the anomalous state and is flagged
     expect(injectRow.querySelector(".text-warning")).not.toBeNull();
@@ -121,5 +121,40 @@ describe("token-saver per-stage savings ledger", () => {
     const card = container.querySelector("#stage-savings");
     expect(card).not.toBeNull();
     expect(card.textContent).toContain("Statistics unavailable");
+  });
+});
+
+describe("token-saver per-stage savings ledger (sparse map)", () => {
+  it("skips zero-request stages even when the payload pre-creates them", async () => {
+    const { container } = await mountClient({
+      windows: {
+        today: {
+          stages: {
+            rtk: { requests: 0, applied: 0, bytesSaved: 0 },
+            headroom: { requests: 2, applied: 2, bytesSaved: -4096 },
+          },
+        },
+      },
+    });
+
+    const card = container.querySelector("#stage-savings");
+    const rows = [...card.querySelectorAll("tbody tr")];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain("Headroom");
+    expect(card.textContent).not.toContain("RTK");
+  });
+
+  it("zero-request-only payloads show the empty message", async () => {
+    const { container } = await mountClient({
+      windows: {
+        today: {
+          stages: { rtk: { requests: 0, applied: 0, bytesSaved: 0 } },
+        },
+      },
+    });
+
+    const card = container.querySelector("#stage-savings");
+    expect(card.textContent).toContain("No saver activity yet today.");
+    expect(card.querySelectorAll("tbody tr")).toHaveLength(0);
   });
 });

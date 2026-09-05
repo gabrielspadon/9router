@@ -13,6 +13,9 @@ import path from "node:path";
 import { DATA_DIR } from "../../../src/lib/dataDir.js";
 
 const MAX_ENTRIES = 512;
+// Unique tmp names per concurrent writer in this process: a shared
+// "${file}.tmp" made two writers overwrite each other's staging file.
+let tmpCounter = 0;
 const STORE_DIR = path.join(DATA_DIR, "token-saver");
 const FILE_NAME = "context-status.json";
 const SID_RE = /^[a-f0-9]{8}$/;
@@ -56,7 +59,17 @@ function sanitize(entry) {
   if (saveBytes !== undefined) out.saveBytes = saveBytes;
   if (entry.compactHint === true) out.compactHint = true;
   const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : "";
-  if (updatedAt && updatedAt.length <= 40) out.updatedAt = updatedAt;
+  // ISO-shaped AND parseable, else the field is dropped: a free-text or
+  // garbage timestamp would poison the freshest-entry comparison in the
+  // MCP route's resolveOwnStatus.
+  if (
+    updatedAt &&
+    updatedAt.length <= 40 &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(updatedAt) &&
+    Number.isFinite(Date.parse(updatedAt))
+  ) {
+    out.updatedAt = updatedAt;
+  }
   return out;
 }
 
@@ -78,7 +91,7 @@ function readAll() {
 }
 
 function writeAll(entries) {
-  const tmp = `${storeFile()}.tmp`;
+  const tmp = `${storeFile()}.${process.pid}.${tmpCounter++}.tmp`;
   fs.mkdirSync(baseDir(), { recursive: true });
   fs.writeFileSync(tmp, JSON.stringify({ v: 1, entries }), "utf8");
   try {
@@ -100,12 +113,23 @@ function writeAll(entries) {
 export function writeContextStatus(sid, fields = {}) {
   try {
     if (!SID_RE.test(String(sid || ""))) return;
-    const entries = readAll();
-    const next = sanitize({ ...fields, sid, updatedAt: new Date().toISOString() });
-    const rest = entries.filter((e) => e.sid !== sid);
-    rest.push(next);
-    while (rest.length > MAX_ENTRIES) rest.shift();
-    writeAll(rest);
+    // One full attempt is read entries, apply this write, rename. An
+    // interleaved writer can win the rename in between (ENOENT on ours);
+    // retry once from a fresh read so the update is never lost silently.
+    const applyOnce = () => {
+      const entries = readAll();
+      const next = sanitize({ ...fields, sid, updatedAt: new Date().toISOString() });
+      const rest = entries.filter((e) => e.sid !== sid);
+      rest.push(next);
+      while (rest.length > MAX_ENTRIES) rest.shift();
+      writeAll(rest);
+    };
+    try {
+      applyOnce();
+    } catch (err) {
+      if (err?.code !== "ENOENT") throw err;
+      applyOnce();
+    }
   } catch {
     /* telemetry must never break the request path */
   }

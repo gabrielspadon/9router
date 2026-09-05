@@ -29,13 +29,24 @@ const STAGE_LABELS = {
 const stageLabel = (saver) =>
   STAGE_LABELS[saver] ?? saver.charAt(0).toUpperCase() + saver.slice(1);
 
-// Signed like the aggregate block: raw toLocaleString under 1 KB, one-decimal KB above.
+// Signed like the aggregate block: raw toLocaleString under 1 KB, one-decimal
+// KB above. U+2212 minus, same as ContextMonitorClient, so the rendered sign
+// is the typographic minus everywhere.
 const formatStageSavings = (bytesSaved) => {
   const abs = Math.abs(bytesSaved);
   const mag =
     abs >= 1024 ? `${(abs / 1024).toFixed(1)} KB` : abs.toLocaleString();
-  return `${bytesSaved < 0 ? "-" : ""}${mag}`;
+  return `${bytesSaved < 0 ? "\u2212" : ""}${mag}`;
 };
+
+// Sparse-stage defensive filter: only stages with at least one request render
+// (the empty state, zero rows). The stats store already returns a sparse map,
+// but a stale or proxied payload with pre-created zero stages must not revive
+// the permanent all-zero rows.
+const activeStageEntries = (stages) =>
+  Object.entries(stages ?? {}).filter(
+    ([, row]) => (row?.requests ?? row?.count ?? 0) > 0,
+  );
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
@@ -1107,7 +1118,7 @@ export default function TokenSaverClient() {
           <p className="text-sm text-text-muted">Loading…</p>
         ) : tsStats === null ? (
           <p className="text-sm text-text-muted">Statistics unavailable</p>
-        ) : Object.keys(tsStats.windows?.today?.stages ?? {}).length === 0 ? (
+        ) : activeStageEntries(tsStats.windows?.today?.stages).length === 0 ? (
           <p className="text-sm text-text-muted">No saver activity yet today.</p>
         ) : (
           <table className="w-full text-sm">
@@ -1125,7 +1136,7 @@ export default function TokenSaverClient() {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(tsStats.windows.today.stages).map(
+              {activeStageEntries(tsStats.windows.today.stages).map(
                 ([saver, row]) => {
                   const bytesSaved = row?.bytesSaved ?? 0;
                   return (
@@ -1141,8 +1152,11 @@ export default function TokenSaverClient() {
                       </td>
                       <td className="px-4 py-3 text-right metric">
                         {bytesSaved > 0 ? (
+                          // growth (prompt injection adds bytes on purpose)
+                          // goes through the same formatter as savings, with a
+                          // "+" prefix, so units stay consistent
                           <span className="text-warning">
-                            +{bytesSaved.toLocaleString()}
+                            {`+${formatStageSavings(bytesSaved)}`}
                           </span>
                         ) : (
                           formatStageSavings(bytesSaved)

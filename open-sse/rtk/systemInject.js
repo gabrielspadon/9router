@@ -23,23 +23,24 @@ function extractTextFromOpenAIMessage(msg) {
   return "";
 }
 
+// Returns true when the prompt was actually appended, false on every early
+// return (already injected, unknown level, no injectable shape) so callers can
+// gate "injected" claims on the change having happened.
 export function injectSystemPrompt(body, format, prompt) {
-  if (!body || !prompt) return;
+  if (!body || !prompt) return false;
 
   switch (format) {
     case FORMATS.CLAUDE:
-      injectClaudeSystem(body, prompt);
-      return;
+      return injectClaudeSystem(body, prompt);
     case FORMATS.GEMINI:
     case FORMATS.GEMINI_CLI:
     case FORMATS.VERTEX:
     case FORMATS.ANTIGRAVITY:
       // Antigravity wraps Gemini shape in body.request → injectGeminiSystem handles it
-      injectGeminiSystem(body, prompt);
-      return;
+      return injectGeminiSystem(body, prompt);
     default:
       // OpenAI and OpenAI-shaped formats (responses/codex/cursor/kiro/ollama)
-      injectMessagesSystem(body, format, prompt);
+      return injectMessagesSystem(body, format, prompt);
   }
 }
 
@@ -47,17 +48,17 @@ export function injectSystemPrompt(body, format, prompt) {
 function injectMessagesSystem(body, format, prompt) {
   // OpenAI Responses API: top-level string field
   if (typeof body.instructions === "string") {
-    if (isPromptAlreadyInjected(body.instructions, prompt)) return;
+    if (isPromptAlreadyInjected(body.instructions, prompt)) return false;
     body.instructions = body.instructions
       ? `${body.instructions}${SEP}${prompt}`
       : prompt;
-    return;
+    return true;
   }
 
   const arr = Array.isArray(body.messages) ? body.messages
     : Array.isArray(body.input) ? body.input
     : null;
-  if (!arr) return;
+  if (!arr) return false;
 
   // The array is picked by SHAPE while the format is a label, and the two can
   // disagree: a body carrying `input` is a Responses request whatever the label
@@ -68,7 +69,7 @@ function injectMessagesSystem(body, format, prompt) {
   const isResponses = format === FORMATS.OPENAI_RESPONSES || arr === body.input;
   const idx = arr.findIndex(m => m && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
   if (idx >= 0) {
-    if (isPromptAlreadyInjected(extractTextFromOpenAIMessage(arr[idx]), prompt)) return;
+    if (isPromptAlreadyInjected(extractTextFromOpenAIMessage(arr[idx]), prompt)) return false;
     appendToOpenAIMessage(arr[idx], prompt, isResponses);
   } else {
     arr.unshift(isResponses
@@ -79,6 +80,7 @@ function injectMessagesSystem(body, format, prompt) {
         }
       : { role: ROLE.SYSTEM, content: prompt });
   }
+  return true;
 }
 
 function appendToOpenAIMessage(msg, prompt, isResponses) {
@@ -117,13 +119,13 @@ function appendToOpenAIMessage(msg, prompt, isResponses) {
 // Insert before the last cache_control block to keep injection inside the cached prefix.
 function injectClaudeSystem(body, prompt) {
   if (typeof body.system === "string" && body.system.length > 0) {
-    if (isPromptAlreadyInjected(body.system, prompt)) return;
+    if (isPromptAlreadyInjected(body.system, prompt)) return false;
     body.system = `${body.system}${SEP}${prompt}`;
-    return;
+    return true;
   }
   if (Array.isArray(body.system)) {
     const existingText = body.system.map(block => block?.text || "").join(" ");
-    if (isPromptAlreadyInjected(existingText, prompt)) return;
+    if (isPromptAlreadyInjected(existingText, prompt)) return false;
     const block = { type: "text", text: prompt };
     let lastCacheIdx = -1;
     for (let i = body.system.length - 1; i >= 0; i--) {
@@ -134,9 +136,10 @@ function injectClaudeSystem(body, prompt) {
     } else {
       body.system.push(block);
     }
-    return;
+    return true;
   }
   body.system = prompt;
+  return true;
 }
 
 // Gemini shape: body.system_instruction | body.systemInstruction | body.request.systemInstruction
@@ -148,18 +151,19 @@ function injectGeminiSystem(body, prompt) {
   const sys = target[key];
   if (sys && Array.isArray(sys.parts)) {
     const existingText = sys.parts.map(part => part?.text || "").join(" ");
-    if (isPromptAlreadyInjected(existingText, prompt)) return;
+    if (isPromptAlreadyInjected(existingText, prompt)) return false;
     sys.parts.push({ text: prompt });
-    return;
+    return true;
   }
   if (typeof sys === "string") {
     // String-typed systemInstruction: coerce to parts, preserving the
     // original text, and dedup against the serialized existing instruction.
-    if (isPromptAlreadyInjected(sys, prompt)) return;
+    if (isPromptAlreadyInjected(sys, prompt)) return false;
     target[key] = sys
       ? { parts: [{ text: sys }, { text: prompt }] }
       : { parts: [{ text: prompt }] };
-    return;
+    return true;
   }
   target[key] = { parts: [{ text: prompt }] };
+  return true;
 }

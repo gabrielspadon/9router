@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
@@ -11,7 +11,16 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 // resolved here and inlined by webpack; runtime falls back to the real
 // process env (dev servers, tests).
 function resolveTpBuildSha() {
-  if (process.env.TOKENPROXY_BUILD_SHA) return process.env.TOKENPROXY_BUILD_SHA;
+  if (process.env.TOKENPROXY_BUILD_SHA) return process.env.TOKENPROXY_BUILD_SHA.slice(0, 12);
+  // A real checkout's git HEAD is authoritative and fresh. cli/BUILD_SHA is
+  // the standalone/no-git fallback only: in long-lived worktrees it holds the
+  // sha of whatever pack ran last, which can be commits behind HEAD.
+  try {
+    if (existsSync(join(projectRoot, ".git"))) {
+      const sha = execSync("git rev-parse HEAD", { cwd: projectRoot, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+      if (sha) return sha.slice(0, 12);
+    }
+  } catch { /* fall through to the stamp files */ }
   for (const candidate of [join(projectRoot, "cli", "BUILD_SHA"), join(projectRoot, "BUILD_SHA")]) {
     try {
       const text = readFileSync(candidate, "utf8").trim();

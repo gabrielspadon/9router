@@ -131,6 +131,30 @@ describe("reqSummary path= assembly", () => {
     expect(pathFor("r-pathed")).toEqual([]);
   });
 
+  it("a 7-code saver path retains cache-keep under the widened render budget", () => {
+    for (const code of [
+      "XFORM.rtk-applied",
+      "XFORM.headroom-applied",
+      "XFORM.mem-pruned",
+      "XFORM.compact-applied",
+      "XFORM.tool-distill",
+      "XFORM.injected",
+      "XFORM.cache-keep",
+    ]) {
+      notePath("r-wide", code);
+    }
+    reqSummary("ok", { rid: "r-wide" }, AT);
+    expect(reqLines()[0]).toContain(
+      "path=XFORM.rtk-applied,XFORM.headroom-applied,XFORM.mem-pruned,XFORM.compact-applied,XFORM.tool-distill,XFORM.injected,XFORM.cache-keep",
+    );
+  });
+
+  it("an 8-stage save list renders complete, not mid-delta cut", () => {
+    const save = "rtk:-100,headroom:-200,schema:-300,inject:3952,mem:-42400,privacy:30,pxpipe:-15,final:12";
+    reqSummary("ok", { rid: "r-save", save }, AT);
+    expect(reqLines()[0]).toContain(`save=${save}`);
+  });
+
   it("countCacheAnchors counts only valid ephemeral breakpoints", () => {
     const body = {
       system: [

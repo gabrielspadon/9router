@@ -57,6 +57,10 @@ function json(body, status = 200) {
 // Exact replica of the chat path's hash chain (auth.js resolveRoutingSessionHash):
 // the identity must reproduce across two resolutions or it is treated as
 // anonymous, then sha256(`${provider}:${sessionId}`) truncated the same way.
+// Returns { hash, anonymous }: anonymous is true when identity resolution
+// found nothing, meaning the hash is the SHARED anonymous-namespace hash, not
+// this caller's own. Callers must not treat an anonymous hash as "your own"
+// session, or the freshest anonymous entry from any caller leaks across sessions.
 function sessionHashForProvider(providerId, headers) {
   let sessionId = null;
   try {
@@ -72,10 +76,13 @@ function sessionHashForProvider(providerId, headers) {
   } catch {
     sessionId = null;
   }
-  return createHash("sha256")
-    .update(`${providerId}:${sessionId || "anonymous"}`)
-    .digest("hex")
-    .slice(0, 32);
+  return {
+    anonymous: !sessionId,
+    hash: createHash("sha256")
+      .update(`${providerId}:${sessionId || "anonymous"}`)
+      .digest("hex")
+      .slice(0, 32),
+  };
 }
 
 function callerHeaders(request) {
@@ -107,7 +114,12 @@ async function resolveOwnStatus(request) {
   const headers = callerHeaders(request);
   let freshest = null;
   for (const provider of providers) {
-    const entry = readContextStatus(idPrefix(sessionHashForProvider(provider, headers)));
+    const { hash, anonymous } = sessionHashForProvider(provider, headers);
+    // Anonymous hashes are a shared namespace: reading "your own" status from
+    // one would return the freshest anonymous entry from ANY caller. Only
+    // non-anonymous identities qualify; none matching means no own telemetry.
+    if (anonymous) continue;
+    const entry = readContextStatus(idPrefix(hash));
     if (entry && (!freshest || String(entry.updatedAt) > String(freshest.updatedAt))) {
       freshest = entry;
     }
@@ -226,6 +238,17 @@ export async function POST(request) {
   }
   if (!rpc || typeof rpc !== "object" || Array.isArray(rpc)) {
     return json(rpcError(null, -32600, "Invalid Request"), 400);
+  }
+
+  // JSON-RPC notifications carry no id and never get a reply, per spec. This
+  // runs before the method switch so notifications/cancelled and any future
+  // notifications/* method are all absorbed the same way.
+  if (
+    rpc.id == null &&
+    typeof rpc.method === "string" &&
+    rpc.method.startsWith("notifications/")
+  ) {
+    return new Response(null, { status: 202 });
   }
 
   switch (rpc.method) {

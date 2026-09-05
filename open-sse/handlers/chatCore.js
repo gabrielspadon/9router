@@ -669,8 +669,12 @@ export async function handleChatCore({
   // stage boundary. Feeds REQ save=/save_tok=, the XFORM.saver-guard anomaly
   // line, bytesSaved on the saver event rows, and the honest growth check.
   // Off entirely when no saver will run, so a saver-free request pays nothing.
+  // privacy runs under its own flag below (line ~758), independent of
+  // tokenSaverEnabled, so its measurement must not depend on the token-saver
+  // union either.
   const saverWillRun = Boolean(
     pxpipeEnabled ||
+      privacyEnabled ||
       (tokenSaverEnabled &&
         (rtkEnabled ||
           schemaDistillEnabled ||
@@ -845,18 +849,22 @@ export async function handleChatCore({
   // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
 
-  // Caveman: inject terse-style system prompt
+  // Caveman: inject terse-style system prompt. injectCaveman reports whether
+  // the body actually changed; an unknown level or an already-injected prompt
+  // must not claim XFORM.injected.
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
-    injectCaveman(translatedBody, finalFormat, cavemanLevel);
-    xf.push(`CAVEMAN:${cavemanLevel}`);
-    notePath(rid, "XFORM.injected");
+    if (injectCaveman(translatedBody, finalFormat, cavemanLevel)) {
+      xf.push(`CAVEMAN:${cavemanLevel}`);
+      notePath(rid, "XFORM.injected");
+    }
   }
 
-  // Ponytail: inject lazy-senior-dev system prompt
+  // Ponytail: inject lazy-senior-dev system prompt (same gate as caveman)
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
-    injectPonytail(translatedBody, finalFormat, ponytailLevel);
-    xf.push(`PONYTAIL:${ponytailLevel}`);
-    notePath(rid, "XFORM.injected");
+    if (injectPonytail(translatedBody, finalFormat, ponytailLevel)) {
+      xf.push(`PONYTAIL:${ponytailLevel}`);
+      notePath(rid, "XFORM.injected");
+    }
   }
   measureSaverStage(
     "inject",
@@ -1044,6 +1052,7 @@ export async function handleChatCore({
       const bytesSaved = saverStageDelta("rtk");
       onTokenSaverEvent?.({
         saver: "rtk",
+        rid,
         applied: true,
         appliedCount: rtkStats.hits.length,
         charsBefore: rtkStats.bytesBefore,
@@ -1066,6 +1075,7 @@ export async function handleChatCore({
       const bytesSaved = saverStageDelta("headroom");
       onTokenSaverEvent?.({
         saver: "headroom",
+        rid,
         applied: true,
         tokensBefore: headroomStats.tokens_before,
         tokensAfter: headroomStats.tokens_after,
@@ -1091,6 +1101,7 @@ export async function handleChatCore({
       if (stageGated && stageBytes !== undefined) {
         onTokenSaverEvent?.({
           saver: stageName,
+          rid,
           applied: true,
           bytesSaved: stageBytes,
           saveTokEst: Math.round(stageBytes / 4),

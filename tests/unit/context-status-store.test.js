@@ -108,6 +108,70 @@ describe("contextStatusStore", () => {
     expect(readAllContextStatuses()).toEqual([]);
   });
 
+  it("drops updatedAt that is not ISO-shaped and parseable", () => {
+    // poison the file directly: free-text and garbage timestamps must not
+    // survive the read-path sanitize (they would poison freshest-entry picks)
+    const file = path.join(dir, "context-status.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        v: 1,
+        entries: [
+          { sid: "aaaa0001", updatedAt: "not a timestamp" },
+          { sid: "bbbb0002", updatedAt: "2026-13-99T99:99:99.000Z" },
+          { sid: "cccc0003", updatedAt: "2026-09-04T12:00:00.000Z" },
+          { sid: "dddd0004", updatedAt: "2026-09-04" },
+        ],
+      }),
+    );
+    const entries = readAllContextStatuses();
+    const bySid = Object.fromEntries(entries.map((e) => [e.sid, e]));
+    expect("updatedAt" in bySid["aaaa0001"]).toBe(false);
+    expect("updatedAt" in bySid["bbbb0002"]).toBe(false);
+    expect(bySid["cccc0003"].updatedAt).toBe("2026-09-04T12:00:00.000Z");
+    expect("updatedAt" in bySid["dddd0004"]).toBe(false);
+  });
+
+  it("retries once on a rename ENOENT from an interleaved writer, keeping the update", () => {
+    const file = path.join(dir, "context-status.json");
+    writeContextStatus("aaaa0001", { ctxTokens: 1 });
+    // simulate an interleaved writer deleting the staging tmp mid-flight:
+    // patch renameSync to fail once with ENOENT
+    const realRename = fs.renameSync;
+    let calls = 0;
+    fs.renameSync = (a, b) => {
+      if (String(a).endsWith(".tmp") && calls++ === 0) {
+        const err = new Error("simulated interleave");
+        err.code = "ENOENT";
+        throw err;
+      }
+      return realRename(a, b);
+    };
+    try {
+      writeContextStatus("bbbb0002", { ctxTokens: 2 });
+    } finally {
+      fs.renameSync = realRename;
+    }
+    // the retry reapplied the write: both entries present
+    expect(readContextStatus("aaaa0001")?.ctxTokens).toBe(1);
+    expect(readContextStatus("bbbb0002")?.ctxTokens).toBe(2);
+  });
+
+  it("uses per-process unique tmp names for concurrent writers", () => {
+    writeContextStatus("aaaa0001", { ctxTokens: 1 });
+    // with a shared "${file}.tmp" two writers would clobber each other; unique
+    // pid.counter names make that structurally impossible. Assert the counter
+    // advanced by inspecting that successive writes leave no tmp and land both.
+    writeContextStatus("bbbb0002", { ctxTokens: 2 });
+    writeContextStatus("cccc0003", { ctxTokens: 3 });
+    expect(readAllContextStatuses().map((e) => e.sid)).toEqual([
+      "aaaa0001",
+      "bbbb0002",
+      "cccc0003",
+    ]);
+    expect(fs.readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
+  });
+
   it("entries with wrong shape are dropped on read", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(

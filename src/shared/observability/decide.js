@@ -209,7 +209,7 @@ function hhmmss(ms) {
 // Path folds are machine-generated CLASS.verdict tokens joined by commas —
 // never free text — so they render under a wider cap than free-text values.
 // takePath() already bounds them; this is the backstop at the same width.
-const PATH_VALUE_CHARS = 120;
+const PATH_VALUE_CHARS = 160;
 
 function scalar(value, key = null) {
   if (value === null || value === undefined) return null;
@@ -219,7 +219,10 @@ function scalar(value, key = null) {
   if (t === 'bigint') return String(value);
   if (t !== 'string') return '[non-scalar]';
   if (value === '') return null;
-  const cap = key === 'path' ? PATH_VALUE_CHARS : MAX_VALUE_CHARS;
+  // save=/save_tok= ride in the same machine-token grammar as path= (an
+  // 8-stage save list is ~84 chars, mid-delta cut at the 60-char free-text cap)
+  // so they share its wider cap; free-text values stay at MAX_VALUE_CHARS.
+  const cap = key === 'path' || key === 'save' ? PATH_VALUE_CHARS : MAX_VALUE_CHARS;
   const safe = redactSecretsText(value)
     .replace(/[\s\u0000-\u001f\u007f]+/g, '_');
   return safe.length > cap ? `${safe.slice(0, cap)}…` : safe;
@@ -515,7 +518,9 @@ function takePath(rid, nowMs = Date.now()) {
   // machine-generated CLASS.verdict tokens (no free text, no leak channel),
   // so the render budget is wider than the free-text value cap — five saver
   // codes plus cache-keep/legacy must survive to make save=/path= auditable.
-  const PATH_RENDER_MAX = 120;
+  // Seven saver codes plus cache-keep/legacy must survive to keep save=/path=
+  // auditable; an 8-code path ("XFORM.a,XFORM.b,...") runs ~150 chars.
+  const PATH_RENDER_MAX = 160;
   let codes = entry.codes;
   const render = (list) => list.join(',');
   while (codes.length > 1 && render(codes).length > PATH_RENDER_MAX) {

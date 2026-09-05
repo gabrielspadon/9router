@@ -438,10 +438,12 @@ export function resetComboRotation(comboName) {
 }
 
 // Token-saver flags a combo may override, keyed by the short name stored in the
-// combo bag and mapped to the parameter name handleChatCore takes. Anything not
-// listed here (privacy filter, tool disclosure, memory pruning) stays global.
+// combo bag and mapped to the parameter name handleChatCore takes. The schema
+// distiller is combo-wired like the others. Anything not listed here (privacy
+// filter, tool disclosure, memory pruning) stays global.
 const COMBO_TOKEN_SAVER_KEYS = Object.freeze({
   rtk: "rtkEnabled",
+  schema: "schemaDistillEnabled",
   headroom: "headroomEnabled",
   caveman: "cavemanEnabled",
   ponytail: "ponytailEnabled",
@@ -500,7 +502,7 @@ function findComboTokenSaverOverride(comboChain, settings) {
  *
  * @param {Set<string>|string[]|string|null} comboChain - combo names, outermost first
  * @param {Object} settings - the global settings object
- * @returns {{rtkEnabled: boolean, headroomEnabled: boolean, cavemanEnabled: boolean, ponytailEnabled: boolean, pxpipeEnabled: boolean}}
+ * @returns {{rtkEnabled: boolean, schemaDistillEnabled: boolean, headroomEnabled: boolean, cavemanEnabled: boolean, ponytailEnabled: boolean, pxpipeEnabled: boolean}}
  */
 export function resolveComboTokenSaver(comboChain, settings) {
   const flags = Object.values(COMBO_TOKEN_SAVER_KEYS);

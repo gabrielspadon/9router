@@ -376,6 +376,32 @@ describe("dashboard guard local-only access", () => {
     expect(response.body.error).toBe("Local only: CLI token required");
   });
 
+  it("rejects /api/context-status remotely even when requireLogin=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const response = await proxy(
+      request("/api/context-status", {
+        host: "router.example.com",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Local only: CLI token required");
+  });
+
+  it("allows /api/context-status on loopback when requireLogin=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const response = await proxy(
+      localRequest("/api/context-status", {
+        host: "localhost:20128",
+        origin: "http://localhost:20128",
+      }),
+    );
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
   it("rejects local-only route on loopback when requireLogin=true and no JWT", async () => {
     const response = await proxy(
       localRequest("/api/mcp/filesystem/sse", {

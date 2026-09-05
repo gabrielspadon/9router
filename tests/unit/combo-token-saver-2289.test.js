@@ -10,6 +10,7 @@ import { resolveComboTokenSaver } from '../../open-sse/services/combo.js';
 
 const GLOBAL = {
   rtkEnabled: true,
+  schemaDistillEnabled: false,
   headroomEnabled: true,
   cavemanEnabled: false,
   ponytailEnabled: false,
@@ -18,6 +19,7 @@ const GLOBAL = {
 
 const ALL_OFF = {
   rtkEnabled: false,
+  schemaDistillEnabled: false,
   headroomEnabled: false,
   cavemanEnabled: false,
   ponytailEnabled: false,

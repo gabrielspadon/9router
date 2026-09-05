@@ -15,17 +15,23 @@
 
 const MIN_BYTES = 8192;
 const STRIP_KEYS = new Set(["default", "examples", "example", "$schema", "title"]);
+// Keys whose object value is a map of schema NAMES to schemas: an entry key is
+// a property/definition name, never a keyword, so it must survive even when it
+// collides with STRIP_KEYS (a property literally named "title"). The entry
+// VALUE still gets keyword stripping recursively.
+const NAME_MAP_KEYS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependencies"]);
 
 function collapseWs(text) {
   return text.replace(/\s{2,}/g, " ");
 }
 
-function distillNode(node, notes) {
-  if (Array.isArray(node)) return node.map((n) => distillNode(n, notes));
+function distillNode(node, notes, parentKey) {
+  if (Array.isArray(node)) return node.map((n) => distillNode(n, notes, parentKey));
   if (!node || typeof node !== "object") return node;
+  const inNameMap = NAME_MAP_KEYS.has(parentKey);
   const out = {};
   for (const [key, value] of Object.entries(node)) {
-    if (STRIP_KEYS.has(key)) {
+    if (!inNameMap && STRIP_KEYS.has(key)) {
       notes.add(`stripped:${key}`);
       continue;
     }
@@ -35,7 +41,7 @@ function distillNode(node, notes) {
       out[key] = collapsed;
       continue;
     }
-    out[key] = distillNode(value, notes);
+    out[key] = distillNode(value, notes, key);
   }
   return out;
 }

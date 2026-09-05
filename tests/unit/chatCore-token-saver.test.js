@@ -216,3 +216,104 @@ describe("chatCore tokenSaver", () => {
     expect(mocks.executeMock).toHaveBeenCalled();
   });
 });
+
+describe("chatCore tokenSaver regressions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.executeMock.mockImplementation(async () => makeExecutorRes());
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("unexpected fetch");
+    });
+  });
+
+  function baseArgs(overrides = {}) {
+    return {
+      body: {
+        model: "openai/gpt-4o",
+        stream: false,
+        messages: [
+          { role: "tool", tool_call_id: "x", content: "x".repeat(800) },
+          { role: "user", content: "hi" },
+        ],
+      },
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "sk-test", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn(), tagForSession: () => "TAG", nextTag: () => "TAG", fmtThink: () => null },
+      connectionId: "conn-1",
+      rtkEnabled: true,
+      headroomEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      pxpipeEnabled: false,
+      clientRawRequest: { headers: {}, body: {} },
+      onTokenSaverEvent: undefined,
+      onPxpipeEvent: mocks.onPxpipeEvent,
+      ...overrides,
+    };
+  }
+
+  it("token-saver rows carry the 8-hex rid", async () => {
+    const onTokenSaverEvent = vi.fn();
+    await handleChatCore(baseArgs({ onTokenSaverEvent, requestId: "abcd1234" }));
+    const rtk = onTokenSaverEvent.mock.calls.find((c) => c[0]?.saver === "rtk")?.[0];
+    expect(rtk).toBeDefined();
+    expect(rtk.rid).toBe("abcd1234");
+  });
+
+  it("privacy measures and emits a row under its own flag with the saver header off", async () => {
+    const onTokenSaverEvent = vi.fn();
+    await handleChatCore(
+      baseArgs({
+        onTokenSaverEvent,
+        rtkEnabled: false,
+        privacyEnabled: true,
+        body: {
+          // openai forceStream: a client-requested stream keeps the privacy
+          // gate open (forced-SSE-to-JSON skips the filter by design)
+          model: "openai/gpt-4o",
+          stream: true,
+          messages: [{ role: "user", content: "contact me at user@example.com please" }],
+        },
+        clientRawRequest: { headers: { "x-tokenproxy-token-saver": "off" }, body: {} },
+      }),
+    );
+    const privacy = onTokenSaverEvent.mock.calls.find((c) => c[0]?.saver === "privacy")?.[0];
+    expect(privacy).toBeDefined();
+    expect(typeof privacy.bytesSaved).toBe("number");
+  });
+
+  it("no phantom XFORM.injected claim when the prompt was already injected", async () => {
+    const { CAVEMAN_PROMPTS } = await import("../../open-sse/rtk/cavemanPrompts.js");
+    const prompt = CAVEMAN_PROMPTS.full;
+    const log1 = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn(), tagForSession: () => "TAG", nextTag: () => "TAG", fmtThink: () => null };
+    const body1 = {
+      model: "openai/gpt-4o",
+      stream: false,
+      messages: [{ role: "system", content: prompt }, { role: "user", content: "hi" }],
+    };
+    await handleChatCore(baseArgs({
+      body: body1,
+      log: log1,
+      rtkEnabled: false,
+      cavemanEnabled: true,
+      cavemanLevel: "full",
+    }));
+    // the system message already carries the prompt: injector must report no change
+    const gearLines = log1.line.mock.calls.filter((c) => String(c[1]).includes("⚙"));
+    const cavemanClaims = gearLines.filter((c) => String(c[2]).includes("CAVEMAN"));
+    expect(cavemanClaims).toHaveLength(0);
+  });
+
+  it("caveman injection claims CAVEMAN flag when the body actually changed", async () => {
+    const log1 = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn(), tagForSession: () => "TAG", nextTag: () => "TAG", fmtThink: () => null };
+    await handleChatCore(baseArgs({
+      log: log1,
+      rtkEnabled: false,
+      cavemanEnabled: true,
+      cavemanLevel: "full",
+    }));
+    const gearLines = log1.line.mock.calls.filter((c) => String(c[1]).includes("⚙"));
+    const cavemanClaims = gearLines.filter((c) => String(c[2]).includes("CAVEMAN:full"));
+    expect(cavemanClaims).toHaveLength(1);
+  });
+});

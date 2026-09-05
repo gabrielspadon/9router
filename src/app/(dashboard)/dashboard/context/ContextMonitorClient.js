@@ -20,10 +20,17 @@ export default function ContextMonitorClient() {
   const [entries, setEntries] = useState([]);
   const [generatedAt, setGeneratedAt] = useState(null);
 
+  // 8s ceiling per poll: a wedged context-status route must not hold the
+  // client open past one backoff step.
+  const REQUEST_TIMEOUT_MS = 8000;
+  const BASE_POLL_MS = 5000;
+  const MAX_POLL_MS = 60000;
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/context-status", {
         headers: { "Cache-Control": "no-store" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
         setStatus("unavailable");
@@ -40,31 +47,57 @@ export default function ContextMonitorClient() {
 
   useEffect(() => {
     let cancelled = false;
+    let failures = 0;
+    let inFlight = false;
+    let timer = null;
+    // Consecutive-failure backoff: 2^failures * 5s capped at 60s, reset to 5s
+    // on the first success. setTimeout chain (not setInterval) so a slow tick
+    // can never overlap the next one.
+    const schedule = () => {
+      if (cancelled) return;
+      const delay = Math.min(MAX_POLL_MS, BASE_POLL_MS * 2 ** failures);
+      timer = setTimeout(() => void tick(), delay);
+    };
     const tick = async () => {
-      if (document.hidden) return;
+      if (cancelled) return;
+      if (document.hidden || inFlight) {
+        // hidden tab or a manual Retry still running: poll again at base rate,
+        // and never let two fetches overlap.
+        timer = setTimeout(() => void tick(), BASE_POLL_MS);
+        return;
+      }
+      inFlight = true;
       try {
         const res = await fetch("/api/context-status", {
           headers: { "Cache-Control": "no-store" },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
         if (cancelled) return;
         if (!res.ok) {
+          failures++;
           setStatus("unavailable");
           return;
         }
         const data = await res.json();
         if (cancelled) return;
+        failures = 0;
         setEntries(Array.isArray(data.entries) ? data.entries : []);
         setGeneratedAt(data.generatedAt ?? null);
         setStatus("ready");
       } catch {
-        if (!cancelled) setStatus("unavailable");
+        if (!cancelled) {
+          failures++;
+          setStatus("unavailable");
+        }
+      } finally {
+        inFlight = false;
+        schedule();
       }
     };
-    tick();
-    const id = setInterval(tick, 5000);
+    void tick();
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, []);
 
