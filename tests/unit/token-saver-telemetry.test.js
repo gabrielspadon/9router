@@ -431,4 +431,20 @@ describe("token-saver REQ telemetry", () => {
     expect(mocks.rtkObserved.before).not.toBeNull();
     expect(sum).toBe(mocks.dispatched.length - mocks.rtkObserved.before.length);
   });
+  it("inject stage emits an event row reporting its growth honestly", async () => {
+    const onTokenSaverEvent = vi.fn();
+    await drive({
+      cavemanEnabled: true,
+      cavemanLevel: "ultra",
+      sid: "telem-ce-04",
+      requestId: "tele0403",
+      onTokenSaverEvent,
+    });
+    const injectRow = onTokenSaverEvent.mock.calls.find(
+      (c) => c[0]?.saver === "inject",
+    )?.[0];
+    expect(injectRow).toBeDefined();
+    expect(injectRow.bytesSaved).toBeGreaterThan(0);
+    expect(injectRow.saveTokEst).toBe(Math.round(injectRow.bytesSaved / 4));
+  });
 });

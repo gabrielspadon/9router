@@ -1078,6 +1078,26 @@ export async function handleChatCore({
         ce: saverFields.ce,
       });
     }
+    // Ledger-backed stages: one row each when the stage actually changed the
+    // body — the ledger records a stage only on a byte change. Emits inject's
+    // intentional growth (positive bytesSaved) and mem/schema/privacy savings
+    // into the same per-saver aggregation the dashboard's stage table reads.
+    // Privacy runs under its own flag, not tokenSaverEnabled, so its gate is
+    // the delta alone.
+    for (const stageName of ["inject", "mem", "schema", "privacy"]) {
+      const stageBytes = saverStageDelta(stageName);
+      const stageGated =
+        stageName === "privacy" ? true : tokenSaverEnabled;
+      if (stageGated && stageBytes !== undefined) {
+        onTokenSaverEvent?.({
+          saver: stageName,
+          applied: true,
+          bytesSaved: stageBytes,
+          saveTokEst: Math.round(stageBytes / 4),
+          ce: saverFields.ce,
+        });
+      }
+    }
   } catch {
     /* stats must not break requests */
   }

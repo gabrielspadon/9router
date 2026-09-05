@@ -244,4 +244,15 @@ describe("schema distillation saver stage (chatCore pipeline)", () => {
     );
     expect(typeof entry.updatedAt).toBe("string");
   });
+  it("emits a schema token-saver event row with signed bytesSaved", async () => {
+    const onTokenSaverEvent = vi.fn();
+    await drive({ schemaDistillEnabled: true, requestId: "sd000105", onTokenSaverEvent });
+    const schemaRow = onTokenSaverEvent.mock.calls.find(
+      (c) => c[0]?.saver === "schema",
+    )?.[0];
+    expect(schemaRow).toBeDefined();
+    expect(schemaRow.applied).toBe(true);
+    expect(schemaRow.bytesSaved).toBeLessThan(0);
+    expect(schemaRow.saveTokEst).toBe(Math.round(schemaRow.bytesSaved / 4));
+  });
 });

@@ -64,6 +64,21 @@ describe("tokenSaver per-stage savings", () => {
     expect(s.windows.all.stages.rtk).toEqual({ requests: 1, applied: 1, bytesSaved: -300 });
   });
 
+  it("aggregates the ledger-backed savers (inject, mem, schema, privacy)", async () => {
+    const mod = await loadMod();
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({ ts: Date.now(), saver: "inject", applied: true, bytesSaved: 3952 });
+    mod.appendTokenSaverEvent({ ts: Date.now(), saver: "mem", applied: true, bytesSaved: -42400 });
+    mod.appendTokenSaverEvent({ ts: Date.now(), saver: "schema", applied: true, bytesSaved: -1800 });
+    mod.appendTokenSaverEvent({ ts: Date.now(), saver: "privacy", applied: false });
+
+    const s = mod.getTokenSaverStats({});
+    expect(s.windows.all.stages.inject).toEqual({ requests: 1, applied: 1, bytesSaved: 3952 });
+    expect(s.windows.all.stages.mem).toEqual({ requests: 1, applied: 1, bytesSaved: -42400 });
+    expect(s.windows.all.stages.schema).toEqual({ requests: 1, applied: 1, bytesSaved: -1800 });
+    expect(s.windows.all.stages.privacy).toEqual({ requests: 1, applied: 0, bytesSaved: 0 });
+  });
+
   it("stages ride along through the /api/token-saver/stats route response", async () => {
     const mod = await loadMod();
     mod.__setTokenSaverEventsDirForTest(TMP);
