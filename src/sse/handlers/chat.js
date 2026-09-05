@@ -669,9 +669,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       if (!credentials || credentials.allRateLimited) {
         if (credentials?.allRateLimited) {
           const errorMsg = credentials.lastError || "Unavailable";
-          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+          // Selection's own status and message, deliberately. They describe the
+          // account selection actually consulted; substituting the status or
+          // the text of an account that failed EARLIER in this cascade reports
+          // one account's problem as another's. Selection is now the layer that
+          // knows an exhausted pool is a 429 and what its earliest real reset
+          // is (auth.js), so there is nothing left for this branch to correct.
+          const status = credentials.clientErrorStatus
+            ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          log.warn(
+            "CHAT",
+            `[${provider}/${model}] ${errorMsg} [${status}] (${credentials.retryAfterHuman})`,
+          );
+          return unavailableResponse(
+            status,
+            `[${provider}/${model}] ${errorMsg}`,
+            credentials.retryAfter,
+            credentials.retryAfterHuman,
+          );
         }
         if (excludeConnectionIds.size === 0) {
           log.warn("AUTH", `No active credentials for provider: ${provider}`);
