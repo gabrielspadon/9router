@@ -86,8 +86,18 @@ const MODEL_PATTERNS = {
 // it through TokenProxy to an external chat model makes typing laggy and burns provider quota per
 // keystroke. Without this guard the broad `flash` pattern in MODEL_PATTERNS hijacks them onto the
 // flash-agent slot. Verified via MITM dump capture of streamGenerateContent (see AI_JOURNAL).
+//
+// Image generation is the second case, and it fails the same way. Antigravity's
+// image model (`gemini-3.1-flash-image`, `kind: "image"` in
+// open-sse/providers/registry/antigravity.js) posts to :generateContent on the
+// same intercepted host, so it reaches this dispatcher like any chat turn. It has
+// no alias key of its own — src/shared/constants/cliTools.js lists only the 15
+// chat aliases — so exact and prefix lookup both miss and the broad `flash`
+// pattern claimed it for the flash-agent slot. The IDE then asked for an image
+// and got a text model that cannot return inlineData. A chat model cannot serve
+// an image request, so there is no alias worth adding: this passes through.
 const MODEL_NO_MAP = {
-  antigravity: [/^tab[_-]/i],
+  antigravity: [/^tab[_-]/i, /image/i],
 };
 
 // URL substrings whose request/response should NOT be dumped to file (telemetry, polling, empty)
