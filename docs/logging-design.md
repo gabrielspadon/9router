@@ -373,13 +373,13 @@ Row 51 is the misreport in section 1.5.
 | 67 | drain begin / end transition | `admin/drain/[connectionId]/route.js:56-92` | 105 B, always |
 | 68 | schema distillation stripped validation-noise keywords | `chatCore.js:773-782` | folded |
 | 69 | thinking strip removed historical reasoning blocks | `chatCore.js:823` | folded |
-| 70 | query-aware compression collapsed low-relevance turns | `chatCore.js:850` | folded |
-| 71 | pair dropping removed oldest text-only turn pairs under deficit (after the mem stage) | `chatCore.js:1147` | folded |
-| 72 | embedding reorder moved relevant turns next to the tail | `chatCore.js:894` | folded |
-| 73 | mid-prefix note summarizing the prefix optimizations | `chatCore.js:1196` | folded |
+| 70 | query-aware compression collapsed low-relevance turns (pressure rung after the mem and headroom stages; fresh decisions only over budget, memoised per session and replayed on later turns) | `chatCore.js` `qacWillRun` | folded |
+| 71 | pair dropping removed oldest text-only turn pairs under deficit (after the qac rung) | `chatCore.js` `pairsWillRun` | folded |
+| 72 | embedding reorder moved relevant user/assistant pairs next to the tail (fresh pass only on a request whose prefix a rung already rewrote; otherwise the session's memoised order is replayed) | `chatCore.js` `reorderWillRun` | folded |
+| 73 | boundary note summarizing the prefix optimizations, appended to the live user turn | `chatCore.js` `midinjectWillRun` | folded |
 | 74 | tools normalization (dedupe + static filter + BM25 disclosure) stripped tools: tools bytes measured before dedupeTools, stage closed after disclosureTools, folded into `save=` as a `tools` stage entry | `chatCore.js:605-673` | folded |
 | 75 | rtk applied | `chatCore.js:926` | folded |
-| 76 | headroom applied | `chatCore.js:997` | folded |
+| 76 | headroom applied (after the mem stage; a Claude body over the size cap sends its oldest message slice) | `chatCore.js` `compressWithHeadroom` | folded |
 | 77 | memory tool pruning reclaimed history | `chatCore.js:1111` | folded |
 | 78 | context compaction replaced older turns | `chatCore.js:1118` | folded |
 | 79 | style prompt injected (caveman/ponytail) | `chatCore.js:1040-1048` | folded |

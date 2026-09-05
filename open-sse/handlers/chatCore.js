@@ -40,7 +40,7 @@ import {
   saveRequestDetail,
   trackActiveSession,
 } from "../../src/lib/usageDb.js";
-import { decide, nextRid, req, reqSummary, notePath, RID_HEADER } from "../../src/shared/observability/decide.js";
+import { decide, nextRid, req, reqSummary, notePath, RID_HEADER, onReqSummary } from "../../src/shared/observability/decide.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import {
@@ -99,7 +99,8 @@ import { applyMemoryEnhancements } from "../services/memory/index.js";
 // Imported from contextBudget directly rather than through the memory index:
 // several suites mock that index wholesale, and a re-export would make the
 // Headroom gate disappear (undefined is not callable) in every one of them.
-import { measureContextPressure } from "../services/memory/contextBudget.js";
+import { measureContextPressure, estimateRequestTokens, CHARS_PER_TOKEN } from "../services/memory/contextBudget.js";
+import { memoGet, memoSet } from "../services/memory/sessionMemo.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
 import { projectClientModelStatus } from "../config/modelErrorClassifier.js";
@@ -197,35 +198,103 @@ export function stripContinuityFields(body, provider, model, log) {
   return body;
 }
 
-// REQ ce= cache-epoch collector: sid -> { prefix, len, sha, at }. Bounded the
-// same way decide.js bounds its path collector: cap 2048, TTL 30 min, LRU
-// eviction, one trim pass per insert. T-F1: only the first CE_PREFIX_BYTES of
-// each serialized body are retained, plus its full length and sha256 — 2048
-// entries times multi-MB bodies was GB-scale resident memory and an OOM
-// trigger. ce is an instrument: a 64KB prefix floor is sufficient signal, and
-// a prefix exhausted without mismatch reports the prefix length.
+// REQ ce= cache-epoch collector: sid -> { blocks, tail, tailOff, len, at }.
+// Bounded the same way decide.js bounds its path collector: cap 2048, TTL 30
+// min, LRU eviction, one trim pass per insert. T-F1: per-block digests plus at
+// most one raw block (64 KiB) are retained per session — 2048 entries times
+// multi-MB bodies was GB-scale resident memory and an OOM trigger.
 const CE_CAP = 2048;
 const CE_TTL_MS = 30 * 60 * 1000;
-const CE_PREFIX_BYTES = 64 * 1024;
+const CE_BLOCK_BYTES = 64 * 1024;
 const ceBodies = new Map();
+
+// rid -> sid for in-flight requests, so the REQ summary a handler writes on
+// completion can land the provider-billed prompt size on the session's
+// context-status entry. A byte estimate divided by four undercounts a code
+// and JSON heavy prompt by up to half, and an agent sizing its context from
+// it believed it had room it did not have.
+const ridSessions = new Map();
+// sid -> provider-count / estimate ratio, the context budget's per-session
+// calibration (contextBudget.calibrationFactor). Learned from each completed
+// request and smoothed, so the ladder measures pressure in the tokens the
+// window is actually enforced in rather than in a fixed chars-per-token guess.
+const sessionCalibration = new Map();
+function boundedSet(map, key, value) {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > CE_CAP) {
+    for (const k of map.keys()) {
+      map.delete(k);
+      if (map.size <= CE_CAP * 0.9) break;
+    }
+  }
+}
+function rememberRidSession(rid, sid, estimatedTokens) {
+  if (!rid || !sid) return;
+  boundedSet(ridSessions, rid, { sid, estimatedTokens });
+}
+export function sessionCalibrationFor(sid) {
+  return (sid && sessionCalibration.get(sid)) || 1;
+}
+onReqSummary((verdict, fields) => {
+  const rid = typeof fields?.rid === "string" ? fields.rid : null;
+  if (!rid) return;
+  const entry = ridSessions.get(rid);
+  if (!entry) return;
+  ridSessions.delete(rid);
+  if (verdict !== "ok") return;
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const actual = n(fields.in) + n(fields.cr) + n(fields.cw);
+  if (actual <= 0) return;
+  writeContextStatus(entry.sid, { rid, ctxTokensActual: actual });
+  if (entry.estimatedTokens > 0) {
+    const ratio = actual / entry.estimatedTokens;
+    const prev = sessionCalibration.get(entry.sid);
+    boundedSet(sessionCalibration, entry.sid, prev ? prev * 0.5 + ratio * 0.5 : ratio);
+  }
+});
 
 function trackCacheEpoch(sid, serialized) {
   const whole = Buffer.from(serialized, "utf8");
   const byteLen = whole.length;
   const now = Date.now();
+  // One digest per CE_BLOCK_BYTES block of the final body plus the raw bytes
+  // of its last block. The shared prefix is then exact when the new body
+  // extends the old one (the common case: a turn appended, so the first
+  // difference falls inside the old last block, which is compared byte for
+  // byte) and block-granular when history was rewritten earlier. Keeping
+  // only the first 64 KiB of raw bytes pinned ce at 65536 for every body
+  // over that size, and compactHint (ce under half the previous size) then
+  // fired on every request of every large session, including byte-identical
+  // resends: the MCP context_status tool told agents to compact constantly.
+  const blocks = [];
+  for (let off = 0; off < byteLen; off += CE_BLOCK_BYTES) {
+    blocks.push(createHash("sha1").update(whole.subarray(off, off + CE_BLOCK_BYTES)).digest("base64"));
+  }
+  const lastOff = blocks.length ? (blocks.length - 1) * CE_BLOCK_BYTES : 0;
   let out;
   const prev = ceBodies.get(sid);
   if (prev && now - prev.at <= CE_TTL_MS) {
-    const n = Math.min(prev.prefix.length, byteLen);
+    const fullPrev = Math.max(0, prev.blocks.length - 1);
+    const n = Math.min(fullPrev, blocks.length);
     let i = 0;
-    while (i < n && prev.prefix[i] === whole[i]) i++;
-    out = { ce: i, prevBytes: prev.len, bytes: byteLen };
+    while (i < n && prev.blocks[i] === blocks[i]) i++;
+    let ce = i * CE_BLOCK_BYTES;
+    if (i === fullPrev && prev.tail) {
+      const here = whole.subarray(prev.tailOff, prev.tailOff + prev.tail.length);
+      const m = Math.min(prev.tail.length, here.length);
+      let j = 0;
+      while (j < m && prev.tail[j] === here[j]) j++;
+      ce = prev.tailOff + j;
+    }
+    out = { ce: Math.min(ce, prev.len, byteLen), prevBytes: prev.len, bytes: byteLen };
   }
   ceBodies.delete(sid);
   ceBodies.set(sid, {
-    prefix: Buffer.from(whole.subarray(0, CE_PREFIX_BYTES)),
+    blocks,
+    tail: Buffer.from(whole.subarray(lastOff)),
+    tailOff: lastOff,
     len: byteLen,
-    sha: createHash("sha256").update(whole).digest("hex"),
     at: now,
   });
   if (ceBodies.size > CE_CAP) {
@@ -654,10 +723,14 @@ export async function handleChatCore({
       }
 
       if (toolDisclosure?.disclosureEnabled) {
+        // Keyed by the client session, not by connection: one connection
+        // serves many interleaved sessions, an account failover moves a
+        // session across connections, and the disclosed list is sticky per
+        // session (toolDisclosure.js) so the tools prefix stays cacheable.
         const { tools: disclosed, stats } = disclosureTools(
           translatedBody.tools,
           body,
-          connectionId,
+          sid ? `sid|${sid}` : connectionId,
           toolDisclosure,
         );
         if (stats) {
@@ -781,12 +854,22 @@ export async function handleChatCore({
   }
   measureSaverStage("schema", schemaDistillRan);
 
-  // Prefix token-savers (#token-savers): thinking strip, query-aware
-  // compression, oldest-pair dropping, embedding reorder. All four rewrite the
-  // message prefix, so they run here, after the schema stage and before
-  // privacy, and all are Claude-target only, same gate pattern as
-  // anchorClaudeCache's finalFormat === FORMATS.CLAUDE below. MidPrefixInject
-  // lands after the mem stage: it summarizes what these stages did.
+  // Prefix token-savers (#token-savers). The pipeline is in two halves.
+  //
+  //   1. Deterministic, every request: thinking strip, rtk, privacy, the
+  //      style injections, pxpipe. Same input, same output, so the prompt
+  //      prefix the provider cached keeps matching turn to turn.
+  //   2. Under context pressure only, least loss first: the memory ladder
+  //      (media, then tool results oldest-first), headroom on the oldest
+  //      slice, query-aware compression, pair dropping, embedding reorder.
+  //      Each decision here is remembered per client session
+  //      (services/memory/sessionMemo.js) and replayed identically on later
+  //      turns, so a rung that fired once does not fire differently next
+  //      time and rewrite the cached prefix again.
+  //
+  // The boundary note (midinject) then lands on the live user turn, which
+  // is new every request anyway, never inside the cached region. All prefix
+  // stages are Claude-target only, same gate as anchorClaudeCache below.
   const claudePrefixTarget = finalFormat === FORMATS.CLAUDE;
   const prefixMessages = () =>
     Array.isArray(translatedBody.messages) ? translatedBody.messages : null;
@@ -814,8 +897,14 @@ export async function handleChatCore({
   // Thinking strip: reasoning blocks in historical assistant turns pay full
   // token cost for reasoning the model cannot act on; only the live turn keeps
   // its chain.
+  // Anthropic itself drops previous-turn thinking from the billed prompt
+  // (measured through the live gateway: identical prompt size with and
+  // without a 1.5 KB historical thinking block), so on its own endpoint the
+  // strip saves nothing and only moves the prefix. It stays for
+  // Claude-compatible third-party upstreams, which bill what they receive.
+  const anthropicNative = provider === "claude" || provider === "anthropic";
   const thinkingWillRun =
-    tokenSaverEnabled && thinkingStripEnabled && claudePrefixTarget && !!prefixMessages();
+    tokenSaverEnabled && thinkingStripEnabled && claudePrefixTarget && !anthropicNative && !!prefixMessages();
   if (thinkingWillRun) {
     const res = stripHistoricalThinking(translatedBody.messages, { keepRecentTurns: 1 });
     if (res.stripped > 0) {
@@ -832,74 +921,6 @@ export async function handleChatCore({
     }
   }
   measureSaverStage("thinking", thinkingWillRun);
-
-  // Query-aware compression: historical turns with low lexical relevance to
-  // the current query collapse to a one-line placeholder. Fail-open inside
-  // the util: a query under 3 usable terms leaves the prefix untouched.
-  const qacWillRun =
-    tokenSaverEnabled && queryAwareCompressionEnabled && claudePrefixTarget && !!prefixMessages();
-  if (qacWillRun) {
-    const query = lastUserQuery(translatedBody.messages);
-    if (query.trim()) {
-      const res = compressPrefixByQuery(translatedBody.messages, {
-        query,
-        keepRecentTurns: 2,
-      });
-      if (res.compressed > 0) {
-        translatedBody.messages = res.messages;
-        notePath(rid, "XFORM.qac-applied");
-        for (const n of res.notes) {
-          if (typeof n?.turn === "number") prefixTurnIndices.push(n.turn);
-        }
-        qacTurns = res.notes
-          .filter((n) => typeof n?.turn === "number")
-          .map((n) => n.turn)
-          .slice(0, 8);
-        pushPrefixNote({
-          kind: "qac",
-          text: `compressed ${res.compressed} low-relevance turn(s)`,
-        });
-      }
-    }
-  }
-  measureSaverStage("qac", qacWillRun);
-
-  // Embedding reorder: moves the most relevant historical turns next to the
-  // recent tail via local OpenAI-compatible embeddings. Fail-open: an embed
-  // failure logs one debug line and leaves the prefix in order.
-  const reorderWillRun =
-    tokenSaverEnabled && embedReorderEnabled && claudePrefixTarget && !!prefixMessages();
-  if (reorderWillRun) {
-    const query = lastUserQuery(translatedBody.messages);
-    if (query.trim()) {
-      const res = await reorderByRelevance(translatedBody.messages, {
-        query,
-        embedUrl: embedReorderUrl,
-        embedModel: embedReorderModel,
-        keepRecentTurns: 2,
-      });
-      if (res.error) {
-        log?.debug?.("REORDER", `skipped: ${String(res.error).slice(0, 80)}`);
-        // DEBUG is dark in production; the failure must still be visible.
-        decide("XFORM", "reorder-degraded", {
-          rid,
-          why: String(res.error).slice(0, 40),
-        });
-      }
-      if (res.moved > 0) {
-        translatedBody.messages = res.messages;
-        // Reorder permutes the array: turn indices recorded by thinking/qac
-        // no longer name the same turns (same discipline as pairs above).
-        prefixTurnIndices.length = 0;
-        notePath(rid, "XFORM.reorder-applied");
-        pushPrefixNote({
-          kind: "reorder",
-          text: `reordered ${res.moved} turn(s) by relevance`,
-        });
-      }
-    }
-  }
-  measureSaverStage("reorder", reorderWillRun);
 
   // RTK: compress tool_result content.
   //
@@ -960,73 +981,6 @@ export async function handleChatCore({
     }
   }
   measureSaverStage("privacy", privacyRan);
-
-  // Headroom: optional external proxy compression; fail open if proxy is absent.
-  //
-  // The measurement is taken here and passed down; headroom.js owns the gate
-  // and the reason it exists. Inside the budget the body is left exactly as the
-  // client sent it, so the prompt prefix stays byte-identical turn to turn and
-  // the provider's cache keeps hitting.
-  const headroomDiagnostics = {};
-  const headroomPressure = headroomEnabled
-    ? measureContextPressure(translatedBody, {
-        contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
-        settings: memorySettings || undefined,
-      })
-    : null;
-  const headroomStats = await compressWithHeadroom(translatedBody, {
-    enabled: tokenSaverEnabled && headroomEnabled,
-    url: headroomUrl,
-    model: upstreamModel,
-    format: finalFormat,
-    compressUserMessages: headroomCompressUserMessages,
-    timeoutMs: headroomTimeoutMs,
-    contextPressure: headroomPressure,
-    diagnostics: headroomDiagnostics,
-  });
-  const headroomLine = formatHeadroomLog(headroomStats);
-  const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
-  measureSaverStage("headroom", tokenSaverEnabled && headroomEnabled);
-  if (
-    tokenSaverEnabled &&
-    Number.isFinite(headroomStats?.tokens_saved) &&
-    headroomDiagnostics?.after
-  ) {
-    // Row emission deferred past the anchor stage, where the whole-body
-    // delta and the final-body cache epoch are both known (same as RTK).
-    notePath(rid, "XFORM.headroom-applied");
-  }
-  if (headroomLine) {
-    log?.info?.(
-      "HEADROOM",
-      `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`,
-    );
-    if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
-      const phantomBefore = headroomDiagnostics?.before?.bodyBytes || 0;
-      const phantomAfter = headroomDiagnostics?.after?.bodyBytes || 0;
-      decide("XFORM", "headroom-phantom", {
-        rid,
-        delta: headroomStats.tokens_saved,
-        shrunk_pct: phantomBefore > 0 ? Math.round(((phantomBefore - phantomAfter) / phantomBefore) * 1000) / 10 : 0,
-      });
-      log?.warn?.(
-        "HEADROOM",
-        `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`,
-      );
-    }
-  } else if (tokenSaverEnabled) {
-    // Folded fork (docs/logging-design.md row 52): a path code on the REQ
-    // line, not its own line.
-    notePath(rid, "XFORM.headroom-skip");
-    // Gating this warn on headroomEnabled meant the ONE case a user needs told
-    // about, the toggle being off while the dashboard reads Running because the
-    // proxy answers, was the case that logged nothing at all (#1956). Say why in
-    // both cases; the reason already distinguishes them.
-    log?.warn?.(
-      "HEADROOM",
-      `skipped: ${headroomEnabled ? (headroomDiagnostics.reason || "compression unavailable") : "disabled in settings"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`,
-    );
-  }
 
   // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
@@ -1091,6 +1045,7 @@ export async function handleChatCore({
       settings: memorySettings,
       targetFormat: finalFormat,
       contextWindow: memoryCaps?.contextWindow ?? null,
+      calibration: sessionCalibrationFor(sid),
       log,
     });
     memStats = memRes.stats || null;
@@ -1123,6 +1078,152 @@ export async function handleChatCore({
   }
   measureSaverStage("mem", tokenSaverEnabled && memorySettings);
 
+  // ---- Pressure-driven prefix rungs. A rung rewrites the cached prefix, so
+  // it runs only when the request does not fit, and its decisions are
+  // memoised per session so the NEXT request reproduces them instead of
+  // deciding afresh.
+  // Keyed by the CLIENT session alone: an account failover retries the same
+  // request on another connection, and a memo keyed by connection would
+  // start over on exactly that retry.
+  const sessionKey = sid || null;
+  let prefixRewritten = Boolean(
+    memStats?.toolPruning?.applied || memStats?.mediaPruning?.applied || memStats?.compaction?.applied,
+  );
+  const measurePrefixPressure = () =>
+    measureContextPressure(translatedBody, {
+      contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
+      settings: memorySettings || undefined,
+      calibration: sessionCalibrationFor(sid),
+    });
+  // The memory ladder cuts tool results oldest-first and prunes on chunk
+  // crossings only, so between crossings the prefix is byte-stable and on a
+  // crossing it changes from the NEWEST cut result onward. The text rungs
+  // below (query-aware compression, pair dropping) edit turns anywhere in
+  // the history, so a fresh decision from them lands EARLIER in the prefix
+  // than the ladder's cut and costs more cache than it saves (measured: 701
+  // KB of re-cache against 451 KB for the ladder alone). They are therefore
+  // the ladder's next rung: they take new decisions only once the ladder has
+  // run out of tool results to cut and the request is still over budget, and
+  // otherwise only replay their memo. With no ladder rung enabled they are
+  // the ladder and decide on any over-budget request.
+  const memRungEnabled = Boolean(
+    memorySettings &&
+      (memorySettings.memoryToolPruningEnabled !== false ||
+        memorySettings.memoryMediaPruningEnabled !== false ||
+        memorySettings.memoryCompactionEnabled === true),
+  );
+  const mayDecideAnew = () => (memRungEnabled ? memStats?.budget?.overAfter === true : true);
+  // Pair dropping asks for the same quantized deficit the ladder uses, so two
+  // requests inside one relief chunk drop the same pairs.
+  const quantizedDeficitChars = (pressure) => {
+    const chunk = Math.max(1, Math.ceil((pressure.budget - pressure.target) * (CHARS_PER_TOKEN / (pressure.calibration || 1))));
+    return Math.ceil(pressure.deficitChars / chunk) * chunk;
+  };
+
+  // Headroom: optional external proxy compression; fail open if proxy is absent.
+  //
+  // The measurement is taken here and passed down; headroom.js owns the gate
+  // and the reason it exists. Inside the budget the body is left exactly as the
+  // client sent it, so the prompt prefix stays byte-identical turn to turn and
+  // the provider's cache keeps hitting.
+  const headroomDiagnostics = {};
+  const headroomPressure = headroomEnabled ? measurePrefixPressure() : null;
+  const headroomStats = await compressWithHeadroom(translatedBody, {
+    enabled: tokenSaverEnabled && headroomEnabled,
+    url: headroomUrl,
+    model: upstreamModel,
+    format: finalFormat,
+    compressUserMessages: headroomCompressUserMessages,
+    timeoutMs: headroomTimeoutMs,
+    contextPressure: headroomPressure,
+    diagnostics: headroomDiagnostics,
+  });
+  const headroomLine = formatHeadroomLog(headroomStats);
+  const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
+  measureSaverStage("headroom", tokenSaverEnabled && headroomEnabled);
+  if (
+    tokenSaverEnabled &&
+    Number.isFinite(headroomStats?.tokens_saved) &&
+    headroomDiagnostics?.after
+  ) {
+    // Row emission deferred past the anchor stage, where the whole-body
+    // delta and the final-body cache epoch are both known (same as RTK).
+    notePath(rid, "XFORM.headroom-applied");
+    prefixRewritten = true;
+  }
+  if (headroomLine) {
+    log?.info?.(
+      "HEADROOM",
+      `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`,
+    );
+    if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
+      const phantomBefore = headroomDiagnostics?.before?.bodyBytes || 0;
+      const phantomAfter = headroomDiagnostics?.after?.bodyBytes || 0;
+      decide("XFORM", "headroom-phantom", {
+        rid,
+        delta: headroomStats.tokens_saved,
+        shrunk_pct: phantomBefore > 0 ? Math.round(((phantomBefore - phantomAfter) / phantomBefore) * 1000) / 10 : 0,
+      });
+      log?.warn?.(
+        "HEADROOM",
+        `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`,
+      );
+    }
+  } else if (tokenSaverEnabled) {
+    // Folded fork (docs/logging-design.md row 52): a path code on the REQ
+    // line, not its own line.
+    notePath(rid, "XFORM.headroom-skip");
+    // Gating this warn on headroomEnabled meant the ONE case a user needs told
+    // about, the toggle being off while the dashboard reads Running because the
+    // proxy answers, was the case that logged nothing at all (#1956). Say why in
+    // both cases; the reason already distinguishes them.
+    log?.warn?.(
+      "HEADROOM",
+      `skipped: ${headroomEnabled ? (headroomDiagnostics.reason || "compression unavailable") : "disabled in settings"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`,
+    );
+  }
+
+
+  // Query-aware compression. Memo replay every turn (a block compressed on an
+  // earlier turn stays compressed whatever this turn's query says); fresh
+  // scoring only while the request is still over budget. A tool_result turn
+  // has no query and used to skip the stage, which flipped the whole
+  // historical prefix between placeholder and full text on alternate
+  // requests.
+  const qacWillRun =
+    tokenSaverEnabled && queryAwareCompressionEnabled && claudePrefixTarget && !!prefixMessages();
+  if (qacWillRun) {
+    let qacMemo = sessionKey ? memoGet("qac", sessionKey) : null;
+    if (sessionKey && !qacMemo) {
+      qacMemo = new Set();
+      memoSet("qac", sessionKey, qacMemo);
+    }
+    const scoreNew = measurePrefixPressure().over && mayDecideAnew();
+    const query = lastUserQuery(translatedBody.messages);
+    if (query.trim() || qacMemo?.size) {
+      const res = compressPrefixByQuery(translatedBody.messages, {
+        query,
+        keepRecentTurns: 2,
+        memo: qacMemo,
+        scoreNew,
+      });
+      if (res.compressed > 0) {
+        translatedBody.messages = res.messages;
+        notePath(rid, "XFORM.qac-applied");
+        if (res.added > 0) prefixRewritten = true;
+        qacTurns = res.notes
+          .filter((n) => typeof n?.turn === "number")
+          .map((n) => n.turn)
+          .slice(0, 8);
+        pushPrefixNote({
+          kind: "qac",
+          text: `compressed ${res.compressed} low-relevance turn(s)`,
+        });
+      }
+    }
+  }
+  measureSaverStage("qac", qacWillRun);
+
   // Pair dropping: demand-driven, like the memory pruner. The deficit is how
   // far the request overruns its budget target, measured with the same
   // measureContextPressure call the headroom and memory stages use, with the
@@ -1133,18 +1234,16 @@ export async function handleChatCore({
   const pairsWillRun =
     tokenSaverEnabled && pairDropEnabled && claudePrefixTarget && !!prefixMessages();
   if (pairsWillRun) {
-    const pairsPressure = measureContextPressure(translatedBody, {
-      contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
-      settings: memorySettings || undefined,
-    });
-    if (pairsPressure.deficitChars > 0) {
+    const pairsPressure = measurePrefixPressure();
+    if (pairsPressure.deficitChars > 0 && mayDecideAnew()) {
       const res = dropOldestPairs(translatedBody.messages, {
-        deficitChars: pairsPressure.deficitChars,
+        deficitChars: quantizedDeficitChars(pairsPressure),
         keepRecentTurns: 6,
       });
       if (res.droppedPairs > 0) {
         translatedBody.messages = res.messages;
         notePath(rid, "XFORM.pairs-dropped");
+        prefixRewritten = true;
         // Pairs DELETES entries and reorder PERMUTES them: the turn indices
         // thinking/qac recorded now point at whatever slid into those slots,
         // and min() of them could land the boundary note on a live recent
@@ -1160,11 +1259,61 @@ export async function handleChatCore({
   }
   measureSaverStage("pairs", pairsWillRun);
 
-  // Mid-prefix note: after the prefix stages reshaped history, land one short
-  // boundary note so the model keeps a map of what the earlier region once
-  // contained. INTENTIONALLY ADDITIVE: it grows the body, which is why the
-  // saver-guard exempts it below (same rationale as "inject"). Gate needs at
-  // least one earlier stage to have produced a note.
+  // Embedding reorder: moves the most relevant historical pairs next to the
+  // recent tail via local OpenAI-compatible embeddings. A permutation of the
+  // prefix is a full cache rewrite, so a fresh embedding pass runs only on a
+  // request whose prefix a rung above already rewrote; every other request
+  // replays the order memoised for this session, and a session without a
+  // memo is left in chronological order. Fail-open: an embed failure logs one
+  // debug line and leaves the prefix in order.
+  const reorderWillRun =
+    tokenSaverEnabled && embedReorderEnabled && claudePrefixTarget && !!prefixMessages();
+  if (reorderWillRun) {
+    let reorderMemo = sessionKey ? memoGet("reorder", sessionKey) : null;
+    if (sessionKey && !reorderMemo) {
+      reorderMemo = { order: [] };
+      memoSet("reorder", sessionKey, reorderMemo);
+    }
+    const recompute = !reorderMemo || prefixRewritten;
+    const query = lastUserQuery(translatedBody.messages);
+    if ((recompute && query.trim()) || (!recompute && reorderMemo.order.length > 0)) {
+      const res = await reorderByRelevance(translatedBody.messages, {
+        query,
+        embedUrl: embedReorderUrl,
+        embedModel: embedReorderModel,
+        keepRecentTurns: 2,
+        memo: reorderMemo,
+        recompute,
+      });
+      if (res.error) {
+        log?.debug?.("REORDER", `skipped: ${String(res.error).slice(0, 80)}`);
+        // DEBUG is dark in production; the failure must still be visible.
+        decide("XFORM", "reorder-degraded", {
+          rid,
+          why: String(res.error).slice(0, 40),
+        });
+      }
+      if (res.moved > 0) {
+        translatedBody.messages = res.messages;
+        notePath(rid, "XFORM.reorder-applied");
+        if (!res.replayed) {
+          pushPrefixNote({
+            kind: "reorder",
+            text: `reordered ${res.moved} pair(s) by relevance`,
+          });
+        }
+      }
+    }
+  }
+  measureSaverStage("reorder", reorderWillRun);
+
+  // Boundary note: after the prefix rungs reshaped history, one short note
+  // tells the model what the earlier region once contained. It lands on the
+  // LIVE user turn, which is new on every request, so the cached prefix is
+  // untouched; landing it at the oldest compressed turn, as it used to,
+  // rewrote everything after that turn on every request whose note text
+  // differed. INTENTIONALLY ADDITIVE, which is why the saver-guard exempts
+  // it below (same rationale as "inject").
   const midinjectWillRun =
     tokenSaverEnabled &&
     midPrefixInjectEnabled &&
@@ -1173,21 +1322,12 @@ export async function handleChatCore({
     !!prefixMessages();
   if (midinjectWillRun) {
     const noteText = composeBoundaryNote(prefixNotes);
-    // Insert index: the smallest turn index the prefix stages recorded when
-    // available (thinking/qac notes carry one). Pairs/reorder notes do not,
-    // so the fallback is the LAST user message index: every prefix stage
-    // protected the recent tail, so the last user turn sits at or after the
-    // boundary the note describes, and injectBoundaryNote scans forward from
-    // there for the nearest user message.
     let insertIndex = -1;
     for (let i = translatedBody.messages.length - 1; i >= 0; i--) {
       if (translatedBody.messages[i]?.role === "user") {
         insertIndex = i;
         break;
       }
-    }
-    if (prefixTurnIndices.length > 0) {
-      insertIndex = Math.min(...prefixTurnIndices);
     }
     const res = injectBoundaryNote(translatedBody.messages, insertIndex, noteText);
     if (res.injected) {
@@ -1264,6 +1404,7 @@ export async function handleChatCore({
   // leaves fresh telemetry. The store swallows its own errors; this catch is
   // the belt on the same contract, telemetry never breaks the request.
   if (sid) {
+    rememberRidSession(rid, sid, estimateRequestTokens(translatedBody));
     try {
       writeContextStatus(sid, {
         rid,

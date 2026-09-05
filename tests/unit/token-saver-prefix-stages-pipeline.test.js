@@ -233,11 +233,26 @@ describe("thinking strip stage (chatCore pipeline)", () => {
     },
   ];
 
+  it("flag on, Anthropic-native upstream: nothing stripped (the provider does not bill historical thinking)", async () => {
+    const result = await drive({
+      body: claudeBody(thinkingMessages),
+      thinkingStripEnabled: true,
+      requestId: "a1000021",
+    });
+    expect(result.success).toBe(true);
+    const blocks = dispatchedBody().messages.filter((m) => m.role === "assistant")
+      .flatMap((m) => m.content).filter((b) => b.type === "thinking");
+    expect(blocks).toHaveLength(2);
+    expect(reqLines()[0]).not.toContain("XFORM.thinking-stripped");
+  });
+
   it("flag on: historical thinking blocks stripped, live turn keeps its chain", async () => {
     const onTokenSaverEvent = vi.fn();
     const result = await drive({
       body: claudeBody(thinkingMessages),
       thinkingStripEnabled: true,
+      // A Claude-compatible third-party upstream bills what it receives.
+      modelInfo: { provider: "anthropic-compatible-audit", model: "claude-3-5-sonnet-20241022" },
       requestId: "a1000001",
       onTokenSaverEvent,
     });
@@ -290,6 +305,10 @@ describe("query-aware compression stage (chatCore pipeline)", () => {
     const result = await drive({
       body: claudeBody(qacMessages),
       queryAwareCompressionEnabled: true,
+      // Fresh scoring is a pressure rung: a request inside its window keeps
+      // its history verbatim (the prefix stays cacheable). With the memory
+      // ladder off, qac is the ladder and may decide on any over-budget turn.
+      memorySettings: { memoryContextWindowOverride: 100, memoryToolPruningEnabled: false, memoryMediaPruningEnabled: false },
       requestId: "a1000002",
       onTokenSaverEvent,
     });
@@ -311,8 +330,54 @@ describe("query-aware compression stage (chatCore pipeline)", () => {
     // (the assistant turn scores just above the 0.04 default and survives)
     expect(eventRow.turns).toEqual([0]);
   });
-});
 
+  it("flag on, inside the window: history is left verbatim (prefix stays cacheable)", async () => {
+    const result = await drive({
+      body: claudeBody(qacMessages),
+      queryAwareCompressionEnabled: true,
+      requestId: "a1000012",
+    });
+    expect(result.success).toBe(true);
+    const flat = JSON.stringify(dispatchedBody().messages);
+    expect(flat).not.toContain("compressed, low relevance to the current query");
+    expect(flat).toContain("cooperative warehouse spreadsheet review");
+    expect(reqLines()[0]).not.toContain("XFORM.qac-applied");
+  });
+
+  it("memo replay: a tool_result turn (no query) reproduces the previous turn's compression", async () => {
+    const sid = "ab12cd34";
+    const first = await drive({
+      body: claudeBody(qacMessages),
+      queryAwareCompressionEnabled: true,
+      memorySettings: { memoryContextWindowOverride: 100, memoryToolPruningEnabled: false, memoryMediaPruningEnabled: false },
+      requestId: "a1000013",
+      sid,
+    });
+    expect(first.success).toBe(true);
+    const firstFlat = JSON.stringify(dispatchedBody().messages[0]);
+    expect(firstFlat).toContain("compressed, low relevance to the current query");
+
+    // Next request of the same session: the live turn is a tool_result, so
+    // there is no query to score against and the request is back inside its
+    // window. The block compressed on the previous turn must still be a
+    // placeholder, byte for byte, or the cached prefix is rewritten.
+    const second = await drive({
+      body: claudeBody([
+        ...qacMessages,
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { path: "a" } }],
+        },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "ok" }] },
+      ]),
+      queryAwareCompressionEnabled: true,
+      requestId: "a1000014",
+      sid,
+    });
+    expect(second.success).toBe(true);
+    expect(JSON.stringify(dispatchedBody().messages[0])).toBe(firstFlat);
+  });
+});
 describe("pair dropping stage (chatCore pipeline)", () => {
   // Five text-only pairs, each long enough that the request overruns a tiny
   // overridden window. First user message is protected by the dropper; the
@@ -340,7 +405,7 @@ describe("pair dropping stage (chatCore pipeline)", () => {
     const result = await drive({
       body: claudeBody(pairsMessages()),
       pairDropEnabled: true,
-      memorySettings: { memoryContextWindowOverride: 500 },
+      memorySettings: { memoryContextWindowOverride: 500, memoryToolPruningEnabled: false, memoryMediaPruningEnabled: false },
       requestId: "a1000003",
     });
     expect(result.success).toBe(true);
@@ -475,6 +540,7 @@ describe("mid-prefix note stage (chatCore pipeline)", () => {
       ]),
       queryAwareCompressionEnabled: true,
       midPrefixInjectEnabled: true,
+      memorySettings: { memoryContextWindowOverride: 100, memoryToolPruningEnabled: false, memoryMediaPruningEnabled: false },
       requestId: "a1000007",
     });
     expect(result.success).toBe(true);
@@ -662,7 +728,7 @@ describe("mid-prefix note placement after pairs (audit finding 6)", () => {
       queryAwareCompressionEnabled: true,
       pairDropEnabled: true,
       midPrefixInjectEnabled: true,
-      memorySettings: { memoryContextWindowOverride: 500 },
+      memorySettings: { memoryContextWindowOverride: 100, memoryToolPruningEnabled: false, memoryMediaPruningEnabled: false },
       requestId: "a1000013",
     });
     expect(result.success).toBe(true);
