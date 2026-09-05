@@ -62,15 +62,18 @@ export async function GET() {
   // some other way, and the two release independently (#1012).
   const currentVersion = process.env.TOKENPROXY_CLI_VERSION || pkg.version;
   const isTrayMode = process.env.TRAY_MODE === "1";
+  // TP_BUILD_SHA is inlined at app build time (next.config.mjs); in dev/test
+  // it resolves from the real process env. Null when neither has it.
+  const buildSha = process.env.TP_BUILD_SHA || null;
 
   // Opted out: skip the registry lookup entirely, so a pinned install neither
   // phones home nor gets offered the version it just rolled back from (#1563).
   if (isUpdateDisabled()) {
-    return Response.json({ currentVersion, latestVersion: null, hasUpdate: false, isTrayMode });
+    return Response.json({ currentVersion, latestVersion: null, hasUpdate: false, isTrayMode, buildSha });
   }
 
   const latestVersion = await getLatestVersionCached();
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate, isTrayMode });
+  return Response.json({ currentVersion, latestVersion, hasUpdate, isTrayMode, buildSha });
 }

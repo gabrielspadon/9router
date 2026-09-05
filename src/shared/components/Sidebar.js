@@ -452,6 +452,16 @@ export default function Sidebar({ onClose, label = "Primary" }) {
             </Link>
           </div>
         </nav>
+        {/* Build identity, baked at app build time (NEXT_PUBLIC_TP_BUILD_SHA).
+            Hidden when the value is missing (dev without config) or unknown. */}
+        {process.env.NEXT_PUBLIC_TP_BUILD_SHA && process.env.NEXT_PUBLIC_TP_BUILD_SHA !== "unknown" && (
+          <div
+            data-testid="sidebar-build"
+            className="mt-auto px-5.5 py-3 text-[11px] font-mono text-content-tertiary border-t border-border-subtle"
+          >
+            build {process.env.NEXT_PUBLIC_TP_BUILD_SHA}
+          </div>
+        )}
       </div>
 
 

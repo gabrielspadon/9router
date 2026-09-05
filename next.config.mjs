@@ -1,7 +1,30 @@
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
+
+// Bake the git build sha into every bundle so /api/version and the dashboard
+// can answer "which build is this". The standalone ships no .git and
+// cli/BUILD_SHA only exists after cli:pack, so at app-build time the sha is
+// resolved here and inlined by webpack; runtime falls back to the real
+// process env (dev servers, tests).
+function resolveTpBuildSha() {
+  if (process.env.TOKENPROXY_BUILD_SHA) return process.env.TOKENPROXY_BUILD_SHA;
+  for (const candidate of [join(projectRoot, "cli", "BUILD_SHA"), join(projectRoot, "BUILD_SHA")]) {
+    try {
+      const text = readFileSync(candidate, "utf8").trim();
+      if (text) return text.slice(0, 12);
+    } catch { /* try the next candidate */ }
+  }
+  try {
+    const sha = execSync("git rev-parse HEAD", { cwd: projectRoot, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    if (sha) return sha.slice(0, 12);
+  } catch { /* not a git checkout */ }
+  return "unknown";
+}
+const tpBuildSha = resolveTpBuildSha();
 // CLI bundling needs workspace root so tracing includes hoisted node_modules (slim ~50MB).
 // Docker / default uses projectRoot so server.js lands at /app/server.js (not nested).
 const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
@@ -39,7 +62,10 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  env: {},
+  env: {
+    TP_BUILD_SHA: tpBuildSha,
+    NEXT_PUBLIC_TP_BUILD_SHA: tpBuildSha,
+  },
   experimental: {
     // #1529/#1572: LLM clients can send long context or base64 image payloads through /v1 rewrites.
     proxyClientMaxBodySize,
