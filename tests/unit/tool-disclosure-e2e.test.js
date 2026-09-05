@@ -181,7 +181,7 @@ describe("tool disclosure e2e comparison", () => {
     expect(entry.connectionId).toBe("conn-stats");
   });
 
-  it("cache hit reuses index across turns", () => {
+  it("session-sticky: a later query never reshapes the disclosed list", () => {
     const connId = "conn-cache-e2e";
     const body1 = makeBody("read a file");
     const body2 = makeBody("send an email");
@@ -190,16 +190,28 @@ describe("tool disclosure e2e comparison", () => {
     const r1 = disclosureTools(CORPUS, body1, connId, cfg);
     const r2 = disclosureTools(CORPUS, body2, connId, cfg);
 
-    // Different queries → different tool selections
     const names1 = r1.tools.map((t) => t.name).join(",");
     const names2 = r2.tools.map((t) => t.name).join(",");
-    console.log("\n=== Cache Hit: same session, different queries ===");
-    console.log("Turn 1:", names1);
-    console.log("Turn 2:", names2);
 
     expect(r1.tools.length).toBeLessThanOrEqual(10);
-    expect(r2.tools.length).toBeLessThanOrEqual(10);
-    // Should differ (different queries → different BM25 results)
-    expect(names1).not.toBe(names2);
+    // The provider hashes tools first, so the list is chosen once per
+    // session and then only ever appended to: turn 2 sees exactly turn 1's
+    // list, in turn 1's order, whatever its own query says.
+    expect(names2).toBe(names1);
+
+    // A tool the history called is appended, and nothing before it moves.
+    const called = CORPUS.find((t) => !r1.tools.includes(t)).name;
+    const body3 = {
+      messages: [
+        ...body2.messages,
+        { role: "assistant", content: [{ type: "tool_use", id: "tu1", name: called, input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "tu1", content: "ok" }] },
+        { role: "user", content: "anything else" },
+      ],
+    };
+    const r3 = disclosureTools(CORPUS, body3, connId, cfg);
+    const names3 = r3.tools.map((t) => t.name);
+    expect(names3.slice(0, r1.tools.length).join(",")).toBe(names1);
+    expect(names3).toContain(called);
   });
 });
