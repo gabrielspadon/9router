@@ -25,10 +25,21 @@ function dispatcherForEndpoint(endpoint) {
   }
 }
 
-// Skip compression for oversized payloads (fail-open): proxy compress time grows
-// non-linearly with size — measured 87KB → 0.010s but 744KB → >30s, which always
-// exceeds DEFAULT_TIMEOUT_MS and burns proxy CPU on doomed requests. 256KB keeps
-// a wide margin over the known-fast point while cutting off the pathological range.
+// Skip compression for oversized payloads (fail-open).
+//
+// The size curve this cap was first justified by does not exist. Re-measured
+// 2026-09-04 against the live proxy at N=5 per size: latency is BIMODAL, not
+// size-dependent — a call either returns in tens of milliseconds or sits at
+// ~30000ms, and the 30s figure is headroom's own COMPRESSION_TIMEOUT_SECONDS
+// (proxy/helpers.py, default 30.0, fail-open), which the same payload hits or
+// misses across repeats. So the cap does not cut off a pathological size range,
+// because there isn't one.
+//
+// It stays anyway, for the reason that survives: a body this large is a body
+// whose whole prefix is about to be rewritten by the proxy, and the cache-write
+// re-prime that costs is real money. The cap bounds the blast radius of one
+// doomed round trip. Raise it only with a cr/cw measurement, never on a
+// latency argument.
 const MAX_COMPRESS_BODY_BYTES = 256 * 1024;
 
 function jsonBytes(value) {
@@ -676,9 +687,36 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
 // Compress request body via Headroom proxy. Fail-open: returns null on any error.
 // /v1/compress only understands OpenAI shape, so Claude bodies are translated
 // to OpenAI, compressed, then translated back using TokenProxy's own translators.
-export async function compressWithHeadroom(body, { enabled, url, model, format, compressUserMessages, timeoutMs = DEFAULT_TIMEOUT_MS, diagnostics = null } = {}) {
+export async function compressWithHeadroom(body, { enabled, url, model, format, compressUserMessages, timeoutMs = DEFAULT_TIMEOUT_MS, contextPressure = null, diagnostics = null } = {}) {
   if (!enabled) {
     setDiagnostic(diagnostics, "disabled");
+    return null;
+  }
+  // ONLY UNDER PRESSURE (2026-09-04). Every gate in this function turns on
+  // volatile content — the payload's size, an error tool result being present,
+  // whether the proxy finds more than 5% to cut — so within ONE conversation
+  // the apply/skip outcome oscillates, and each flip rewrites the prompt prefix
+  // the provider has cached. Measured live on the RTX seam over 422 requests: a
+  // turn whose outcome flipped from the previous one shared a mean 62,568 bytes
+  // of prefix with it, 49% of them under 2 KB, against 152,892 bytes and 17%
+  // under 2 KB when the outcome held. The cache-write re-prime that buys costs
+  // more than the tokens compression saves.
+  //
+  // So the caller measures how far over budget the request is
+  // (services/memory/contextBudget.js) and passes it here. Inside the budget
+  // the body is left exactly as the client sent it, which is what keeps the
+  // prefix byte-identical turn to turn; over budget, the prefix is going to
+  // move anyway and the saved tokens are what keep the request in the window.
+  // Same discipline as services/memory/toolPruner.js.
+  //
+  // A caller that passes no measurement is not gated, so this module's own
+  // suites keep exercising the compression path directly.
+  if (contextPressure && !contextPressure.over) {
+    setDiagnostic(
+      diagnostics,
+      `within context budget (~${contextPressure.projected} of ${contextPressure.budget} tokens,`
+      + ` window ${contextPressure.limit}) — prefix left intact`,
+    );
     return null;
   }
   if (!url) {

@@ -84,6 +84,10 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyMemoryEnhancements } from "../services/memory/index.js";
+// Imported from contextBudget directly rather than through the memory index:
+// several suites mock that index wholesale, and a re-export would make the
+// Headroom gate disappear (undefined is not callable) in every one of them.
+import { measureContextPressure } from "../services/memory/contextBudget.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
 import { projectClientModelStatus } from "../config/modelErrorClassifier.js";
@@ -733,7 +737,18 @@ export async function handleChatCore({
   }
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
+  //
+  // The measurement is taken here and passed down; headroom.js owns the gate
+  // and the reason it exists. Inside the budget the body is left exactly as the
+  // client sent it, so the prompt prefix stays byte-identical turn to turn and
+  // the provider's cache keeps hitting.
   const headroomDiagnostics = {};
+  const headroomPressure = headroomEnabled
+    ? measureContextPressure(translatedBody, {
+        contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
+        settings: memorySettings || undefined,
+      })
+    : null;
   const headroomStats = await compressWithHeadroom(translatedBody, {
     enabled: tokenSaverEnabled && headroomEnabled,
     url: headroomUrl,
@@ -741,6 +756,7 @@ export async function handleChatCore({
     format: finalFormat,
     compressUserMessages: headroomCompressUserMessages,
     timeoutMs: headroomTimeoutMs,
+    contextPressure: headroomPressure,
     diagnostics: headroomDiagnostics,
   });
   const headroomLine = formatHeadroomLog(headroomStats);
