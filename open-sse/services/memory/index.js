@@ -18,10 +18,10 @@
  * The pipeline is now a LADDER, climbed only as far as the overflow requires:
  *
  *   0. request fits inside the window less its reserve  -> nothing is touched
- *   1. trim the oldest tool results, generously          (almost no loss)
- *   2. replace historical media with placeholders        (already described)
- *   3. trim the oldest tool results, hard                (real loss)
- *   4. summarize the older conversation                  (last resort, opt-in)
+ *   1. replace historical media with placeholders        (already described)
+ *   2. trim the oldest tool results, oldest first, each  (loss grows with age)
+ *      only as deep as the remaining overflow needs
+ *   3. summarize the older conversation                  (last resort, opt-in)
  *
  * Each rung re-measures before the next is considered, so the cheapest thing
  * that clears the overflow is the only thing that happens. Prune as little as
@@ -32,13 +32,7 @@ import { pruneHistoricalTools, PRESSURE_TIERS } from "./toolPruner.js";
 import { pruneHistoricalMedia } from "./mediaPruner.js";
 import { compactContextWindow } from "./contextCompactor.js";
 import { injectPendingHandoff } from "./handoffStore.js";
-import { measureContextPressure, resolveContextBudget } from "./contextBudget.js";
-
-// Rung 1 trims to these caps; rung 3 continues with the tighter ones. Split so
-// media, which has already been described in the assistant's own replies, is
-// given up before a tool result is cut to a fifth of a page.
-const GENTLE_TIERS = PRESSURE_TIERS.slice(0, 3);
-const HARD_TIERS = PRESSURE_TIERS.slice(3);
+import { measureContextPressure, resolveContextBudget, CHARS_PER_TOKEN } from "./contextBudget.js";
 
 /**
  * Apply all enabled memory enhancements to a request body in sequence
@@ -49,6 +43,8 @@ const HARD_TIERS = PRESSURE_TIERS.slice(3);
  * @param {number} [options.contextWindow] - the upstream model's own context
  *   window, from getCapabilitiesForModel. Absent falls back to the engine
  *   default, which is deliberately conservative.
+ * @param {number} [options.calibration] - provider-count over estimate ratio
+ *   for this session (contextBudget.calibrationFactor); 1 when unknown.
  * @param {string} [options.projectKey] - Optional project key for handoffs
  * @param {Object} [options.log] - Logger instance
  * @returns {Promise<{ body: Object, stats: Object }>}
@@ -58,6 +54,7 @@ export async function applyMemoryEnhancements(body, options = {}) {
     settings = {},
     targetFormat = "openai",
     contextWindow = null,
+    calibration = 1,
     projectKey,
     log,
   } = options;
@@ -111,7 +108,7 @@ export async function applyMemoryEnhancements(body, options = {}) {
   const compactionEnabled = settings.memoryCompactionEnabled === true;
 
   const budget = resolveContextBudget({ contextWindow, settings });
-  const measure = () => measureContextPressure(body, { contextWindow, settings });
+  const measure = () => measureContextPressure(body, { contextWindow, settings, calibration });
   let pressure = measure();
   // `projected` and `over` describe the request AS IT ARRIVED, which is the
   // question an operator is asking when they look at this. `projectedAfter` and
@@ -154,12 +151,29 @@ export async function applyMemoryEnhancements(body, options = {}) {
     ? [Math.floor(configuredFloor)]
     : [];
 
+  // ONE DEFICIT PER REQUEST, QUANTIZED. The tool walk cuts oldest-first and
+  // stops the moment its deficit is covered, so the cut set is a function of
+  // the deficit it is handed. Two things made that deficit differ from one
+  // request to the next even when nothing else changed: it was re-measured
+  // between rungs (media pruning shrank it, so the hard rung ran three tiers
+  // on one turn and five on the next and the OLDEST results flipped between
+  // cap levels), and it grew by a few hundred chars per turn (one more result
+  // cut every request). Measured: 10 of 10 over-budget transitions rewrote
+  // the historical prefix. So the deficit is taken once, from the request as
+  // it arrived, rounded UP to a multiple of the relief chunk, and threaded
+  // through the rungs as a remaining balance. Consecutive turns then ask for
+  // the same cuts until real growth crosses the next chunk, and a larger
+  // chunk only ever deepens the same cascade, so the prefix is byte-stable
+  // between chunk crossings. Stateless, so a retry or a restart agrees.
+  const reliefChunkChars = Math.max(1, Math.ceil((budget.budget - budget.target) * (CHARS_PER_TOKEN / pressure.calibration)));
+  let remaining = Math.ceil(pressure.deficitChars / reliefChunkChars) * reliefChunkChars;
+
   const runTools = (tiers) => {
-    if (!toolPruningEnabled || !pressure.over) return;
+    if (!toolPruningEnabled || remaining <= 0) return;
     const res = pruneHistoricalTools(body, {
       enabled: true,
       budgetAware: true,
-      deficitChars: pressure.deficitChars,
+      deficitChars: remaining,
       keepRecentTurns: settings.memoryMaxToolTurnsKeepFull,
       tiers,
     });
@@ -172,36 +186,40 @@ export async function applyMemoryEnhancements(body, options = {}) {
         `tool prune tier${tiers[0]}: ~${Math.round(res.savedChars / 4)} tokens`
         + ` across ${res.count} historical tool turns`,
       );
-      pressure = measure();
     }
+    remaining = Math.max(0, remaining - res.savedChars);
   };
 
-  // Rung 1: generous caps. A 20,000-character cap on a build log loses the
-  // middle of one file dump and nothing a model was reasoning about.
-  runTools(GENTLE_TIERS);
-
-  // Rung 2: historical media. The assistant has already described these in its
-  // own replies, which stay in the conversation, so the placeholder keeps the
-  // thread of what happened while giving back the payload.
-  if (mediaPruningEnabled && (pressure.over || settings.memoryMediaPruningAlways === true)) {
+  // Rung 1: historical media. The assistant has already described these in
+  // its own replies, which stay in the conversation, so the placeholder keeps
+  // the thread of what happened while giving back the payload. It goes first
+  // because it is the cheapest loss, and because it is all-or-nothing and so
+  // independent of how much the tool walk below has to find.
+  // Its savings are NOT taken off the balance the tool walk works from: the
+  // amount media gives back changes as images age into the historical
+  // region, and a balance that moved with it moved the walk's stopping point
+  // between two turns of equal chunk (measured: one result flipped back to
+  // full text). The walk answers to the quantized deficit alone; media is a
+  // bonus on top.
+  if (mediaPruningEnabled && (remaining > 0 || settings.memoryMediaPruningAlways === true)) {
     const mediaRes = pruneHistoricalMedia(body, { enabled: true });
     if (mediaRes.pruned) {
       stats.mediaPruning = { applied: true, savedItems: mediaRes.savedItems };
       log?.debug?.("MEMORY", `Pruned ${mediaRes.savedItems} historical media items`);
-      pressure = measure();
     }
   }
 
-  // Rung 3: hard caps, then any floor the operator configured. This is where
-  // information is genuinely lost, so it is reached only when rungs 1 and 2
-  // did not clear the overflow.
-  runTools([...HARD_TIERS, ...floorTier]);
+  // Rung 2: tool results, oldest first, each cut only as deep as the
+  // remaining overflow requires (toolPruner.js), the operator's floor as the
+  // tightest cap where one is configured.
+  runTools([...PRESSURE_TIERS, ...floorTier]);
+  pressure = measure();
 
-  // Rung 4: Phase 2 sliding-window compaction. Still opt-in, and now the LAST
+  // Rung 3: Phase 2 sliding-window compaction. Still opt-in, and now the LAST
   // resort rather than a flat 32,000-token trigger — which on a one-million
   // token window fired at 3% of capacity. Its threshold is the budget, so
   // enabling it can no longer cost a conversation that fits.
-  if (compactionEnabled && pressure.over) {
+  if (compactionEnabled && pressure.over && remaining > 0) {
     const compactRes = compactContextWindow(body, {
       enabled: true,
       thresholdTokens: settings.memoryCompactionThresholdTokens ?? budget.budget,
