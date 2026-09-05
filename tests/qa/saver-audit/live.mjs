@@ -220,7 +220,7 @@ async function main() {
   const W = Math.round(Math.max(est * 0.55 + 8000, est * 0.55 / 0.95));
   console.log(`W (context window override) = ${W} (est=${est})`);
 
-  const matrix = buildMatrix(W);
+  const matrix = buildMatrix(W).filter(([n]) => !process.env.CONFIGS || process.env.CONFIGS.split(",").includes(n));
   const summaries = [];
 
   for (const [name, overrides] of matrix) {

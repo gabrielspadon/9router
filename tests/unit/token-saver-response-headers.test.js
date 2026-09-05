@@ -100,7 +100,25 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestUsage: vi.fn(async () => {}),
 }));
 
-const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+const { handleChatCore, sessionCalibrationFor } = await import("../../open-sse/handlers/chatCore.js");
+const { estimateRequestTokens, calibrationFactor } = await import("../../open-sse/services/memory/contextBudget.js");
+
+// x-tp-ctx-tokens is the CALIBRATED ESTIMATE, the same number the pruning
+// ladder measures pressure with, never the old bytes/4. Measured live on
+// Haiku over an 18-turn tool-heavy session, bytes/4 ran 26% to 34% under the
+// provider's own count on every turn; the calibrated estimate landed within
+// 2.8%. An agent that self-sizes from this header and a ladder that decides
+// whether to cut history now read one number.
+// The calibration is snapshotted BEFORE the request under test, because the
+// request's own REQ.ok summary feeds the provider's billed count back into it
+// and the header was already written by then.
+function expectedCtxTokens(calBefore) {
+  return String(Math.ceil(estimateRequestTokens(JSON.parse(mocks.dispatched)) * calBefore));
+}
+
+function calNow(sid) {
+  return calibrationFactor(sessionCalibrationFor(sid));
+}
 
 // openai is forceStream upstream: this SSE body feeds both the streaming and
 // the forced SSE→JSON paths.
@@ -190,6 +208,7 @@ async function drive(overrides = {}) {
 describe("x-tp saver response headers", () => {
   it("non-streaming JSON path carries ctx-tokens and save-bytes from the saver ledger", async () => {
     mocks.executeMock.mockImplementation(async () => anthropicExecutorRes());
+    const calBefore = calNow(null);
     const result = await drive({
       body: {
         model: "claude-3-5-sonnet-20241022",
@@ -206,8 +225,9 @@ describe("x-tp saver response headers", () => {
     });
     expect(result.success).toBe(true);
     const headers = result.response.headers;
-    // ctx-tokens = round(final pre-dispatch bytes / 4)
-    expect(headers.get("x-tp-ctx-tokens")).toBe(String(Math.round(mocks.dispatched.length / 4)));
+    expect(headers.get("x-tp-ctx-tokens")).toBe(expectedCtxTokens(calBefore));
+    // and it is NOT the bytes/4 figure this replaced
+    expect(headers.get("x-tp-ctx-tokens")).not.toBe(String(Math.round(mocks.dispatched.length / 4)));
     // save-bytes = signed sum of stage deltas, same arithmetic as save_tok=*4
     const reqs = reqLines();
     expect(reqs).toHaveLength(1);
@@ -228,10 +248,11 @@ describe("x-tp saver response headers", () => {
     const appended = structuredClone(base);
     appended.messages.push({ role: "assistant", content: "answer" });
     appended.messages.push({ role: "user", content: "second question" });
+    const calBefore = calNow("hdr-sid-1");
     const result = await drive({ body: appended, sid: "hdr-sid-1", requestId: "hdr0201" });
     const headers = result.response.headers;
     expect(headers.get("content-type")).toContain("text/event-stream");
-    expect(headers.get("x-tp-ctx-tokens")).toBe(String(Math.round(mocks.dispatched.length / 4)));
+    expect(headers.get("x-tp-ctx-tokens")).toBe(expectedCtxTokens(calBefore));
     // rtk ran but found nothing to shrink: no stage deltas, so no save-bytes
     expect(headers.get("x-tp-save-bytes")).toBeNull();
     const reqs = reqLines();
@@ -256,6 +277,7 @@ describe("x-tp saver response headers", () => {
 
     const rewritten = structuredClone(base);
     rewritten.messages[0] = { role: "user", content: "an entirely different opening question" };
+    const calBefore = calNow("hdr-sid-2");
     const second = await drive({ body: rewritten, sid: "hdr-sid-2", requestId: "hdr0301" });
     const headers = second.response.headers;
     const reqs = reqLines();
@@ -263,7 +285,7 @@ describe("x-tp saver response headers", () => {
     expect(ce).toBeLessThan(1000); // full rewrite: only the envelope survives
     expect(headers.get("x-tp-ce-bytes")).toBe(String(ce));
     expect(headers.get("x-tp-compact-hint")).toBe("1");
-    expect(headers.get("x-tp-ctx-tokens")).toBe(String(Math.round(mocks.dispatched.length / 4)));
+    expect(headers.get("x-tp-ctx-tokens")).toBe(expectedCtxTokens(calBefore));
     expect(headers.get("x-tp-rid")).toBe("hdr0301");
   });
 
@@ -285,10 +307,11 @@ describe("x-tp saver response headers", () => {
         headers: { "content-type": "application/json" },
       }),
     }));
+    const calBefore = calNow("hdr-sid-3");
     const result = await drive({ sid: "hdr-sid-3", requestId: "hdr0500" });
     expect(result.success).toBe(false);
     const headers = result.response.headers;
-    expect(headers.get("x-tp-ctx-tokens")).toBe(String(Math.round(mocks.dispatched.length / 4)));
+    expect(headers.get("x-tp-ctx-tokens")).toBe(expectedCtxTokens(calBefore));
     expect(headers.get("x-tp-save-bytes")).toBe("-800");
     expect(headers.get("x-tp-rid")).toBe("hdr0500");
   });

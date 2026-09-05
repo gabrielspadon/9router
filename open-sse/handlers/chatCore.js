@@ -99,7 +99,7 @@ import { applyMemoryEnhancements } from "../services/memory/index.js";
 // Imported from contextBudget directly rather than through the memory index:
 // several suites mock that index wholesale, and a re-export would make the
 // Headroom gate disappear (undefined is not callable) in every one of them.
-import { measureContextPressure, estimateRequestTokens, CHARS_PER_TOKEN } from "../services/memory/contextBudget.js";
+import { measureContextPressure, estimateRequestTokens, calibrationFactor, CHARS_PER_TOKEN } from "../services/memory/contextBudget.js";
 import { memoGet, memoSet } from "../services/memory/sessionMemo.js";
 import { isConnectTimeoutError } from "../utils/responseHeaderTimeout.js";
 import { applyCodexFastMode } from "../config/codexFastMode.js";
@@ -1390,8 +1390,21 @@ export async function handleChatCore({
   }
   // HEADERS finding: model-self-sizing response headers, all derived from the
   // values computed above — zero marginal serialization.
+  // The reported prompt size is the calibrated estimate, not bytes/4. Measured
+  // live on Haiku over an 18-turn tool-heavy session, bytes/4 sat 26% to 34%
+  // under the provider's own count on every single turn (mean absolute error
+  // 32.4%), while estimateRequestTokens times the session calibration landed
+  // within 2.8%. It is also the derivation the pressure ladder prunes against,
+  // so the number an agent self-sizes from can no longer disagree with the
+  // number that decides whether history gets cut.
+  const estTokens = finalBodyBytes === null ? null : estimateRequestTokens(translatedBody);
   const saverMeta = {};
-  if (finalBodyBytes !== null) saverMeta.ctxTokens = Math.round(finalBodyBytes / 4);
+  if (estTokens !== null) {
+    // measureContextPressure.projected, arrived at by the same arithmetic:
+    // the clamped calibration and the same rounding, so the header and the
+    // ladder cannot report two different sizes for one body.
+    saverMeta.ctxTokens = Math.ceil(estTokens * calibrationFactor(sessionCalibrationFor(sid)));
+  }
   if (saverStages.length) {
     saverMeta.saveBytes = Math.round(
       saverStages.reduce((a, st) => a + st.delta, 0),
@@ -1404,7 +1417,7 @@ export async function handleChatCore({
   // leaves fresh telemetry. The store swallows its own errors; this catch is
   // the belt on the same contract, telemetry never breaks the request.
   if (sid) {
-    rememberRidSession(rid, sid, estimateRequestTokens(translatedBody));
+    rememberRidSession(rid, sid, estTokens);
     try {
       writeContextStatus(sid, {
         rid,
