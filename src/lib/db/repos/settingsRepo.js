@@ -71,6 +71,24 @@ const DEFAULT_SETTINGS = {
   // tool input_schemas before dispatch. Off by default; engages only past an
   // 8KB serialized-tools floor (open-sse/utils/schemaDistiller.js).
   schemaDistillEnabled: false,
+  // Thinking strip: remove thinking/redacted_thinking blocks from historical
+  // assistant turns; the live turn keeps its reasoning chain. Off by default.
+  thinkingStripEnabled: false,
+  // Query-aware compression: collapse low-relevance historical turns to a
+  // one-line placeholder against the current query. Off by default.
+  queryAwareCompressionEnabled: false,
+  // Pair dropping: drop oldest complete text-only turn pairs when the request
+  // overruns its context budget. Off by default.
+  pairDropEnabled: false,
+  // Embedding reorder: move relevant earlier turns next to the recent tail via
+  // local OpenAI-compatible embeddings (open-sse/utils/embedReorder.js).
+  // Fail-open: an unreachable embed endpoint leaves the prefix untouched.
+  embedReorderEnabled: false,
+  embedReorderUrl: "http://127.0.0.1:11434/v1/embeddings",
+  embedReorderModel: "nomic-embed-text",
+  // Mid-prefix note: inject a boundary note summarizing what the prefix
+  // stages optimized. Off by default.
+  midPrefixInjectEnabled: false,
   // Privacy filter (#2728): pseudonymise emails and the terms below in the
   // outbound body, restored before the client sees the answer. Off by
   // default — it walks every request, so it costs nothing until asked for.

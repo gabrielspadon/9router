@@ -15,6 +15,11 @@ const GLOBAL = {
   cavemanEnabled: false,
   ponytailEnabled: false,
   pxpipeEnabled: true,
+  thinkingStripEnabled: false,
+  queryAwareCompressionEnabled: false,
+  pairDropEnabled: false,
+  embedReorderEnabled: false,
+  midPrefixInjectEnabled: false,
 };
 
 const ALL_OFF = {
@@ -24,6 +29,11 @@ const ALL_OFF = {
   cavemanEnabled: false,
   ponytailEnabled: false,
   pxpipeEnabled: false,
+  thinkingStripEnabled: false,
+  queryAwareCompressionEnabled: false,
+  pairDropEnabled: false,
+  embedReorderEnabled: false,
+  midPrefixInjectEnabled: false,
 };
 
 function settings(comboStrategies) {

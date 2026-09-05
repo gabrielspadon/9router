@@ -372,10 +372,15 @@ Row 51 is the misreport in section 1.5.
 | 66 | cache alias normalization dropped a spelling | `usageTracking.js:207` | 115 B, always |
 | 67 | drain begin / end transition | `admin/drain/[connectionId]/route.js:56-92` | 105 B, always |
 | 68 | schema distillation stripped validation-noise keywords | `chatCore.js:705-714` | folded |
+| 69 | thinking strip removed historical reasoning blocks | `chatCore.js` prefix stages | folded |
+| 70 | query-aware compression collapsed low-relevance turns | `chatCore.js` prefix stages | folded |
+| 71 | pair dropping removed oldest text-only turn pairs under deficit | `chatCore.js` prefix stages | folded |
+| 72 | embedding reorder moved relevant turns next to the tail | `chatCore.js` prefix stages | folded |
+| 73 | mid-prefix note summarizing the prefix optimizations | `chatCore.js` prefix stages | folded |
 
-Rows 1-68 with the folded sub-forks collapsed give **55 distinct emitting
+Rows 1-73 with the folded sub-forks collapsed give **60 distinct emitting
 decision points**, of which 10 are nominal-path and fold into the summary line,
-and 45 speak only when they fire.
+and 50 speak only when they fire.
 
 ---
 

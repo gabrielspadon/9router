@@ -24,6 +24,11 @@ const STAGE_LABELS = {
   mem: "Memory prune",
   schema: "Schema distillation",
   privacy: "Privacy filter",
+  thinking: "Thinking strip",
+  qac: "Query-aware",
+  pairs: "Pair dropping",
+  reorder: "Embed reorder",
+  midinject: "Mid-prefix note",
 };
 
 const stageLabel = (saver) =>
@@ -51,6 +56,12 @@ const activeStageEntries = (stages) =>
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [schemaDistillEnabled, setSchemaDistillEnabled] = useState(false);
+  const [thinkingStripEnabled, setThinkingStripEnabled] = useState(false);
+  const [queryAwareCompressionEnabled, setQueryAwareCompressionEnabled] =
+    useState(false);
+  const [pairDropEnabled, setPairDropEnabled] = useState(false);
+  const [embedReorderEnabled, setEmbedReorderEnabled] = useState(false);
+  const [midPrefixInjectEnabled, setMidPrefixInjectEnabled] = useState(false);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
   // "" = not configured; HEADROOM_TIMEOUT_MS and the built-in default then apply.
@@ -141,6 +152,31 @@ export default function TokenSaverClient() {
   const handleSchemaDistillEnabled = (value) => {
     setSchemaDistillEnabled(value);
     patchSetting({ schemaDistillEnabled: value });
+  };
+
+  const handleThinkingStripEnabled = (value) => {
+    setThinkingStripEnabled(value);
+    patchSetting({ thinkingStripEnabled: value });
+  };
+
+  const handleQueryAwareCompressionEnabled = (value) => {
+    setQueryAwareCompressionEnabled(value);
+    patchSetting({ queryAwareCompressionEnabled: value });
+  };
+
+  const handlePairDropEnabled = (value) => {
+    setPairDropEnabled(value);
+    patchSetting({ pairDropEnabled: value });
+  };
+
+  const handleEmbedReorderEnabled = (value) => {
+    setEmbedReorderEnabled(value);
+    patchSetting({ embedReorderEnabled: value });
+  };
+
+  const handleMidPrefixInjectEnabled = (value) => {
+    setMidPrefixInjectEnabled(value);
+    patchSetting({ midPrefixInjectEnabled: value });
   };
 
   const handleCavemanEnabled = (value) => {
@@ -501,6 +537,11 @@ export default function TokenSaverClient() {
           const data = await res.json();
           setRtkEnabledState(data.rtkEnabled !== false);
           setSchemaDistillEnabled(!!data.schemaDistillEnabled);
+          setThinkingStripEnabled(!!data.thinkingStripEnabled);
+          setQueryAwareCompressionEnabled(!!data.queryAwareCompressionEnabled);
+          setPairDropEnabled(!!data.pairDropEnabled);
+          setEmbedReorderEnabled(!!data.embedReorderEnabled);
+          setMidPrefixInjectEnabled(!!data.midPrefixInjectEnabled);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
           setHeadroomTimeoutMs(
@@ -658,6 +699,77 @@ export default function TokenSaverClient() {
             checked={schemaDistillEnabled}
             onChange={() => handleSchemaDistillEnabled(!schemaDistillEnabled)}
             ariaLabel="Strip validation-noise keywords from tool schemas"
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Thinking strip</p>
+            <p className="text-sm text-text-muted">
+              Strips historical reasoning blocks from earlier assistant turns,
+              keeps the live turn.
+            </p>
+          </div>
+          <Toggle
+            checked={thinkingStripEnabled}
+            onChange={() => handleThinkingStripEnabled(!thinkingStripEnabled)}
+            ariaLabel="Strip historical reasoning blocks"
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Query-aware compression</p>
+            <p className="text-sm text-text-muted">
+              Compresses low-relevance earlier turns against the current
+              query.
+            </p>
+          </div>
+          <Toggle
+            checked={queryAwareCompressionEnabled}
+            onChange={() =>
+              handleQueryAwareCompressionEnabled(!queryAwareCompressionEnabled)
+            }
+            ariaLabel="Compress low-relevance earlier turns"
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Pair dropping</p>
+            <p className="text-sm text-text-muted">
+              Drops oldest complete text-only turn pairs under context
+              pressure.
+            </p>
+          </div>
+          <Toggle
+            checked={pairDropEnabled}
+            onChange={() => handlePairDropEnabled(!pairDropEnabled)}
+            ariaLabel="Drop oldest turn pairs under context pressure"
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Embedding reorder</p>
+            <p className="text-sm text-text-muted">
+              Moves relevant earlier turns next to the recent tail via local
+              embeddings.
+            </p>
+          </div>
+          <Toggle
+            checked={embedReorderEnabled}
+            onChange={() => handleEmbedReorderEnabled(!embedReorderEnabled)}
+            ariaLabel="Reorder earlier turns by local embeddings"
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Mid-prefix note</p>
+            <p className="text-sm text-text-muted">
+              Injects a boundary note summarizing what was optimized.
+            </p>
+          </div>
+          <Toggle
+            checked={midPrefixInjectEnabled}
+            onChange={() => handleMidPrefixInjectEnabled(!midPrefixInjectEnabled)}
+            ariaLabel="Inject a boundary note summarizing optimizations"
           />
         </div>
         <div className="flex items-center justify-between py-4 gap-4 flex-wrap">

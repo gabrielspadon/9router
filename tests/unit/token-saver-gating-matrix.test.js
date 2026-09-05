@@ -191,6 +191,13 @@ describe("token saver settings defaults (settingsRepo)", () => {
     expect(d.cavemanEnabled).toBe(false);
     expect(d.ponytailEnabled).toBe(false);
     expect(d.pxpipeEnabled).toBe(false);
+    expect(d.thinkingStripEnabled).toBe(false);
+    expect(d.queryAwareCompressionEnabled).toBe(false);
+    expect(d.pairDropEnabled).toBe(false);
+    expect(d.embedReorderEnabled).toBe(false);
+    expect(d.embedReorderUrl).toBe("http://127.0.0.1:11434/v1/embeddings");
+    expect(d.embedReorderModel).toBe("nomic-embed-text");
+    expect(d.midPrefixInjectEnabled).toBe(false);
     expect(d.memoryToolPruningEnabled).toBe(true);
     expect(d.memoryMediaPruningEnabled).toBe(true);
     expect(d.memoryCompactionEnabled).toBe(false);

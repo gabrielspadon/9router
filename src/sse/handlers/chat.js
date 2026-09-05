@@ -746,6 +746,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         ccFilterNaming: !!chatSettings.ccFilterNaming,
         rtkEnabled: comboTokenSaver.rtkEnabled,
         schemaDistillEnabled: comboTokenSaver.schemaDistillEnabled,
+        thinkingStripEnabled: comboTokenSaver.thinkingStripEnabled,
+        queryAwareCompressionEnabled: comboTokenSaver.queryAwareCompressionEnabled,
+        pairDropEnabled: comboTokenSaver.pairDropEnabled,
+        embedReorderEnabled: comboTokenSaver.embedReorderEnabled,
+        // url/model are global: a combo overrides the reorder switch, not the
+        // local embed endpoint every member would share.
+        embedReorderUrl: chatSettings.embedReorderUrl,
+        embedReorderModel: chatSettings.embedReorderModel,
+        midPrefixInjectEnabled: comboTokenSaver.midPrefixInjectEnabled,
         privacyEnabled: !!chatSettings.privacyFilterEnabled,
         privacyTerms: chatSettings.privacyFilterTerms || [],
         headroomEnabled: comboTokenSaver.headroomEnabled,

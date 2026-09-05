@@ -62,6 +62,14 @@ import {
 } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { distillToolSchemas } from "../utils/schemaDistiller.js";
+import { stripHistoricalThinking } from "../utils/thinkingStrip.js";
+import { compressPrefixByQuery } from "../utils/queryAwareCompress.js";
+import { dropOldestPairs } from "../utils/pairDropper.js";
+import { reorderByRelevance } from "../utils/embedReorder.js";
+import {
+  injectBoundaryNote,
+  composeBoundaryNote,
+} from "../utils/midPrefixInject.js";
 import { toolFilter } from "../utils/toolFilter.js";
 import { disclosureTools } from "../utils/toolDisclosure.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -250,6 +258,13 @@ export async function handleChatCore({
   ccFilterNaming,
   rtkEnabled,
   schemaDistillEnabled,
+  thinkingStripEnabled,
+  queryAwareCompressionEnabled,
+  pairDropEnabled,
+  embedReorderEnabled,
+  embedReorderUrl,
+  embedReorderModel,
+  midPrefixInjectEnabled,
   privacyEnabled,
   privacyTerms,
   headroomEnabled,
@@ -678,12 +693,25 @@ export async function handleChatCore({
       (tokenSaverEnabled &&
         (rtkEnabled ||
           schemaDistillEnabled ||
+          thinkingStripEnabled ||
+          queryAwareCompressionEnabled ||
+          pairDropEnabled ||
+          embedReorderEnabled ||
+          midPrefixInjectEnabled ||
           headroomEnabled ||
           cavemanEnabled ||
           ponytailEnabled ||
           memorySettings)),
   );
   const saverStages = [];
+  // Accumulates the human-readable summary the mid-prefix note lands at the
+  // kept-region boundary (midPrefixInject below). Capped at 12 entries.
+  const PREFIX_NOTES_MAX = 12;
+  const prefixNotes = [];
+  const prefixTurnIndices = [];
+  const pushPrefixNote = (note) => {
+    if (prefixNotes.length < PREFIX_NOTES_MAX) prefixNotes.push(note);
+  };
   const saverPrev = saverWillRun
     ? { bytes: Buffer.byteLength(JSON.stringify(translatedBody)) }
     : null;
@@ -720,6 +748,139 @@ export async function handleChatCore({
     }
   }
   measureSaverStage("schema", schemaDistillRan);
+
+  // Prefix token-savers (#token-savers): thinking strip, query-aware
+  // compression, oldest-pair dropping, embedding reorder. All four rewrite the
+  // message prefix, so they run here, after the schema stage and before
+  // privacy, and all are Claude-target only, same gate pattern as
+  // anchorClaudeCache's finalFormat === FORMATS.CLAUDE below. MidPrefixInject
+  // lands after the mem stage: it summarizes what these stages did.
+  const claudePrefixTarget = finalFormat === FORMATS.CLAUDE;
+  const prefixMessages = () =>
+    Array.isArray(translatedBody.messages) ? translatedBody.messages : null;
+  // Text of the LAST user message: string content, or the concatenated text
+  // blocks of an array content. Empty means the stage has no query to work
+  // against and stays silent.
+  const lastUserQuery = (messages) => {
+    if (!Array.isArray(messages)) return "";
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg || msg.role !== "user") continue;
+      if (typeof msg.content === "string") return msg.content;
+      if (Array.isArray(msg.content)) {
+        const text = msg.content
+          .filter((b) => b && b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("\n");
+        if (text.trim()) return text;
+      }
+      return "";
+    }
+    return "";
+  };
+
+  // Thinking strip: reasoning blocks in historical assistant turns pay full
+  // token cost for reasoning the model cannot act on; only the live turn keeps
+  // its chain.
+  const thinkingWillRun =
+    tokenSaverEnabled && thinkingStripEnabled && claudePrefixTarget && !!prefixMessages();
+  if (thinkingWillRun) {
+    const res = stripHistoricalThinking(translatedBody.messages, { keepRecentTurns: 1 });
+    if (res.stripped > 0) {
+      translatedBody.messages = res.messages;
+      notePath(rid, "XFORM.thinking-stripped");
+      for (const n of res.notes) {
+        if (typeof n?.turn === "number") prefixTurnIndices.push(n.turn);
+      }
+      pushPrefixNote({ kind: "thinking", text: `stripped ${res.stripped} reasoning block(s)` });
+    }
+  }
+  measureSaverStage("thinking", thinkingWillRun);
+
+  // Query-aware compression: historical turns with low lexical relevance to
+  // the current query collapse to a one-line placeholder. Fail-open inside
+  // the util: a query under 3 usable terms leaves the prefix untouched.
+  const qacWillRun =
+    tokenSaverEnabled && queryAwareCompressionEnabled && claudePrefixTarget && !!prefixMessages();
+  if (qacWillRun) {
+    const query = lastUserQuery(translatedBody.messages);
+    if (query.trim()) {
+      const res = compressPrefixByQuery(translatedBody.messages, {
+        query,
+        keepRecentTurns: 2,
+      });
+      if (res.compressed > 0) {
+        translatedBody.messages = res.messages;
+        notePath(rid, "XFORM.qac-applied");
+        for (const n of res.notes) {
+          if (typeof n?.turn === "number") prefixTurnIndices.push(n.turn);
+        }
+        pushPrefixNote({
+          kind: "qac",
+          text: `compressed ${res.compressed} low-relevance turn(s)`,
+        });
+      }
+    }
+  }
+  measureSaverStage("qac", qacWillRun);
+
+  // Pair dropping: demand-driven, like the memory pruner. The deficit is how
+  // far the request overruns its budget target, measured with the same
+  // measureContextPressure call the headroom and memory stages use, with the
+  // model's own window from the capability table. Nothing drops while the
+  // request fits its window.
+  const pairsWillRun =
+    tokenSaverEnabled && pairDropEnabled && claudePrefixTarget && !!prefixMessages();
+  if (pairsWillRun) {
+    const pairsPressure = measureContextPressure(translatedBody, {
+      contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
+      settings: memorySettings || undefined,
+    });
+    if (pairsPressure.deficitChars > 0) {
+      const res = dropOldestPairs(translatedBody.messages, {
+        deficitChars: pairsPressure.deficitChars,
+        keepRecentTurns: 6,
+      });
+      if (res.droppedPairs > 0) {
+        translatedBody.messages = res.messages;
+        notePath(rid, "XFORM.pairs-dropped");
+        pushPrefixNote({
+          kind: "pairs",
+          text: `dropped ${res.droppedPairs} pair(s) (~${res.savedChars} chars)`,
+        });
+      }
+    }
+  }
+  measureSaverStage("pairs", pairsWillRun);
+
+  // Embedding reorder: moves the most relevant historical turns next to the
+  // recent tail via local OpenAI-compatible embeddings. Fail-open: an embed
+  // failure logs one debug line and leaves the prefix in order.
+  const reorderWillRun =
+    tokenSaverEnabled && embedReorderEnabled && claudePrefixTarget && !!prefixMessages();
+  if (reorderWillRun) {
+    const query = lastUserQuery(translatedBody.messages);
+    if (query.trim()) {
+      const res = await reorderByRelevance(translatedBody.messages, {
+        query,
+        embedUrl: embedReorderUrl,
+        embedModel: embedReorderModel,
+        keepRecentTurns: 2,
+      });
+      if (res.error) {
+        log?.debug?.("REORDER", `skipped: ${String(res.error).slice(0, 80)}`);
+      }
+      if (res.moved > 0) {
+        translatedBody.messages = res.messages;
+        notePath(rid, "XFORM.reorder-applied");
+        pushPrefixNote({
+          kind: "reorder",
+          text: `reordered ${res.moved} turn(s) by relevance`,
+        });
+      }
+    }
+  }
+  measureSaverStage("reorder", reorderWillRun);
 
   // RTK: compress tool_result content.
   //
@@ -935,6 +1096,43 @@ export async function handleChatCore({
   }
   measureSaverStage("mem", tokenSaverEnabled && memorySettings);
 
+  // Mid-prefix note: after the prefix stages reshaped history, land one short
+  // boundary note so the model keeps a map of what the earlier region once
+  // contained. INTENTIONALLY ADDITIVE: it grows the body, which is why the
+  // saver-guard exempts it below (same rationale as "inject"). Gate needs at
+  // least one earlier stage to have produced a note.
+  const midinjectWillRun =
+    tokenSaverEnabled &&
+    midPrefixInjectEnabled &&
+    claudePrefixTarget &&
+    prefixNotes.length > 0 &&
+    !!prefixMessages();
+  if (midinjectWillRun) {
+    const noteText = composeBoundaryNote(prefixNotes);
+    // Insert index: the smallest turn index the prefix stages recorded when
+    // available (thinking/qac notes carry one). Pairs/reorder notes do not,
+    // so the fallback is the LAST user message index: every prefix stage
+    // protected the recent tail, so the last user turn sits at or after the
+    // boundary the note describes, and injectBoundaryNote scans forward from
+    // there for the nearest user message.
+    let insertIndex = -1;
+    for (let i = translatedBody.messages.length - 1; i >= 0; i--) {
+      if (translatedBody.messages[i]?.role === "user") {
+        insertIndex = i;
+        break;
+      }
+    }
+    if (prefixTurnIndices.length > 0) {
+      insertIndex = Math.min(...prefixTurnIndices);
+    }
+    const res = injectBoundaryNote(translatedBody.messages, insertIndex, noteText);
+    if (res.injected) {
+      translatedBody.messages = res.messages;
+      measureSaverStage("midinject", true);
+      notePath(rid, "XFORM.midinject-applied");
+    }
+  }
+
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
 
   // Pin cache breakpoints to the final body — every saver above can reshape
@@ -1030,7 +1228,15 @@ export async function handleChatCore({
       // threshold — the guard is for compressors that were supposed to shrink.
       // "final" is exempt with "inject": it is not a saver, it only
       // attributes post-saver reshaping (cache anchoring) honestly.
-      if (st.stage !== "inject" && st.stage !== "final" && st.delta > saverEntryBytes * 0.05) {
+      // "midinject" is exempt with "inject": the boundary note it adds is the
+      // whole point, and on small bodies that intentional addition trips the
+      // threshold, the guard is for compressors that were supposed to shrink.
+      if (
+        st.stage !== "inject" &&
+        st.stage !== "final" &&
+        st.stage !== "midinject" &&
+        st.delta > saverEntryBytes * 0.05
+      ) {
         decide("XFORM", "saver-guard", {
           rid,
           stage: st.stage,
@@ -1094,7 +1300,17 @@ export async function handleChatCore({
     // into the same per-saver aggregation the dashboard's stage table reads.
     // Privacy runs under its own flag, not tokenSaverEnabled, so its gate is
     // the delta alone.
-    for (const stageName of ["inject", "mem", "schema", "privacy"]) {
+    for (const stageName of [
+      "inject",
+      "mem",
+      "schema",
+      "privacy",
+      "thinking",
+      "qac",
+      "pairs",
+      "reorder",
+      "midinject",
+    ]) {
       const stageBytes = saverStageDelta(stageName);
       const stageGated =
         stageName === "privacy" ? true : tokenSaverEnabled;

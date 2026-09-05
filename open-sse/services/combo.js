@@ -448,6 +448,11 @@ const COMBO_TOKEN_SAVER_KEYS = Object.freeze({
   caveman: "cavemanEnabled",
   ponytail: "ponytailEnabled",
   pxpipe: "pxpipeEnabled",
+  thinking: "thinkingStripEnabled",
+  qac: "queryAwareCompressionEnabled",
+  pairs: "pairDropEnabled",
+  reorder: "embedReorderEnabled",
+  midinject: "midPrefixInjectEnabled",
 });
 
 // Read the override off the bag settings already keeps per combo
@@ -490,7 +495,9 @@ function findComboTokenSaverOverride(comboChain, settings) {
  * settings in settings.comboStrategies[<name>].tokenSaver:
  *
  *   { enabled?: boolean, rtk?: boolean, headroom?: boolean,
- *     caveman?: boolean, ponytail?: boolean, pxpipe?: boolean }
+ *     caveman?: boolean, ponytail?: boolean, pxpipe?: boolean,
+ *     schema?: boolean, thinking?: boolean, qac?: boolean,
+ *     pairs?: boolean, reorder?: boolean, midinject?: boolean }
  *
  * `enabled` is the same kind of master gate chatCore's own tokenSaverEnabled is:
  * false forces every saver off for this combo, true (the default) leaves the
