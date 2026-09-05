@@ -120,6 +120,10 @@ Runtime doctrine extends that split with three purity requirements:
 
 Source of truth: `gates/E1.6-boundary.md` (gates B1-B9).
 
+### 2026-09-05 contract removal
+
+The four-duty contract (proxy accounts, rotate accounts, save tokens, track usage; nothing else) was audited against the full surface and the violating upstream product surface was REMOVED from this fork: the 19 `api/cli-tools/*` routes, `api/claude-compat/write-claude-settings`, `claudeDefaultModels` (including its `subagent` slot), the `cli-tools`/`mitm`/`claude-compat` dashboard pages, headroom process spawn/kill/pip-install management (`lib/headroom/process.js`, start/stop/restart routes; external-URL compression mode is kept), and `api/tunnel/tailscale-install`. Harness configuration homes (`~/.claude*`, `~/.codex/*`) are no longer read or written by the gateway. When reconciling with upstream, treat these deletions as a stated contract divergence (per the line-73 convention): do not re-import them silently; each needs an explicit owner-side decision.
+
 ## Capability Matrix
 
 Priority means migration urgency. `P0` blocks removal of the predecessor integration, `P1` is required for behavioral parity, and `P2` improves resilience after cutover.

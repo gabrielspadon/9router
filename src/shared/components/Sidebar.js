@@ -37,14 +37,7 @@ export const navItems = [
     job: "Compose",
   },
   { href: "/dashboard/memory", label: "Memory & Context", icon: "psychology", job: "Compose" },
-  {
-    href: "/dashboard/claude-compat",
-    label: "Claude Compat",
-    icon: "smart_toy",
-    job: "Compose",
-  },
   { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api", job: "Point" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal", job: "Point" },
   { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat", job: "Point" },
   // PXPIPE is deliberately absent: it is an optional add-on that is not installed on
   // most hosts, so a permanent rail slot would advertise a page that mostly reports
@@ -65,7 +58,6 @@ export const HIDEABLE_NAV_ITEMS = [
   { id: "quota", label: "Quota Tracker", href: "/dashboard/quota" },
   { id: "tokenSaver", label: "Token Saver", href: "/dashboard/token-saver" },
   { id: "context", label: "Context", href: "/dashboard/context" },
-  { id: "cliTools", label: "CLI Tools", href: "/dashboard/cli-tools" },
   { id: "mediaProviders", label: "Media Providers" },
   { id: "proxyPools", label: "Proxy Pools", href: "/dashboard/proxy-pools" },
   { id: "skills", label: "Skills", href: "/dashboard/skills" },

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
-// Eight more reports the BLOCKED re-triage found already satisfied, each
+// More reports the BLOCKED re-triage found already satisfied, each
 // re-derived here against the tree before the issue was closed.
 //
 // The per-SHA ancestry assertions these carried are gone rather than ported,
@@ -21,10 +21,6 @@ it("#2936 passthrough streams normalize reasoning to reasoning_content", () => {
 
 it("#3003 qoder accepts a PAT as well as OAuth", () => {
   expect(read("open-sse/providers/registry/qoder.js")).toContain("authModes");
-});
-
-it("#3233 hermes settings write the key where the CLI reads it", () => {
-  expect(read("src/app/api/cli-tools/hermes-settings/route.js")).toContain("OPENAI_API_KEY");
 });
 
 it("#3308 a null or non-string tool arguments value is coerced", () => {

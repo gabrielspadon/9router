@@ -134,15 +134,6 @@ const DEFAULT_SETTINGS = {
     suffixMode: "auto",
     keywords: [],
   },
-  // Default-model mapping written to ~/.claude/settings.json env by the
-  // endpoint page's one-click button (see /api/claude-compat/write-claude-settings).
-  claudeDefaultModels: {
-    sonnet: { model: "", name: "", oneM: false },
-    opus: { model: "", name: "", oneM: false },
-    fable: { model: "", name: "", oneM: false },
-    haiku: { model: "", name: "", oneM: false },
-    subagent: { model: "", oneM: false },
-  },
   // User contextWindow overrides, keyed by model id or glob pattern (e.g.
   // "glm-5.3" or "glm-5*"). Consumed by open-sse/providers/capabilities.js
   // via setContextWindowOverrides(); managed on /dashboard/model-context.

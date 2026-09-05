@@ -11,13 +11,12 @@ vi.mock("@/lib/headroom/detect", () => ({
   DEFAULT_HEADROOM_URL: "http://127.0.0.1:8099",
   getHeadroomStatus: (...a) => getHeadroomStatus(...a),
 }));
-vi.mock("@/lib/headroom/process", () => ({ getManagedPid: () => null }));
 
 const { GET } = await import("@/app/api/headroom/status/route.js");
 
 beforeEach(() => {
   getSettings.mockReset();
-  getHeadroomStatus.mockReset().mockResolvedValue({ installed: true, running: true });
+  getHeadroomStatus.mockReset().mockResolvedValue({ running: true, localUrl: true });
 });
 
 describe("headroom status reports the toggle, not only the probe (#1956)", () => {
@@ -38,7 +37,7 @@ describe("headroom status reports the toggle, not only the probe (#1956)", () =>
 
   it("is not active when the toggle is on but the proxy is down", async () => {
     getSettings.mockResolvedValue({ headroomEnabled: true });
-    getHeadroomStatus.mockResolvedValue({ installed: true, running: false });
+    getHeadroomStatus.mockResolvedValue({ running: false, localUrl: true });
     expect((await (await GET()).json()).active).toBe(false);
   });
 

@@ -867,8 +867,8 @@ export async function GET(request) {
     // of `{object:"list",data:[...]}` — so this branch never gives Codex a
     // model Non-Codex clients don't also see. No endpoint- or header-based
     // alternative exists to key this off: Codex's config always sets
-    // wire_api = "responses" (src/app/api/cli-tools/codex-settings/route.js)
-    // and it lists models by GETting this same shared /v1/models — there is
+    // wire_api = "responses" and it lists models by GETting this same shared
+    // /v1/models — there is
     // no separate /v1/responses/models path, and it sends no inbound header
     // naming its wire dialect (the outbound "OpenAI-Beta": "codex-1" in
     // open-sse/services/usage/codex.js is this gateway talking to the

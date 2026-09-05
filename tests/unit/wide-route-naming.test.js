@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// Naming and heading contract for the eight routes the five-route accessibility
-// sample never showed (leaf A6): combos, quota, token-saver, cli-tools, memory
+// Naming and heading contract for the routes the five-route accessibility
+// sample never showed (leaf A6): combos, quota, token-saver, memory
 // and the gallery.
 //
 // Everything here is asserted as a role, a heading level or an accessible name.
@@ -31,8 +31,6 @@ vi.mock('next/link', () => ({
 
 const { default: MemoryClient } =
   await import('@/app/(dashboard)/dashboard/memory/MemoryClient.js');
-const { default: CLIToolsPageClient } =
-  await import('@/app/(dashboard)/dashboard/cli-tools/CLIToolsPageClient.js');
 const { default: GalleryPage } = await import('@/app/(dashboard)/dashboard/gallery/page.js');
 const { default: TokenSaverClient } =
   await import('@/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js');
@@ -281,24 +279,6 @@ describe('/dashboard/token-saver', () => {
     expect(names).toContain('Compress LLM output with Caveman');
     expect(names).toContain('Bias code output toward minimal with Ponytail');
     expect(names).toContain('Rank tools per turn with BM25');
-  });
-});
-
-// --- A6-3: /dashboard/cli-tools --------------------------------------------
-
-describe('/dashboard/cli-tools', () => {
-  let host;
-  beforeEach(async () => {
-    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
-    host = await mounted(createElement(CLIToolsPageClient, { machineId: 'test-machine' }));
-  });
-  afterEach(() => vi.restoreAllMocks());
-
-  it('gives the tool grid a group heading, so no card starts at h3 under the shell h1', () => {
-    const h2s = [...host.querySelectorAll('h2')].map((h) => h.textContent.trim());
-    expect(h2s).toEqual(['Agent CLIs', 'MITM Tools']);
-    expect(host.querySelectorAll('h3').length).toBeGreaterThan(0);
-    expect(skippedLevels(outlineUnderShellH1(host))).toEqual([]);
   });
 });
 

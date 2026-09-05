@@ -11,10 +11,8 @@ import { fileURLToPath } from 'node:url';
 // it has two consumers, the banner (/api/version) and the installer that
 // actually replaces the binary (/api/version/update), so honouring an opt-out
 // in one and not the other would still leave the install replaceable.
-//
-// Half 1 of that report, "Claude Cowork option is completely absent", does not
-// hold here: the entry is in the catalogue and the page renders the catalogue
-// unfiltered, asserted at the bottom.
+// (Half 1 of that report, "Claude Cowork option is completely absent", covered
+// the removed CLI-tools surface and went with it.)
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 
@@ -99,16 +97,5 @@ describe('a pinned install can decline the npm latest it rolled back from (#1563
     const cli = readFileSync(resolve(ROOT, 'cli/cli.js'), 'utf8');
     const check = cli.slice(cli.indexOf('function checkForUpdate'));
     expect(check.slice(0, 600)).toContain('TOKENPROXY_NO_UPDATE');
-  });
-
-  it('Claude Cowork is in the CLI tools catalogue and the page does not filter it', () => {
-    const catalogue = readFileSync(resolve(ROOT, 'src/shared/constants/cliTools.js'), 'utf8');
-    expect(catalogue).toContain('name: "Claude Cowork"');
-
-    const page = readFileSync(
-      resolve(ROOT, 'src/app/(dashboard)/dashboard/cli-tools/CLIToolsPageClient.js'),
-      'utf8'
-    );
-    expect(page).toContain('Object.entries(CLI_TOOLS)');
   });
 });

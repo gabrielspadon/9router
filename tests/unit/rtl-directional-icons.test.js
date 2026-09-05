@@ -34,7 +34,7 @@ for (const file of walk(SRC)) {
 
 describe("directional icons mirror in right-to-left locales", () => {
   it("finds the directional glyphs to check", () => {
-    expect(spans.length).toBeGreaterThan(50);
+    expect(spans.length).toBeGreaterThan(10);
   });
 
   it("marks every one of them with dir-icon", () => {

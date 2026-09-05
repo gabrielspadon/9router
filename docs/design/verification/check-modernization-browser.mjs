@@ -5,8 +5,8 @@ import { pathToFileURL } from "node:url";
 
 const REQUIRED_ROUTES = [
   "login", "landing", "dashboard-home", "providers", "providers-new", "provider-claude",
-  "statistics", "usage", "quota", "endpoint", "combos", "cli-tools", "claude-compat",
-  "basic-chat", "console-log", "media-providers", "memory", "mitm", "model-context",
+  "statistics", "usage", "quota", "endpoint", "combos",
+  "basic-chat", "console-log", "media-providers", "memory", "model-context",
   "profile", "proxy-pools", "pxpipe", "skills", "token-saver", "translator",
 ];
 

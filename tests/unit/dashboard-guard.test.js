@@ -418,7 +418,7 @@ describe("dashboard guard local-only access", () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
     const response = await proxy(
-      localRequest("/api/cli-tools/antigravity-mitm", {
+      localRequest("/api/headroom/status", {
         host: "localhost:20128",
         origin: "http://localhost:20128",
       }),
@@ -431,7 +431,7 @@ describe("dashboard guard local-only access", () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
     const response = await proxy(
-      request("/api/cli-tools/antigravity-mitm", {
+      request("/api/headroom/status", {
         host: "router.example.com",
       }),
     );
@@ -443,7 +443,7 @@ describe("dashboard guard local-only access", () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
     const response = await proxy(
-      localRequest("/api/cli-tools/antigravity-mitm", {
+      localRequest("/api/headroom/status", {
         host: "localhost:20128",
         origin: "http://evil.example.com",
       }),
@@ -525,8 +525,7 @@ describe("dashboard guard local-only access", () => {
 
     for (const [pathname, method] of [
       ["/api/headroom/status", "GET"],
-      ["/api/headroom/extras", "POST"],
-      ["/api/headroom/restart", "POST"],
+      ["/api/headroom/proxy/dashboard", "GET"],
     ]) {
       const response = await proxy(
         request(pathname, { host: "router.example.com", method }),

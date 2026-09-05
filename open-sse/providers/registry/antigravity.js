@@ -59,7 +59,7 @@ export default {
     { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
     // Friendly synonym, not an Antigravity model key: every other enumeration of
     // this catalog in the tree (src/mitm/config.js MODEL_SYNONYMS,
-    // src/shared/constants/cliTools.js modelAliases, the quota display-name and
+    // the quota display-name and
     // important-model lists in open-sse/services/usage/google.js, and
     // tests/translator/real/antigravity-models.real.test.js) carries
     // gemini-3-flash-agent and omits this id, so it is routed onto that key

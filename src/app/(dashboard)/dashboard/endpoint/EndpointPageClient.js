@@ -57,13 +57,9 @@ export default function APIPageClient({ machineId }) {
   const [tsAuthUrl, setTsAuthUrl] = useState("");
   const [tsAuthLabel, setTsAuthLabel] = useState("");
   const [tsInstalled, setTsInstalled] = useState(null); // null=checking, true/false
-  const [tsInstalling, setTsInstalling] = useState(false);
-  const [tsInstallLog, setTsInstallLog] = useState([]);
-  const [tsSudoPassword, setTsSudoPassword] = useState("");
   const [tsConnecting, setTsConnecting] = useState(false);
   const [showTsModal, setShowTsModal] = useState(false);
   const [showDisableTsModal, setShowDisableTsModal] = useState(false);
-  const tsLogRef = useRef(null);
 
   // Debounce reachable=false: server may briefly return false during background refresh.
   // Only flip UI to "reconnecting" after N consecutive misses to avoid spinner flicker.
@@ -96,11 +92,6 @@ export default function APIPageClient({ machineId }) {
   const unsafeReason = !requireLogin
     ? "Enable \"Require login\" and set a custom password before activating the tunnel."
     : "Change the default dashboard password before activating the tunnel.";
-
-  // Auto-scroll install log
-  useEffect(() => {
-    if (tsLogRef.current) tsLogRef.current.scrollTop = tsLogRef.current.scrollHeight;
-  }, [tsInstallLog]);
 
   useEffect(() => {
     fetchData();
@@ -418,59 +409,6 @@ export default function APIPageClient({ machineId }) {
     return { installed: false };
   };
 
-  const handleInstallTailscale = async () => {
-    setTsInstalling(true);
-    setTsStatus(null);
-    setTsInstallLog([]);
-    try {
-      const res = await fetch("/api/tunnel/tailscale-install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sudoPassword: tsSudoPassword }),
-      });
-      setTsSudoPassword("");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
-        for (const part of parts) {
-          const lines = part.split("\n");
-          let event = "progress";
-          let data = null;
-          for (const line of lines) {
-            if (line.startsWith("event: ")) event = line.slice(7).trim();
-            if (line.startsWith("data: ")) {
-              try { data = JSON.parse(line.slice(6)); } catch { /* skip */ }
-            }
-          }
-          if (!data) continue;
-          if (event === "progress") {
-            setTsInstallLog((prev) => [...prev.slice(-50), data.message]);
-          } else if (event === "done") {
-            setTsInstalled(true);
-            setTsInstalling(false);
-            setShowTsModal(false);
-            handleConnectTailscale();
-            return;
-          } else if (event === "error") {
-            setTsStatus({ type: "error", message: data.error || "Install failed" });
-          }
-        }
-      }
-    } catch (e) {
-      setTsStatus({ type: "error", message: e.message });
-    } finally {
-      setTsInstalling(false);
-    }
-  };
-
   // Ping Tailscale health until reachable
   const pingTsHealth = async (url) => {
     setTsProgress("Waiting for Tailscale ready...");
@@ -618,7 +556,6 @@ export default function APIPageClient({ machineId }) {
 
   const handleOpenTsModal = async () => {
     setTsStatus(null);
-    setTsInstallLog([]);
     const data = await checkTailscaleInstalled();
     if (data?.installed && data?.hasCachedPassword) {
       handleConnectTailscale();
@@ -1254,7 +1191,7 @@ export default function APIPageClient({ machineId }) {
       <Modal
         isOpen={showTsModal}
         title="Tailscale Funnel"
-        onClose={() => { if (!tsInstalling) { setShowTsModal(false); setTsSudoPassword(""); setTsStatus(null); } }}
+        onClose={() => { setShowTsModal(false); setTsStatus(null); }}
       >
         <div className="flex flex-col gap-4">
           {/* Checking state */}
@@ -1266,37 +1203,31 @@ export default function APIPageClient({ machineId }) {
           )}
 
           {/* Not installed */}
-          {tsInstalled === false && !tsInstalling && (
+          {tsInstalled === false && (
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-text-muted">Tailscale is not installed. Install it to enable Funnel.</p>
+              <p className="text-sm text-text-muted">
+                Tailscale is not installed on this host. Install it from{" "}
+                <a
+                  href="https://tailscale.com/download"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand underline hover:no-underline"
+                >
+                  tailscale.com/download
+                </a>
+                , then come back and connect.
+              </p>
               <div className="flex gap-2">
-                <Button onClick={handleInstallTailscale} fullWidth>
-                  Install Tailscale
+                <Button onClick={() => { setShowTsModal(false); checkTailscaleInstalled(); }} fullWidth>
+                  Done
                 </Button>
                 <Button onClick={() => setShowTsModal(false)} variant="ghost" fullWidth>Cancel</Button>
               </div>
             </div>
           )}
 
-          {/* Installing with progress log */}
-          {tsInstalling && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-sm text-text-muted">
-                <span aria-hidden="true" className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                Installing Tailscale...
-              </div>
-              {tsInstallLog.length > 0 && (
-                <div ref={tsLogRef} className="bg-surface-2 rounded p-2 max-h-40 overflow-y-auto font-mono text-xs text-text-muted">
-                  {tsInstallLog.map((line, i) => (
-                    <div key={i}>{line}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Installed: show Connect button */}
-          {tsInstalled === true && !tsInstalling && (
+          {tsInstalled === true && (
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2 text-sm text-success">
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">check_circle</span>

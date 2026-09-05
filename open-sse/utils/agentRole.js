@@ -23,8 +23,8 @@ import { detectClientTool } from "./clientDetector.js";
  * but because it is the one integrated harness with no OTHER way to route a
  * sub-agent to a cheaper model: Codex, OpenCode and Grok CLI already carry a
  * native, client-side subagent-model setting (their own `agents.subagent` /
- * `agent.explorer` / `subagents.models` config, written by this app's own
- * cli-tools settings routes) that picks a distinct model per role WITHOUT any
+ * `agent.explorer` / `subagents.models` config) that picks a distinct model
+ * per role WITHOUT any
  * server-side detection. Claude Code's Task-tool sub-agents inherit the
  * parent's model with no equivalent per-role override, so the preamble is the
  * only signal available for it. Adding another harness here means adding its
