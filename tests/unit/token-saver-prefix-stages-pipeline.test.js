@@ -286,10 +286,12 @@ describe("query-aware compression stage (chatCore pipeline)", () => {
   ];
 
   it("flag on: low-relevance historical turn collapses to a placeholder", async () => {
+    const onTokenSaverEvent = vi.fn();
     const result = await drive({
       body: claudeBody(qacMessages),
       queryAwareCompressionEnabled: true,
       requestId: "a1000002",
+      onTokenSaverEvent,
     });
     expect(result.success).toBe(true);
 
@@ -302,6 +304,12 @@ describe("query-aware compression stage (chatCore pipeline)", () => {
     expect(row).toBeDefined();
     expect(Number(row.split(":")[1])).toBeLessThan(0);
     expect(reqLines()[0]).toContain("XFORM.qac-applied");
+
+    // The event row names WHICH turns were compressed, bounded integers.
+    const eventRow = onTokenSaverEvent.mock.calls.find((c) => c[0]?.saver === "qac")?.[0];
+    expect(eventRow).toBeDefined();
+    // (the assistant turn scores just above the 0.04 default and survives)
+    expect(eventRow.turns).toEqual([0]);
   });
 });
 
@@ -442,6 +450,10 @@ describe("embedding reorder stage (chatCore pipeline)", () => {
     expect(dispatched.messages).toHaveLength(5);
     expect(reqLines()[0]).not.toContain("XFORM.reorder-applied");
     expect(saveRows().find((kv) => kv.startsWith("reorder:"))).toBeUndefined();
+    // The failure used to be DEBUG-gated and invisible in production: it now
+    // speaks as a folded XFORM row carrying the rid.
+    expect(consoleLines.join("\n")).toContain("XFORM.reorder-degraded");
+    expect(consoleLines.join("\n")).toContain("rid=a1000006");
   });
 });
 
@@ -559,5 +571,131 @@ describe("all prefix flags off", () => {
     expect(reqLines()).toHaveLength(1);
     expect(reqLines()[0]).not.toMatch(/ save=/);
     expect(result.response.headers.get("x-tp-save-bytes")).toBeNull();
+  });
+});
+
+describe("tools normalization stage (audit finding 7)", () => {
+  const CLAUDE_HEADERS = { "user-agent": "claude-cli/1.0.0 (external, cli)" };
+
+  function toolsBody() {
+    return {
+      ...claudeBody([{ role: "user", content: "hello there" }]),
+      tools: [
+        { name: "mcp__exa__web_search_exa", description: "exa search" },
+        { name: "WebSearch", description: "built-in search" },
+        { name: "WebFetch", description: "built-in fetch" },
+        { name: "read_file", description: "read a file" },
+      ],
+    };
+  }
+
+  it("duplicate built-ins stripped by dedupe: save= carries a tools stage, path carries tool-strip, event row lands", async () => {
+    const onTokenSaverEvent = vi.fn();
+    const result = await drive({
+      body: toolsBody(),
+      clientRawRequest: { headers: CLAUDE_HEADERS, body: {} },
+      requestId: "a1000011",
+      onTokenSaverEvent,
+    });
+    expect(result.success).toBe(true);
+
+    const dispatched = dispatchedBody();
+    const names = dispatched.tools.map((t) => t.name);
+    expect(names).not.toContain("WebSearch");
+    expect(names).not.toContain("WebFetch");
+    expect(names).toContain("mcp__exa__web_search_exa");
+
+    const row = saveRows().find((kv) => kv.startsWith("tools:"));
+    expect(row).toBeDefined();
+    expect(Number(row.split(":")[1])).toBeLessThan(0);
+    expect(reqLines()[0]).toContain("XFORM.tool-strip");
+
+    const eventRow = onTokenSaverEvent.mock.calls.find((c) => c[0]?.saver === "tools")?.[0];
+    expect(eventRow).toBeDefined();
+    expect(eventRow.rid).toBe("a1000011");
+    expect(eventRow.bytesSaved).toBeLessThan(0);
+  });
+
+  it("no duplicates: no tools stage entry and no tool-strip code", async () => {
+    const body = toolsBody();
+    body.tools = body.tools.filter((t) => !["WebSearch", "WebFetch"].includes(t.name));
+    await drive({
+      body,
+      clientRawRequest: { headers: CLAUDE_HEADERS, body: {} },
+      requestId: "a1000012",
+    });
+    expect(saveRows().find((kv) => kv.startsWith("tools:"))).toBeUndefined();
+    expect(reqLines()[0]).not.toContain("XFORM.tool-strip");
+  });
+});
+
+describe("mid-prefix note placement after pairs (audit finding 6)", () => {
+  // qac compresses historical turns (recording their indices), then pairs
+  // DELETES a pair and shifts the array: the recorded indices used to point
+  // at whatever slid into those slots, landing the note on a live recent
+  // turn. After the fix the stale indices are cleared and the last-user
+  // fallback applies.
+  function qacPairsMessages() {
+    const msgs = [];
+    const topics = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const t of topics) {
+      msgs.push({
+        role: "user",
+        content: `question about ${t} ` + `${t} context padding`.repeat(40),
+      });
+      msgs.push({
+        role: "assistant",
+        content: `answer about ${t} ` + `${t} response padding`.repeat(40),
+      });
+    }
+    msgs.push({
+      role: "user",
+      content:
+        "how do I configure the retry backoff for the api client when the gateway times out",
+    });
+    return msgs;
+  }
+
+  it("qac+pairs+midinject: the note lands on a real user turn at or before the live boundary, never on a compressed placeholder", async () => {
+    const result = await drive({
+      body: claudeBody(qacPairsMessages()),
+      queryAwareCompressionEnabled: true,
+      pairDropEnabled: true,
+      midPrefixInjectEnabled: true,
+      memorySettings: { memoryContextWindowOverride: 500 },
+      requestId: "a1000013",
+    });
+    expect(result.success).toBe(true);
+
+    const dispatched = dispatchedBody();
+    const flat = JSON.stringify(dispatched.messages);
+    expect(flat).toContain("[tokenproxy context note]");
+    expect(flat).toContain("qac: compressed");
+    expect(flat).toContain("pairs: dropped");
+
+    // Locate the note block and its message.
+    let noteMsgIdx = -1;
+    for (let i = 0; i < dispatched.messages.length; i++) {
+      const m = dispatched.messages[i];
+      const blocks = Array.isArray(m.content) ? m.content : [];
+      if (blocks.some((b) => b?.type === "text" && b.text.includes("[tokenproxy context note]"))) {
+        noteMsgIdx = i;
+      }
+    }
+    expect(noteMsgIdx).toBeGreaterThanOrEqual(0);
+
+    // The note rides a USER message...
+    expect(dispatched.messages[noteMsgIdx].role).toBe("user");
+    // ...that is not a compressed placeholder turn...
+    expect(JSON.stringify(dispatched.messages[noteMsgIdx].content)).not.toContain(
+      "compressed, low relevance",
+    );
+    // ...and nothing AFTER the last user message carries the note (the note
+    // never lands past the live boundary into turns that follow it).
+    const lastUserIdx = dispatched.messages.reduce(
+      (acc, m, i) => (m.role === "user" ? i : acc),
+      -1,
+    );
+    expect(noteMsgIdx).toBeLessThanOrEqual(lastUserIdx);
   });
 });

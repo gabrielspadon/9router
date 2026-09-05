@@ -9,9 +9,15 @@
 //
 // Deterministic: no randomness, no clock. Pure function, plain-node importable.
 
+import { ELIDE_MARKER_RE } from "../rtk/filters/elide.js";
+
 const PLACEHOLDER_OPEN = '[tokenproxy: earlier turn about "';
 const PLACEHOLDER_CLOSE = '" compressed, low relevance to the current query]';
 const MAX_NOTES = 8;
+
+// 0.04, not 0.08: at 0.08 the scorer destroyed 79% of on-topic turns for
+// +0.3% bytes on the audit fixture; 0.04 has perfect precision on it.
+const DEFAULT_THRESHOLD = 0.04;
 
 // Lowercase alphanumeric terms, deduped, in first-appearance order.
 function tokenize(text) {
@@ -32,7 +38,10 @@ function wordCount(text) {
 }
 
 function flattenPreview(text, previewChars) {
-  return String(text).replace(/\s+/g, " ").trim().slice(0, previewChars);
+  const flat = String(text).replace(/\s+/g, " ").trim();
+  // Slice on code points, never UTF-16 units: a cut between a surrogate pair
+  // would render a lone half-emoji in the placeholder.
+  return Array.from(flat).slice(0, previewChars).join("");
 }
 
 function placeholderFor(text, previewChars) {
@@ -68,7 +77,7 @@ function historicalBoundary(messages, keepRecentTurns) {
 function compressPrefixByQuery(messages, options = {}) {
   const query = options.query == null ? "" : String(options.query);
   const keepRecentTurns = options.keepRecentTurns == null ? 2 : options.keepRecentTurns;
-  const threshold = options.threshold == null ? 0.08 : options.threshold;
+  const threshold = options.threshold == null ? DEFAULT_THRESHOLD : options.threshold;
   const previewChars = options.previewChars == null ? 60 : options.previewChars;
 
   const queryTerms = tokenize(query).filter((term) => term.length >= 3);
@@ -84,7 +93,15 @@ function compressPrefixByQuery(messages, options = {}) {
   const notes = [];
   let notesTruncated = false;
 
+  // A historical block that already carries an rtk elide integrity marker is
+  // never placeholder-compressed: the marker is the only proof of what the
+  // elided span contained, and qac would destroy it (same rule as R-F5 in
+  // toolPruner and the compactor's summarizeMessage).
+  const hasElideMarker = (text) =>
+    typeof text === "string" && ELIDE_MARKER_RE.test(text);
+
   const replaceStringContent = (msg, i) => {
+    if (hasElideMarker(msg.content)) return msg;
     const score = blockScore(msg.content, queryTerms, new Set(tokenize(msg.content)));
     if (score >= threshold) return msg;
     const preview = flattenPreview(msg.content, previewChars);
@@ -100,6 +117,7 @@ function compressPrefixByQuery(messages, options = {}) {
     for (let j = 0; j < blocks.length; j++) {
       const block = blocks[j];
       if (!block || block.type !== "text" || typeof block.text !== "string") continue;
+      if (hasElideMarker(block.text)) continue;
       const score = blockScore(block.text, queryTerms, new Set(tokenize(block.text)));
       if (score >= threshold) continue;
       const preview = flattenPreview(block.text, previewChars);

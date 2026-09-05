@@ -59,7 +59,7 @@ export const VERDICTS = Object.freeze({
   // rtk-applied/headroom-applied/mem-pruned/compact-applied/injected are the
   // token-saver path codes: folded into REQ.ok's path= (and save= carries the
   // measured bytes), so a saver never costs a line on the nominal path.
-  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy', 'rtk-applied', 'headroom-applied', 'tool-distill', 'mem-pruned', 'compact-applied', 'injected', 'thinking-stripped', 'qac-applied', 'pairs-dropped', 'reorder-applied', 'midinject-applied', 'saver-guard']),
+  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy', 'rtk-applied', 'headroom-applied', 'tool-distill', 'mem-pruned', 'compact-applied', 'injected', 'thinking-stripped', 'qac-applied', 'pairs-dropped', 'reorder-applied', 'midinject-applied', 'saver-guard', 'privacy-applied', 'pxpipe-applied', 'mem-handoff', 'reorder-degraded']),
   UP: Object.freeze(['retry', 'failover', 'attempt-ceiling', 'replay-overflow']),
   STREAM: Object.freeze(['stalled', 'empty', 'non-sse', 'terminal-synthesized', 'usage-estimated', 'detail-pending']),
   ACCT: Object.freeze(['detail-write-failed', 'alias-dropped']),
@@ -220,12 +220,19 @@ function scalar(value, key = null) {
   if (t !== 'string') return '[non-scalar]';
   if (value === '') return null;
   // save=/save_tok= ride in the same machine-token grammar as path= (an
-  // 8-stage save list is ~84 chars, mid-delta cut at the 60-char free-text cap)
-  // so they share its wider cap; free-text values stay at MAX_VALUE_CHARS.
+  // 8-stage save list is ~84 chars) so they share its wider cap; free-text
+  // values stay at MAX_VALUE_CHARS.
   const cap = key === 'path' || key === 'save' ? PATH_VALUE_CHARS : MAX_VALUE_CHARS;
   const safe = redactSecretsText(value)
     .replace(/[\s\u0000-\u001f\u007f]+/g, '_');
-  return safe.length > cap ? `${safe.slice(0, cap)}…` : safe;
+  if (safe.length <= cap) return safe;
+  // path=/save= are comma-joined machine codes: cut at the last whole code
+  // before the cap, never mid-code, so every rendered token stays greppable.
+  if (key === 'path' || key === 'save') {
+    const cut = safe.lastIndexOf(',', cap);
+    if (cut > 0) return `${safe.slice(0, cut)}…`;
+  }
+  return `${safe.slice(0, cap)}…`;
 }
 
 function orderedEntries(fields) {

@@ -68,11 +68,21 @@ function injectMessagesSystem(body, format, prompt) {
   // content field. Derive it from the array actually chosen.
   const isResponses = format === FORMATS.OPENAI_RESPONSES || arr === body.input;
   const idx = arr.findIndex(m => m && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
+  // Isolation, same discipline as chatCore's isolateCompressibleItems and the
+  // privacy stage: the caller's array and message objects are never mutated.
+  // The array is cloned up front and the touched message becomes a shallow
+  // copy with its own content collection.
+  const arrKey = Array.isArray(body.messages) && arr === body.messages ? "messages" : "input";
+  const next = arr.slice();
+  body[arrKey] = next;
   if (idx >= 0) {
     if (isPromptAlreadyInjected(extractTextFromOpenAIMessage(arr[idx]), prompt)) return false;
-    appendToOpenAIMessage(arr[idx], prompt, isResponses);
+    const target = { ...arr[idx] };
+    if (Array.isArray(target.content)) target.content = target.content.slice();
+    appendToOpenAIMessage(target, prompt, isResponses);
+    next[idx] = target;
   } else {
-    arr.unshift(isResponses
+    next.unshift(isResponses
       ? {
           type: RESPONSES_ITEM.MESSAGE,
           role: ROLE.SYSTEM,
@@ -127,15 +137,18 @@ function injectClaudeSystem(body, prompt) {
     const existingText = body.system.map(block => block?.text || "").join(" ");
     if (isPromptAlreadyInjected(existingText, prompt)) return false;
     const block = { type: "text", text: prompt };
+    // Clone before splice/push: the caller's system array is never mutated.
+    const next = body.system.slice();
     let lastCacheIdx = -1;
-    for (let i = body.system.length - 1; i >= 0; i--) {
-      if (body.system[i]?.cache_control) { lastCacheIdx = i; break; }
+    for (let i = next.length - 1; i >= 0; i--) {
+      if (next[i]?.cache_control) { lastCacheIdx = i; break; }
     }
     if (lastCacheIdx >= 0) {
-      body.system.splice(lastCacheIdx, 0, block);
+      next.splice(lastCacheIdx, 0, block);
     } else {
-      body.system.push(block);
+      next.push(block);
     }
+    body.system = next;
     return true;
   }
   body.system = prompt;
@@ -152,7 +165,8 @@ function injectGeminiSystem(body, prompt) {
   if (sys && Array.isArray(sys.parts)) {
     const existingText = sys.parts.map(part => part?.text || "").join(" ");
     if (isPromptAlreadyInjected(existingText, prompt)) return false;
-    sys.parts.push({ text: prompt });
+    // Clone the parts array: the caller's system_instruction is never mutated.
+    target[key] = { ...sys, parts: [...sys.parts, { text: prompt }] };
     return true;
   }
   if (typeof sys === "string") {

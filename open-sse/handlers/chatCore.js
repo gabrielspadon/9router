@@ -40,7 +40,7 @@ import {
   saveRequestDetail,
   trackActiveSession,
 } from "../../src/lib/usageDb.js";
-import { decide, nextRid, req, notePath, RID_HEADER } from "../../src/shared/observability/decide.js";
+import { decide, nextRid, req, reqSummary, notePath, RID_HEADER } from "../../src/shared/observability/decide.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import {
@@ -604,9 +604,20 @@ export async function handleChatCore({
 
   // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
   // dedup for DeepSeek models (upstream rejects duplicate tool names on all endpoints).
+  // Ledger: the whole block ran pre-ledger and was invisible in save=. Measure
+  // the tools bytes before dedupe, close the stage after disclosure, and fold
+  // the result into saverStages below so a strip shows up as a "tools" stage
+  // entry (negative delta) instead of vanishing into the entry bytes.
+  let toolsStageDelta = null;
+  let toolsStripped = false;
+  let toolsBeforeBytes = null;
+  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+    toolsBeforeBytes = Buffer.byteLength(JSON.stringify(translatedBody.tools));
+  }
   if (Array.isArray(translatedBody.tools)) {
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools, { clientTool, model });
     if (stripped.length > 0) {
+      toolsStripped = true;
       translatedBody.tools = deduped;
       log?.debug?.(
         "TOOLDEDUP",
@@ -633,6 +644,7 @@ export async function handleChatCore({
       if (toolDisclosure?.filterEnabled) {
         const filtered = toolFilter(translatedBody.tools, toolDisclosure);
         if (filtered.length < translatedBody.tools.length) {
+          toolsStripped = true;
           log?.debug?.(
             "TOOLDISCLOSE",
             `filter: ${translatedBody.tools.length}→${filtered.length} tools`,
@@ -649,6 +661,7 @@ export async function handleChatCore({
           toolDisclosure,
         );
         if (stats) {
+          if ((stats.stripped ?? 0) > 0) toolsStripped = true;
           log?.debug?.(
             "TOOLDISCLOSE",
             `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`,
@@ -665,6 +678,16 @@ export async function handleChatCore({
         "TOOLDISCLOSE",
         `measure: ${beforeN}tools ${beforeBytes}B → ${afterN}tools ${afterBytes}B`,
       );
+    }
+    if (toolsBeforeBytes !== null) {
+      const toolsAfterBytes = Buffer.byteLength(JSON.stringify(translatedBody.tools));
+      if (toolsAfterBytes !== toolsBeforeBytes) {
+        toolsStageDelta = {
+          delta: toolsAfterBytes - toolsBeforeBytes,
+          in: toolsBeforeBytes,
+          out: toolsAfterBytes,
+        };
+      }
     }
   }
 
@@ -704,6 +727,15 @@ export async function handleChatCore({
           memorySettings)),
   );
   const saverStages = [];
+  // The tools-normalization block above ran before this ledger existed; fold
+  // its measured delta in as the first stage so save= attributes the strip.
+  if (toolsStageDelta) saverStages.push({ stage: "tools", ...toolsStageDelta });
+  if (toolsStripped) notePath(rid, "XFORM.tool-strip");
+  // Per-stage compressed-turn indices for the qac/thinking event rows (the
+  // dashboard shows WHICH turns a stage compressed, bounded at 8).
+  let thinkingTurns = [];
+  let qacTurns = [];
+  let memStats = null;
   // Accumulates the human-readable summary the mid-prefix note lands at the
   // kept-region boundary (midPrefixInject below). Capped at 12 entries.
   const PREFIX_NOTES_MAX = 12;
@@ -792,6 +824,10 @@ export async function handleChatCore({
       for (const n of res.notes) {
         if (typeof n?.turn === "number") prefixTurnIndices.push(n.turn);
       }
+      thinkingTurns = res.notes
+        .filter((n) => typeof n?.turn === "number")
+        .map((n) => n.turn)
+        .slice(0, 8);
       pushPrefixNote({ kind: "thinking", text: `stripped ${res.stripped} reasoning block(s)` });
     }
   }
@@ -815,6 +851,10 @@ export async function handleChatCore({
         for (const n of res.notes) {
           if (typeof n?.turn === "number") prefixTurnIndices.push(n.turn);
         }
+        qacTurns = res.notes
+          .filter((n) => typeof n?.turn === "number")
+          .map((n) => n.turn)
+          .slice(0, 8);
         pushPrefixNote({
           kind: "qac",
           text: `compressed ${res.compressed} low-relevance turn(s)`,
@@ -823,35 +863,6 @@ export async function handleChatCore({
     }
   }
   measureSaverStage("qac", qacWillRun);
-
-  // Pair dropping: demand-driven, like the memory pruner. The deficit is how
-  // far the request overruns its budget target, measured with the same
-  // measureContextPressure call the headroom and memory stages use, with the
-  // model's own window from the capability table. Nothing drops while the
-  // request fits its window.
-  const pairsWillRun =
-    tokenSaverEnabled && pairDropEnabled && claudePrefixTarget && !!prefixMessages();
-  if (pairsWillRun) {
-    const pairsPressure = measureContextPressure(translatedBody, {
-      contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
-      settings: memorySettings || undefined,
-    });
-    if (pairsPressure.deficitChars > 0) {
-      const res = dropOldestPairs(translatedBody.messages, {
-        deficitChars: pairsPressure.deficitChars,
-        keepRecentTurns: 6,
-      });
-      if (res.droppedPairs > 0) {
-        translatedBody.messages = res.messages;
-        notePath(rid, "XFORM.pairs-dropped");
-        pushPrefixNote({
-          kind: "pairs",
-          text: `dropped ${res.droppedPairs} pair(s) (~${res.savedChars} chars)`,
-        });
-      }
-    }
-  }
-  measureSaverStage("pairs", pairsWillRun);
 
   // Embedding reorder: moves the most relevant historical turns next to the
   // recent tail via local OpenAI-compatible embeddings. Fail-open: an embed
@@ -869,9 +880,17 @@ export async function handleChatCore({
       });
       if (res.error) {
         log?.debug?.("REORDER", `skipped: ${String(res.error).slice(0, 80)}`);
+        // DEBUG is dark in production; the failure must still be visible.
+        decide("XFORM", "reorder-degraded", {
+          rid,
+          why: String(res.error).slice(0, 40),
+        });
       }
       if (res.moved > 0) {
         translatedBody.messages = res.messages;
+        // Reorder permutes the array: turn indices recorded by thinking/qac
+        // no longer name the same turns (same discipline as pairs above).
+        prefixTurnIndices.length = 0;
         notePath(rid, "XFORM.reorder-applied");
         pushPrefixNote({
           kind: "reorder",
@@ -935,8 +954,10 @@ export async function handleChatCore({
       }
     }
     privacyFilter = redactOutbound(translatedBody, privacyTerms);
-    if (privacyFilter)
+    if (privacyFilter) {
       log?.debug?.("PRIVACY", `pseudonymised ${privacyFilter.size} value(s)`);
+      if (privacyFilter.size > 0) notePath(rid, "XFORM.privacy-applied");
+    }
   }
   measureSaverStage("privacy", privacyRan);
 
@@ -1046,8 +1067,10 @@ export async function handleChatCore({
     });
     pxpipeSummary = pxpipeResult.summary;
     if (pxpipeResult.body) translatedBody = pxpipeResult.body;
-    if (pxpipeSummary?.applied)
+    if (pxpipeSummary?.applied) {
       xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
+      notePath(rid, "XFORM.pxpipe-applied");
+    }
     try {
       onPxpipeEvent?.({ provider, model, ...pxpipeSummary });
     } catch {
@@ -1070,6 +1093,7 @@ export async function handleChatCore({
       contextWindow: memoryCaps?.contextWindow ?? null,
       log,
     });
+    memStats = memRes.stats || null;
     const memBudget = memRes.stats?.budget;
     if (memBudget) {
       // The occupancy line, on every request. It is the only way to see from a
@@ -1093,8 +1117,48 @@ export async function handleChatCore({
       xf.push(`COMPACT:${memRes.stats.compaction.savedTokens}t`);
       notePath(rid, "XFORM.compact-applied");
     }
+    if (memRes.stats?.handoff?.applied) {
+      notePath(rid, "XFORM.mem-handoff");
+    }
   }
   measureSaverStage("mem", tokenSaverEnabled && memorySettings);
+
+  // Pair dropping: demand-driven, like the memory pruner. The deficit is how
+  // far the request overruns its budget target, measured with the same
+  // measureContextPressure call the headroom and memory stages use, with the
+  // model's own window from the capability table. Nothing drops while the
+  // request fits its window. Runs AFTER the mem stage on purpose: toolPruner
+  // covers 12-25x more deficit per run than pairs, so pairs burning droppable
+  // pairs first would spend them before the cheaper, larger reclaim ran.
+  const pairsWillRun =
+    tokenSaverEnabled && pairDropEnabled && claudePrefixTarget && !!prefixMessages();
+  if (pairsWillRun) {
+    const pairsPressure = measureContextPressure(translatedBody, {
+      contextWindow: getCapabilitiesForModel(provider, upstreamModel)?.contextWindow ?? null,
+      settings: memorySettings || undefined,
+    });
+    if (pairsPressure.deficitChars > 0) {
+      const res = dropOldestPairs(translatedBody.messages, {
+        deficitChars: pairsPressure.deficitChars,
+        keepRecentTurns: 6,
+      });
+      if (res.droppedPairs > 0) {
+        translatedBody.messages = res.messages;
+        notePath(rid, "XFORM.pairs-dropped");
+        // Pairs DELETES entries and reorder PERMUTES them: the turn indices
+        // thinking/qac recorded now point at whatever slid into those slots,
+        // and min() of them could land the boundary note on a live recent
+        // turn (a false statement to the model). Clear them: the
+        // last-user-message fallback below then applies.
+        prefixTurnIndices.length = 0;
+        pushPrefixNote({
+          kind: "pairs",
+          text: `dropped ${res.droppedPairs} pair(s) (~${res.savedChars} chars)`,
+        });
+      }
+    }
+  }
+  measureSaverStage("pairs", pairsWillRun);
 
   // Mid-prefix note: after the prefix stages reshaped history, land one short
   // boundary note so the model keeps a map of what the earlier region once
@@ -1294,13 +1358,27 @@ export async function handleChatCore({
         ce: saverFields.ce,
       });
     }
+    // PXPIPE also lands in the main sink (the native onPxpipeEvent emit above
+    // feeds its own UI only): the row below is what the dashboard stage table
+    // and the rid-join read. Both emits stay — each sink keeps its contract.
+    if (pxpipeSummary?.applied) {
+      onTokenSaverEvent?.({
+        saver: "pxpipe",
+        rid,
+        applied: true,
+        bytesSaved: saverStageDelta("pxpipe"),
+        imageCount: pxpipeSummary.imageCount,
+        ce: saverFields.ce,
+      });
+    }
     // Ledger-backed stages: one row each when the stage actually changed the
     // body — the ledger records a stage only on a byte change. Emits inject's
-    // intentional growth (positive bytesSaved) and mem/schema/privacy savings
-    // into the same per-saver aggregation the dashboard's stage table reads.
-    // Privacy runs under its own flag, not tokenSaverEnabled, so its gate is
-    // the delta alone.
+    // intentional growth (positive bytesSaved) and mem/schema/privacy/tools
+    // savings into the same per-saver aggregation the dashboard's stage table
+    // reads. Privacy runs under its own flag, not tokenSaverEnabled, so its
+    // gate is the delta alone.
     for (const stageName of [
+      "tools",
       "inject",
       "mem",
       "schema",
@@ -1315,14 +1393,29 @@ export async function handleChatCore({
       const stageGated =
         stageName === "privacy" ? true : tokenSaverEnabled;
       if (stageGated && stageBytes !== undefined) {
-        onTokenSaverEvent?.({
+        const row = {
           saver: stageName,
           rid,
           applied: true,
           bytesSaved: stageBytes,
           saveTokEst: Math.round(stageBytes / 4),
           ce: saverFields.ce,
-        });
+        };
+        // Which turns the stage compressed, for the dashboard timeline
+        // (bounded integer array, never free text).
+        if (stageName === "thinking" && thinkingTurns.length > 0) row.turns = thinkingTurns;
+        if (stageName === "qac" && qacTurns.length > 0) row.turns = qacTurns;
+        // Mem sub-action attribution: the mem row names which rungs fired,
+        // not just the whole-body delta.
+        if (stageName === "mem" && memStats) {
+          const toolPrunedChars = memStats.toolPruning?.savedChars;
+          const mediaPrunedItems = memStats.mediaPruning?.savedItems;
+          const compactedTokens = memStats.compaction?.savedTokens;
+          if (Number.isFinite(toolPrunedChars)) row.toolPrunedChars = toolPrunedChars;
+          if (Number.isFinite(mediaPrunedItems)) row.mediaPrunedItems = mediaPrunedItems;
+          if (Number.isFinite(compactedTokens)) row.compactedTokens = compactedTokens;
+        }
+        onTokenSaverEvent?.(row);
       }
     }
   } catch {
@@ -1424,14 +1517,14 @@ export async function handleChatCore({
 
     if (error.name === "AbortError") {
       streamController.handleError(isAntigravity ? new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE) : error);
-      req("failed", { rid, conn: connPrefix, status: 499, why: "aborted" });
+      reqSummary("failed", { rid, conn: connPrefix, status: 499, why: "aborted", ...saverFields });
       return withSaverHeaders(createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted", null, null, rid), saverMeta);
     }
     const errMsg = isAntigravity
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
       : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (isBodyReadTimeoutError(error)) {
-      req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
+      reqSummary("failed", { rid, conn: connPrefix, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout", ...saverFields });
       return withSaverHeaders(createErrorResult(
         HTTP_STATUS.GATEWAY_TIMEOUT,
         isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream response body timed out",
@@ -1447,7 +1540,7 @@ export async function handleChatCore({
         `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${!isAntigravity && error.stack ? `\n    ${error.stack}` : ""}`,
       );
     }
-    req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.BAD_GATEWAY, why: "transport" });
+    reqSummary("failed", { rid, conn: connPrefix, status: HTTP_STATUS.BAD_GATEWAY, why: "transport", ...saverFields });
     return withSaverHeaders(createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, null, null, rid), saverMeta);
   };
   try {
@@ -1767,7 +1860,7 @@ export async function handleChatCore({
       );
     }
     reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
-    req("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream", ...saverFields });
+    reqSummary("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream", ...saverFields });
     return withSaverHeaders(createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata, rid), saverMeta);
   }
 

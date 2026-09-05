@@ -3,7 +3,7 @@
 <ts> REQ.ok rid=aa000001 conn=conn-aaa route=claude/claude-fable-5>claude/claude-fable-5 fmt=openai>claude sel=win row=<row> t=<ms> in=1900 out=50 cr=900 cw=0 ttft=<ms> path=XFORM.headroom-skip,XFORM.cache-legacy
 <ts> SEL.win rid=aa000002 conn=conn-aaa model=claude-fable-5 key=fallback-order win=true alt=conn-bbb:unknown rem=85 reset=<reset> why=initial-pin
 <ts> SEL.repin rid=aa000002 model=claude-fable-5 from=none to=conn-aaa trigger=initial-pin why=no-existing-pin rcpt=rcpt-replay
-<ts> REQ.failed rid=aa000002 conn=conn-aaa status=429 why=upstream ce=120
+<ts> REQ.failed rid=aa000002 conn=conn-aaa status=429 why=upstream ce=120 path=XFORM.headroom-skip,XFORM.cache-legacy
 <ts> LOCK.applied rid=aa000002 conn=conn-aaa prov=claude model=claude-fable-5 status=429 class=quota sched=backoff level=0 cooldown=60s cap=21600s why=retry-after expect_reset=true
 <ts> UP.failover rid=aa000002 from=conn-aaa to=pool why=locked-60s
 <ts> SEL.win rid=aa000002 conn=conn-bbb model=claude-fable-5 key=fallback-order win=true rem=85 reset=<reset> why=initial-pin

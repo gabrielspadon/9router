@@ -74,6 +74,24 @@ export async function applyMemoryEnhancements(body, options = {}) {
     return { body, stats };
   }
 
+  // Isolation, same discipline as chatCore's isolateCompressibleItems for RTK
+  // (#3566) and privacy: every mutation below (handoff injection, tool/media
+  // pruning, compaction) rewrites these arrays IN PLACE, and without a private
+  // copy an account-fallback retry would hand the pipeline an already-pruned
+  // body, so the second run trims ANOTHER slice of history (measured: a second
+  // pass re-trimmed 39,822 chars). Only the collections the pruners and the
+  // compactor actually touch are copied, never the whole body.
+  for (const key of ["messages", "input", "contents"]) {
+    if (!Array.isArray(body[key])) continue;
+    try {
+      body[key] = structuredClone(body[key]);
+    } catch {
+      // A non-cloneable item means this collection stays shared. Pruning is
+      // idempotent-ish rather than exact, so a shared array is a worse
+      // result, not a broken one.
+    }
+  }
+
   // 1. Phase 4: Pending Handoff Injection (if enabled). Additive, and it runs
   // BEFORE the measurement so what it adds is inside the budget rather than
   // smuggled past it.
@@ -188,6 +206,10 @@ export async function applyMemoryEnhancements(body, options = {}) {
       enabled: true,
       thresholdTokens: settings.memoryCompactionThresholdTokens ?? budget.budget,
       recentTurnsToKeep: settings.memoryRecentTurnsToKeep ?? 8,
+      // The compactor emits role:"system" blocks for other targets, but a
+      // claude body cannot carry those inside messages[] (the one normalizer
+      // that folds them has already run), so it labels a user-role note.
+      format: targetFormat,
     });
     if (compactRes.compacted) {
       // `savedTokens` is not a field the compactor returns; reading it gave

@@ -337,3 +337,30 @@ describe("chat.js admission refusal (the 73% line)", () => {
     warn.mockRestore();
   });
 });
+
+describe("path/save truncation cuts at whole codes (audit finding 19)", () => {
+  it("a 9-code path renders only whole codes plus an ellipsis, never a mid-code cut", () => {
+    const codes = Array.from({ length: 9 }, (_, i) => `XFORM.tool-distill${i}`);
+    const line = formatLine("REQ", "ok", { rid: "7f3a1c02", path: codes.join(",") }, AT);
+    const rendered = line.split("path=")[1];
+    const parts = rendered.split(",");
+    expect(rendered.length).toBeLessThanOrEqual(161); // 160 cap + ellipsis
+    for (let i = 0; i < parts.length; i++) {
+      if (i === parts.length - 1) expect(parts[i].endsWith("…")).toBe(true);
+      else expect(parts[i]).toMatch(/^XFORM\.[\w-]+$/);
+    }
+    // The cut kept the EARLIEST codes whole, dropping the tail.
+    expect(parts[0]).toBe("XFORM.tool-distill0");
+  });
+
+  it("save= gets the same whole-code treatment", () => {
+    const stages = Array.from({ length: 9 }, (_, i) => `stage${i}:-123456789`);
+    const line = formatLine("REQ", "ok", { rid: "7f3a1c02", save: stages.join(",") }, AT);
+    const rendered = line.split("save=")[1];
+    const parts = rendered.split(",");
+    expect(parts.at(-1).endsWith("…")).toBe(true);
+    for (let i = 0; i < parts.length - 1; i++) {
+      expect(parts[i]).toMatch(/^stage\d+:-?\d+$/);
+    }
+  });
+});

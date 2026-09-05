@@ -207,3 +207,24 @@ describe("property names colliding with STRIP_KEYS", () => {
     expect(defs.default.properties.example.default).toBeUndefined();
   });
 });
+
+describe("__proto__ property names survive distillation (audit finding 12)", () => {
+  it("a property literally named __proto__ stays an own property, with no prototype swap", () => {
+    // JSON.parse (not a literal) is what puts "__proto__" in as an own
+    // property, the way a real wire body carries it.
+    const schema = JSON.parse(
+      '{"type":"object","properties":{"__proto__":{"type":"string","title":"drop me"},"title":{"type":"string"}}}',
+    );
+    const pad = "z".repeat(9000);
+    const tools = [{ name: "t", description: pad, input_schema: schema }];
+    const { tools: distilled } = distillToolSchemas(tools);
+    const props = distilled[0].input_schema.properties;
+    expect(Object.prototype.hasOwnProperty.call(props, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(props)).toBe(Object.prototype);
+    expect(props.__proto__).toEqual({ type: "string" });
+    // round-trips through JSON intact
+    expect(JSON.parse(JSON.stringify(distilled))[0].input_schema.properties.__proto__).toEqual({
+      type: "string",
+    });
+  });
+});

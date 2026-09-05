@@ -52,3 +52,42 @@ describe("a Responses input array always gets a typed item (#3390)", () => {
     expect(body.input).toHaveLength(1);
   });
 });
+
+// The injector must never mutate caller arrays: caveman/ponytail replay the
+// same injection on every request of a session, and a shared array would
+// compound across retries the way the pre-#3566 RTK bug did.
+describe("injectSystemPrompt never mutates caller collections (audit finding 11)", () => {
+  it("claude: caller system array untouched, body gets a new one", () => {
+    const system = [
+      { type: "text", text: "base" },
+      { type: "text", text: "cached", cache_control: { type: "ephemeral" } },
+    ];
+    const body = { system };
+    expect(injectSystemPrompt(body, FORMATS.CLAUDE, "NEW RULES")).toBe(true);
+    expect(system).toHaveLength(2); // caller array untouched
+    expect(body.system).not.toBe(system);
+    expect(body.system).toHaveLength(3);
+    expect(body.system[1].text).toBe("NEW RULES"); // inserted BEFORE the cache anchor
+    expect(body.system[2].text).toBe("cached");
+  });
+
+  it("openai: caller messages array and the system message content array untouched", () => {
+    const content = [{ type: "text", text: "sys msg" }];
+    const messages = [{ role: "system", content }, { role: "user", content: "hi" }];
+    const body = { messages };
+    expect(injectSystemPrompt(body, FORMATS.OPENAI, "NEW RULES")).toBe(true);
+    expect(messages).toHaveLength(2);
+    expect(content).toHaveLength(1);
+    expect(body.messages).not.toBe(messages);
+    expect(body.messages[0].content).toHaveLength(2);
+  });
+
+  it("gemini: caller systemInstruction parts array untouched", () => {
+    const parts = [{ text: "base instruction" }];
+    const body = { systemInstruction: { parts } };
+    expect(injectSystemPrompt(body, FORMATS.GEMINI, "NEW RULES")).toBe(true);
+    expect(parts).toHaveLength(1);
+    expect(body.systemInstruction.parts).toHaveLength(2);
+    expect(body.systemInstruction.parts[0]).toBe(parts[0]); // shared first part, not cloned content
+  });
+});

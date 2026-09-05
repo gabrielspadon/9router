@@ -296,3 +296,74 @@ describe("tokenSaver event store", () => {
     expect(stats.windows.all.errors).toBe(0);
   });
 });
+
+describe("audit follow-ups: mem sub-action fields and turns allowlist", () => {
+  it("persists bounded mem attribution fields (toolPrunedChars, mediaPrunedItems, compactedTokens)", async () => {
+    const mod = await import("@/lib/tokenSaver/events.js");
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({
+      saver: "mem",
+      applied: true,
+      bytesSaved: -4200,
+      toolPrunedChars: 39822,
+      mediaPrunedItems: 3,
+      compactedTokens: 1200,
+      ce: 64,
+      rid: "abcdef12",
+    });
+    const rows = mod.readTokenSaverEvents();
+    const row = rows.at(-1);
+    expect(row.toolPrunedChars).toBe(39822);
+    expect(row.mediaPrunedItems).toBe(3);
+    expect(row.compactedTokens).toBe(1200);
+  });
+
+  it("drops malformed mem attribution fields and clamps negatives", async () => {
+    const mod = await import("@/lib/tokenSaver/events.js");
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({
+      saver: "mem",
+      applied: true,
+      toolPrunedChars: -5,
+      mediaPrunedItems: "many",
+      compactedTokens: NaN,
+    });
+    const row = mod.readTokenSaverEvents().at(-1);
+    expect(row.toolPrunedChars).toBe(0);
+    expect("mediaPrunedItems" in row).toBe(false);
+    expect("compactedTokens" in row).toBe(false);
+  });
+
+  it("persists the turns array capped at 8 integers, dropping garbage", async () => {
+    const mod = await import("@/lib/tokenSaver/events.js");
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({
+      saver: "qac",
+      applied: true,
+      bytesSaved: -100,
+      turns: [3, 1, "x", 7.6, 2, 9, 11, 4, 6, 8],
+    });
+    const row = mod.readTokenSaverEvents().at(-1);
+    expect(row.turns).toEqual([3, 1, 8, 2, 9, 11, 4, 6]);
+    expect(row.turns).toHaveLength(8);
+  });
+
+  it("drops a turns field that is not an array of numbers", async () => {
+    const mod = await import("@/lib/tokenSaver/events.js");
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({ saver: "qac", applied: true, bytesSaved: -1, turns: "0,1,2" });
+    mod.appendTokenSaverEvent({ saver: "qac", applied: true, bytesSaved: -1, turns: ["a", "b"] });
+    const rows = mod.readTokenSaverEvents();
+    expect("turns" in rows.at(-2)).toBe(false);
+    expect("turns" in rows.at(-1)).toBe(false);
+  });
+
+  it("accepts the tools saver", async () => {
+    const mod = await import("@/lib/tokenSaver/events.js");
+    mod.__setTokenSaverEventsDirForTest(TMP);
+    mod.appendTokenSaverEvent({ saver: "tools", applied: true, bytesSaved: -512, rid: "abcdef12" });
+    const row = mod.readTokenSaverEvents().at(-1);
+    expect(row.saver).toBe("tools");
+    expect(row.bytesSaved).toBe(-512);
+  });
+});

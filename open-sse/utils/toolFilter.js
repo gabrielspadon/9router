@@ -34,6 +34,17 @@ export function toolFilter(tools, config) {
   if (!Array.isArray(tools) || tools.length === 0) return tools;
   if (!config) return tools;
 
+  // A malformed operator config (a garbage regex, a non-array whitelist) must
+  // never throw into the request path: fail open and skip the filter.
+  try {
+    return applyFilter(tools, config);
+  } catch {
+    return tools;
+  }
+}
+
+function applyFilter(tools, config) {
+
   const {
     excludeServers = [],
     excludeTools = [],

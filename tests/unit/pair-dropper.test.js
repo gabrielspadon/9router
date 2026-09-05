@@ -196,3 +196,28 @@ describe("dropOldestPairs", () => {
     expect(result.droppedPairs).toBe(2);
   });
 });
+
+describe("depth cap protects, never drops (audit finding 14)", () => {
+  it("a tool_use nested deeper than the walk cap makes the pair undroppable", () => {
+    // 26 levels of {content:[...]} wrappers around a tool_use block: deeper
+    // than MAX_DEPTH (24). Over-depth must read as "contains marker" so the
+    // pair is protected, not as "clean" (which would drop tool structure).
+    let deep = { type: "tool_use", id: "tu-1", name: "read_file", input: {} };
+    for (let i = 0; i < 26; i++) deep = { content: [deep] };
+    const messages = [
+      { role: "user", content: "question about padding " + "pad ".repeat(60) },
+      { role: "assistant", content: [deep] },
+      { role: "user", content: "recent one" },
+      { role: "assistant", content: "recent two" },
+    ];
+    // The tail pair is protected by keepRecentTurns, so the ONLY candidate is
+    // the deep pair: over-depth must read as "contains marker" and protect it.
+    const res = dropOldestPairs(messages, {
+      deficitChars: 100,
+      keepRecentTurns: 2,
+      protectFirstUser: false,
+    });
+    expect(res.droppedPairs).toBe(0);
+    expect(res.messages).toBe(messages);
+  });
+});

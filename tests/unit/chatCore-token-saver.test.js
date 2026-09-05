@@ -55,9 +55,9 @@ vi.mock("../../open-sse/rtk/index.js", async (orig) => {
       if (!enabled) return null;
       const big = "x".repeat(800);
       const small = "x".repeat(100);
-      // mutate like real RTK: shrink one tool_result if present
+      // mutate like real RTK: shrink any long string content
       for (const m of (body.messages || [])) {
-        if (m?.role === "tool" && typeof m.content === "string" && m.content.length > 500) {
+        if (typeof m?.content === "string" && m.content.length > 500) {
           m.content = small;
         }
         if (Array.isArray(m?.content)) {
@@ -316,4 +316,27 @@ describe("chatCore tokenSaver regressions", () => {
     const cavemanClaims = gearLines.filter((c) => String(c[2]).includes("CAVEMAN:full"));
     expect(cavemanClaims).toHaveLength(1);
   });
+
+  it("failed requests keep save= and path= on the REQ.failed line (audit finding 20)", async () => {
+    const consoleLines = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args) => {
+      consoleLines.push(args.map(String).join(" "));
+    });
+    let result;
+    try {
+      mocks.executeMock.mockRejectedValueOnce(new Error("socket hang up"));
+      result = await handleChatCore(baseArgs({ requestId: "fa110001" }));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result).toBeTruthy();
+    const failed = consoleLines.find((l) => l.includes(" REQ.failed "));
+    expect(failed).toBeTruthy();
+    // RTK ran before the transport blew up: its byte delta and folded path
+    // code must survive on the failure line, not only on REQ.ok.
+    expect(failed).toMatch(/ save=rtk:-/);
+    expect(failed).toMatch(/path=\S*XFORM\.rtk-applied/);
+    expect(failed).toContain("rid=fa110001");
+  });
+
 });

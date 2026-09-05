@@ -214,3 +214,58 @@ describe("the wiring that makes it reachable (#2728)", () => {
     expect(streamSrc).toContain("restoreResponseStream(privacyFilter, transformedBody)");
   });
 });
+
+// The content-walk must be KEY-AWARE: blocks under message.content include
+// tool_use.id/name and tool_result.tool_call_id, and a privacy term that
+// collides with a tool name must not rewrite them (the outbound call would
+// desync from body.tools and the upstream 400s). Text-bearing keys inside a
+// tool_use input still redact.
+describe("protocol keys survive the content walk (audit finding 1)", () => {
+  it("tool_use.id/name and tool_result.tool_call_id stay byte-identical when a term matches the tool name", () => {
+    const f = createPrivacyFilter({ emails: false, terms: ["gmail"] });
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_gmail_1",
+              name: "gmail_search",
+              input: { query: "search gmail for the shipping label" },
+            },
+            { type: "tool_result", tool_use_id: "toolu_gmail_1", content: "found the label" },
+          ],
+        },
+      ],
+      tools: [{ name: "gmail_search", description: "search gmail" }],
+    };
+    expect(f.redactBody(body)).toBeGreaterThan(0);
+    const toolUse = body.messages[0].content[0];
+    expect(toolUse.name).toBe("gmail_search");
+    expect(toolUse.id).toBe("toolu_gmail_1");
+    expect(body.messages[0].content[1].tool_use_id).toBe("toolu_gmail_1");
+    expect(body.tools[0].name).toBe("gmail_search");
+    // The operator term inside the tool_use INPUT string still redacts.
+    expect(JSON.stringify(toolUse.input)).toContain("[redacted-1]");
+    expect(JSON.stringify(toolUse.input)).not.toContain("gmail");
+  });
+
+  it("redacts thinking text but never the Claude signature", () => {
+    const f = createPrivacyFilter();
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "ada@example.com figured it out", signature: "sig-ada@example.com" },
+          ],
+        },
+      ],
+    };
+    f.redactBody(body);
+    const block = body.messages[0].content[0];
+    expect(block.thinking).not.toContain("ada@example.com");
+    expect(block.signature).toBe("sig-ada@example.com");
+  });
+});

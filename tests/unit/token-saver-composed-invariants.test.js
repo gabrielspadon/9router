@@ -318,17 +318,22 @@ describe("composed saver pipeline invariants", () => {
     expect(mocks.dispatched.length).toBeLessThan(entryBytes);
 
     // -- final body structure: compactor contract --------------------------
+    // Claude targets cannot carry role:"system" inside messages[], so the
+    // summary+notice ship as ONE user-role note under the midPrefixInject
+    // "[tokenproxy context note]" label (a claude body rejected by the API is
+    // worse than a labeled synthetic user note).
     const dispatched = JSON.parse(mocks.dispatched);
     const entryBody = JSON.parse(entry);
     const msgs = dispatched.messages;
-    expect(msgs).toHaveLength(4);
-    expect(msgs.map((m) => m.role)).toEqual(["system", "system", "assistant", "user"]);
+    expect(msgs).toHaveLength(3);
+    expect(msgs.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(msgs[0].content).toContain("[tokenproxy context note] ");
     expect(msgs[0].content).toContain("[Historical Context Summary by tokenproxy Memory Optimizer]");
     expect(typeof msgs[0].content).toBe("string");
 
     // recent window: byte-identical to the entry tail
-    expect(JSON.stringify(msgs[2])).toBe(JSON.stringify(entryBody.messages[9]));
-    expect(JSON.stringify(msgs[3])).toBe(JSON.stringify(entryBody.messages[10]));
+    expect(JSON.stringify(msgs[1])).toBe(JSON.stringify(entryBody.messages[9]));
+    expect(JSON.stringify(msgs[2])).toBe(JSON.stringify(entryBody.messages[10]));
 
     // tool_use/tool_result pairing in the survivors
     const toolUseIds = new Set();
@@ -344,12 +349,12 @@ describe("composed saver pipeline invariants", () => {
     expect(toolUseIds.has("tu-5")).toBe(true);
 
     // is_error evidence: full 3000 chars, flag intact
-    const errBlock = msgs[3].content[0];
+    const errBlock = msgs[2].content[0];
     expect(errBlock.is_error).toBe(true);
     expect(errBlock.content).toBe("E".repeat(3000));
 
     // thinking signature intact in the recent assistant turn
-    const thinking = msgs[2].content.find((b) => b.type === "thinking");
+    const thinking = msgs[1].content.find((b) => b.type === "thinking");
     expect(thinking.signature).toBe(mkSig("sig-C"));
     expect(thinking.thinking).toBe("stderr says the regression is in the parser");
 
@@ -359,7 +364,7 @@ describe("composed saver pipeline invariants", () => {
     const sysAnchor = dispatched.system.find((b) => b.text === "You are a careful engineer.");
     expect(sysAnchor.cache_control).toEqual({ type: "ephemeral" });
     expect(dispatched.tools[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
-    const textBlock = msgs[2].content.find((b) => b.type === "text");
+    const textBlock = msgs[1].content.find((b) => b.type === "text");
     expect(textBlock.cache_control).toEqual({ type: "ephemeral" });
 
     // -- compaction replaced the history: RTK/headroom/pruner effects all --

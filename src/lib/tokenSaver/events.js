@@ -16,7 +16,7 @@ const TOKEN_SAVER_DIR = path.join(DATA_DIR, "token-saver");
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const SAVERS = new Set(["rtk", "headroom", "pxpipe", "inject", "mem", "schema", "privacy", "thinking", "qac", "pairs", "reorder", "midinject"]);
+const SAVERS = new Set(["rtk", "headroom", "pxpipe", "inject", "mem", "schema", "privacy", "thinking", "qac", "pairs", "reorder", "midinject", "tools"]);
 // Bounded reason enum — only vetted labels, never free-form diagnostics text.
 const REASONS = new Set(["phantom"]);
 
@@ -129,6 +129,20 @@ export function appendTokenSaverEvent(event) {
     if (ce !== undefined) row.ce = ce;
     const images = clampMetric(event.imageCount, { integer: true });
     if (images !== undefined) row.imageCount = images;
+    // Mem sub-action attribution: bounded nonnegative integers, never text.
+    for (const key of ["toolPrunedChars", "mediaPrunedItems", "compactedTokens"]) {
+      const v = clampMetric(event[key], { integer: true });
+      if (v !== undefined) row[key] = v;
+    }
+    // Which turns a prefix stage compressed: bounded integer array (cap 8),
+    // free text and non-finite entries dropped.
+    if (Array.isArray(event.turns)) {
+      const turns = event.turns
+        .filter((t) => Number.isFinite(Number(t)))
+        .map((t) => Math.round(Number(t)))
+        .slice(0, 8);
+      if (turns.length > 0) row.turns = turns;
+    }
     const dur = clampMetric(event.durationMs);
     if (dur !== undefined) row.durationMs = dur;
     if (REASONS.has(event.reason)) row.reason = event.reason;

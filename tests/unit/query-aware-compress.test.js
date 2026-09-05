@@ -204,3 +204,79 @@ describe("compressPrefixByQuery", () => {
     expect(result.messages[0].content[1].text).toContain("[tokenproxy:");
   });
 });
+
+const ELIDE_MARKER = "head\n[elided 12 chars · hmac abcdef12 · head+tail preserved by tokenproxy]\ntail";
+
+describe("audit follow-ups: elide-marker awareness, 0.04 default, emoji-safe previews", () => {
+  it("never placeholder-compresses a historical block carrying the rtk elide marker, even at score 0", () => {
+    // Zero lexical overlap with the query: score 0, far below any threshold.
+    const messages = [
+      { role: "user", content: `unrelated lunch pizza salad debate notes `.repeat(4) + ELIDE_MARKER },
+      { role: "assistant", content: "pizza place closes at six" },
+      { role: "user", content: "how do I configure the retry backoff for the api gateway" },
+    ];
+    const result = compressPrefixByQuery(messages, {
+      query: "reticulated spline calibration procedure guide",
+    });
+    expect(result.compressed).toBe(0); // marker turn is the only historical one
+    expect(result.messages[0].content).toContain("head+tail preserved by tokenproxy");
+    expect(result.messages[0].content).not.toContain("compressed, low relevance");
+  });
+
+  it("guards the block-content path too: a text block with the marker survives inside array content", () => {
+    const messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "banana logistics notes " + ELIDE_MARKER },
+        ],
+      },
+      { role: "assistant", content: "the banana place closes at six" },
+      { role: "user", content: "how do I configure the retry backoff for the api gateway" },
+    ];
+    const result = compressPrefixByQuery(messages, {
+      query: "reticulated spline calibration procedure guide",
+    });
+    expect(result.compressed).toBe(0);
+    expect(result.messages[0].content[0].text).toContain("head+tail preserved by tokenproxy");
+  });
+
+  it("default threshold is 0.04: keeps a weakly-relevant block that 0.08 destroyed", () => {
+    // 1 of 8 query terms in a 4-word block: score ~0.079, inside (0.04, 0.08).
+    const messages = [
+      { role: "user", content: "hotel booking for tonight" },
+      { role: "assistant", content: "ok" },
+      { role: "user", content: "alpha bravo charlie delta echo foxtrot golf query" },
+    ];
+    const kept = compressPrefixByQuery(messages, {
+      query: "alpha bravo charlie delta echo foxtrot golf hotel",
+      keepRecentTurns: 1,
+    });
+    // score ~0.079: the weakly-relevant hotel block survives the 0.04 default
+    // by reference, while the old 0.08 default destroyed it.
+    expect(kept.messages[0]).toBe(messages[0]);
+    const destroyed = compressPrefixByQuery(messages, {
+      query: "alpha bravo charlie delta echo foxtrot golf hotel",
+      keepRecentTurns: 1,
+      threshold: 0.08,
+    });
+    expect(destroyed.compressed).toBe(2);
+    expect(destroyed.messages[0]).not.toBe(messages[0]);
+  });
+
+  it("preview slices on code points: an emoji at the cut never splits into a lone surrogate", () => {
+    const messages = [
+      { role: "user", content: "😀".repeat(10) + " more text here" },
+      { role: "assistant", content: "ok" },
+      { role: "user", content: "alpha bravo charlie delta echo foxtrot golf hotel" },
+    ];
+    const result = compressPrefixByQuery(messages, {
+      query: "alpha bravo charlie delta echo foxtrot golf hotel",
+      keepRecentTurns: 1,
+      previewChars: 10,
+    });
+    const placeholder = result.messages[0].content;
+    expect(placeholder).toContain("😀".repeat(10));
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(placeholder)).toBe(false);
+  });
+});

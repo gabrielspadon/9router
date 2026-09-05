@@ -113,3 +113,41 @@ describe("pxpipe event payload carries saver:'pxpipe'", () => {
     expect(event.reason).toBe("transform_error");
   });
 });
+
+// Audit finding 9: pxpipe used to emit only to its own sink (onPxpipeEvent),
+// never joining the main token-saver stage table. It now ALSO emits a row the
+// dashboard stage table and the rid-join read, and folds XFORM.pxpipe-applied
+// into the REQ path.
+describe("pxpipe joins the main token-saver sink", () => {
+  // Fresh executor Response per test: a Response body can be consumed once,
+  // and this describe has no access to the sibling describe's beforeEach.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatCoreMocks.executeMock.mockResolvedValue(makeExecutorRes());
+  });
+
+  it("applied path: main-sink row with rid, bytesSaved, imageCount, and the path code", async () => {
+    const onTokenSaverEvent = vi.fn();
+    const consoleLines = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args) => {
+      consoleLines.push(args.map(String).join(" "));
+    });
+    try {
+      await handleChatCore(pxpipeArgs({ onTokenSaverEvent, requestId: "ppx00001" }));
+    } finally {
+      spy.mockRestore();
+    }
+    const row = onTokenSaverEvent.mock.calls.find((c) => c[0]?.saver === "pxpipe")?.[0];
+    expect(row).toBeDefined();
+    expect(row.rid).toBe("ppx00001");
+    expect(row.applied).toBe(true);
+    expect(typeof row.bytesSaved).toBe("number");
+    expect(row.imageCount).toBe(1);
+    // The native pxpipe UI emit still fires alongside the main-sink row.
+    expect(chatCoreMocks.onPxpipeEvent.mock.calls.at(-1)?.[0]?.saver).toBe("pxpipe");
+    // Path code rides the REQ.ok line.
+    const reqLine = consoleLines.find((l) => l.includes(" REQ.ok "));
+    expect(reqLine).toBeTruthy();
+    expect(reqLine).toContain("XFORM.pxpipe-applied");
+  });
+});

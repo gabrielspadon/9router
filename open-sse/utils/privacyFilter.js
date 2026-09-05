@@ -16,9 +16,24 @@
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const ALIAS_DOMAIN = "redacted.invalid";
 
-// Keys whose string values are model-visible prose. Everything else (ids,
-// roles, types, tool_call_id) is protocol and must survive byte-identical.
-const CONTENT_KEYS = new Set(["text", "content", "output", "input_text", "system"]);
+// Keys whose string values are model-visible prose. Everything else is
+// protocol and must survive byte-identical.
+const CONTENT_KEYS = new Set(["text", "content", "output", "input_text", "system", "thinking"]);
+// Protocol keys: their string values are identifiers and names, never prose.
+// A privacy term that collides with a tool name must NOT rewrite
+// tool_use.name/tool_call_id, or the outbound call desyncs from body.tools
+// and the upstream 400s. Descending into these keys is skipped entirely.
+const PROTOCOL_KEYS = new Set([
+  "id",
+  "name",
+  "type",
+  "role",
+  "tool_call_id",
+  "tool_use_id",
+  "signature",
+  "caller",
+  "callee",
+]);
 const MAX_DEPTH = 12;
 
 function escapeRe(s) {
@@ -91,6 +106,7 @@ export function createPrivacyFilter({ emails = true, terms = [] } = {}) {
     }
     if (typeof node !== "object") return node;
     for (const key of Object.keys(node)) {
+      if (PROTOCOL_KEYS.has(key)) continue; // protocol survives byte-identical
       node[key] = walk(node[key], depth + 1, inContent || CONTENT_KEYS.has(key));
     }
     return node;

@@ -355,9 +355,9 @@ Row 51 is the misreport in section 1.5.
 
 | # | Fork | `file:line` | Cost |
 |---|---|---|---|
-| 52 | headroom skip (disabled vs unavailable vs reason) | `chatCore.js:750-757` | folded |
-| 53 | headroom phantom savings (delta reported, JSON shrank <5%) | `chatCore.js:744-748` | 130 B, always |
-| 54 | tool-disclosure bm25 strip | `chatCore.js:575-592` | folded |
+| 52 | headroom skip (disabled vs unavailable vs reason) | `chatCore.js:1020` | folded |
+| 53 | headroom phantom savings (delta reported, JSON shrank <5%) | `chatCore.js:1007` | 130 B, always |
+| 54 | tool-disclosure bm25 strip | `chatCore.js:605-673` | folded |
 | 55 | retry same account | `chat.js:860` | 110 B, always |
 | 56 | failover to next account | `chat.js:788,864,868` | 125 B, always |
 | 57 | attempt ceiling reached | `chat.js:840` | 100 B, always |
@@ -371,16 +371,28 @@ Row 51 is the misreport in section 1.5.
 | 65 | requestDetail left `pending` (second write never landed) | `streamingHandler.js:444-470` | 100 B, always |
 | 66 | cache alias normalization dropped a spelling | `usageTracking.js:207` | 115 B, always |
 | 67 | drain begin / end transition | `admin/drain/[connectionId]/route.js:56-92` | 105 B, always |
-| 68 | schema distillation stripped validation-noise keywords | `chatCore.js:705-714` | folded |
-| 69 | thinking strip removed historical reasoning blocks | `chatCore.js` prefix stages | folded |
-| 70 | query-aware compression collapsed low-relevance turns | `chatCore.js` prefix stages | folded |
-| 71 | pair dropping removed oldest text-only turn pairs under deficit | `chatCore.js` prefix stages | folded |
-| 72 | embedding reorder moved relevant turns next to the tail | `chatCore.js` prefix stages | folded |
-| 73 | mid-prefix note summarizing the prefix optimizations | `chatCore.js` prefix stages | folded |
+| 68 | schema distillation stripped validation-noise keywords | `chatCore.js:773-782` | folded |
+| 69 | thinking strip removed historical reasoning blocks | `chatCore.js:823` | folded |
+| 70 | query-aware compression collapsed low-relevance turns | `chatCore.js:850` | folded |
+| 71 | pair dropping removed oldest text-only turn pairs under deficit (after the mem stage) | `chatCore.js:1147` | folded |
+| 72 | embedding reorder moved relevant turns next to the tail | `chatCore.js:894` | folded |
+| 73 | mid-prefix note summarizing the prefix optimizations | `chatCore.js:1196` | folded |
+| 74 | tools normalization (dedupe + static filter + BM25 disclosure) stripped tools: tools bytes measured before dedupeTools, stage closed after disclosureTools, folded into `save=` as a `tools` stage entry | `chatCore.js:605-673` | folded |
+| 75 | rtk applied | `chatCore.js:926` | folded |
+| 76 | headroom applied | `chatCore.js:997` | folded |
+| 77 | memory tool pruning reclaimed history | `chatCore.js:1111` | folded |
+| 78 | context compaction replaced older turns | `chatCore.js:1118` | folded |
+| 79 | style prompt injected (caveman/ponytail) | `chatCore.js:1040-1048` | folded |
+| 80 | privacy filter pseudonymised outbound values | `chatCore.js:959` | folded |
+| 81 | pxpipe compressed bulky images | `chatCore.js:1072` | folded |
+| 82 | pending session handoff injected | `chatCore.js:1121` | folded |
+| 83 | claude cache anchors kept vs re-anchored | `chatCore.js:1222` | folded |
+| 84 | saver grew the body >5% of entry bytes | `chatCore.js:1304` | 115 B, on anomaly |
+| 85 | embedding reorder degraded (embed endpoint failed, prefix left in order) | `chatCore.js:884` | 120 B, on embed failure |
 
-Rows 1-73 with the folded sub-forks collapsed give **60 distinct emitting
+Rows 1-85 with the folded sub-forks collapsed give **62 distinct emitting
 decision points**, of which 10 are nominal-path and fold into the summary line,
-and 50 speak only when they fire.
+and 52 speak only when they fire.
 
 ---
 

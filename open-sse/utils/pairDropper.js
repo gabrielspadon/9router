@@ -31,7 +31,11 @@ const TOOL_MARKER_TYPES = new Set([
 const MAX_DEPTH = 24;
 
 function containsToolMarker(value, depth) {
-  if (value === null || typeof value !== "object" || depth > MAX_DEPTH) return false;
+  if (value === null || typeof value !== "object") return false;
+  // Over-depth is PROTECT, never droppable: a tool_use nested deeper than the
+  // walk can see may be hiding below the cap, and treating an unseen subtree
+  // as clean could drop a pair carrying tool structure.
+  if (depth > MAX_DEPTH) return true;
   if (Array.isArray(value)) {
     for (const item of value) {
       if (containsToolMarker(item, depth + 1)) return true;

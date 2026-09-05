@@ -38,10 +38,18 @@ function distillNode(node, notes, parentKey) {
     if (key === "description" && typeof value === "string") {
       const collapsed = collapseWs(value);
       if (collapsed !== value) notes.add("ws:description");
-      out[key] = collapsed;
+      // defineProperty, not out[key] = : a key literally named "__proto__"
+      // would otherwise silently swap the object's prototype instead of
+      // becoming an own property and be lost on the next JSON.stringify.
+      Object.defineProperty(out, key, { value: collapsed, enumerable: true, configurable: true, writable: true });
       continue;
     }
-    out[key] = distillNode(value, notes, key);
+    Object.defineProperty(out, key, {
+      value: distillNode(value, notes, key),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return out;
 }

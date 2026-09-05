@@ -10,9 +10,19 @@
  * while consolidating older turns into a structured summary block.
  */
 
+import { ELIDE_MARKER_RE } from "../../rtk/filters/elide.js";
+
 const DEFAULT_THRESHOLD_TOKENS = 32000;
 const DEFAULT_RECENT_TURNS = 8;
 const CHARS_PER_TOKEN_ESTIMATE = 3.8;
+
+// Claude-target bodies cannot carry role:"system" inside messages[]: the one
+// claude normalizer that folds system messages runs BEFORE the memory stage,
+// so a system-role summary ships an API-rejected shape. The midPrefixInject
+// convention labels synthetic user notes "[tokenproxy context note] "; the
+// compactor's claude summary uses the same label so the model (and every
+// reader) can tell it from a real user turn.
+const CLAUDE_USER_NOTE_PREFIX = "[tokenproxy context note] ";
 
 /**
  * Fast conservative token estimation
@@ -43,7 +53,21 @@ function summarizeMessage(msg) {
     contentText = msg.content;
   } else if (Array.isArray(msg.content)) {
     contentText = msg.content
-      .map((c) => (c?.type === "text" ? c.text : c?.type === "tool_use" ? `[called tool: ${c.name}]` : c?.type === "tool_result" ? `[tool result: ${typeof c.content === "string" ? c.content.slice(0, 100) : "output"}]` : ""))
+      .map((c) => {
+        if (c?.type === "text") return c.text;
+        if (c?.type === "tool_use") return `[called tool: ${c.name}]`;
+        if (c?.type === "tool_result") {
+          // An elided result keeps its integrity marker verbatim (R-F5
+          // discipline): the summary names it as preserved and carries the
+          // marker text itself, never the fabricated word "output".
+          if (typeof c.content === "string" && ELIDE_MARKER_RE.test(c.content)) {
+            const marker = c.content.match(ELIDE_MARKER_RE)[0];
+            return `[elided tool result preserved verbatim, ${c.content.length} chars] ${marker}`;
+          }
+          return `[tool result: ${typeof c.content === "string" ? c.content.slice(0, 100) : "output"}]`;
+        }
+        return "";
+      })
       .filter(Boolean)
       .join(" ");
   } else if (typeof msg.output === "string") {
@@ -71,11 +95,21 @@ function summarizeMessage(msg) {
  * @returns {{ body: Object, compacted: boolean, originalTokens: number, newTokens: number }}
  */
 export function compactContextWindow(body, options = {}) {
-  const {
-    enabled = false,
-    thresholdTokens = DEFAULT_THRESHOLD_TOKENS,
-    recentTurnsToKeep = DEFAULT_RECENT_TURNS,
-  } = options;
+  const { enabled = false } = options;
+  // Coerce with Number.isFinite fallbacks: NaN or a non-numeric threshold made
+  // the size gate fire spuriously (every comparison against NaN is false, so
+  // the "below threshold" early return never matched), and a recentTurnsToKeep
+  // of 0 or less replaced the WHOLE conversation including the current query.
+  const thresholdTokens =
+    Number.isFinite(Number(options.thresholdTokens)) && Number(options.thresholdTokens) > 0
+      ? Math.floor(Number(options.thresholdTokens))
+      : DEFAULT_THRESHOLD_TOKENS;
+  const recentTurnsToKeep = Math.max(
+    1,
+    Number.isFinite(Number(options.recentTurnsToKeep)) && Number(options.recentTurnsToKeep) >= 1
+      ? Math.floor(Number(options.recentTurnsToKeep))
+      : DEFAULT_RECENT_TURNS,
+  );
 
   if (!enabled || !body || typeof body !== "object") {
     return { body, compacted: false, originalTokens: 0, newTokens: 0 };
@@ -96,19 +130,29 @@ export function compactContextWindow(body, options = {}) {
     return { body, compacted: false, originalTokens, newTokens: originalTokens };
   }
 
-  // Preserve system messages at the start
+  // Preserve leading system messages at the start. System messages that
+  // appear LATER in the conversation used to fall into the compacted region,
+  // where the per-message 250-char summary cap silently dropped their content;
+  // they are now preserved verbatim right after the summary blocks instead.
   const systemMessages = [];
-  let conversationStartIndex = 0;
   for (let i = 0; i < items.length; i++) {
-    if (items[i]?.role === "system") {
-      systemMessages.push(items[i]);
-      conversationStartIndex = i + 1;
-    } else {
-      break;
-    }
+    if (items[i]?.role !== "system") break;
+    systemMessages.push(items[i]);
+  }
+  const conversationStartIndex = systemMessages.length;
+
+  // System messages past the head used to fall into the compacted region,
+  // where the per-message summary cap silently dropped their content. They
+  // are pulled out verbatim and re-spliced after the summary blocks; they are
+  // also excluded from the summary input's turn accounting below.
+  const midSystemMessages = [];
+  for (let i = conversationStartIndex; i < items.length; i++) {
+    if (items[i]?.role === "system") midSystemMessages.push(items[i]);
   }
 
-  const conversationalItems = items.slice(conversationStartIndex);
+  const conversationalItems = items
+    .slice(conversationStartIndex)
+    .filter((m) => m?.role !== "system");
   if (conversationalItems.length <= recentTurnsToKeep) {
     return { body, compacted: false, originalTokens, newTokens: originalTokens };
   }
@@ -193,28 +237,38 @@ function buildSummary(olderItems) {
 
   const summaryContent = buildSummary(olderItems);
 
-  // Both compaction blocks carry role "system", not "user"/"assistant" (#2187).
-  // The original shape put a summary INTO a fabricated user turn and then had
-  // a fabricated assistant turn "acknowledge" it -- a model was told the user
-  // said something they never said, and that it replied to it, which is the
-  // exact shape prompt-injection training flags on tool-history content.
-  // Framing both blocks as system-scoped notices instead removes the invented
-  // dialogue while keeping the same two-message slot so recentItems still
-  // follow immediately after.
-  const summaryMessage = {
-    role: "system",
-    content: summaryContent,
-  };
+  // #2187: the summary never rides a fabricated user/assistant dialogue. For
+  // non-claude targets both blocks carry role "system" (system-scoped notices).
+  // Claude targets cannot: role:"system" inside messages[] is rejected by the
+  // API once the one system-folding normalizer has already run, so there the
+  // summary+notice ship as ONE user-role note under the midPrefixInject
+  // "[tokenproxy context note]" label, which marks it as proxy-written.
+  const compactionNoticeText =
+    "The summary above replaces the compacted turns above it; continue the conversation using it as context.";
+  const claudeTarget = options.format === "claude";
 
-  const compactionNotice = {
-    role: "system",
-    content: "The summary above replaces the compacted turns above it; continue the conversation using it as context.",
-  };
+  const summaryMessage = claudeTarget
+    ? {
+        role: "user",
+        content: `${CLAUDE_USER_NOTE_PREFIX}${summaryContent}\n\n${compactionNoticeText}`,
+      }
+    : {
+        role: "system",
+        content: summaryContent,
+      };
+
+  const compactionNotice = claudeTarget
+    ? null
+    : {
+        role: "system",
+        content: compactionNoticeText,
+      };
 
   const compactedMessages = [
     ...systemMessages,
     summaryMessage,
-    compactionNotice,
+    ...(compactionNotice ? [compactionNotice] : []),
+    ...midSystemMessages,
     ...recentItems,
   ];
 

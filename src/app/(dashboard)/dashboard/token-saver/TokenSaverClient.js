@@ -29,6 +29,8 @@ const STAGE_LABELS = {
   pairs: "Pair dropping",
   reorder: "Embed reorder",
   midinject: "Mid-prefix note",
+  tools: "Tools normalization",
+  pxpipe: "PXPIPE",
 };
 
 const stageLabel = (saver) =>

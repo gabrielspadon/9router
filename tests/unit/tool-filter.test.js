@@ -116,3 +116,17 @@ describe("toolFilter", () => {
     expect(result[0].function.name).toBe("Bash");
   });
 });
+
+describe("fail-open on malformed operator config (audit finding 15)", () => {
+  it("a garbage regex config no-ops instead of throwing into the request", () => {
+    const tools = [mkTool("alpha"), mkTool("beta")];
+    expect(toolFilter(tools, { excludeDescriptionPattern: "([" })).toBe(tools);
+    expect(toolFilter(tools, { includeOnlyDescriptionPattern: "a{2,1}" })).toBe(tools);
+  });
+
+  it("a non-array whitelist shape no-ops instead of throwing", () => {
+    const tools = [mkTool("alpha"), mkTool("beta")];
+    const out = toolFilter(tools, { excludeTools: "not-an-array" });
+    expect(out).toEqual(tools); // unchanged content, fail-open
+  });
+});

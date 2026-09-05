@@ -307,3 +307,20 @@ describe("SEC-1: HMAC integrity marker", () => {
     expect(parseElided(elide(a)).hmac).not.toBe(parseElided(elide(b)).hmac);
   });
 });
+
+// Audit finding 13: the tail boundary used to be able to land between the two
+// UTF-16 units of an emoji, splitting a surrogate pair into the marker.
+describe("elide never splits a surrogate pair at the tail boundary", () => {
+  it("tail starting on a low surrogate advances past the whole pair", () => {
+    // 4999 'a' + one emoji (2 UTF-16 units) + 999 'b': len = 6000, so the raw
+    // tailStart (len - 1000 = 5000) is the emoji's LOW surrogate.
+    const input = "a".repeat(4999) + "\u{1F600}" + "b".repeat(999);
+    const out = compressOne(input).after;
+    const parsed = parseElided(out);
+    // The whole pair elides into the middle; the tail is the intact 999 'b's.
+    expect(parsed.tail).toBe("b".repeat(999));
+    expect(out.endsWith("b".repeat(999))).toBe(true);
+    // No orphaned surrogate half survives anywhere in the output.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(out)).toBe(false);
+  });
+});
