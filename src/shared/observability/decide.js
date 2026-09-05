@@ -27,8 +27,16 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { redactSecretsText } from 'open-sse/utils/redact.js';
-import { DATA_DIR } from '@/lib/dataDir.js';
+// RELATIVE, not 'open-sse/...': this module is also reached from plain-node
+// open-sse importers (tokenRefresh/dedup.js), where the bare 'open-sse'
+// specifier does not resolve. redact.js imports nothing, so the chain stays
+// dependency-free.
+import { redactSecretsText } from '../../../open-sse/utils/redact.js';
+// RELATIVE, not '@/': open-sse modules (tokenRefresh/dedup.js and friends) emit
+// through this file and must stay importable under plain node — the
+// open-sse-plain-node-imports test forbids the '@/'' alias on this path, and
+// dataDir.js itself imports only node builtins.
+import { DATA_DIR } from '../../lib/dataDir.js';
 
 /**
  * The closed verdict vocabulary, one frozen list per class. A verdict that is
@@ -48,13 +56,16 @@ export const VERDICTS = Object.freeze({
   LEASE: Object.freeze(['refused', 'ungated', 'double-release']),
   CRED: Object.freeze(['refresh-failed', 'rotated', 'same', 'chain-diverged', 'dedup-reuse', 'no-refresh-path']),
   LOCK: Object.freeze(['applied', 'permanent', 'monthly-reset', 'clamped']),
-  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip']),
+  // rtk-applied/headroom-applied/mem-pruned/compact-applied/injected are the
+  // token-saver path codes: folded into REQ.ok's path= (and save= carries the
+  // measured bytes), so a saver never costs a line on the nominal path.
+  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy', 'rtk-applied', 'headroom-applied', 'mem-pruned', 'compact-applied', 'injected', 'saver-guard']),
   UP: Object.freeze(['retry', 'failover', 'attempt-ceiling', 'replay-overflow']),
   STREAM: Object.freeze(['stalled', 'empty', 'non-sse', 'terminal-synthesized', 'usage-estimated', 'detail-pending']),
   ACCT: Object.freeze(['detail-write-failed', 'alias-dropped']),
   DRAIN: Object.freeze(['begin', 'end']),
   REQ: Object.freeze(['ok', 'failed', 'refused']),
-  LOG: Object.freeze(['throttled', 'resumed', 'sink-failed', 'unknown-verdict']),
+  LOG: Object.freeze(['throttled', 'resumed', 'sink-failed', 'unknown-verdict', 'boot']),
 });
 
 /** The identity keys, always first and always in this order, so one grep for
@@ -189,7 +200,12 @@ function hhmmss(ms) {
   return new Date(ms).toISOString().slice(11, 19);
 }
 
-function scalar(value) {
+// Path folds are machine-generated CLASS.verdict tokens joined by commas —
+// never free text — so they render under a wider cap than free-text values.
+// takePath() already bounds them; this is the backstop at the same width.
+const PATH_VALUE_CHARS = 120;
+
+function scalar(value, key = null) {
   if (value === null || value === undefined) return null;
   const t = typeof value;
   if (t === 'boolean') return value ? 'true' : 'false';
@@ -197,9 +213,10 @@ function scalar(value) {
   if (t === 'bigint') return String(value);
   if (t !== 'string') return '[non-scalar]';
   if (value === '') return null;
+  const cap = key === 'path' ? PATH_VALUE_CHARS : MAX_VALUE_CHARS;
   const safe = redactSecretsText(value)
     .replace(/[\s\u0000-\u001f\u007f]+/g, '_');
-  return safe.length > MAX_VALUE_CHARS ? `${safe.slice(0, MAX_VALUE_CHARS)}…` : safe;
+  return safe.length > cap ? `${safe.slice(0, cap)}…` : safe;
 }
 
 function orderedEntries(fields) {
@@ -209,7 +226,7 @@ function orderedEntries(fields) {
   const push = (k) => {
     if (seen.has(k) || !Object.hasOwn(fields, k)) return;
     seen.add(k);
-    const v = scalar(fields[k]);
+    const v = scalar(fields[k], k);
     if (v !== null) out.push([k, v]);
   };
   for (const k of LEAD_KEYS) push(k);
@@ -403,11 +420,92 @@ export function req(verdict, fields = {}, nowMs = Date.now()) {
   return write('REQ', verdict, fields, nowMs);
 }
 
+// ------------------------------------------------------------- path folding ---
+//
+// The mechanism that keeps the nominal path silent without losing it. Every
+// fold-eligible fork appends its `CLASS.verdict` code to a per-request list
+// instead of emitting a line; the REQ summary prints the list as `path=`. A
+// request whose path is empty took every default.
+//
+// Bound three ways so the collector cannot become the leak: codes cap at 12
+// per request (the doc's hard ceiling is one line per class), entries expire
+// 10 minutes after their last append (a request that never reaches REQ leaves
+// no state behind), and the map itself sweeps at 4096 entries.
+
+const PATH_MAX_CODES = 12;
+const PATH_ENTRY_TTL_MS = 10 * 60 * 1000;
+const PATH_MAP_SWEEP_AT = 4096;
+
+const paths = new Map();
+
+function sweepPaths(nowMs) {
+  if (paths.size < PATH_MAP_SWEEP_AT) return;
+  for (const [rid, entry] of paths) {
+    if (nowMs - entry.at > PATH_ENTRY_TTL_MS) paths.delete(rid);
+  }
+}
+
+/** Record one folded fork for a request: notePath(rid, 'XFORM.headroom-skip'). */
+export function notePath(rid, code, nowMs = Date.now()) {
+  if (typeof rid !== 'string' || rid === '' || typeof code !== 'string' || code === '') return;
+  sweepPaths(nowMs);
+  let entry = paths.get(rid);
+  if (!entry) {
+    entry = { codes: [], at: nowMs };
+    paths.set(rid, entry);
+  }
+  entry.at = nowMs;
+  if (entry.codes.length < PATH_MAX_CODES && !entry.codes.includes(code)) {
+    entry.codes.push(code);
+  }
+}
+
+/** The folded codes for a request, without clearing. Test and summary seam. */
+export function pathFor(rid) {
+  const entry = paths.get(rid);
+  return entry ? [...entry.codes] : [];
+}
+
+function takePath(rid, nowMs = Date.now()) {
+  const entry = paths.get(rid);
+  if (!entry) return null;
+  paths.delete(rid);
+  // The list is dropped from the TAIL to fit, not truncated mid-string: the
+  // earliest forks are the ones a reader needs first. Path codes are
+  // machine-generated CLASS.verdict tokens (no free text, no leak channel),
+  // so the render budget is wider than the free-text value cap — five saver
+  // codes plus cache-keep/legacy must survive to make save=/path= auditable.
+  const PATH_RENDER_MAX = 120;
+  let codes = entry.codes;
+  const render = (list) => list.join(',');
+  while (codes.length > 1 && render(codes).length > PATH_RENDER_MAX) {
+    codes = codes.slice(0, -1);
+  }
+  const joined = render(codes);
+  return joined.length > PATH_RENDER_MAX ? null : joined;
+}
+
+/**
+ * The one nominal line: a whole successful request in a single record. Never
+ * folded (one per request already) and never throttled by the backstop, which
+ * counts only the non-nominal classes. Carries `path=` when the request took
+ * non-default forks that folded instead of speaking.
+ */
+export function reqSummary(verdict, fields = {}, nowMs = Date.now()) {
+  const rid = typeof fields?.rid === 'string' ? fields.rid : null;
+  if (rid) {
+    const path = takePath(rid, nowMs);
+    if (path) fields = { ...fields, path };
+  }
+  return req(verdict, fields, nowMs);
+}
+
 // Test seam: folding and the backstop are process-wide singletons, so a suite
 // needs a way to start from empty without reaching into the maps.
 export const __decide = {
   resetState() {
     foldState.clear();
+    paths.clear();
     storm.windowAt = 0;
     storm.lines = 0;
     storm.throttled = false;
@@ -415,6 +513,7 @@ export const __decide = {
     sinkDead = false;
   },
   foldSize: () => foldState.size,
+  pathSize: () => paths.size,
   disableSink() { sinkDead = true; },
   FOLD_MAX_KEYS,
   STORM_LIMIT,

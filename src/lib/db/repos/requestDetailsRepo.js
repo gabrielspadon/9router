@@ -1,4 +1,4 @@
-import { redactSecrets, stripSensitiveHeaders } from "open-sse/utils/redact.js";
+import { redactSecrets, stripSensitiveHeaders } from "../../../../open-sse/utils/redact.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { saveRequestStats } from "./requestStatsRepo.js";

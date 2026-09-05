@@ -136,29 +136,68 @@ import { applyMemoryEnhancements } from "../../open-sse/services/memory/index.js
   expect(getHandoff(projectKey)).toBe(null);
 });
 
-  it("ApplyMemoryEnhancements: master orchestrator handles all modular toggles", async () => {
-  const body = {
-    messages: [
-      { role: "user", content: "Check status" },
-      { role: "assistant", content: "Checking", tool_calls: [{ id: "t1", function: { name: "status" } }] },
-      { role: "tool", tool_call_id: "t1", content: "Status report: OK\n".repeat(60) },
-      { role: "assistant", content: "Now running tests", tool_calls: [{ id: "t2", function: { name: "test" } }] },
-      { role: "tool", tool_call_id: "t2", content: "Active test output" },
-      { role: "user", content: "All done" }
-    ]
-  };
+  const conversation = () => ({
+  messages: [
+    { role: "user", content: "Check status" },
+    { role: "assistant", content: "Checking", tool_calls: [{ id: "t1", function: { name: "status" } }] },
+    { role: "tool", tool_call_id: "t1", content: "Status report: OK\n".repeat(60) },
+    { role: "assistant", content: "Now running tests", tool_calls: [{ id: "t2", function: { name: "test" } }] },
+    { role: "tool", tool_call_id: "t2", content: "Active test output" },
+    { role: "user", content: "All done" }
+  ]
+});
+
+const TOGGLES = {
+  memoryToolPruningEnabled: true,
+  memoryMaxToolTurnsKeepFull: 1,
+  memoryMaxHistoricalToolChars: 200,
+  memoryMediaPruningEnabled: true,
+  memoryCompactionEnabled: false,
+};
+
+it("ApplyMemoryEnhancements: leaves a conversation that fits entirely alone", async () => {
+  // The contract that changed. This body is about 300 tokens. It used to be
+  // pruned anyway, because the pruner ran on every request and had no idea what
+  // window it was shaping for. Against a 1,000,000-token model it now keeps
+  // every byte, which is both the context the operator paid for and a prompt
+  // prefix identical to the one the provider has cached.
+  const body = conversation();
+  const before = JSON.stringify(body);
 
   const { stats } = await applyMemoryEnhancements(body, {
-    settings: {
-      memoryToolPruningEnabled: true,
-      memoryMaxToolTurnsKeepFull: 1,
-      memoryMaxHistoricalToolChars: 200,
-      memoryMediaPruningEnabled: true,
-      memoryCompactionEnabled: false,
-    },
+    settings: TOGGLES,
+    contextWindow: 1_000_000,
     targetFormat: "claude"
   });
 
+  expect(stats.toolPruning.applied).toBe(false);
+  expect(stats.mediaPruning.applied).toBe(false);
+  expect(stats.compaction.applied).toBe(false);
+  expect(JSON.stringify(body)).toBe(before);
+  expect(stats.budget.over).toBe(false);
+  expect(stats.budget.limit).toBe(1_000_000);
+});
+
+it("ApplyMemoryEnhancements: prunes progressively once the window is full", async () => {
+  // Same body, a window it cannot fit in. Now history is cut — and only as far
+  // as the overflow requires, oldest first. The generous tiers find nothing
+  // here (the tool output is under 20,000 characters), so the escalation runs
+  // through to a hard tier, which is what `tiersUsed` records.
+  const body = conversation();
+  const historicalBefore = body.messages[2].content.length;
+
+  const { stats } = await applyMemoryEnhancements(body, {
+    settings: { ...TOGGLES, memoryContextWindowOverride: 400 },
+    contextWindow: 1_000_000,
+    targetFormat: "claude"
+  });
+
+  expect(stats.budget.over).toBe(true);
   expect(stats.toolPruning.applied).toBe(true);
+  expect(stats.toolPruning.tiersUsed).toBeGreaterThan(1);
+  expect(body.messages[2].content.length).toBeLessThan(historicalBefore);
+  // The protected recent tool turn is untouched: pressure never eats the
+  // working set the model is still reasoning about.
+  expect(body.messages[4].content).toBe("Active test output");
   expect(stats.compaction.applied).toBe(false);
 });

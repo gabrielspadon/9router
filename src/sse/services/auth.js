@@ -37,8 +37,14 @@ import {
   registerAccountCapacity,
   releaseAccountLease,
   releaseAccountLeaseOnResponse,
+  lastLeaseRefusal,
   _getLeaseRegistry,
 } from "./accountLeaseRegistry.js";
+import { decide } from "@/shared/observability/decide.js";
+
+// The design's id shape is a literal 8-char prefix (conn=acc_9f2c). decide's
+// idPrefix is a SHA-256 prefix and is for credentials, not connection ids.
+const prefix8 = (v) => String(v ?? '').slice(0, 8);
 import { effectiveCapacity } from "@/shared/utils/accountCapacity.js";
 import { toRankerWindows } from "@/shared/utils/quotaWindowBridge.js";
 import { buildSwitchReceipt } from "@/shared/utils/switchReceipt.js";
@@ -57,6 +63,9 @@ export function _getProviderSelectionQueueSize() {
 // retry-after, so a caller is never told to retry with no delay hint at all.
 // Mirrors accountScheduler.js's own RETRY_AFTER_SECONDS.
 const SCHEDULER_RETRY_AFTER_SECONDS = 1;
+// Local, so this module does not take a dependency on the handler's status
+// table just to name one code.
+const HTTP_STATUS_RATE_LIMITED = 429;
 
 // The affinity table is keyed by (sessionHash, model) and both are NOT NULL, so
 // a request that names no model still needs a key. A sentinel rather than the
@@ -308,6 +317,27 @@ export async function getReachableProviders() {
 }
 
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
+  // Decision-log context (docs/logging-design.md 3.2): rid/sid threaded from the
+  // request-handling caller through options.logCtx. Absent on background
+  // selection, and then the emitted lines simply carry no rid.
+  const logCtx = options?.logCtx && typeof options.logCtx === 'object' ? options.logCtx : {};
+  const rid = typeof logCtx.rid === 'string' ? logCtx.rid : null;
+  const sid = typeof logCtx.sid === 'string' ? logCtx.sid : null;
+  const selCtx = (fields = {}) => ({
+    ...(rid ? { rid } : {}),
+    ...(sid ? { sid } : {}),
+    ...(model ? { model } : {}),
+    ...fields,
+  });
+  // decide() renders one k=v per key; repeated alternatives (alt=, folded by
+  // the design into one comma-joined value) are joined here at the printer.
+  const flatten = (fields = {}) => Object.fromEntries(
+    Object.entries(fields)
+      .filter(([, v]) => v !== null && v !== undefined)
+      .map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]),
+  );
+  const emit = (cls, verdict, fields) => { decide(cls, verdict, selCtx(flatten(fields))); };
+
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
@@ -412,14 +442,36 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         .map(([connectionId]) => connectionId)
     );
     const ignoreLockConn = options?.ignoreModelLockConnId || null;
+    // Exclusions carry their reason to the decision log (rows 32-33): a
+    // filtered-out account is a decision, and "who was skipped and why" is the
+    // first question an auditor asks of a refusal.
+    const drainExcluded = [];
+    const modelLocked = [];
     const availableConnections = connections.filter(c => {
       if (strictPreferredConnection && c.id !== preferredConnectionId) return false;
       if (excludeSet.has(c.id)) return false;
-      if (draining.has(c.id)) return false;
+      if (draining.has(c.id)) { drainExcluded.push(prefix8(c.id)); return false; }
       if (c.id === ignoreLockConn) return true;
-      if (isModelLockActive(c, model)) return false;
+      if (isModelLockActive(c, model)) {
+        const failure = getActiveModelFailure(c, model);
+        modelLocked.push({
+          conn: prefix8(c.id),
+          lock: String(getModelLockKey(model)).slice(0, 60),
+          until: failure?.until ?? null,
+        });
+        return false;
+      }
       return true;
     });
+    if (drainExcluded.length) {
+      emit('SEL', 'drain-excluded', {
+        alt: drainExcluded.slice(0, 3),
+        ...(drainExcluded.length > 3 ? { more: drainExcluded.length - 3 } : {}),
+      });
+    }
+    for (const m of modelLocked) {
+      emit('SEL', 'model-locked', { conn: m.conn, lock: m.lock, ...(m.until ? { until: m.until } : {}) });
+    }
 
     // Filter out accounts paused due to low remaining quota (safety buffer).
     // evaluateQuota is fail-open: a missing/erroring quota read never pauses an
@@ -431,6 +483,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // per account, because a quota lookup that fails must never make an account
     // ineligible.
     const nowMs = Date.now();
+    // Fail-open exits still speak (rows 34-35): a paused account and an
+    // evidence-less one are decisions the log must be able to answer for.
+    const quotaPaused = [];
+    const quotaUnknown = [];
     const quotaChecked = await Promise.all(
       availableConnections.map(async (c) => {
         let q;
@@ -441,10 +497,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           // but a throw from anywhere else in it (a proxy resolution, a repo
           // read) would otherwise reject this Promise.all and take the WHOLE
           // provider down rather than one account.
+          quotaUnknown.push(c);
           return { connection: c, windows: [] };
         }
         if (q.paused) {
-          log.info("AUTH", `${provider} | ${c.id?.slice(0, 8)} skipped: quota paused (window below per-window threshold)`);
+          quotaPaused.push(c);
           return null;
         }
         // Percentage in, absolute units out (quotaWindowBridge.js). An empty
@@ -471,6 +528,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const routed = quotaChecked.filter(Boolean);
     const routedConnections = routed.map((r) => r.connection);
     const windowsByConnection = Object.fromEntries(routed.map((r) => [r.connection.id, r.windows]));
+
+    for (const c of quotaPaused) {
+      emit('SEL', 'quota-paused', { conn: prefix8(c.id), why: 'window-below-threshold' });
+    }
+    for (const c of quotaUnknown) {
+      // A fail-open always speaks: empty windows here mean the read itself
+      // threw, not that the account has no quota state (row 35).
+      emit('SEL', 'quota-unknown', { conn: prefix8(c.id), why: 'evidence-absent-not-empty' });
+    }
 
     log.debug("AUTH", `${provider} | available: ${routedConnections.length}/${connections.length}`);
     connections.forEach(c => {
@@ -512,6 +578,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     let connection = null;
     let lease = null;
+    // The scheduler's verdict for the caller: REQ.ok sel= and path= read this
+    // in a later wave (row 29's silent pin-hit reaches the caller here).
+    let selection = null;
     // Pin to preferred connection if specified and available. This is an
     // OPERATOR pin (a combo member, a replay of the connection that just
     // failed), which is a different fact from the session pin the scheduler
@@ -541,6 +610,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         // is free, the slot is not. Reported with a nonzero retry-after through
         // the shape callers already read for "come back later".
         const retryAt = new Date(Date.now() + SCHEDULER_RETRY_AFTER_SECONDS * 1000).toISOString();
+        // LEASE.refused carries the numbers the wait is about (row 37): how
+        // full, against what ceiling, when to try again.
+        const refusal = lastLeaseRefusal(connection.id);
+        const cap = refusal?.cap ?? effectiveCapacity(connection, { settings, provider: providerId }).limit;
+        const held = refusal?.held ?? leaseRegistry.inFlight(connection.id);
+        emit('LEASE', 'refused', {
+          conn: prefix8(connection.id),
+          held,
+          cap,
+          next: `${SCHEDULER_RETRY_AFTER_SECONDS}s`,
+          retry_after: `${SCHEDULER_RETRY_AFTER_SECONDS}s`,
+        });
         log.info("AUTH", `${provider} | ${connection.id?.slice(0, 8)} at capacity, caller should retry`);
         return {
           allRateLimited: true,
@@ -556,6 +637,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // binding is real and gets recorded. Placed after the reservation on
       // purpose: pinning ahead of it would bind a session to an account that
       // refused it.
+      // An admission without a registered ceiling is fail-open, not free:
+      // it must be visible as such (row 38).
+      if (lease?.ungated) {
+        emit('LEASE', 'ungated', {
+          conn: prefix8(connection.id),
+          why: lease.why,
+          held: lease.held,
+        });
+      }
       const pinned = await persistOperatorPin({
         sessionHash: resolveRoutingSessionHash(options, providerId),
         model: model || MODEL_ANY,
@@ -563,6 +653,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         windows: windowsByConnection[connection.id],
         nowMs,
       });
+      // Row 29: the operator pin is a real decision and says so.
+      emit('SEL', 'operator-pinned', { conn: prefix8(connection.id), why: pinned?.reason ?? 'operator-pin' });
+      selection = { verdict: 'operator-pinned', conn: prefix8(connection.id), why: pinned?.reason ?? null };
       if (pinned?.receipt) {
         log.info(
           "AUTH",
@@ -592,26 +685,85 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         repos,
       });
 
+      // The scheduler's whole decision as trace entries: the ranking verdict,
+      // the repin verdict, slot-walk skips and the refusal reason. Printing is
+      // auth.js's job (purity discipline, step 3.2) — the scheduler only
+      // returns the verdicts.
+      const printTrace = (trace) => {
+        for (const entry of trace || []) {
+          if (!entry || entry.verdict === 'pin-hit') continue; // nominal, silent (row 29)
+          const fields = { ...(entry.fields || {}) };
+          if (entry.verdict === 'repin' && decision.receipt?.id) fields.rcpt = decision.receipt.id;
+          emit(entry.cls, entry.verdict, fields);
+        }
+      };
+
       if (decision?.unavailable) {
-        const retryAt = new Date(nowMs + (decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS) * 1000).toISOString();
-        log.info("AUTH", `${provider} | scheduler: ${decision.reason}, caller should retry`);
+        // TWO DIFFERENT FACTS WEAR THIS SHAPE, and telling them apart is what
+        // stops a client spinning at one request per second.
+        //
+        // `at-capacity` is a CONCURRENCY wait: the pool has entitlement, it
+        // just has no free slot this instant. One second is the right answer
+        // and 503 is the right status, because the condition clears on its own
+        // in well under a second.
+        //
+        // Every other refusal is the pool being out of ENTITLEMENT, and that is
+        // a 429 whose honest retry-after is the earliest projected window reset
+        // — which the ranker already computed and handed up as
+        // `earliestResetAt`. This branch used to answer 503 with a flat
+        // one-second floor for both, so a caller told "come back in a second"
+        // retried straight into an exhausted pool and kept doing it until a
+        // window rolled over hours later. The operator sees that as the proxy
+        // hammering accounts that had nothing left to give.
+        const capacityWait = decision.reason === 'at-capacity';
+        const retryAt = !capacityWait && decision.earliestResetAt
+          ? decision.earliestResetAt
+          : new Date(nowMs + (decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS) * 1000).toISOString();
+        printTrace(decision.trace);
+        log.info(
+          "AUTH",
+          `${provider} | scheduler: ${decision.reason}`
+          + `${decision.degraded ? " (no quota evidence)" : ""}`
+          + ` | caller should retry at ${retryAt}`
+        );
         return {
           allRateLimited: true,
           retryAfter: retryAt,
-          retryAfterHuman: `${decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS}s`,
+          retryAfterHuman: capacityWait
+            ? `${decision.retryAfter || SCHEDULER_RETRY_AFTER_SECONDS}s`
+            : formatRetryAfter(retryAt),
           lastError: `No account available (${decision.reason})`,
-          lastErrorCode: null,
-          clientErrorStatus: null,
+          // 429 is the truth an exhausted pool owes the caller. A capacity wait
+          // is not a rate limit, so it keeps the 503 the caller already reads.
+          lastErrorCode: capacityWait ? null : HTTP_STATUS_RATE_LIMITED,
+          clientErrorStatus: capacityWait ? null : HTTP_STATUS_RATE_LIMITED,
         };
       }
 
       connection = decision.connection;
       lease = decision.lease;
-      log.info(
-        "AUTH",
-        `${provider} | ${connection.id?.slice(0, 8)} selected (${decision.reason})`
-        + (decision.receipt ? ` from ${decision.receipt.fromConnectionId?.slice(0, 8) || "none"}` : "")
-      );
+      // The retired "selected (...)" INFO line is replaced by these: SEL.win
+      // (or the ranking's degraded verdict), SEL.repin with rcpt=<receipt id>,
+      // SEL.skipped for the slot walk. pin-hit is nominal and stays silent —
+      // its info rides the return below for the REQ.ok sel= field.
+      for (const entry of decision.trace || []) {
+        if (!entry || entry.verdict === 'pin-hit') continue;
+        const fields = { ...(entry.fields || {}) };
+        if (entry.verdict === 'win' && !fields.why) {
+          if (decision.reason === 'pinned') fields.why = 'operator-pinned';
+          else if (decision.reason === 'first-pin') fields.why = 'initial-pin';
+        }
+        if (entry.verdict === 'repin' && decision.receipt?.id) fields.rcpt = decision.receipt.id;
+        emit(entry.cls, entry.verdict, fields);
+      }
+      if (lease?.ungated) {
+        emit('LEASE', 'ungated', { conn: prefix8(connection.id), why: lease.why, held: lease.held });
+      }
+      selection = {
+        verdict: decision.reason === 'pinned' ? 'pin-hit' : 'win',
+        conn: prefix8(connection.id),
+        why: decision.repin?.reason ?? null,
+      };
     }
 
     const connectionProxyData = connection.providerSpecificData || {};
@@ -622,11 +774,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         : undefined,
     });
     if (resolvedProxy.kind !== "usable") {
+      // Row 36: the account was selected but its proxy resolution failed —
+      // pool id and the resolution verdict are the whole fact.
+      emit('SEL', 'proxy-unusable', {
+        conn: prefix8(connection.id),
+        prov: providerId,
+        pool: expectedPoolId || 'none',
+        why: resolvedProxy.kind,
+      });
       // The lease was taken before the proxy was resolved, and this return
       // happens AFTER the reservation, so it is the one exit inside this
       // function that can strand a slot. Release it here: nothing downstream
       // ever learns the lease existed, so nothing downstream can free it.
-      leaseRegistry.release(lease);
+      if (lease && !leaseRegistry.release(lease)) {
+        // Only possible when this same lease was already released — name the
+        // seq so a leaking caller is findable (row 39).
+        emit('LEASE', 'double-release', { conn: prefix8(lease.connectionId), seq: lease.seq });
+      }
       return null;
     }
     const proxyOptions = toConnectionProxyOptions(resolvedProxy);
@@ -655,6 +819,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         resolutionKind: proxyOptions.resolutionKind,
       },
       connectionId: connection.id,
+      // Session identity the selection already resolved for routing affinity;
+      // chat.js prefixes it into the `sid` used by REQ ce= cache-epoch
+      // telemetry. Additive: absent rather than recomputed when resolution
+      // found nothing client-derived.
+      sessionHash: resolveRoutingSessionHash(options, providerId),
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
@@ -664,6 +833,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // so a belt-and-braces release costs nothing and a missed one is a leaked
       // slot that never comes back until the process restarts.
       accountLease: lease,
+      // The selection verdict for the caller (REQ.ok sel=/path= later).
+      selection,
       // Pass full connection for clearAccountError to read modelLock_* keys
       _connection: connection
     };
@@ -732,8 +903,24 @@ export function describeProviderError(errorText) {
   return code ? clamp(`Provider error (${code})`) : "Provider error";
 }
 
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, failureMetadata = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, failureMetadata = null, logCtx = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  // Request-scoped decision-log context ({rid, sid}); absent on background
+  // calls, and then the LOCK lines carry no rid (docs/logging-design.md 3.2).
+  const rid = typeof logCtx?.rid === 'string' ? logCtx.rid : null;
+  const sid = typeof logCtx?.sid === 'string' ? logCtx.sid : null;
+  const lockCtx = (fields = {}) => ({
+    ...(rid ? { rid } : {}),
+    ...(sid ? { sid } : {}),
+    conn: prefix8(connectionId),
+    prov: resolveProviderId(provider),
+    ...(model ? { model } : {}),
+    ...fields,
+  });
+  const numStatus = Number(status);
+  const lockClass = numStatus === 401 || numStatus === 403 || numStatus === 404
+    ? 'credential'
+    : numStatus === 429 ? 'quota' : 'transient';
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -748,8 +935,14 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       lastErrorAt: new Date().toISOString(),
       backoffLevel: 0,
     });
-    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-    log.warn("AUTH", `${connName} requires Codex reauthorization [401]`);
+    // The credential is dead and the provider says so: no reset exists, which
+    // is exactly what expect_reset=false states (rows 47-48).
+    decide('LOCK', 'permanent', lockCtx({
+      status: numStatus || null,
+      class: 'credential',
+      why: reason,
+      expect_reset: false,
+    }));
     return { shouldFallback: true, cooldownMs: 0 };
   }
 
@@ -784,20 +977,30 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   // GitHub's monthly exhaustion is a real month-long window and stays uncapped;
   // everything else is bounded by this provider's ceiling (#2895).
   let shouldFallback, cooldownMs, newBackoffLevel;
+  // What the schedule ASKED for before the ceiling, for LOCK.clamped
+  // (row 51): {requested, applied} is only interesting when they differ.
+  let requestedMs = null;
+  let clampedApplied = false;
   if (githubResetAtMs) {
     shouldFallback = true;
     cooldownMs = githubResetAtMs - Date.now();
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), retryDelayCapMs(provider));
+    requestedMs = resetsAtMs - Date.now();
+    cooldownMs = Math.min(requestedMs, retryDelayCapMs(provider));
+    clampedApplied = cooldownMs === retryDelayCapMs(provider) && requestedMs > cooldownMs;
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = fallbackResult);
     // Only the backoff schedule, which is what a rate limit earns. A 401/403/404
     // lock is about the credential rather than a window, and shortening it would
     // just retry a dead key every minute.
-    if (newBackoffLevel) cooldownMs = Math.min(cooldownMs, retryDelayCapMs(provider));
+    if (newBackoffLevel) {
+      requestedMs = cooldownMs;
+      cooldownMs = Math.min(cooldownMs, retryDelayCapMs(provider));
+      clampedApplied = cooldownMs === retryDelayCapMs(provider) && requestedMs > cooldownMs;
+    }
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
@@ -826,9 +1029,37 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
 
-  const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  // The retired "locked modelLock_... for Ns [status]" line is replaced by
+  // these (rows 47-51). expect_reset=false beside class=credential is the
+  // misreport the design calls out: a timed backoff on a credential fault
+  // asserts a reset that will never happen.
+  if (githubResetAtMs) {
+    decide('LOCK', 'monthly-reset', lockCtx({
+      status: numStatus || null,
+      reset: until,
+      why: 'usage-limit',
+    }));
+  } else {
+    const why = lockClass === 'credential'
+      ? 'no-permanent-path-for-provider'
+      : lockClass === 'quota' ? 'retry-after' : 'upstream-error';
+    decide('LOCK', 'applied', lockCtx({
+      status: numStatus || null,
+      class: lockClass,
+      sched: 'backoff',
+      level: newBackoffLevel ?? backoffLevel,
+      cooldown: `${Math.max(0, Math.round(cooldownMs / 1000))}s`,
+      cap: `${Math.round(retryDelayCapMs(provider) / 1000)}s`,
+      why,
+      expect_reset: lockClass !== 'credential',
+    }));
+    if (clampedApplied && requestedMs !== null) {
+      decide('LOCK', 'clamped', lockCtx({
+        requested: `${Math.max(0, Math.round(requestedMs / 1000))}s`,
+        applied: `${Math.max(0, Math.round(cooldownMs / 1000))}s`,
+      }));
+    }
+  }
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);

@@ -1,8 +1,17 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Injected at the top of translateRequest (before any format translation)
-import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, ELIDE_MIN_CHARS } from "./constants.js";
+import { elide } from "./filters/elide.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
+
+// Item-level error check (DEFECT D-err-4): an error flag nested INSIDE a
+// content-array item is still evidence; the block-level isErrorToolResult
+// only sees the enclosing node, so each item must be checked before
+// compressing. Covers all three flag spellings seen across formats.
+function isErrorItem(item) {
+  return !!item && (item.is_error === true || item.isError === true || item.status === "error");
+}
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
 // A failed tool result is a trace, and compressing it destroys the evidence
@@ -46,7 +55,7 @@ export function compressMessages(body, enabled) {
         } else if (Array.isArray(msg.output)) {
           for (let k = 0; k < msg.output.length; k++) {
             const part = msg.output[k];
-            if (part && part.type === "input_text" && typeof part.text === "string") {
+            if (part && part.type === "input_text" && typeof part.text === "string" && !isErrorItem(part)) {
               part.text = compressText(part.text, stats, "openai-responses-array");
             }
           }
@@ -68,7 +77,7 @@ export function compressMessages(body, enabled) {
         if (isErrorToolResult(msg)) continue;
         for (let k = 0; k < msg.content.length; k++) {
           const part = msg.content[k];
-          if (part && part.type === "text" && typeof part.text === "string") {
+          if (part && part.type === "text" && typeof part.text === "string" && !isErrorItem(part)) {
             part.text = compressText(part.text, stats, "openai-tool-array");
           }
         }
@@ -88,7 +97,7 @@ export function compressMessages(body, enabled) {
           // Shape 3: claude array form — compress each text part
           for (let k = 0; k < block.content.length; k++) {
             const part = block.content[k];
-            if (part && part.type === "text" && typeof part.text === "string") {
+            if (part && part.type === "text" && typeof part.text === "string" && !isErrorItem(part)) {
               part.text = compressText(part.text, stats, "claude-array");
             }
           }
@@ -115,7 +124,7 @@ function compressKiroFormat(body, enabled) {
       if (!Array.isArray(toolResults)) continue;
 
       for (const tr of toolResults) {
-        if (tr.status === "error") continue; // preserve error traces
+        if (isErrorItem(tr)) continue; // preserve error traces
         if (!Array.isArray(tr.content)) continue;
 
         for (const part of tr.content) {
@@ -141,7 +150,10 @@ function compressText(text, stats, shape) {
     return text;
   }
 
-  const fn = autoDetectFilter(text);
+  const fn = autoDetectFilter(text)
+    // Size-based catch-all, NOT part of the sniffing chain: elide is tried
+    // only when no structured filter claimed the block.
+    || (text.length > ELIDE_MIN_CHARS ? elide : null);
   if (!fn) {
     stats.bytesAfter += bytesIn;
     return text;

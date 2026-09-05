@@ -45,6 +45,12 @@ export function createLeaseRegistry({ capacityOf } = {}) {
   // (an abort handler and a `finally` both firing) free a different request's
   // slot. Set.delete on the object is inherently idempotent.
   const held = new Map();
+  // The most recent refusal per connection, so a caller can print
+  // LEASE.refused {held, cap, retry_after} without re-reading capacity rules
+  // (docs/logging-design.md row 37). A freed slot only ever comes from a
+  // release, so the hint is one short retry window.
+  const refusals = new Map();
+  const REFUSAL_RETRY_MS = 1000;
   let seq = 0;
 
   const countOf = (connectionId) => held.get(connectionId)?.size ?? 0;
@@ -62,7 +68,10 @@ export function createLeaseRegistry({ capacityOf } = {}) {
     // change widens or narrows an existing gate without recreating it.
     const limit = capacityOf(connectionId);
     const gated = Number.isInteger(limit) && limit > 0;
-    if (gated && countOf(connectionId) >= limit) return null;
+    if (gated && countOf(connectionId) >= limit) {
+      refusals.set(connectionId, { held: countOf(connectionId), cap: limit, retryAfterMs: REFUSAL_RETRY_MS });
+      return null;
+    }
 
     let set = held.get(connectionId);
     if (!set) {
@@ -71,10 +80,28 @@ export function createLeaseRegistry({ capacityOf } = {}) {
     }
     seq += 1;
     // Frozen so a caller cannot repoint a live lease at another connection and
-    // release someone else's slot with it.
-    const lease = Object.freeze({ connectionId, seq });
+    // release someone else's slot with it. An UNGATED admission (no ceiling
+    // registered, or a malformed one) is marked so the caller can print
+    // LEASE.ungated with the fail-open reason (row 38) instead of mistaking
+    // the admission for a gated one.
+    const lease = Object.freeze({
+      connectionId,
+      seq,
+      ...(!gated
+        ? {
+            ungated: true,
+            why: limit === 0 ? 'capacity-unregistered' : 'capacity-malformed',
+            held: countOf(connectionId) + 1,
+          }
+        : {}),
+    });
     set.add(lease);
     return lease;
+  }
+
+  /** The last reserve refusal for `connectionId`, or null. */
+  function lastRefusal(connectionId) {
+    return refusals.get(connectionId) ?? null;
   }
 
   /**
@@ -111,5 +138,5 @@ export function createLeaseRegistry({ capacityOf } = {}) {
     return out;
   }
 
-  return { reserve, release, inFlight, snapshot };
+  return { reserve, release, inFlight, snapshot, lastRefusal };
 }

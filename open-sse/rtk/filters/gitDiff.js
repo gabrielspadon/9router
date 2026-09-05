@@ -25,7 +25,10 @@ export function gitDiff(diff, maxLines = 500) {
       if (currentFile && (added > 0 || removed > 0)) {
         result.push(`  +${added} -${removed}`);
       }
-      const parts = line.split(" b/");
+      // core.quotePath quotes non-ASCII paths: diff --git "a/x" "b/x";
+      // strip the quotes so the " b/" split still recovers the real name
+      const normalized = line.split('"').join("");
+      const parts = normalized.split(" b/");
       currentFile = parts.length > 1 ? parts.slice(1).join(" b/") : "unknown";
       result.push(`\n${currentFile}`);
       added = 0;

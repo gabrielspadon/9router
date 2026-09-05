@@ -37,6 +37,22 @@ export default {
       "X-Stainless-Os": "MacOS",
       "X-Stainless-Timeout": "600",
     },
+    // Response-header deadline. The 15s global default is a CONNECT budget and
+    // it is wrong for this provider, because Anthropic sends no headers until
+    // prefill is done: header latency scales with the prompt. Measured on RTX
+    // 2026-09-04 over 601 requests, every one of the 7 at a 150k-token prompt
+    // timed out at exactly 15s while 599 of 601 below it succeeded, and TTFT
+    // among the successes ran to a p90 of 19.5s and a max of 98s. A 1M-token
+    // window makes a 15s header budget unusable at the top of its own range.
+    // 120s is CONNECT_TIMEOUT_MAX_MS, the ceiling isValidConnectTimeoutMs
+    // enforces -- anything above it is silently rejected and falls through to
+    // the 60s env default, which is still under the measured max. It clears
+    // that 98s observation with headroom. A genuinely dead socket still fails
+    // fast on ECONNREFUSED/ENOTFOUND, and a hung stream is still bounded by
+    // STREAM_FIRST_CHUNK_TIMEOUT_MS (200s), STREAM_STALL_TIMEOUT_MS (360s) and
+    // RESPONSE_BODY_TIMEOUT_MS (300s), so this only stops aborting live
+    // prefills that were about to succeed.
+    timeoutMs: 120000,
     quirks: {
       cloakToolsOnOAuth: true,
     },

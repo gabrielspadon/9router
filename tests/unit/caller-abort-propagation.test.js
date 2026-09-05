@@ -208,6 +208,7 @@ describe("caller abort propagation", () => {
       "codex",
       "gpt-5.6-sol",
       undefined,
+      { rid: expect.stringMatching(/^[0-9a-f]{8}$/) },
     );
   });
 
@@ -225,6 +226,7 @@ describe("caller abort propagation", () => {
       "gpt-5.6-sol",
       undefined,
       { clientErrorStatus: 404, unknownModelVerified: true },
+      { rid: expect.stringMatching(/^[0-9a-f]{8}$/) },
     );
   });
 

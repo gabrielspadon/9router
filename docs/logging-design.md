@@ -1,9 +1,9 @@
 ---
 title: Agent-efficient decision logging
-status: partially implemented (steps 1, 2, and the chat.js half of steps 3.6/4)
+status: implemented (steps 1-6, all fourteen classes, front proxy included); incident-replay validated 2026-09-04
 owner: gabrielspadon
-last_verified: 2026-09-03
-scope: emitter and correlation shipped; steps 3.1-3.5, 5 and the front proxy remain
+last_verified: 2026-09-04
+scope: emitter, correlation, SEL/RANK/LEASE/LOCK/AUTHZ/ADM/CRED/UP/STREAM/ACCT/XFORM wiring, REQ summary, ledger join, boot snapshot, front ADM lines — shipped on feat/agent-logging (c80133c7, c3bad01e, db7aecca)
 supersedes: none
 ---
 

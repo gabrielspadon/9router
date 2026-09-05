@@ -5,6 +5,7 @@ import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/c
 import PropTypes from "prop-types";
 import { Badge, Button, StatusToken, Toggle, Tooltip } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
+import { quotaAutoPingTooltip } from "@/shared/constants/config";
 import CooldownTimer from "./CooldownTimer";
 
 const HOT_RELOAD_BADGE_VARIANTS = {
@@ -50,9 +51,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : hasLegacyProxy
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
-  const autoPingTooltip = autoPing?.provider === "codex"
-    ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
-    : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
+  // Every provider the scheduler knows now reaches this row, so a two-branch
+  // ternary would silently describe a 5h Claude window on an Antigravity
+  // per-model quota or a Kimi weekly one.
+  const autoPingTooltip = quotaAutoPingTooltip(autoPing?.provider);
 
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {

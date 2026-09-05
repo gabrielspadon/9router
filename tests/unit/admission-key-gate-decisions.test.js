@@ -1,0 +1,102 @@
+// ADM.key-required / ADM.key-invalid — the chat.js API-key gate
+// (docs/logging-design.md row 5). One line per refusal naming which
+// requirement fired (setting or env) and whether a key was presented, without
+// ever naming the key itself.
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const authMocks = vi.hoisted(() => ({
+  clearAccountError: vi.fn(),
+  getProviderCredentials: vi.fn(),
+  isValidApiKey: vi.fn(),
+  markAccountUnavailable: vi.fn(),
+  getReachableProviders: vi.fn(),
+}));
+const coreMocks = vi.hoisted(() => ({ handleChatCore: vi.fn() }));
+const settingsMocks = vi.hoisted(() => ({ getSettings: vi.fn() }));
+
+vi.mock("open-sse/index.js", () => ({}), { virtual: true });
+vi.mock("@/sse/services/auth.js", () => ({
+  clearAccountError: authMocks.clearAccountError,
+  getProviderCredentials: authMocks.getProviderCredentials,
+  isValidApiKey: authMocks.isValidApiKey,
+  markAccountUnavailable: authMocks.markAccountUnavailable,
+  getReachableProviders: authMocks.getReachableProviders,
+}));
+vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: coreMocks.handleChatCore }));
+vi.mock("@/lib/localDb", () => ({
+  getSettings: settingsMocks.getSettings,
+  validateApiKey: vi.fn(),
+}));
+
+// The logger stays REAL: part of the point is that the old reasonless
+// `log.warn("AUTH", ...)` line is gone, and a stray reintroduction fails here.
+
+import { __decide } from "@/shared/observability/decide.js";
+import { handleChat, __rateLimiter } from "@/sse/handlers/chat.js";
+
+let lines = [];
+let warnLines = [];
+let logSpy;
+let warnSpy;
+
+beforeEach(() => {
+  __decide.resetState();
+  __decide.disableSink();
+  __rateLimiter.reset();
+  lines = [];
+  warnLines = [];
+  logSpy = vi.spyOn(console, "log").mockImplementation((l) => lines.push(l));
+  warnSpy = vi.spyOn(console, "warn").mockImplementation((l) => warnLines.push(l));
+  settingsMocks.getSettings.mockResolvedValue({ requireApiKey: true });
+  authMocks.isValidApiKey.mockResolvedValue(false);
+  coreMocks.handleChatCore.mockReset();
+});
+afterEach(() => {
+  logSpy.mockRestore();
+  warnSpy.mockRestore();
+  vi.unstubAllEnvs();
+});
+
+const chatRequest = (headers = {}) =>
+  new Request("http://localhost:20128/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify({ model: "test-model", messages: [] }),
+  });
+
+describe("chat.js API-key gate", () => {
+  it("key-required: no key presented, setting fired -> source=setting presented=false, no AUTH warn", async () => {
+    const res = await handleChat(chatRequest());
+    expect(res.status).toBe(401);
+    const line = lines.find((l) => l.includes("ADM.key-required"));
+    expect(line).toMatch(/rid=[0-9a-f]{8}/);
+    expect(line).toContain("source=setting");
+    expect(line).toContain("presented=false");
+    expect(lines.filter((l) => l.includes("ADM.key-required"))).toHaveLength(1);
+    expect(warnLines.join(" ")).not.toContain("AUTH");
+    expect(coreMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
+  it("key-required: env-only tightening -> source=env", async () => {
+    settingsMocks.getSettings.mockResolvedValue({});
+    vi.stubEnv("REQUIRE_API_KEY", "true");
+    const res = await handleChat(chatRequest());
+    expect(res.status).toBe(401);
+    const line = lines.find((l) => l.includes("ADM.key-required"));
+    expect(line).toContain("source=env");
+    expect(line).toContain("presented=false");
+  });
+
+  it("key-invalid: a presented key that fails validation -> presented=true, key never appears", async () => {
+    const res = await handleChat(chatRequest({ authorization: "Bearer sk-bad-000" }));
+    expect(res.status).toBe(401);
+    const line = lines.find((l) => l.includes("ADM.key-invalid"));
+    expect(line).toMatch(/rid=[0-9a-f]{8}/);
+    expect(line).toContain("source=setting");
+    expect(line).toContain("presented=true");
+    expect(line).not.toContain("sk-bad-000");
+    expect(warnLines.join(" ")).not.toContain("AUTH");
+    expect(coreMocks.handleChatCore).not.toHaveBeenCalled();
+  });
+});

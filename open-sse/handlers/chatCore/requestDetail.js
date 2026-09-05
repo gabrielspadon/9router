@@ -1,4 +1,4 @@
-import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "../../../src/lib/usageDb.js";
 import { extractThinking } from "../../translator/concerns/thinkingUnified.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage, clampReasoningTokens, stripBufferFromUsage } from "../../utils/usageTracking.js";
@@ -85,8 +85,27 @@ export function buildRequestDetail(base, overrides = {}) {
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
     status: base.status || "success",
+    rid: base.rid || undefined,
     ...overrides
   };
+}
+
+/**
+ * The numeric fields behind formatDoneLine as the k=v map REQ.ok carries. One
+ * selection point for both the human line and the decision line, so the CACHE
+ * split and units cannot drift between them.
+ */
+export function doneFields({ usage, latency }) {
+  const u = usage || {};
+  const fields = {
+    t: latency?.total ?? 0,
+    in: u.prompt_tokens ?? u.input_tokens ?? 0,
+    out: u.completion_tokens ?? u.output_tokens ?? 0,
+    cr: u.cache_read_input_tokens ?? u.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0,
+    cw: u.cache_creation_input_tokens ?? 0,
+  };
+  if (latency?.ttft != null) fields.ttft = latency.ttft;
+  return fields;
 }
 
 // Build the "done" summary: duration, ttft, in/out tokens with cache breakdown
@@ -132,7 +151,7 @@ export function summarizeReasoning(translatedBody) {
   return undefined;
 }
 
-export function saveUsageStats({ provider, model, tokens: rawTokens, connectionId, apiKey, endpoint, requestedModel, translatedBody, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens: rawTokens, connectionId, apiKey, endpoint, requestedModel, translatedBody, label = "USAGE", silent = false, rid }) {
   if (!rawTokens || typeof rawTokens !== "object") return;
 
   // Estimated usage arrives with the client headroom buffer already baked in
@@ -153,7 +172,7 @@ export function saveUsageStats({ provider, model, tokens: rawTokens, connectionI
 
   // Canonicalize to one storage convention (prompt_tokens cache-inclusive) so
   // cached/cache-creation tokens survive to cost calc + stats. See canonicalizeUsage.
-  const normalized = canonicalizeUsage(tokens) || {
+  const normalized = canonicalizeUsage(tokens, { conn: connectionId ? String(connectionId).slice(0, 8) : undefined, model }) || {
     prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
     completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
   };
@@ -168,5 +187,6 @@ export function saveUsageStats({ provider, model, tokens: rawTokens, connectionI
     endpoint: endpoint || null,
     requestedModel: requestedModel || undefined,
     reasoningEffort: summarizeReasoning(translatedBody),
+    rid: rid || undefined,
   }).catch(() => {});
 }

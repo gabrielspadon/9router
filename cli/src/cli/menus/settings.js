@@ -90,9 +90,9 @@ async function showSettingsMenu(breadcrumb = []) {
       ...(d0?.settings?.quotaAutoPingProviders || []).map(({ id, settingsKey }) => {
         const name = id.charAt(0).toUpperCase() + id.slice(1);
         return {
-          label: (d) => `Auto-ping (${name}): ${d?.settings?.[settingsKey] === true ? "ON" : "OFF"} → toggle`,
+          label: (d) => `Auto-ping (${name}): ${autoPingIsOn(d?.settings?.[settingsKey]) ? "ON" : "OFF"} → toggle`,
           action: async (d) => {
-            await toggleAutoPing(settingsKey, name, d?.settings?.[settingsKey] === true);
+            await toggleAutoPing(settingsKey, name, d?.settings?.[settingsKey]);
             return true;
           },
         };
@@ -201,11 +201,53 @@ async function toggleHeadroom(currentlyOn) {
 // could not turn it on or off at all (#2349). Same shape as the two toggles
 // above: the settings API already owns both keys and reconfigures the scheduler
 // on write, so this needs no new endpoint and no CLI-side state.
-async function toggleAutoPing(key, label, currentlyOn) {
-  const next = !currentlyOn;
+// The scheduler gates on the PER-CONNECTION map and reads nothing else, so "on"
+// is "at least one account is turned on", not the sibling `enabled` flag, which
+// no code path reads.
+function autoPingIsOn(cfg) {
+  return Object.values(cfg?.connections || {}).some((v) => v === true);
+}
+
+// WRITE THE SHAPE THE SCHEDULER READS. This menu used to PATCH a bare boolean,
+// and `updateSettings` replaces a top-level key wholesale
+// (src/lib/db/repos/settingsRepo.js:251), so one toggle here overwrote
+// `{enabled, connections}` with `true` and destroyed the account map. That
+// silently turned warming OFF for every account on the provider, because the
+// tick skips a provider whose connections map is empty
+// (src/shared/services/quotaAutoPing.js:778), and only the dashboard's
+// per-connection switches could put it back.
+//
+// This menu has no connection list of its own, so it flips the accounts already
+// enrolled rather than inventing membership: turning a provider on re-arms what
+// the dashboard enrolled, and enrolling a NEW account stays a dashboard action.
+// Returns null when nothing is enrolled, since writing an empty map would read
+// back as "on" while warming nothing.
+function nextAutoPingConfig(current) {
+  const connections = { ...(current?.connections || {}) };
+  const ids = Object.keys(connections);
+  if (ids.length === 0) return null;
+  const enabled = !autoPingIsOn(current);
+  for (const id of ids) connections[id] = enabled;
+  return { ...current, enabled, connections };
+}
+
+async function toggleAutoPing(key, label, current) {
+  const next = nextAutoPingConfig(current);
+  if (!next) {
+    showStatus(
+      `Auto-ping (${label}): no accounts enrolled — enable one in the dashboard first`,
+      "info",
+    );
+    await pause();
+    return;
+  }
   const result = await api.updateSettings({ [key]: next });
+  const count = Object.keys(next.connections).length;
   if (result.success) {
-    showStatus(`Auto-ping (${label}) ${next ? "enabled" : "disabled"}`, "success");
+    showStatus(
+      `Auto-ping (${label}) ${next.enabled ? "enabled" : "disabled"} for ${count} account(s)`,
+      "success",
+    );
   } else {
     showStatus(`Failed: ${result.error}`, "error");
   }
@@ -233,4 +275,4 @@ async function resetPassword() {
   await pause();
 }
 
-module.exports = { showSettingsMenu };
+module.exports = { showSettingsMenu, autoPingIsOn, nextAutoPingConfig };

@@ -2,6 +2,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const { pathToFileURL } = require('url');
 
 const origCreate = http.createServer.bind(http);
@@ -283,6 +284,53 @@ function isClientDisconnect(err, req, res) {
   return Boolean(req?.aborted || req?.destroyed || res?.destroyed);
 }
 
+    // One LOG.boot line after the server binds (docs/logging-design.md). Every
+// field is best-effort: nothing here may throw into boot.
+//
+// This file is CJS and OUTSIDE the webpack bundle, so it cannot reach the
+// bundled decide.js — and `src/` is not on disk in the published standalone
+// (the comment above initializeApp says so), which makes a dynamic import of
+// the source file a silent no-op in production. The line is therefore emitted
+// here with the same format and written straight to the same two sinks
+// (console for journald/dashboard, decisions.ndjson for file grep). All
+// values are self-generated scalars, so the shared redaction chokepoint has
+// nothing to add; whitespace is still flattened defensively.
+async function emitBootLine() {
+  try {
+    let sha = 'unknown';
+    for (const candidate of [path.join(__dirname, 'BUILD_SHA'), path.join(__dirname, 'cli', 'BUILD_SHA'), path.join(__dirname, '..', 'BUILD_SHA')]) {
+      try {
+        const text = fs.readFileSync(candidate, 'utf8').trim();
+        if (text) { sha = text.slice(0, 12); break; }
+      } catch { /* try the next candidate */ }
+    }
+    let version = 'unknown';
+    try {
+      version = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || 'unknown';
+    } catch { /* keep unknown */ }
+    const [nodeMajor, nodeMinor] = process.versions.node.split('.');
+    const dataDir = process.platform === 'win32'
+      ? path.join(process.env.APPDATA || '', 'tokenproxy')
+      : path.join(os.homedir(), '.tokenproxy');
+    const fields = {
+      sha,
+      version: String(version).slice(0, 60),
+      node: `${nodeMajor}.${nodeMinor}`,
+      db: path.basename(process.env.DATA_DIR || dataDir).replace(/^\./, '') || 'unknown',
+      logdecisions: process.env.TOKENPROXY_LOG_DECISIONS === 'off' ? 'off' : 'on',
+    };
+    const scalar = (v) => String(v).replace(/[\s -]+/g, '_').slice(0, 60);
+    const line = `${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')} LOG.boot `
+      + Object.entries(fields).map(([k, v]) => `${k}=${scalar(v)}`).join(' ');
+    console.log(line);
+    try {
+      const sink = path.join(process.env.DATA_DIR || dataDir, 'logs', 'decisions.ndjson');
+      fs.mkdirSync(path.dirname(sink), { recursive: true, mode: 0o700 });
+      fs.appendFileSync(sink, JSON.stringify({ ts: new Date().toISOString(), cls: 'LOG', verdict: 'boot', ...fields }) + '\n', { mode: 0o600 });
+    } catch { /* the ndjson sink is best-effort; the journal line already carries it */ }
+  } catch { /* boot logging must never throw */ }
+}
+
 // Wrap Next standalone HTTP server: derive client IP from the TCP socket
 // (unspoofable) and strip client-supplied forwarding headers so downstream
 // rate-limiting keys on the real peer address instead of attacker-controlled XFF.
@@ -363,6 +411,7 @@ http.createServer = (...args) => {
     socket.destroy();
   });
   server.once('listening', () => {
+    emitBootLine();
     startBackgroundTokenRefreshFromCustomServer();
   });
   const origEmit = server.emit;
@@ -380,7 +429,8 @@ http.createServer = (...args) => {
     }
     const chunks = [head];
     let received = head.length;
-    const serve = () => {
+
+const serve = () => {
       // Replay the upgraded request through the existing HTTP/1.1 handler.
       const replay = new http.IncomingMessage(socket);
       Object.assign(replay, {

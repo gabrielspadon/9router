@@ -22,7 +22,7 @@ function estTokens(chars) {
 }
 
 function skipped(reason, extra = {}) {
-  return { body: null, summary: { applied: false, reason, ...extra } };
+  return { body: null, summary: { applied: false, reason, saver: "pxpipe", ...extra } };
 }
 
 // Transform a Claude-format request body through pxpipe. Returns
@@ -77,6 +77,7 @@ export async function compressWithPxpipe(body, { enabled, format, model, minChar
     const summary = {
       applied: true,
       reason: "applied",
+      saver: "pxpipe",
       originalChars,
       compressedBodyChars,
       imagedChars,

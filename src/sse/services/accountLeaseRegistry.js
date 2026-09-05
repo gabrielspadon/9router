@@ -51,6 +51,17 @@ export function _getLeaseRegistry() {
 }
 
 /**
+ * The most recent reserve refusal for `connectionId`: {held, cap,
+ * retryAfterMs} or null. What a LEASE.refused line prints (row 37). A lease
+ * object itself already carries `seq` (what LEASE.double-release prints,
+ * row 39) and, when admitted without a ceiling, `ungated` + `why` +
+ * `held` (what LEASE.ungated prints, row 38).
+ */
+export function lastLeaseRefusal(connectionId) {
+  return leaseRegistry.lastRefusal(connectionId);
+}
+
+/**
  * Release a lease taken by getProviderCredentials.
  *
  * IDEMPOTENT by construction (accountLease.js release returns true only for the

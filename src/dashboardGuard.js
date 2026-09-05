@@ -11,6 +11,7 @@ import {
   isAdminMutation,
   isAdminPath,
 } from "@/lib/admin/policy.js";
+import { logAdminAuthz } from "@/lib/admin/authzLog.js";
 
 // A 401 from the gateway itself and a 401 relayed from an upstream provider
 // rendered identically in clients, so users could not tell whether to sign in
@@ -237,15 +238,19 @@ async function isAuthenticated(request) {
  */
 async function adminGateDenial(request, pathname) {
   const operator = (await hasValidCliToken(request)) || (await hasValidToken(request));
-  return adminDecision({
-    authClass: adminAuthClass(pathname),
-    mutating: isAdminMutation(request.method),
-    operator,
-    // Only asked when it can still change the answer, since validating a key
-    // is a database round trip on every admin request otherwise.
-    inference: operator ? false : await hasValidApiKey(request),
-    loopback: isLocalRequest(request),
-  });
+  // Only asked when it can still change the answer, since validating a key
+  // is a database round trip on every admin request otherwise.
+  const mutating = isAdminMutation(request.method);
+  const inference = operator ? false : await hasValidApiKey(request);
+  const loopback = isLocalRequest(request);
+  const authClass = adminAuthClass(pathname);
+  const decision = adminDecision({ authClass, mutating, operator, inference, loopback });
+  logAdminAuthz(
+    request,
+    { authClass, mutating, operator, inference, loopback, pathname },
+    decision
+  );
+  return decision;
 }
 
 function isPublicApi(pathname) {
@@ -279,11 +284,11 @@ export async function proxy(request) {
   // The admin ABI, gated before every other /api rule so no later branch can
   // reach it. ADMIN_API_PREFIX is the literal these paths are matched on.
   if (isAdminPath(pathname)) {
-    const denial = await adminGateDenial(request, pathname);
-    if (!denial) return NextResponse.next();
+    const decision = await adminGateDenial(request, pathname);
+    if (!decision || decision.allow) return NextResponse.next();
     return NextResponse.json(
-      { error: denial.error, code: denial.code, source: ADMIN_ERROR_SOURCE },
-      { status: denial.status },
+      { error: decision.error, code: decision.code, source: ADMIN_ERROR_SOURCE },
+      { status: decision.status },
     );
   }
 

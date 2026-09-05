@@ -80,7 +80,7 @@ vi.mock("../../open-sse/rtk/headroom.js", () => ({
   isHeadroomPhantomSavings: mocks.headroom.isHeadroomPhantomSavings,
 }));
 
-vi.mock("../../open-sse/pxpipe.js", () => ({
+vi.mock("../../open-sse/rtk/pxpipe.js", () => ({
   compressWithPxpipe: vi.fn(async () => ({ body: null, summary: { applied: false, reason: "disabled" } })),
 }));
 

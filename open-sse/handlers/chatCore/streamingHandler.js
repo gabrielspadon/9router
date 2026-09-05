@@ -9,9 +9,10 @@ import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { peekStreamForContent } from "../../utils/streamContent.js";
-import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine, doneFields } from "./requestDetail.js";
 import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
-import { saveRequestDetail } from "@/lib/usageDb.js";
+import { saveRequestDetail } from "../../../src/lib/usageDb.js";
+import { decide, req, reqSummary, RID_HEADER } from "../../../src/shared/observability/decide.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { withGenerationIdHeader } from "../../utils/generationId.js";
 import {
@@ -70,8 +71,10 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, privacyFilter, reqTag, log, callerSignal }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, privacyFilter, reqTag, log, callerSignal, rid }) {
   if (callerSignal?.aborted) return createCallerAbortResult();
+
+  const getConnPrefix = () => (connectionId ? String(connectionId).slice(0, 8) : undefined);
 
   // Every failure below rejects the stream BEFORE the placeholder detail row is
   // written, and chatCore's own error sinks only see a transport throw or a non-2xx
@@ -79,7 +82,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // body, a JSON error payload, a stream carrying no content), left the user an error
   // in the client and nothing in Recent Requests to open (#2221). Recording one row in
   // the shape chatCore already uses makes the failed request inspectable like any other.
-  const failStream = (status, message) => {
+  const failStream = (status, message, why) => {
+    // 200-OK-but-unusable classification forks: one STREAM.non-sse line.
+    decide("STREAM", "non-sse", { rid, conn: getConnPrefix(), why: why || "unknown" });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
@@ -90,6 +95,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       response: { error: message, status, thinking: null },
       pxpipe,
       status: "error",
+      rid,
     }, { id: streamDetailId })).catch(() => {});
     return {
       success: false,
@@ -97,7 +103,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       error: message,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${message}` } }), {
         status,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...(rid ? { [RID_HEADER]: rid } : {}) },
       }),
     };
   };
@@ -135,7 +141,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
     streamController?.handleError?.(new Error(shortMsg));
-    return failStream(status, shortMsg);
+    return failStream(status, shortMsg, "non-sse-content-type");
   }
 
   // First-valid-event gate: buffer the first chunk from upstream before confirming success.
@@ -146,7 +152,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const shortMsg = provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream returned no response body";
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
     streamController?.handleError?.(new Error(shortMsg));
-    return failStream(status, shortMsg);
+    return failStream(status, shortMsg, "no-body");
   }
 
   let hasMeaningfulSseContent = true;
@@ -164,7 +170,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         : `Upstream stream read error: ${contentPeek.error?.message || contentPeek.error}`;
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
       streamController?.handleError?.(provider === "antigravity" ? new Error(shortMsg) : contentPeek.error);
-      return failStream(status, shortMsg);
+      return failStream(status, shortMsg, "peek-read-error");
     }
     if (contentPeek.upstreamError) {
       // The peek detects an upstream that answers 200 and puts its error in the
@@ -181,7 +187,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · upstream error as content\n    ${shortMsg}`);
       else log?.warn?.("CHATCORE", `${provider}/${model} streamed HTTP 200 carrying an upstream error — treating as failure. ${contentPeek.upstreamError.reason}`);
       streamController?.handleError?.(new Error(shortMsg));
-      return failStream(status, shortMsg);
+      return failStream(status, shortMsg, "upstream-error-as-content");
     }
     hasMeaningfulSseContent = contentPeek.hasContent;
     providerResponse = { ...providerResponse, body: contentPeek.body };
@@ -204,7 +210,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         : "Upstream stream ended before a valid event (empty stream)";
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
       streamController?.handleError?.(new Error(shortMsg));
-      return failStream(status, shortMsg);
+      return failStream(status, shortMsg, "empty-stream");
     }
     firstChunk = value;
   } catch (readErr) {
@@ -219,7 +225,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       : `Upstream stream read error: ${readErr?.message || readErr}`;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
     streamController?.handleError?.(provider === "antigravity" ? new Error(shortMsg) : readErr);
-    return failStream(status, shortMsg);
+    return failStream(status, shortMsg, "read-error");
   }
 
   const reportValidation = async (validation) => {
@@ -244,7 +250,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       const status = 502;
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
       streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
-      return failStream(status, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      return failStream(status, ANTIGRAVITY_SAFE_ERROR_MESSAGE, "antigravity-json-error");
     }
     if (jsonCapture.exceeded) {
       try { await reader.cancel(); } catch {}
@@ -252,7 +258,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       const status = 502;
       if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
       streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
-      return failStream(status, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      return failStream(status, ANTIGRAVITY_SAFE_ERROR_MESSAGE, "antigravity-json-error");
     }
     bufferedAntigravityJson = jsonCapture.text;
   }
@@ -272,7 +278,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const status = 403;
     const message = ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE;
     streamController?.handleError?.(new Error(message));
-    return failStream(status, message);
+    return failStream(status, message, "verification-required");
   }
 
   if (initialSseOutcome?.kind === "error") {
@@ -281,7 +287,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const status = 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${ANTIGRAVITY_SAFE_ERROR_MESSAGE}`);
     streamController?.handleError?.(new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE));
-    return failStream(status, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+    return failStream(status, ANTIGRAVITY_SAFE_ERROR_MESSAGE, "antigravity-sse-error");
   }
 
   // Check if first chunk contains a structured JSON error object returned as 200 OK
@@ -306,7 +312,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
             try { await reader.cancel(); } catch {}
             try { reader.releaseLock?.(); } catch {}
           }
-          return failStream(status, safeErrMsg);
+          return failStream(status, safeErrMsg, "upstream-error-object");
         }
       } catch {
         // Not a pure JSON error object, treat as valid streaming content
@@ -323,7 +329,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       : "Upstream stream ended before meaningful content";
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
     streamController?.handleError?.(new Error(shortMsg));
-    return failStream(status, shortMsg);
+    return failStream(status, shortMsg, "no-meaningful-content");
   }
 
   if (bufferedAntigravityJson != null) {
@@ -426,7 +432,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = emittedFormat === FORMATS.OPENAI_RESPONSES;
-  const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
+  const onAbortTerminal = isResponsesPassthrough
+    ? () => {
+        decide("STREAM", "terminal-synthesized", { rid, why: "abort" });
+        return buildAbortedResponsesTerminalBytes();
+      }
+    : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const wrappedResponse = {
     ...providerResponse,
@@ -440,6 +451,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     callerSignal,
   });
 
+  // If completion (or abandonment) fired synchronously during pipe setup, the
+  // one-shot finalizer in buildOnStreamComplete already ran and cannot rewrite
+  // this row — the placeholder would stay "pending" forever (doc row 65).
+  if (completionDelivered) decide("STREAM", "detail-pending", { rid });
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: 0, total: Date.now() - requestStartTime },
@@ -464,9 +479,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     // StatusBadge, RequestDetailsTab's icon and UsageStats' dot all test for
     // success and fall through to the failure tone otherwise — so the row stays
     // visible and reads as not-yet-succeeded rather than as a good response.
-    status: "pending"
-  }, { id: streamDetailId })).catch(err => {
-    console.error("[RequestDetail] Failed to save streaming request:", err.message);
+    status: "pending",
+    rid,
+  }, { id: streamDetailId })).catch(() => {
+    decide("ACCT", "detail-write-failed", { rid, phase: "save-stream" });
   });
 
   // Privacy filter (#2728): last transform before the client, so an alias is
@@ -479,7 +495,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       // allowlist in utils/generationId.js. It is the only handle a user or an
       // operator has for correlating this turn against the upstream's billing
       // and logs.
-      headers: withGenerationIdHeader(SSE_HEADERS, providerResponse)
+      headers: withGenerationIdHeader(
+        rid ? { ...SSE_HEADERS, [RID_HEADER]: rid } : SSE_HEADERS,
+        providerResponse,
+      )
     })
   };
 }
@@ -518,7 +537,8 @@ function notifyTerminalVerificationSuccess(callback, connectionId, log) {
  *   rotation for the *next* request (see chat.js), which is what actually
  *   gets a retried request routed to a different backend.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat, notifyTerminalVerificationSuccess: notifyTerminal }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onEmptyStream, sourceFormat, rid, route, fmt, sel, notifyTerminalVerificationSuccess: notifyTerminal,
+  saverFields = {} }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   // One-shot finalization guard shared by onStreamComplete (flush/cancel paths)
@@ -528,6 +548,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
 
   // Mutable state the SSE transform stream populates on every chunk via syncState()
   const streamState = { usage: null, content: "", thinking: "", ttftAt: null };
+
+  const connPrefix = () => (connectionId ? String(connectionId).slice(0, 8) : undefined);
 
   // Both finalization paths lock the account the same way; onEmptyStream is
   // async in chat.js, so a rejection here must not surface as an unhandled one.
@@ -578,16 +600,25 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: aborted ? "aborted" : "success"
-    }, { id: streamDetailId })).catch(err => {
-      console.error("[RequestDetail] Failed to update streaming content:", err.message);
+      status: aborted ? "aborted" : "success",
+      rid,
+    }, { id: streamDetailId })).catch(() => {
+      decide("ACCT", "detail-write-failed", { rid, phase: "update" });
     });
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, label: aborted ? "STREAM USAGE (aborted)" : "STREAM USAGE", silent: true });
-    if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, label: aborted ? "STREAM USAGE (aborted)" : "STREAM USAGE", silent: true, rid });
+    // The one nominal per-request line (doc §3.3/3.4): success is REQ.ok,
+    // an aborted/interrupted completion is REQ.failed — exactly one, never both.
+    if (usage?.estimated) decide("STREAM", "usage-estimated", { rid, conn: connPrefix(), why: "provider-omitted-usage" });
+    if (aborted) {
+      reqSummary("failed", { ...saverFields, rid, conn: connPrefix(), route, fmt, sel, status: 499, why: "aborted" });
+    } else {
+      reqSummary("ok", { ...saverFields, rid, conn: connPrefix(), route, fmt, sel, row: streamDetailId, ...doneFields({ usage, latency }) });
+    }
 
     if (!contentObj?.content?.trim?.() && !contentObj?.thinking?.trim?.() && !hasOutputTokens(usage)) {
+      decide("STREAM", "empty", { rid, conn: connPrefix(), why: "no-content", lock: true });
       lockForNextRequest("stream completed with no content/thinking/output tokens");
     }
 
@@ -627,15 +658,24 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: detail,
       response: { content: detail, thinking: null, type: "streaming" },
       pxpipe,
-      status: "cancelled"
-    }, { id: streamDetailId })).catch(err => {
-      console.error("[RequestDetail] Failed to finalize interrupted stream:", err.message);
+      status: "cancelled",
+      rid,
+    }, { id: streamDetailId })).catch(() => {
+      decide("ACCT", "detail-write-failed", { rid, phase: "finalize" });
     });
 
     if (hasValidUsage(tokens)) {
       saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, translatedBody, label: "STREAM USAGE (interrupted)", silent: true });
     }
     if (log?.line) log.line(reqTag, "✗", `INTERRUPTED ${reason || "unknown"}`);
+    reqSummary("failed", { ...saverFields, rid,
+      conn: connPrefix(),
+      route,
+      fmt,
+      sel,
+      status: reason === "client_disconnect" || reason === "caller_abort" ? 499 : 502,
+      why: String(reason || "unknown").slice(0, 40),
+    });
 
     // A stall is the one interruption the client cannot route around: the
     // account answered 200 and then went silent, so the next request would be
@@ -644,6 +684,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     // report asks for rotation when the model hangs in the reasoning phase and
     // explicitly not for a stall during a healthy final response.
     if (reason === "stall_timeout" && !streamState.content?.trim?.() && !hasOutputTokens(tokens)) {
+      const stallLimit = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+      decide("STREAM", "stalled", { rid, conn: connPrefix(), idle: stallLimit, limit: stallLimit, action: "lock" });
       lockForNextRequest("stalled before producing any answer");
     }
   };

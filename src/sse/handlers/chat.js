@@ -33,7 +33,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
-import { decide, idPrefix, relativeReset, requestRid } from "@/shared/observability/decide.js";
+import { decide, idPrefix, relativeReset, requestRid, req } from "@/shared/observability/decide.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { looksLikeClaudeWrappedModel,
@@ -161,19 +161,20 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     // measured six-hour window, 73.9% of the whole journal, naming neither the
     // caller, the limit, the window nor the reset -- while all four were in
     // scope on the next line. It is now one folded ADM.ratelimited carrying all
-    // four. `key` is a SHA-256 prefix, which tells two callers apart without the
-    // line ever holding the credential. `model` is deliberately absent: the body
-    // is not parsed until after this gate and reading it here to decorate a log
-    // line would consume the request stream.
+    // four: the window lives inside `limit=60/60s`, so there is no `win` field.
+    // `key` is a SHA-256 prefix, which tells two callers apart without the
+    // line ever holding the credential. `why` is a closed three-value enum.
+    // `model` is deliberately absent: the body is not parsed until after this
+    // gate and reading it here to decorate a log line would consume the
+    // request stream.
     decide("ADM", "ratelimited", {
       rid,
       key: apiKey
         ? `api:${idPrefix(apiKey)}`
         : rateLimitKey === "anonymous" ? "anon" : `ip:${idPrefix(rateLimitKey)}`,
       limit: `${RATE_LIMIT_MAX_REQUESTS}/${RATE_LIMIT_WINDOW_MS / 1000}s`,
-      win: `${RATE_LIMIT_WINDOW_MS / 1000}s`,
       reset: relativeReset(resetAt),
-      why: apiKey ? "api-key-window" : "client-window",
+      why: apiKey ? "api-key-window" : rateLimitKey === "anonymous" ? "anon-window" : "ip-window",
     });
     return errorResponse(HTTP_STATUS.RATE_LIMITED, "Too many requests, please slow down", {
       retryAfter: { at: resetAt },
@@ -223,12 +224,22 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   // the stored setting imposes. A container operator has no dashboard to click,
   // which is why the env var has to work at all.
   const settings = await getSettings();
+  // `source` is which requirement fired: the stored setting wins when both
+  // are set, because the env var can only tighten, never relax (see below).
+  const requireApiKeySource = settings.requireApiKey ? "setting" : "env";
   const requireApiKey = settings.requireApiKey || process.env.REQUIRE_API_KEY === "true";
   if (requireApiKey) {
     const authorized = await isInternalModelTestAuthorized(request, apiKey, isValidApiKey);
     if (!authorized) {
+      // One decision, one line: ADM.key-required when nothing was presented,
+      // ADM.key-invalid when a key was presented but did not validate. The key
+      // itself never appears (silence policy), only `presented=true|false`.
+      decide("ADM", presentedApiKey ? "key-invalid" : "key-required", {
+        rid,
+        source: requireApiKeySource,
+        presented: presentedApiKey ? true : false,
+      });
       const message = presentedApiKey ? "Invalid API key" : "Missing API key";
-      log.warn("AUTH", `${message} (requireApiKey=true)`);
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, message);
     }
     // Count the distinct clients on this key, so a leaked or shared key is
@@ -253,7 +264,9 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   // rewrite (the claude- prefix and routing-index resolution) stays gated.
   const unsuffixed = stripContextSuffix(modelStr);
   if (unsuffixed !== modelStr) {
-    log.info("CHAT", `Context suffix: "${modelStr}" -> "${unsuffixed}"`);
+    // DEBUG, not INFO: one line per request that names nothing an operator
+    // acts on (the doc's row 10 records the strip via path=, not narration).
+    log.debug("CHAT", `Context suffix: "${modelStr}" -> "${unsuffixed}"`);
     body.model = unsuffixed;
     modelStr = unsuffixed;
   }
@@ -443,6 +456,9 @@ export async function providerConcurrencyOverflow(provider, settings = null) {
 }
 
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, comboChain = null, callerSignal = request?.signal) {
+  // Same request object handleChat saw, so readRid's memoised WeakMap hands
+  // back the SAME rid every hop of a recursive chat call.
+  const rid = requestRid(request);
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -593,6 +609,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const credentialOptions = {
       clientHeaders: clientRawRequest?.headers || null,
       clientBody: body,
+      // Decision-log context for auth.js (docs/logging-design.md 3.2): rid
+      // joins every SEL/LEASE/LOCK line this selection emits.
+      logCtx: { rid },
     };
     if (lastFailedConn) credentialOptions.ignoreModelLockConnId = lastFailedConn;
     if (requestReplayConnectionId) credentialOptions.preferredConnectionId = requestReplayConnectionId;
@@ -645,9 +664,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       if (!credentials || credentials.allRateLimited) {
         if (credentials?.allRateLimited) {
           const errorMsg = credentials.lastError || "Unavailable";
-          const status = credentials.clientErrorStatus ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
-          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+          // Selection's own status and message, deliberately. They describe the
+          // account selection actually consulted; substituting the status or
+          // the text of an account that failed EARLIER in this cascade reports
+          // one account's problem as another's. Selection is now the layer that
+          // knows an exhausted pool is a 429 and what its earliest real reset
+          // is (auth.js), so there is nothing left for this branch to correct.
+          const status = credentials.clientErrorStatus
+            ?? (Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE);
+          log.warn(
+            "CHAT",
+            `[${provider}/${model}] ${errorMsg} [${status}] (${credentials.retryAfterHuman})`,
+          );
+          return unavailableResponse(
+            status,
+            `[${provider}/${model}] ${errorMsg}`,
+            credentials.retryAfter,
+            credentials.retryAfterHuman,
+          );
         }
         if (excludeConnectionIds.size === 0) {
           log.warn("AUTH", `No active credentials for provider: ${provider}`);
@@ -738,6 +772,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         pxpipeTransform: comboTokenSaver.pxpipeEnabled ? await getPxpipeTransform() : null,
         onPxpipeEvent: appendPxpipeEvent,
         onTokenSaverEvent: appendTokenSaverEvent,
+        // 8-char session prefix for REQ ce= cache-epoch telemetry; idPrefix
+        // returns null when selection carried no client-derived session.
+        sid: idPrefix(credentials.sessionHash),
         providerThinking,
         connectTimeout,
         codexFastMode: chatSettings.providerStrategies?.codex?.fastMode === true,
@@ -777,7 +814,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
             `Empty streaming response from ${provider}/${model}`,
             provider,
             model,
-            Date.now() + EMPTY_CONTENT_COOLDOWN_MS
+            Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
+            null,
+            { rid }
           );
         }
       });
@@ -825,13 +864,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         lastError = reason;
         lastStatus = peeked.upstreamError?.status || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} ${reason} → NEXT ACCOUNT`);
+        decide("UP", "failover", { rid, from: String(credentials.connectionId).slice(0, 8), to: "pool", why: String(reason).slice(0, 40) });
         await markAccountUnavailable(
           credentials.connectionId,
           HTTP_STATUS.BAD_GATEWAY,
           `${reason} from ${provider}/${model}`,
           provider,
           model,
-          Date.now() + EMPTY_CONTENT_COOLDOWN_MS
+          Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
+          null,
+          { rid }
         );
         excludeConnectionIds.add(credentials.connectionId);
         continue;
@@ -848,6 +890,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         requestReplayAttempted = true;
         requestReplayConnectionId = credentials.connectionId;
         log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
+        decide("UP", "replay-overflow", { rid });
         continue;
       }
 
@@ -861,6 +904,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         result.resetsAtMs,
       ];
       if (result.failureMetadata) accountFailureArgs.push(result.failureMetadata);
+      accountFailureArgs.push({ rid });
       const { shouldFallback, cooldownMs } = await markAccountUnavailable(...accountFailureArgs);
 
       if (shouldFallback) {
@@ -877,6 +921,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         // the real upstream response rather than rotating past the budget.
         if (maxAttempts && excludeConnectionIds.size + 1 >= maxAttempts) {
           log.warn("CHAT", `[${provider}/${model}] attempt ceiling ${maxAttempts} reached`);
+          decide("UP", "attempt-ceiling", { rid, attempts: maxAttempts });
           leaseHandedOff = true;
           return releaseAccountLeaseOnResponse(result.response, accountLease);
         }
@@ -897,14 +942,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           // Same account, immediate retry — cooldown was skipped for transient
           // errors, so this is a fast re-dispatch rather than a wait.
           log.warn("RETRY", `⇄ ACC:${credentials.connectionName} failed (${result.status}) attempt ${fails}/${ACCOUNT_RETRY_LIMIT} → RETRY SAME`);
+          decide("UP", "retry", { rid, conn: String(credentials.connectionId).slice(0, 8), attempt: fails, why: `status-${result.status}` });
           continue;
         }
         if (cooldownMs > SAME_ACCOUNT_RETRY_MAX_COOLDOWN_MS) {
           log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} locked ${Math.round(cooldownMs / 1000)}s (${result.status}) → NEXT ACCOUNT`);
+          decide("UP", "failover", { rid, from: String(credentials.connectionId).slice(0, 8), to: "pool", why: `locked-${Math.round(cooldownMs / 1000)}s` });
           excludeConnectionIds.add(credentials.connectionId);
           continue;
         }
         log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE after ${ACCOUNT_RETRY_LIMIT} tries (${result.status}) → NEXT ACCOUNT`);
+        decide("UP", "failover", { rid, from: String(credentials.connectionId).slice(0, 8), to: "pool", why: `unavailable-${result.status}` });
         excludeConnectionIds.add(credentials.connectionId);
         continue;
       }

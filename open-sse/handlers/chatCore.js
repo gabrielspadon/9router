@@ -10,6 +10,7 @@ import { FORMATS } from "../translator/formats.js";
 import {
   normalizeClaudePassthrough,
   anchorClaudeCache,
+  countCacheAnchors,
 } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -37,8 +38,8 @@ import {
   appendRequestLog,
   saveRequestDetail,
   trackActiveSession,
-} from "@/lib/usageDb.js";
-import { nextRid } from "@/shared/observability/decide.js";
+} from "../../src/lib/usageDb.js";
+import { decide, nextRid, req, notePath, RID_HEADER } from "../../src/shared/observability/decide.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import {
@@ -180,6 +181,38 @@ export function stripContinuityFields(body, provider, model, log) {
   return body;
 }
 
+// REQ ce= cache-epoch collector: sid -> { body: serialized final pre-dispatch
+// body, at: ms }. Bounded the same way decide.js bounds its path collector:
+// cap 2048, TTL 30 min, LRU eviction, one trim pass per insert.
+const CE_CAP = 2048;
+const CE_TTL_MS = 30 * 60 * 1000;
+const ceBodies = new Map();
+
+function commonPrefixBytes(a, b) {
+  const ba = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  const n = Math.min(ba.length, bb.length);
+  let i = 0;
+  while (i < n && ba[i] === bb[i]) i++;
+  return i;
+}
+
+function trackCacheEpoch(sid, serialized) {
+  const now = Date.now();
+  let ce;
+  const prev = ceBodies.get(sid);
+  if (prev && now - prev.at <= CE_TTL_MS) ce = commonPrefixBytes(prev.body, serialized);
+  ceBodies.delete(sid);
+  ceBodies.set(sid, { body: serialized, at: now });
+  if (ceBodies.size > CE_CAP) {
+    for (const key of ceBodies.keys()) {
+      ceBodies.delete(key);
+      if (ceBodies.size <= CE_CAP * 0.9) break;
+    }
+  }
+  return ce;
+}
+
 export async function handleChatCore({
   requestId,
   body,
@@ -216,6 +249,7 @@ export async function handleChatCore({
   pxpipeTransform,
   onPxpipeEvent,
   onTokenSaverEvent,
+  sid,
   sourceFormatOverride,
   providerThinking,
   connectTimeout,
@@ -271,6 +305,7 @@ export async function handleChatCore({
   // which is why the live journal shows a 🟢 DONE landing before the 🟡 that
   // started it. The emoji stays for the operator's own eye.
   const rid = requestId || nextRid();
+  const connPrefix = connectionId ? String(connectionId).slice(0, 8) : undefined;
   const reqTag = rid ? `${emojiTag} rid=${rid}`.trim() : emojiTag;
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
@@ -605,41 +640,6 @@ export async function handleChatCore({
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
-  // Request line: one correlated summary (fmt + thinking + counts + account)
-  if (log?.line) {
-    const clientModel = clientRawRequest?.body?.model || `${provider}/${model}`;
-    const msgN =
-      translatedBody.messages?.length ||
-      translatedBody.input?.length ||
-      translatedBody.contents?.length ||
-      body.messages?.length ||
-      body.input?.length ||
-      0;
-    const toolN = translatedBody.tools?.length || body.tools?.length || 0;
-    const fmtStr = passthrough
-      ? `FMT: ${sourceFormat} (passthrough)`
-      : `FMT: ${sourceFormat}→${targetFormat}`;
-    const showThinking =
-      provider !== "grok-cli" || supportsGrokCliReasoningEffort(model);
-    const think = showThinking
-      ? log.fmtThink?.(extractThinking(translatedBody))
-      : null;
-    const acc =
-      credentials?.connectionName ||
-      credentials?.connectionId?.slice(0, 8) ||
-      "-";
-    const parts = [
-      `POST ${clientModel} → ${provider}/${model}`,
-      fmtStr,
-      stream ? "STREAM" : "JSON",
-      `${msgN} MSG`,
-    ];
-    if (toolN) parts.push(`${toolN} TOOL`);
-    if (think) parts.push(`THINK:${think}`);
-    parts.push(`ACC:${acc}`);
-    log.line(reqTag, "▶", parts.join(" · "));
-  }
-
   // TTS models don't support tool messages/function calling
   if (getModelType(alias, model) === "tts" && translatedBody.messages) {
     translatedBody.messages = translatedBody.messages.filter(
@@ -647,6 +647,38 @@ export async function handleChatCore({
     );
     delete translatedBody.tools;
   }
+
+  // Token-saver byte ledger: whole-body per-stage deltas serialized once per
+  // stage boundary. Feeds REQ save=/save_tok=, the XFORM.saver-guard anomaly
+  // line, bytesSaved on the saver event rows, and the honest growth check.
+  // Off entirely when no saver will run, so a saver-free request pays nothing.
+  const saverWillRun = Boolean(
+    pxpipeEnabled ||
+      (tokenSaverEnabled &&
+        (rtkEnabled ||
+          headroomEnabled ||
+          cavemanEnabled ||
+          ponytailEnabled ||
+          memorySettings)),
+  );
+  const saverStages = [];
+  const saverPrev = saverWillRun
+    ? { bytes: Buffer.byteLength(JSON.stringify(translatedBody)) }
+    : null;
+  const saverEntryBytes = saverPrev ? saverPrev.bytes : 0;
+  const measureSaverStage = (stage, ran) => {
+    if (!saverPrev || !ran) return;
+    const at = Buffer.byteLength(JSON.stringify(translatedBody));
+    if (at !== saverPrev.bytes) {
+      saverStages.push({
+        stage,
+        delta: at - saverPrev.bytes,
+        in: saverPrev.bytes,
+        out: at,
+      });
+    }
+    saverPrev.bytes = at;
+  };
 
   // RTK: compress tool_result content.
   //
@@ -665,23 +697,12 @@ export async function handleChatCore({
   );
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
-  try {
-    if (tokenSaverEnabled && rtkStats?.hits?.length) {
-      const evt = {
-        saver: "rtk",
-        applied: true,
-        appliedCount: rtkStats.hits.length,
-        charsBefore: rtkStats.bytesBefore,
-        charsAfter: rtkStats.bytesAfter,
-        charsSaved: Math.max(
-          0,
-          (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0),
-        ),
-      };
-      if (typeof onTokenSaverEvent === "function") onTokenSaverEvent(evt);
-    }
-  } catch {
-    /* stats must not break requests */
+  measureSaverStage("rtk", rtkWillRun);
+  // Row emission for every saver is deferred to just after the anchor stage
+  // below, where the whole-body delta and the final-body cache epoch are both
+  // known; the path code speaks here where the stage ran.
+  if (tokenSaverEnabled && rtkStats?.hits?.length) {
+    notePath(rid, "XFORM.rtk-applied");
   }
 
   // Privacy filter (#2728): pseudonymise emails and operator terms in the
@@ -724,26 +745,15 @@ export async function handleChatCore({
   });
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
-  // Headroom aggregate event: only after bodyBytes actually shrank (diagnostics.after populated)
-  try {
-    if (
-      tokenSaverEnabled &&
-      Number.isFinite(headroomStats?.tokens_saved) &&
-      headroomDiagnostics?.after
-    ) {
-      const evt = {
-        saver: "headroom",
-        applied: true,
-        tokensBefore: headroomStats.tokens_before,
-        tokensAfter: headroomStats.tokens_after,
-        tokensSaved: headroomStats.tokens_saved,
-        bodyBytesBefore: headroomDiagnostics.before?.bodyBytes,
-        bodyBytesAfter: headroomDiagnostics.after?.bodyBytes,
-      };
-      if (typeof onTokenSaverEvent === "function") onTokenSaverEvent(evt);
-    }
-  } catch {
-    /* stats must not break requests */
+  measureSaverStage("headroom", tokenSaverEnabled && headroomEnabled);
+  if (
+    tokenSaverEnabled &&
+    Number.isFinite(headroomStats?.tokens_saved) &&
+    headroomDiagnostics?.after
+  ) {
+    // Row emission deferred past the anchor stage, where the whole-body
+    // delta and the final-body cache epoch are both known (same as RTK).
+    notePath(rid, "XFORM.headroom-applied");
   }
   if (headroomLine) {
     log?.info?.(
@@ -751,12 +761,22 @@ export async function handleChatCore({
       `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`,
     );
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
+      const phantomBefore = headroomDiagnostics?.before?.bodyBytes || 0;
+      const phantomAfter = headroomDiagnostics?.after?.bodyBytes || 0;
+      decide("XFORM", "headroom-phantom", {
+        rid,
+        delta: headroomStats.tokens_saved,
+        shrunk_pct: phantomBefore > 0 ? Math.round(((phantomBefore - phantomAfter) / phantomBefore) * 1000) / 10 : 0,
+      });
       log?.warn?.(
         "HEADROOM",
         `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`,
       );
     }
-  } else if (tokenSaverEnabled)
+  } else if (tokenSaverEnabled) {
+    // Folded fork (docs/logging-design.md row 52): a path code on the REQ
+    // line, not its own line.
+    notePath(rid, "XFORM.headroom-skip");
     // Gating this warn on headroomEnabled meant the ONE case a user needs told
     // about, the toggle being off while the dashboard reads Running because the
     // proxy answers, was the case that logged nothing at all (#1956). Say why in
@@ -765,6 +785,7 @@ export async function handleChatCore({
       "HEADROOM",
       `skipped: ${headroomEnabled ? (headroomDiagnostics.reason || "compression unavailable") : "disabled in settings"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`,
     );
+  }
 
   // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
@@ -773,13 +794,20 @@ export async function handleChatCore({
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
+    notePath(rid, "XFORM.injected");
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
+    notePath(rid, "XFORM.injected");
   }
+  measureSaverStage(
+    "inject",
+    tokenSaverEnabled &&
+      ((cavemanEnabled && cavemanLevel) || (ponytailEnabled && ponytailLevel)),
+  );
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
@@ -802,26 +830,47 @@ export async function handleChatCore({
       /* stats must not break requests */
     }
   }
+  measureSaverStage("pxpipe", pxpipeEnabled);
 
   // Memory & Context Optimizer (Tool & Media Pruning, Compaction, Cache Anchoring, Handoffs)
   if (tokenSaverEnabled && memorySettings) {
+    // THE MODEL'S OWN WINDOW decides when history has to be cut, and the
+    // capability table already knows it (1,000,000 for the Opus and Sonnet 5
+    // class, and a conservative default for anything it has not heard of).
+    // Without this the memory pipeline ran on fixed thresholds and pruned a
+    // conversation occupying 3% of its window.
+    const memoryCaps = getCapabilitiesForModel(provider, upstreamModel);
     const memRes = await applyMemoryEnhancements(translatedBody, {
       settings: memorySettings,
       targetFormat: finalFormat,
+      contextWindow: memoryCaps?.contextWindow ?? null,
       log,
     });
+    const memBudget = memRes.stats?.budget;
+    if (memBudget) {
+      // The occupancy line, on every request. It is the only way to see from a
+      // journal that a session is actually using the window it pays for, and
+      // it is what made the old behavior visible in the first place.
+      xf.push(
+        `CTX:${Math.round(memBudget.projectedAfter / 1000)}k`
+        + `/${Math.round(memBudget.limit / 1000)}k`,
+      );
+    }
     if (memRes.stats?.toolPruning?.applied) {
       xf.push(
         `TOOL-PRUNE:~${Math.round(memRes.stats.toolPruning.savedChars / 4)}t`,
       );
+      notePath(rid, "XFORM.mem-pruned");
     }
     if (memRes.stats?.mediaPruning?.applied) {
       xf.push(`MEDIA-PRUNE:${memRes.stats.mediaPruning.savedItems}`);
     }
     if (memRes.stats?.compaction?.applied) {
       xf.push(`COMPACT:${memRes.stats.compaction.savedTokens}t`);
+      notePath(rid, "XFORM.compact-applied");
     }
   }
+  measureSaverStage("mem", tokenSaverEnabled && memorySettings);
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
 
@@ -840,7 +889,95 @@ export async function handleChatCore({
     if (Array.isArray(translatedBody.tools)) {
       translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
     }
+    const anchorsBefore = countCacheAnchors(body);
     anchorClaudeCache(translatedBody);
+    // Path codes (doc §2 XFORM rows): client multi-anchor plan survived
+    // translation vs the re-anchor fallback.
+    const anchorsAfter = countCacheAnchors(translatedBody);
+    notePath(rid, anchorsBefore >= 2 && anchorsAfter >= anchorsBefore ? "XFORM.cache-keep" : "XFORM.cache-legacy");
+  }
+
+  // REQ save=/save_tok=/ce=: per-saver byte deltas (negative = saved, positive
+  // growth reported honestly) plus the cache-epoch prefix this request shares
+  // with its session's previous final pre-dispatch body. savers off -> silent.
+  const saverFields = {};
+  if (saverStages.length) {
+    saverFields.save = saverStages
+      .map((st) => `${st.stage}:${st.delta}`)
+      .join(",");
+    saverFields.save_tok = Math.round(
+      saverStages.reduce((a, st) => a + st.delta, 0) / 4,
+    );
+    for (const st of saverStages) {
+      // Phantom-growth anomaly, the inverse of the headroom phantom saver:
+      // a saver that grows the body by more than 5% of entry bytes is a bug,
+      // not a saver. Speak once per (rid, stage) — one request, one line.
+      // The inject stage is exempt: prompt injection ADDS the style text on
+      // purpose, and on small bodies that intentional addition trips the
+      // threshold — the guard is for compressors that were supposed to shrink.
+      if (st.stage !== "inject" && st.delta > saverEntryBytes * 0.05) {
+        decide("XFORM", "saver-guard", {
+          rid,
+          stage: st.stage,
+          in: st.in,
+          out: st.out,
+        });
+      }
+    }
+  }
+  if (sid) {
+    const ce = trackCacheEpoch(sid, JSON.stringify(translatedBody));
+    if (ce !== undefined) saverFields.ce = ce;
+  }
+
+  // Token-saver aggregate rows, one per saver that ran. Emitted here — after
+  // every saver stage and the anchor — so each row carries the whole-body
+  // bytesSaved/saveTokEst and the final-body cache epoch (ce), not just the
+  // per-tool char/token figures. Unit discipline (chars vs tokens vs bytes)
+  // lives in src/lib/tokenSaver/events.js; fields absent when unknown.
+  const saverStageDelta = (name) =>
+    saverStages.find((st) => st.stage === name)?.delta;
+  try {
+    if (tokenSaverEnabled && rtkStats?.hits?.length) {
+      const bytesSaved = saverStageDelta("rtk");
+      onTokenSaverEvent?.({
+        saver: "rtk",
+        applied: true,
+        appliedCount: rtkStats.hits.length,
+        charsBefore: rtkStats.bytesBefore,
+        charsAfter: rtkStats.bytesAfter,
+        charsSaved: Math.max(
+          0,
+          (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0),
+        ),
+        bytesSaved,
+        saveTokEst:
+          bytesSaved === undefined ? undefined : Math.round(bytesSaved / 4),
+        ce: saverFields.ce,
+      });
+    }
+    if (
+      tokenSaverEnabled &&
+      Number.isFinite(headroomStats?.tokens_saved) &&
+      headroomDiagnostics?.after
+    ) {
+      const bytesSaved = saverStageDelta("headroom");
+      onTokenSaverEvent?.({
+        saver: "headroom",
+        applied: true,
+        tokensBefore: headroomStats.tokens_before,
+        tokensAfter: headroomStats.tokens_after,
+        tokensSaved: headroomStats.tokens_saved,
+        bodyBytesBefore: headroomDiagnostics.before?.bodyBytes,
+        bodyBytesAfter: headroomDiagnostics.after?.bodyBytes,
+        bytesSaved,
+        saveTokEst:
+          bytesSaved === undefined ? undefined : Math.round(bytesSaved / 4),
+        ce: saverFields.ce,
+      });
+    }
+  } catch {
+    /* stats must not break requests */
   }
 
   const executor = getExecutor(provider);
@@ -932,20 +1069,26 @@ export async function handleChatCore({
         },
         pxpipe: pxpipeSummary,
         status: "error",
+        rid,
       }),
     ).catch(() => {});
 
     if (error.name === "AbortError") {
       streamController.handleError(isAntigravity ? new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE) : error);
-      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted");
+      req("failed", { rid, conn: connPrefix, status: 499, why: "aborted" });
+      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted", null, null, rid);
     }
     const errMsg = isAntigravity
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
       : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (isBodyReadTimeoutError(error)) {
+      req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
       return createErrorResult(
         HTTP_STATUS.GATEWAY_TIMEOUT,
         isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream response body timed out",
+        null,
+        null,
+        rid,
       );
     }
     if (log?.errorLine) {
@@ -955,7 +1098,8 @@ export async function handleChatCore({
         `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${!isAntigravity && error.stack ? `\n    ${error.stack}` : ""}`,
       );
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.BAD_GATEWAY, why: "transport" });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, null, null, rid);
   };
   try {
     const result = await executor.execute({
@@ -1139,6 +1283,10 @@ export async function handleChatCore({
               finalBody,
               requestStartTime,
               connectionId,
+              rid,
+              route: `${clientRawRequest?.body?.model || body?.model || "?"}>${provider}/${model}`,
+              fmt: `${sourceFormat}>${targetFormat}`,
+              sel: credentials?.selection?.verdict,
               apiKey,
               clientRawRequest,
               onRequestSuccess,
@@ -1146,6 +1294,7 @@ export async function handleChatCore({
               onValidationRequired,
               notifyTerminalVerificationSuccess,
               pxpipe: pxpipeSummary,
+              saverFields,
               privacyFilter,
               callerSignal,
               reqTag,
@@ -1252,6 +1401,7 @@ export async function handleChatCore({
         response: { error: sinkMessage, status: safeStatusCode, thinking: null },
         pxpipe: pxpipeSummary,
         status: "error",
+        rid,
       }),
     ).catch(() => {});
 
@@ -1267,7 +1417,8 @@ export async function handleChatCore({
       );
     }
     reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
-    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata);
+    req("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream", ...saverFields });
+    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata, rid);
   }
 
   const sharedCtx = {
@@ -1279,6 +1430,10 @@ export async function handleChatCore({
     finalBody,
     requestStartTime,
     connectionId,
+    rid,
+    route: `${clientRawRequest?.body?.model || body?.model || "?"}>${provider}/${model}`,
+    fmt: `${sourceFormat}>${targetFormat}`,
+    sel: credentials?.selection?.verdict,
     apiKey,
     clientRawRequest,
     onRequestSuccess,
@@ -1287,6 +1442,7 @@ export async function handleChatCore({
     notifyTerminalVerificationSuccess,
     onEmptyStream,
     pxpipe: pxpipeSummary,
+    saverFields,
     privacyFilter,
     callerSignal,
     reqTag,
