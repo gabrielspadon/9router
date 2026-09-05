@@ -30,11 +30,23 @@
 const DEFAULT_MAX_CHARS = 800;
 const DEFAULT_KEEP_TURNS = 2;
 
-// Error results are evidence, not bulk: rtk/index.js:8-13 never compresses
-// is_error/isError/status:'error' tool results, and neither does this pruner.
+// Error results are evidence, not bulk: rtk/index.js never compresses
+// error-flagged tool results, and neither does this pruner. R-F2: error:true
+// (strict boolean) and status:'failed' join the flag vocabulary.
 function isErrorFlagged(node) {
   if (!node || typeof node !== "object") return false;
-  return node.is_error === true || node.isError === true || node.status === "error";
+  return node.is_error === true || node.isError === true || node.error === true ||
+    node.status === "error" || node.status === "failed";
+}
+
+// R-F5: a historical result already rewritten by rtk's elide filter carries an
+// integrity marker; re-truncating it would destroy the marker, so it is kept
+// verbatim, like error evidence. Matches both the current hmac markers and
+// sha-era markers written by earlier processes.
+const ELIDE_MARKER_RE =
+  /\[elided \d+ chars · (?:sha|hmac) [0-9a-f]{8} · head\+tail preserved by tokenproxy\]/;
+function hasElideMarker(text) {
+  return typeof text === "string" && ELIDE_MARKER_RE.test(text);
 }
 
 // Truncation caps, generous to tight. A tier is applied to every historical
@@ -57,6 +69,11 @@ export const DEFAULT_PRESSURE_KEEP_TURNS = 20;
  */
 function truncateText(text, maxChars) {
   if (typeof text !== "string" || text.length <= maxChars) {
+    return { text, truncated: false, savedChars: 0 };
+  }
+
+  // R-F5: never re-truncate rtk-elided text — the elide integrity marker must survive.
+  if (hasElideMarker(text)) {
     return { text, truncated: false, savedChars: 0 };
   }
 

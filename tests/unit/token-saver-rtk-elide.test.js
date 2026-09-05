@@ -1,7 +1,9 @@
 // Elide filter: deterministic head+tail elision with an integrity marker for
 // oversized tool_result blobs that match no structured filter. Contract pins:
-//   - marker text exact (operators grep it): "\n[elided N chars · sha <8hex> · head+tail preserved by tokenproxy]\n"
-//   - N = exact elided char count; sha = first 8 hex of sha256 of the elided middle
+//   - marker text exact (operators grep it): "\n[elided N chars · hmac <8hex> · head+tail preserved by tokenproxy]\n"
+//   - N = exact elided char count; hmac = first 8 hex of HMAC-SHA256 of the
+//     elided middle under a per-process key (SEC-1) — deterministic within one
+//     process, not stable across restarts, and never equal to a bare sha256
 //   - <= ELIDE_MIN_CHARS: no match (null), same convention as other filters
 //   - never grows the input; is_error blocks are exempt via the framework guard
 //   - wired as a size-based catch-all AFTER autodetect, never sniffed
@@ -14,7 +16,8 @@ import { ELIDE_MIN_CHARS } from "../../open-sse/rtk/constants.js";
 // --- helpers ----------------------------------------------------------------
 
 const sha8 = (s) => createHash("sha256").update(s, "utf8").digest("hex").slice(0, 8);
-const MARKER_RE = /\n\[elided (\d+) chars · sha ([0-9a-f]{8}) · head\+tail preserved by tokenproxy\]\n/;
+// SEC-1: the marker field is now hmac, not sha.
+const MARKER_RE = /\n\[elided (\d+) chars · hmac ([0-9a-f]{8}) · head\+tail preserved by tokenproxy\]\n/;
 
 // Compress a single Claude string-form tool_result block; returns the text
 // before/after plus stats.
@@ -29,27 +32,34 @@ function compressOne(text, extra = {}) {
   };
 }
 
-// Split an elided output into { head, n, sha, tail }; fails the test if the
+// Split an elided output into { head, n, hmac, tail }; fails the test if the
 // marker is absent or malformed.
 function parseElided(out) {
   const m = out.match(MARKER_RE);
   expect(m, "marker must be present and exact").not.toBeNull();
   const head = out.slice(0, m.index);
   const tail = out.slice(m.index + m[0].length);
-  return { head, n: Number(m[1]), sha: m[2], tail };
+  return { head, n: Number(m[1]), hmac: m[2], tail };
 }
 
 // Assert the full contract for one elided blob against its original text.
 function expectElidedConsistent(orig, out) {
-  const { head, n, sha, tail } = parseElided(out);
+  const { head, n, hmac, tail } = parseElided(out);
   expect(head).toBe(orig.slice(0, head.length));           // head verbatim
   expect(tail).toBe(orig.slice(orig.length - tail.length)); // tail verbatim
   const middle = orig.slice(head.length, orig.length - tail.length);
   expect(n).toBe(middle.length);                           // N exact
-  expect(sha).toBe(sha8(middle));                          // sha of the middle
+  expect(hmac).toMatch(/^[0-9a-f]{8}$/);                   // SEC-1: hmac field shape
+  // SEC-1: within one process the HMAC is deterministic and content-bound —
+  // eliding a middle-differing twin under an identical head/tail must not
+  // reuse this marker.
+  const twin = head + middle.split("").reverse().join("") + tail;
+  if (twin.length === orig.length && twin !== orig && middle.length > 1) {
+    expect(parseElided(compressOne(twin).after).hmac).not.toBe(hmac);
+  }
   expect(out.length).toBeLessThan(orig.length);            // no-grow
   expect(out).toBe(
-    head + `\n[elided ${n} chars · sha ${sha} · head+tail preserved by tokenproxy]\n` + tail
+    head + `\n[elided ${n} chars · hmac ${hmac} · head+tail preserved by tokenproxy]\n` + tail
   ); // byte-exact composition
 }
 
@@ -268,5 +278,32 @@ describe("elide: composed invariants", () => {
 
   it("is_error tool_result stays byte-identical inside the composed body", () => {
     expect(json(body.messages[2].content[1].content)).toBe(json(before.messages[2].content[1].content));
+  });
+});
+
+// SEC-1: the marker authenticates the elided span with HMAC-SHA256 under a
+// per-process key instead of a bare sha256, which was a brute-force oracle
+// for low-entropy middles (probe recovered a 5-char middle in 2.6s).
+describe("SEC-1: HMAC integrity marker", () => {
+  it("marker carries hmac, never sha, and never equals the bare sha256 prefix", () => {
+    const text = singleLineBlob();
+    const { after } = compressOne(text);
+    expect(after).not.toMatch(/· sha [0-9a-f]{8}/);
+    const { hmac } = parseElided(after);
+    const middle = text.slice(1500, text.length - 1000);
+    expect(hmac).not.toBe(sha8(middle)); // not a bare hash of the middle
+  });
+
+  it("integrity holds within one process: same input, same marker", () => {
+    const text = multiLineBlob();
+    expect(parseElided(elide(text)).hmac).toBe(parseElided(elide(text)).hmac);
+  });
+
+  it("integrity is content-bound: a one-char middle change under identical head/tail changes the hmac", () => {
+    const head = "h".repeat(1500);
+    const tail = "t".repeat(1000);
+    const a = head + "m".repeat(5000) + tail;
+    const b = head + "n" + "m".repeat(4999) + tail;
+    expect(parseElided(elide(a)).hmac).not.toBe(parseElided(elide(b)).hmac);
   });
 });

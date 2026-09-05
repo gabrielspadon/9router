@@ -404,6 +404,18 @@ function clientCacheAnchors(body) {
     const cc = block.cache_control;
     if (cc == null) return;
     count += 1;
+    // F2: thinking blocks never accept cache_control (:357), so a preserved
+    // anchor on one is a deterministic 400 — force the legacy re-anchor.
+    if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+      valid = false;
+      return;
+    }
+    // F3: Anthropic refuses defer_loading tools that also carry cache_control
+    // (#3567) — a preserved anchor on one resurrects that 400.
+    if (block.defer_loading === true) {
+      valid = false;
+      return;
+    }
     if (cc.type !== "ephemeral" || (cc.ttl !== undefined && cc.ttl !== "5m" && cc.ttl !== "1h")) {
       valid = false;
     } else {
@@ -431,12 +443,18 @@ function clientCacheAnchors(body) {
     if (lastTool >= 0 && !anchored.has(body.tools[lastTool])) fallbackNeeded += 1;
   }
   if (Array.isArray(body.messages)) {
+    // F1: count the fallback on the same position anchorClaudeCache anchors —
+    // the last assistant with content, else the last message with content of
+    // any role (first-turn fallback). Counting only the last assistant missed
+    // the first-turn tail anchor and let a 4-anchor plan ship a 5th breakpoint.
+    let target = null;
     for (let i = body.messages.length - 1; i >= 0; i--) {
       const msg = body.messages[i];
-      if (msg.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
-      if (!msg.content.some(b => anchored.has(b))) fallbackNeeded += 1;
-      break;
+      if (!Array.isArray(msg.content)) continue;
+      if (msg.role === ROLE.ASSISTANT) { target = msg; break; }
+      if (!target) target = msg;
     }
+    if (target && !target.content.some(b => anchored.has(b))) fallbackNeeded += 1;
   }
   if (count + fallbackNeeded > 4) return null;
 
@@ -738,6 +756,27 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
             msg.content.unshift(buildThinkingPlaceholder(provider));
           }
         }
+      }
+    }
+
+    // F4: first turn has no assistant — mirror anchorClaudeCache's tail
+    // fallback (last message with content, any role) so prepareClaudeRequest
+    // alone stamps the same 5m anchor the full pipeline would.
+    if (!lastAssistantProcessed) {
+      for (let i = filtered.length - 1; i >= 0; i--) {
+        const msg = filtered[i];
+        if (!Array.isArray(msg.content)) continue;
+        if (keepClientCache && msg.content.some(b => keepClientCache.has(b))) break;
+        let anchored = false;
+        for (let j = msg.content.length - 1; j >= 0; j--) {
+          const block = msg.content[j];
+          if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
+            block.cache_control = { type: "ephemeral" };
+            anchored = true;
+            break;
+          }
+        }
+        if (anchored) break;
       }
     }
     body.messages = dropEmptyContentMessages(body.messages);

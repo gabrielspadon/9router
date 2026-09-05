@@ -47,10 +47,38 @@ function windowToParams(connectionId, w) {
 // then degrades the whole group to previous-pin stickiness). Delete-then-insert
 // inside one transaction is also what makes a concurrent reader see either the
 // whole old snapshot or the whole new one, never a half-written mix.
+// P-F3: putWindows runs (delete + reinsert) for every account on every
+// request, inside the serialized selection queue, even when the quota read
+// produced exactly what is already on disk. Compare everything the write
+// would change EXCEPT observedAt (windowToParams stamps it to "now" by
+// design, so it always differs); when scope/remaining/limit/resetAt/
+// confidence all match, skip the transaction entirely.
+function windowsUnchanged(existing, list) {
+  if (existing.length !== list.length) return false;
+  const byScope = new Map(list.map((w) => [String(w?.scope ?? ''), w]));
+  if (byScope.size !== list.length) return false;
+  for (const row of existing) {
+    const w = byScope.get(row.scope);
+    if (!w) return false;
+    if ((w.remaining ?? null) !== (row.remaining ?? null)) return false;
+    if ((w.limit ?? null) !== (row.limit ?? null)) return false;
+    if ((w.resetAt ?? null) !== (row.resetAt ?? null)) return false;
+    const confidence = typeof w.confidence === 'string' ? w.confidence : 'unknown';
+    if (confidence !== row.confidence) return false;
+  }
+  return true;
+}
+
 export async function putWindows(connectionId, windows) {
   if (!connectionId) return 0;
   const list = Array.isArray(windows) ? windows : [];
   const db = await getAdapter();
+  const existing = db.all(
+    `SELECT scope, remaining, "limit" AS "limit", resetAt, confidence
+     FROM quotaWindows WHERE connectionId = ?`,
+    [connectionId]
+  );
+  if (windowsUnchanged(existing, list)) return list.length;
   db.transaction(() => {
     db.run(`DELETE FROM quotaWindows WHERE connectionId = ?`, [connectionId]);
     for (const w of list) {

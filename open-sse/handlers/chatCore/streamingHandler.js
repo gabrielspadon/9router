@@ -5,6 +5,7 @@ import { restoreResponseStream } from "../../utils/privacyFilter.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { createSseTerminalObserver } from "../../utils/streamTerminal.js";
 import { createCallerAbortResult } from "../../utils/error.js";
+import { saverTelemetryHeaders, withSaverHeaders } from "./saverHeaders.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
@@ -71,8 +72,12 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, privacyFilter, reqTag, log, callerSignal, rid }) {
-  if (callerSignal?.aborted) return createCallerAbortResult();
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, streamController, onStreamComplete, streamDetailId, streamState, pxpipe, privacyFilter, reqTag, log, callerSignal, rid, saverMeta = {} }) {
+  if (callerSignal?.aborted) return withSaverHeaders(createCallerAbortResult(), saverMeta);
+
+  // HEADERS finding: caller-abort results carry the same x-tp-* saver
+  // telemetry as every other gateway-built response.
+  const abortResult = () => withSaverHeaders(createCallerAbortResult(), saverMeta);
 
   const getConnPrefix = () => (connectionId ? String(connectionId).slice(0, 8) : undefined);
 
@@ -103,7 +108,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       error: message,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${message}` } }), {
         status,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...(rid ? { [RID_HEADER]: rid } : {}) },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...(rid ? { [RID_HEADER]: rid } : {}), ...saverTelemetryHeaders(saverMeta) },
       }),
     };
   };
@@ -127,9 +132,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     try {
       bodyText = await providerResponse.text();
     } catch {
-      if (callerSignal?.aborted) return createCallerAbortResult();
+      if (callerSignal?.aborted) return abortResult();
     }
-    if (callerSignal?.aborted) return createCallerAbortResult();
+    if (callerSignal?.aborted) return abortResult();
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
     const upstreamMessage = sanitizedTitle
@@ -200,7 +205,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const { done, value } = await reader.read();
     if (callerSignal?.aborted) {
       try { reader.releaseLock?.(); } catch {}
-      return createCallerAbortResult();
+      return abortResult();
     }
     if (done || !value || value.length === 0) {
       try { reader.releaseLock?.(); } catch {}
@@ -217,7 +222,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     try { await reader?.cancel?.(); } catch {}
     try { reader?.releaseLock?.(); } catch {}
     if (callerSignal?.aborted) {
-      return createCallerAbortResult();
+      return abortResult();
     }
     const status = 502;
     const shortMsg = provider === "antigravity"
@@ -496,7 +501,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       // operator has for correlating this turn against the upstream's billing
       // and logs.
       headers: withGenerationIdHeader(
-        rid ? { ...SSE_HEADERS, [RID_HEADER]: rid } : SSE_HEADERS,
+        {
+          ...(rid ? { [RID_HEADER]: rid } : {}),
+          ...SSE_HEADERS,
+          ...saverTelemetryHeaders(saverMeta),
+        },
         providerResponse,
       )
     })

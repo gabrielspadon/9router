@@ -28,6 +28,8 @@ import {
   validateClaudeClassifierMessage,
 } from "./claudeClassifier.js";
 
+import { saverTelemetryHeaders, withSaverHeaders } from "./saverHeaders.js";
+
 /**
  * Reasoning text carried by an OpenAI-shaped message or streaming delta.
  *
@@ -405,7 +407,7 @@ function assertClassifierGeminiSseLossless(rawSSE) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, reqTag, log, callerSignal, rid, route, fmt, sel, saverFields = {} }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, reqTag, log, callerSignal, rid, route, fmt, sel, saverFields = {}, saverMeta = {} }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -421,15 +423,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     trackDone();
   };
   const connPrefix = connectionId ? String(connectionId).slice(0, 8) : undefined;
+  // HEADERS finding: gateway-built error responses carry the same x-tp-*
+  // saver telemetry as successes.
+  const saverErrorResult = (...args) => withSaverHeaders(createErrorResult(...args), saverMeta);
   const bodyReadFailure = (error, context = "convert-sse-json") => {
     trackDoneOnce();
-    if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+    if (callerSignal?.aborted && isCallerAbortError(error)) return withSaverHeaders(createCallerAbortResult(), saverMeta);
     if (isBodyReadTimeoutError(error)) {
       reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
-      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
+      return saverErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
     }
     reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: context.slice(0, 40) });
-    return createErrorResult(
+    return saverErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Failed to convert streaming response to JSON",
       null,
@@ -453,7 +458,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       } catch {
         log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
       }
-      return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+      return saverErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
     }
   }
 
@@ -484,14 +489,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         const parsed = parseGeminiSSEToOpenAIResponse(sseText, model, targetFormat, provider);
         if (!parsed) {
           trackDoneOnce();
-          return createErrorResult(
+          return saverErrorResult(
             HTTP_STATUS.BAD_GATEWAY,
             provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid Gemini SSE response for non-streaming request",
           );
         }
         if (parsed.error) {
           trackDoneOnce();
-          return createErrorResult(
+          return saverErrorResult(
             HTTP_STATUS.BAD_GATEWAY,
             provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : parsed.error.message || "Upstream SSE stream failed",
           );
@@ -535,7 +540,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
         decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
         reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
+        return saverErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
       }
       trackDoneOnce();
       if (onRequestSuccess) await onRequestSuccess();
@@ -588,6 +593,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*",
               ...(rid ? { [RID_HEADER]: rid } : {}),
+              ...saverTelemetryHeaders(saverMeta),
             },
           }),
         };
@@ -711,13 +717,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
             ...(rid ? { [RID_HEADER]: rid } : {}),
+            ...saverTelemetryHeaders(saverMeta),
           },
         }),
       };
     } catch (err) {
       if (err instanceof ClaudeClassifierValidationError) {
         reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
-        return createErrorResult(
+        return saverErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           CLAUDE_CLASSIFIER_ERROR_MESSAGE,
           null,
@@ -739,7 +746,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     if (!parsed) {
       trackDoneOnce();
       reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "invalid-sse" });
-      return createErrorResult(
+      return saverErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
         null,
@@ -750,7 +757,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     if (parsed.error) {
       trackDoneOnce();
       reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-in-sse" });
-      return createErrorResult(
+      return saverErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         provider === "antigravity"
           ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
@@ -768,7 +775,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
       decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
       reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
+      return saverErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE, null, null, rid);
     }
 
     trackDoneOnce();
@@ -859,13 +866,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
           ...(rid ? { [RID_HEADER]: rid } : {}),
+          ...saverTelemetryHeaders(saverMeta),
         },
       }),
     };
   } catch (err) {
     if (err instanceof ClaudeClassifierValidationError) {
       reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
-      return createErrorResult(
+      return saverErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
         CLAUDE_CLASSIFIER_ERROR_MESSAGE,
         null,

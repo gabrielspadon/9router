@@ -4,20 +4,36 @@ const ENCRYPT_ALGO = 'aes-256-gcm';
 const ENCRYPT_SALT = 'tokenproxy-conn-secret';
 const ENC_PREFIX = 'enc1:';
 
+// P-F1: the machine id cannot change under a running process, but reading it
+// costs a ~2ms subprocess — and deriveKey ran once per row decrypt, which put
+// the whole admission queue behind it. Cache the derived key for the process
+// lifetime; first call computes, later calls return.
+let cachedKey = null;
+
 function deriveKey() {
+  if (cachedKey) return cachedKey;
+  let key;
   if (process.env.DB_ENCRYPTION_KEY) {
-    return crypto.createHash('sha256').update(process.env.DB_ENCRYPTION_KEY).digest();
+    key = crypto.createHash('sha256').update(process.env.DB_ENCRYPTION_KEY).digest();
+  } else {
+    try {
+      const { machineIdSync } = require('node-machine-id');
+      const raw = machineIdSync();
+      key = crypto
+        .createHash('sha256')
+        .update(raw + ENCRYPT_SALT)
+        .digest();
+    } catch {
+      key = crypto.createHash('sha256').update(ENCRYPT_SALT).digest();
+    }
   }
-  try {
-    const { machineIdSync } = require('node-machine-id');
-    const raw = machineIdSync();
-    return crypto
-      .createHash('sha256')
-      .update(raw + ENCRYPT_SALT)
-      .digest();
-  } catch {
-    return crypto.createHash('sha256').update(ENCRYPT_SALT).digest();
-  }
+  cachedKey = key;
+  return key;
+}
+
+// Test-only: reset the cached key so a test can re-derive under different env.
+export function _resetSecretKeyCacheForTests() {
+  cachedKey = null;
 }
 
 function encrypt(plaintext) {

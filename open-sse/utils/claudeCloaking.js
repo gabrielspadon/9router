@@ -9,7 +9,10 @@ const CC_ENTRYPOINT = "sdk-cli";
 // buildHash/cch derive from (apiKey, sessionId) instead of the request body and
 // fresh randomness: per-request variation defeats provider prompt-cache TTLs.
 function generateBillingHeader(apiKey, sessionId) {
-  const cch = createHash("sha256").update(`cch:${apiKey}:${sessionId ?? ""}`).digest("hex").slice(0, 5);
+  // F5: an absent session id (sessionManager hands a fresh random id per
+  // request when it has no connection) must fall back to a stable per-account
+  // seed, never per-request variation that defeats the prompt-cache TTL.
+  const cch = createHash("sha256").update(`cch:${apiKey}:${sessionId || `key:${apiKey}`}`).digest("hex").slice(0, 5);
   const buildHash = createHash("sha256").update(`cc-build:${apiKey}`).digest("hex").slice(0, 3);
   return `x-anthropic-billing-header: cc_version=${CLAUDE_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
 }
@@ -26,7 +29,9 @@ function deriveUuid(seed) {
 function generateFakeUserID(sessionId, apiKey) {
   const deviceId = apiKey ? createHash("sha256").update(`device:${apiKey}`).digest("hex") : randomBytes(32).toString("hex");
   const accountUuid = apiKey ? deriveUuid(`account:${apiKey}`) : randomUUID();
-  const sessionUuid = sessionId || randomUUID();
+  // F5: same stability requirement as the cch — a random session_id per
+  // request would vary metadata.user_id and break the cached prefix too.
+  const sessionUuid = sessionId || deriveUuid(`session:${apiKey}`);
   return `{"device_id":"${deviceId}","account_uuid":"${accountUuid}","session_id":"${sessionUuid}"}`;
 }
 

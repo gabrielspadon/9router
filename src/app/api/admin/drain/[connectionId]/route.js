@@ -2,6 +2,7 @@ import { getProviderConnectionById } from "@/lib/db/repos/connectionsRepo.js";
 import { requireAdmin } from "@/lib/admin/guard.js";
 import { adminError, adminJson, invalidIfMatch, parseAdminBody } from "@/lib/admin/policy.js";
 import { readDrainDoc, toDrainState, versionOf, writeDrainDoc } from "@/lib/admin/state.js";
+import { decide, idPrefix } from "@/shared/observability/decide.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -57,6 +58,9 @@ export async function POST(request, { params }) {
 
   const next = { isDraining: true, requestedAt: new Date().toISOString(), completedAt: null };
   await writeDrainDoc(connectionId, next);
+  // D-11: DRAIN was declared but never emitted. Only an actual state
+  // transition speaks — the idempotent early return above stays silent.
+  decide("DRAIN", "begin", { conn: idPrefix(connectionId) });
   return adminJson(toDrainState(connectionId, next));
 }
 
@@ -92,5 +96,7 @@ export async function DELETE(request, { params }) {
     completedAt: new Date().toISOString(),
   };
   await writeDrainDoc(connectionId, next);
+  // D-11: the drain completing is the matching end marker for DRAIN.begin.
+  decide("DRAIN", "end", { conn: idPrefix(connectionId) });
   return adminJson(toDrainState(connectionId, next));
 }

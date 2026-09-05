@@ -129,3 +129,43 @@ describe("memory tool pruner: error-flagged results exempt", () => {
     expect(res.count).toBe(1);
   });
 });
+
+describe("R-F2: error:true and status:'failed' are exempt from pruning", () => {
+  const opts = { enabled: true, keepRecentTurns: 0, maxHistoricalChars: 200 };
+
+  it("OpenAI tool msg with error:true survives byte-identical", () => {
+    const out = big("segfault at module.js:17");
+    const body = { messages: [{ role: "tool", tool_call_id: "c1", error: true, content: out }] };
+    const res = pruneHistoricalTools(body, opts);
+    expect(body.messages[0].content).toBe(out);
+    expect(res.count).toBe(0);
+  });
+
+  it("Responses function_call_output with status:'failed' survives byte-identical", () => {
+    const out = big("job failed at step 3");
+    const body = { messages: [{ type: "function_call_output", call_id: "c2", status: "failed", output: out }] };
+    const res = pruneHistoricalTools(body, opts);
+    expect(body.messages[0].output).toBe(out);
+    expect(res.count).toBe(0);
+  });
+
+  it("item-level error:true inside a Claude content array exempts only that item", () => {
+    const errItem = big("traceback at worker.js:9");
+    const okItem = big("ordinary log output");
+    const body = {
+      messages: [
+        { role: "user", content: [
+          { type: "tool_result", tool_use_id: "c3", content: [
+            { type: "text", error: true, text: errItem },
+            { type: "text", text: okItem },
+          ] },
+        ] },
+      ],
+    };
+    const res = pruneHistoricalTools(body, opts);
+    const subs = body.messages[0].content[0].content;
+    expect(subs[0].text).toBe(errItem);
+    expect(subs[1].text).not.toBe(okItem);
+    expect(res.count).toBe(1);
+  });
+});

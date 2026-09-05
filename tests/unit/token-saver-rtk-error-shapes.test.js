@@ -236,3 +236,83 @@ describe("DEFECT D-err-5: Kiro toolResults ignore is_error / isError flags", () 
     expect(textOf(body)).toBe(textOf(before));
   });
 });
+
+// R-F2: error:true (strict boolean) and status:'failed' were absent from the
+// error-guard vocabulary in both isErrorItem and isErrorToolResult, so those
+// failure traces were compressed like healthy output.
+describe("R-F2: error:true and status:'failed' join the error vocabulary", () => {
+  const log = makeGitLog();
+
+  it("OpenAI tool msg with error:true stays byte-identical", () => {
+    const body = { messages: [{ role: "tool", tool_call_id: "e1", error: true, content: log }] };
+    const before = structuredClone(body);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(0);
+    expect(JSON.stringify(body)).toBe(JSON.stringify(before));
+  });
+
+  it("OpenAI tool msg with status:'failed' stays byte-identical", () => {
+    const body = { messages: [{ role: "tool", tool_call_id: "e2", status: "failed", content: log }] };
+    const before = structuredClone(body);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(0);
+    expect(JSON.stringify(body)).toBe(JSON.stringify(before));
+  });
+
+  it("Claude tool_result block with status:'failed' stays byte-identical", () => {
+    const body = {
+      messages: [
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "e3", status: "failed", content: log }] },
+      ],
+    };
+    const before = structuredClone(body);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(0);
+    expect(JSON.stringify(body)).toBe(JSON.stringify(before));
+  });
+
+  it("Responses function_call_output with error:true stays byte-identical", () => {
+    const body = { input: [{ type: "function_call_output", call_id: "e4", error: true, output: log }] };
+    const before = structuredClone(body);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(0);
+    expect(JSON.stringify(body)).toBe(JSON.stringify(before));
+  });
+
+  it("Kiro toolResult with status:'failed' stays byte-identical", () => {
+    const body = {
+      conversationState: {
+        history: [
+          {
+            userInputMessage: {
+              userInputMessageContext: { toolResults: [{ status: "failed", content: [{ text: log }] }] },
+            },
+          },
+        ],
+      },
+    };
+    const before = structuredClone(body);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(0);
+    expect(JSON.stringify(body)).toBe(JSON.stringify(before));
+  });
+
+  it("item-level error:true inside a content array is honoured, healthy sibling still compresses", () => {
+    const body = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "e5", content: [{ type: "text", text: log, error: true }] },
+            { type: "tool_result", tool_use_id: "ok", content: [{ type: "text", text: log }] },
+          ],
+        },
+      ],
+    };
+    const before = structuredClone(body);
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(1); // only the healthy sibling
+    expect(body.messages[0].content[0].content[0].text).toBe(before.messages[0].content[0].content[0].text);
+    expect(body.messages[0].content[1].content[0].text).not.toBe(before.messages[0].content[1].content[0].text);
+  });
+});
