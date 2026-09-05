@@ -67,6 +67,10 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  // Schema distillation: strip validation-noise JSON-Schema keywords from
+  // tool input_schemas before dispatch. Off by default; engages only past an
+  // 8KB serialized-tools floor (open-sse/utils/schemaDistiller.js).
+  schemaDistillEnabled: false,
   // Privacy filter (#2728): pseudonymise emails and the terms below in the
   // outbound body, restored before the client sees the answer. Off by
   // default — it walks every request, so it costs nothing until asked for.

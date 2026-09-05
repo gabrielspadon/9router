@@ -1,0 +1,135 @@
+// MCP context_status state: the sid-keyed self-sizing telemetry snapshot the
+// /api/v1/mcp context_status tool serves back to a model. One JSON file under
+// DATA_DIR/token-saver/, LRU-capped at 512 sessions, atomic tmp+rename writes,
+// mode 0600 (same discipline as tokenSaver/events.js). Telemetry only: the
+// entry carries byte/token counts and flags, never prompts or bodies.
+// Every operation is best-effort sync fs — a failure here must never reach
+// the request path, so all throws are swallowed inside this module.
+
+import fs from "node:fs";
+import path from "node:path";
+// RELATIVE, not '@/': chatCore.js reaches this module under plain node, where
+// the alias does not resolve (same rule as decide.js).
+import { DATA_DIR } from "../../../src/lib/dataDir.js";
+
+const MAX_ENTRIES = 512;
+const STORE_DIR = path.join(DATA_DIR, "token-saver");
+const FILE_NAME = "context-status.json";
+const SID_RE = /^[a-f0-9]{8}$/;
+
+let _dirOverride = null;
+export function __setContextStatusDirForTest(dir) {
+  _dirOverride = dir || null;
+}
+
+function baseDir() {
+  return _dirOverride || STORE_DIR;
+}
+
+function storeFile() {
+  return path.join(baseDir(), FILE_NAME);
+}
+
+function clampInt(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
+}
+
+// Signed variant: saveBytes is a whole-body delta (negative = saved), same
+// discipline as the tokenSaver events sink — growth is reported, not clamped.
+function clampSignedInt(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}
+
+// Strict allowlist, mirroring the tokenSaver events sink: unknown fields are
+// dropped, numbers are clamped nonnegative, no free text beyond rid.
+function sanitize(entry) {
+  const out = { sid: entry.sid };
+  const rid = typeof entry.rid === "string" ? entry.rid : "";
+  if (rid && /^[0-9a-f]{1,32}$/.test(rid)) out.rid = rid.slice(0, 8);
+  for (const key of ["ctxTokens", "ceBytes"]) {
+    const v = clampInt(entry[key]);
+    if (v !== undefined) out[key] = v;
+  }
+  const saveBytes = clampSignedInt(entry.saveBytes);
+  if (saveBytes !== undefined) out.saveBytes = saveBytes;
+  if (entry.compactHint === true) out.compactHint = true;
+  const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : "";
+  if (updatedAt && updatedAt.length <= 40) out.updatedAt = updatedAt;
+  return out;
+}
+
+function readAll() {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(storeFile(), "utf8"));
+  } catch {
+    return []; // absent or corrupt file: start empty, never throw
+  }
+  const list = Array.isArray(parsed?.entries) ? parsed.entries : [];
+  const out = [];
+  for (const e of list) {
+    if (e && typeof e === "object" && SID_RE.test(String(e.sid || ""))) {
+      out.push(sanitize(e));
+    }
+  }
+  return out;
+}
+
+function writeAll(entries) {
+  const tmp = `${storeFile()}.tmp`;
+  fs.mkdirSync(baseDir(), { recursive: true });
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, entries }), "utf8");
+  try {
+    fs.chmodSync(tmp, 0o600);
+  } catch {
+    /* best-effort */
+  }
+  fs.renameSync(tmp, storeFile());
+  try {
+    fs.chmodSync(storeFile(), 0o600);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Upsert one session's telemetry. LRU: the rewritten entry moves to the tail
+// (newest), the oldest head drops once the cap is exceeded. Order in the file
+// IS the recency order.
+export function writeContextStatus(sid, fields = {}) {
+  try {
+    if (!SID_RE.test(String(sid || ""))) return;
+    const entries = readAll();
+    const next = sanitize({ ...fields, sid, updatedAt: new Date().toISOString() });
+    const rest = entries.filter((e) => e.sid !== sid);
+    rest.push(next);
+    while (rest.length > MAX_ENTRIES) rest.shift();
+    writeAll(rest);
+  } catch {
+    /* telemetry must never break the request path */
+  }
+}
+
+export function readContextStatus(sid) {
+  try {
+    if (!SID_RE.test(String(sid || ""))) return null;
+    const entries = readAll();
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].sid === sid) return entries[i];
+    }
+  } catch {
+    /* best-effort */
+  }
+  return null;
+}
+
+// Full snapshot, newest last. Used by the MCP route when scanning candidates
+// and by tests.
+export function readAllContextStatuses() {
+  try {
+    return readAll();
+  } catch {
+    return [];
+  }
+}

@@ -18,6 +18,7 @@ const TOKEN_SAVER_STATS_TIMEOUT_MS = 10_000;
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [schemaDistillEnabled, setSchemaDistillEnabled] = useState(false);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
   // "" = not configured; HEADROOM_TIMEOUT_MS and the built-in default then apply.
@@ -103,6 +104,11 @@ export default function TokenSaverClient() {
     } catch (error) {
       console.log("Error updating rtkEnabled:", error);
     }
+  };
+
+  const handleSchemaDistillEnabled = (value) => {
+    setSchemaDistillEnabled(value);
+    patchSetting({ schemaDistillEnabled: value });
   };
 
   const handleCavemanEnabled = (value) => {
@@ -462,6 +468,7 @@ export default function TokenSaverClient() {
         if (res.ok) {
           const data = await res.json();
           setRtkEnabledState(data.rtkEnabled !== false);
+          setSchemaDistillEnabled(!!data.schemaDistillEnabled);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
           setHeadroomTimeoutMs(
@@ -604,6 +611,21 @@ export default function TokenSaverClient() {
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
             ariaLabel="Compress tool output with RTK"
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Schema distillation</p>
+            <p className="text-sm text-text-muted">
+              Strips validation-noise JSON-Schema keywords (default, examples,
+              $schema, title) from tool schemas before dispatch, once they
+              total 8 KB or more. Tool names and descriptions are untouched.
+            </p>
+          </div>
+          <Toggle
+            checked={schemaDistillEnabled}
+            onChange={() => handleSchemaDistillEnabled(!schemaDistillEnabled)}
+            ariaLabel="Strip validation-noise keywords from tool schemas"
           />
         </div>
         <div className="flex items-center justify-between py-4 gap-4 flex-wrap">

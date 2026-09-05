@@ -49,6 +49,7 @@ import {
 } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { withSaverHeaders } from "./chatCore/saverHeaders.js";
+import { writeContextStatus } from "./chatCore/contextStatusStore.js";
 import { clientRequestedStreaming as requestedStreaming } from "./chatCore/streamMode.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import {
@@ -60,6 +61,7 @@ import {
   isNativePassthrough,
 } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { distillToolSchemas } from "../utils/schemaDistiller.js";
 import { toolFilter } from "../utils/toolFilter.js";
 import { disclosureTools } from "../utils/toolDisclosure.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -243,6 +245,7 @@ export async function handleChatCore({
   apiKey,
   ccFilterNaming,
   rtkEnabled,
+  schemaDistillEnabled,
   privacyEnabled,
   privacyTerms,
   headroomEnabled,
@@ -666,6 +669,7 @@ export async function handleChatCore({
     pxpipeEnabled ||
       (tokenSaverEnabled &&
         (rtkEnabled ||
+          schemaDistillEnabled ||
           headroomEnabled ||
           cavemanEnabled ||
           ponytailEnabled ||
@@ -689,6 +693,25 @@ export async function handleChatCore({
     }
     saverPrev.bytes = at;
   };
+
+  // Schema distillation: strip validation-noise JSON-Schema keywords from
+  // tool input_schemas (default/examples/example/$schema/title) plus schema
+  // description whitespace. Conservative: tool name/description are never
+  // touched, structural keywords survive, and it engages only past an 8KB
+  // serialized-tools floor. It runs here, after the ledger baseline, rather
+  // than up beside dedupeTools, so measureSaverStage attributes the
+  // whole-body delta to the "schema" stage instead of folding it into the
+  // entry bytes and losing it from save=.
+  const schemaDistillRan =
+    tokenSaverEnabled && schemaDistillEnabled && Array.isArray(translatedBody.tools);
+  if (schemaDistillRan) {
+    const distilled = distillToolSchemas(translatedBody.tools);
+    if (distilled.savedBytes > 0) {
+      translatedBody.tools = distilled.tools;
+      notePath(rid, "XFORM.tool-distill");
+    }
+  }
+  measureSaverStage("schema", schemaDistillRan);
 
   // RTK: compress tool_result content.
   //
@@ -933,6 +956,23 @@ export async function handleChatCore({
   }
   if (saverFields.ce !== undefined) saverMeta.ce = saverFields.ce;
   if (compactHint) saverMeta.compactHint = true;
+  // MCP context_status state: sid-keyed self-sizing snapshot for the
+  // /api/v1/mcp tool. Written before dispatch so an upstream failure still
+  // leaves fresh telemetry. The store swallows its own errors; this catch is
+  // the belt on the same contract, telemetry never breaks the request.
+  if (sid) {
+    try {
+      writeContextStatus(sid, {
+        rid,
+        ctxTokens: saverMeta.ctxTokens,
+        saveBytes: saverMeta.saveBytes,
+        ceBytes: saverMeta.ce,
+        compactHint: saverMeta.compactHint,
+      });
+    } catch (err) {
+      log?.debug?.("CTXSTATUS", `write failed: ${String(err?.message || err).slice(0, 60)}`);
+    }
+  }
   if (saverStages.length) {
     saverFields.save = saverStages
       .map((st) => `${st.stage}:${st.delta}`)

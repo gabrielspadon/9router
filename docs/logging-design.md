@@ -371,9 +371,10 @@ Row 51 is the misreport in section 1.5.
 | 65 | requestDetail left `pending` (second write never landed) | `streamingHandler.js:444-470` | 100 B, always |
 | 66 | cache alias normalization dropped a spelling | `usageTracking.js:207` | 115 B, always |
 | 67 | drain begin / end transition | `admin/drain/[connectionId]/route.js:56-92` | 105 B, always |
+| 68 | schema distillation stripped validation-noise keywords | `chatCore.js:705-714` | folded |
 
-Rows 1-67 with the folded sub-forks collapsed give **54 distinct emitting
-decision points**, of which 9 are nominal-path and fold into the summary line,
+Rows 1-68 with the folded sub-forks collapsed give **55 distinct emitting
+decision points**, of which 10 are nominal-path and fold into the summary line,
 and 45 speak only when they fire.
 
 ---

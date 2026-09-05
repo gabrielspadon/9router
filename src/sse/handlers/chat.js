@@ -745,6 +745,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         apiKey,
         ccFilterNaming: !!chatSettings.ccFilterNaming,
         rtkEnabled: comboTokenSaver.rtkEnabled,
+        schemaDistillEnabled: !!chatSettings.schemaDistillEnabled,
         privacyEnabled: !!chatSettings.privacyFilterEnabled,
         privacyTerms: chatSettings.privacyFilterTerms || [],
         headroomEnabled: comboTokenSaver.headroomEnabled,

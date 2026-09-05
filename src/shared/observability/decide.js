@@ -59,7 +59,7 @@ export const VERDICTS = Object.freeze({
   // rtk-applied/headroom-applied/mem-pruned/compact-applied/injected are the
   // token-saver path codes: folded into REQ.ok's path= (and save= carries the
   // measured bytes), so a saver never costs a line on the nominal path.
-  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy', 'rtk-applied', 'headroom-applied', 'mem-pruned', 'compact-applied', 'injected', 'saver-guard']),
+  XFORM: Object.freeze(['headroom-skip', 'headroom-unavailable', 'headroom-phantom', 'tool-strip', 'cache-keep', 'cache-legacy', 'rtk-applied', 'headroom-applied', 'tool-distill', 'mem-pruned', 'compact-applied', 'injected', 'saver-guard']),
   UP: Object.freeze(['retry', 'failover', 'attempt-ceiling', 'replay-overflow']),
   STREAM: Object.freeze(['stalled', 'empty', 'non-sse', 'terminal-synthesized', 'usage-estimated', 'detail-pending']),
   ACCT: Object.freeze(['detail-write-failed', 'alias-dropped']),
