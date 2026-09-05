@@ -36,6 +36,15 @@ vi.mock("@/lib/usageDb.js", () => ({
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 
+// Headroom only runs on a request that is OVER its context budget (the gate
+// lives in rtk/headroom.js and chatCore measures for it), so every fixture here
+// has to be over budget or the proxy is never reached and none of these
+// diagnostics exist. gpt-4o advertises 128k, and a body big enough to overrun
+// that would also trip the 256 KB payload cap — so the window is overridden
+// instead, which is a real operator setting rather than a test-only seam.
+const OVER_BUDGET = { memoryContextWindowOverride: 20_000 };
+const BIG = "x".repeat(120_000);
+
 describe("handleChatCore Headroom diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -61,7 +70,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
 
     await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: BIG }] },
       modelInfo: { provider: "openai", model: "gpt-4o" },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log,
@@ -69,6 +78,7 @@ describe("handleChatCore Headroom diagnostics", () => {
       headroomEnabled: true,
       headroomUrl: "http://localhost:8787",
       headroomCompressUserMessages: false,
+      memorySettings: OVER_BUDGET,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,
@@ -101,7 +111,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     });
 
     await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: BIG }] },
       modelInfo: { provider: "openai", model: "gpt-4o" },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log,
@@ -109,6 +119,7 @@ describe("handleChatCore Headroom diagnostics", () => {
       headroomEnabled: true,
       headroomUrl: "https://user:secret@example.com:8787/proxy?token=abc123",
       headroomCompressUserMessages: false,
+      memorySettings: OVER_BUDGET,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,
@@ -130,7 +141,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
 
     await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: BIG }] },
       modelInfo: { provider: "openai", model: "gpt-4o" },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log,
@@ -138,6 +149,7 @@ describe("handleChatCore Headroom diagnostics", () => {
       headroomEnabled: true,
       headroomUrl: "https://user:secret@example.com:8787/proxy?token=abc123",
       headroomCompressUserMessages: false,
+      memorySettings: OVER_BUDGET,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,
@@ -161,7 +173,7 @@ describe("handleChatCore Headroom diagnostics", () => {
 
   it("sends Headroom-compressed messages to the provider executor", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
-    const original = "very large context that should be replaced";
+    const original = "very large context that should be replaced. ".repeat(3_000);
     const compressed = "compressed context";
 
     global.fetch = vi.fn(async (url) => {
@@ -185,6 +197,7 @@ describe("handleChatCore Headroom diagnostics", () => {
       headroomEnabled: true,
       headroomUrl: "http://localhost:8787",
       headroomCompressUserMessages: false,
+      memorySettings: OVER_BUDGET,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,
@@ -212,8 +225,8 @@ describe("handleChatCore Headroom diagnostics", () => {
 
   it("keeps original body (no commit) and logs skip reason when Headroom reports phantom savings", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
-    const original = "x".repeat(1000);
-    const nearlySame = "x".repeat(990);
+    const original = "x".repeat(120_000);
+    const nearlySame = "x".repeat(119_000);
 
     global.fetch = vi.fn(async (url) => {
       if (String(url).includes("/v1/compress")) {
@@ -236,6 +249,7 @@ describe("handleChatCore Headroom diagnostics", () => {
       headroomEnabled: true,
       headroomUrl: "http://localhost:8787",
       headroomCompressUserMessages: false,
+      memorySettings: OVER_BUDGET,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,
