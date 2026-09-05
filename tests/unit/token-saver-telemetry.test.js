@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   // stage snapshots observed independently inside the mocked boundaries
   rtkObserved: { before: null, after: null },
   headroomObserved: { before: null, after: null },
+  privacyObserved: { before: null, after: null },
   dispatched: null,
 }));
 
@@ -85,6 +86,40 @@ vi.mock("../../open-sse/rtk/pxpipe.js", () => ({
   compressWithPxpipe: vi.fn(async () => ({ body: null, summary: { applied: false, reason: "disabled" } })),
 }));
 
+// T-F3: stand-in for the privacy filter — replaces the operator term with a
+// one-char alias (exact -6 bytes per occurrence) and reports a truthy filter
+// so the response-side restoration path is exercised.
+vi.mock("../../open-sse/utils/privacyFilter.js", async (orig) => {
+  const actual = await orig();
+  return {
+    ...actual,
+    redactOutbound: vi.fn((body) => {
+      if (!body) return null;
+      mocks.privacyObserved.before = JSON.stringify(body);
+      let changed = false;
+      const scrub = (text) => {
+        if (typeof text === "string" && text.includes("SEEKRET")) {
+          changed = true;
+          return text.split("SEEKRET").join("R");
+        }
+        return text;
+      };
+      for (const m of body.messages || []) {
+        if (typeof m?.content === "string") {
+          m.content = scrub(m.content);
+        } else if (Array.isArray(m?.content)) {
+          for (const part of m.content) {
+            if (typeof part?.text === "string") part.text = scrub(part.text);
+          }
+        }
+      }
+      mocks.privacyObserved.after = JSON.stringify(body);
+      if (!changed) return null;
+      return { size: 1, aliases: () => [], restore: (t) => t, restoreJson: (t) => t };
+    }),
+  };
+});
+
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
@@ -149,6 +184,7 @@ beforeEach(() => {
   mocks.headroom.compressWithHeadroom.mockImplementation(async () => null);
   mocks.rtkObserved.before = mocks.rtkObserved.after = null;
   mocks.headroomObserved.before = mocks.headroomObserved.after = null;
+  mocks.privacyObserved.before = mocks.privacyObserved.after = null;
   mocks.dispatched = null;
   consoleLines = [];
   consoleSpy = vi.spyOn(console, "log").mockImplementation((...args) => {
@@ -332,5 +368,67 @@ describe("token-saver REQ telemetry", () => {
     expect(typeof rtkRow.ce).toBe("number");
     expect(headroomRow.bytesSaved).toBe(deltas.headroom);
     expect(headroomRow.ce).toBe(rtkRow.ce);
+  });
+
+  it("T-F1: ce= floors at the 64KB stored prefix when bodies share more than 64KB", async () => {
+    const big = "p".repeat(100 * 1024);
+    const base = {
+      model: "openai/gpt-4o",
+      stream: false,
+      messages: [{ role: "user", content: big }],
+    };
+    await drive({ body: structuredClone(base), sid: "telem-ce-64k", requestId: "tele0500" });
+    const appended = structuredClone(base);
+    appended.messages.push({ role: "assistant", content: "a" });
+    await drive({ body: appended, sid: "telem-ce-64k", requestId: "tele0501" });
+    const reqs = reqLines();
+    expect(reqs).toHaveLength(2);
+    expect(reqs[0]).not.toContain("ce=");
+    // the shared region is ~100KB, but the instrument only retains a 64KB
+    // prefix per sid, so the reported epoch is the prefix floor
+    expect(reqs[1]).toMatch(/ ce=65536(?:\s|$)/);
+    expect(JSON.stringify(appended).length).toBeGreaterThan(64 * 1024);
+  });
+
+  it("T-F3: privacy bytes are measured as their own stage, not attributed to headroom", async () => {
+    const body = {
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 64,
+      stream: false,
+      messages: [{ role: "user", content: "hello SEEKRET world" }],
+    };
+    await drive({
+      body,
+      modelInfo: { provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
+      privacyEnabled: true,
+      privacyTerms: ["SEEKRET"],
+      rtkEnabled: false,
+      headroomEnabled: true, // runs but mutates nothing
+      memorySettings: null,
+      requestId: "tele0700",
+    });
+    const reqs = reqLines();
+    expect(reqs).toHaveLength(1);
+    const privacyDelta =
+      mocks.privacyObserved.after.length - mocks.privacyObserved.before.length;
+    expect(privacyDelta).toBe(-6);
+    expect(reqs[0]).toMatch(/ save=privacy:-6/);
+    // headroom ran but changed nothing, so it must not absorb privacy bytes
+    expect(reqs[0]).not.toContain("headroom:");
+    expect(xformLines().filter((l) => l.includes("saver-guard"))).toHaveLength(0);
+  });
+
+  it("T-F2: the final stage closes the ledger — stage deltas sum to dispatched minus ledger entry bytes", async () => {
+    mocks.headroom.compressWithHeadroom.mockImplementation(shrinkHeadroomMock());
+    await drive({ rtkEnabled: true, headroomEnabled: true, requestId: "tele0800" });
+    const reqs = reqLines();
+    expect(reqs).toHaveLength(1);
+    const stages = saveFieldOf(reqs[0]);
+    const sum = Object.values(stages).reduce((a, b) => a + b, 0);
+    // the ledger opens at the first stage boundary (post-translation, observed
+    // inside the rtk mock) and the final measure closes it at dispatch: the
+    // per-stage deltas must telescope to exactly the dispatched delta
+    expect(mocks.rtkObserved.before).not.toBeNull();
+    expect(sum).toBe(mocks.dispatched.length - mocks.rtkObserved.before.length);
   });
 });

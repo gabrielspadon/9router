@@ -19,6 +19,7 @@ import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { detectUpstreamErrorContent } from "../../services/upstreamErrorContent.js";
 import { extractPanelText } from "../../services/combo.js";
 import { messageReasoningText, parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { saverTelemetryHeaders, withSaverHeaders } from "./saverHeaders.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine, doneFields } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "../../../src/lib/usageDb.js";
@@ -637,7 +638,11 @@ function hasMultipleClassifierAlternatives(responseBody) {
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal, rid, route, fmt, sel, saverFields = {} }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, verificationContext, onValidationRequired, notifyTerminalVerificationSuccess: notifyTerminal, reqLogger, toolNameMap, customToolNames, responsesToolNameMap, trackDone, appendLog, pxpipe, privacyFilter, reqTag, log, callerSignal, rid, route, fmt, sel, saverFields = {}, saverMeta = {} }) {
+  // HEADERS finding: gateway-built error responses carry the same x-tp-*
+  // saver telemetry as successes.
+  const saverErrorResult = (...args) => withSaverHeaders(createErrorResult(...args), saverMeta);
+  const abortResult = () => withSaverHeaders(createCallerAbortResult(), saverMeta);
   const contentType = providerResponse.headers.get("content-type") || "";
   const classifierMode = sourceFormat === FORMATS.CLAUDE
     && isClaudeClassifierRequest(body);
@@ -657,14 +662,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const connPrefix = connectionId ? String(connectionId).slice(0, 8) : undefined;
   const bodyReadFailure = (error, context) => {
     trackDoneOnce();
-    if (callerSignal?.aborted && isCallerAbortError(error)) return createCallerAbortResult();
+    if (callerSignal?.aborted && isCallerAbortError(error)) return abortResult();
     if (isBodyReadTimeoutError(error)) {
       reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
-      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
+      return saverErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `Upstream response body timed out for ${provider}`, null, null, rid);
     }
     console.error(`[ChatCore] Failed to ${context} from ${provider}:`, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : error.message);
     reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: String(context || "body-read").slice(0, 40) });
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`, null, null, rid);
+    return saverErrorResult(HTTP_STATUS.BAD_GATEWAY, provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Invalid response from ${provider}`, null, null, rid);
   };
 
   if (contentType.includes("text/event-stream")) {
@@ -683,7 +688,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         } catch {
           log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
         }
-        return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+        return saverErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
       }
     }
     // A provider not statically flagged forceStream (e.g. a dynamically-added
@@ -743,7 +748,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       if (!parsed) {
         trackDoneOnce();
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        return createErrorResult(
+        return saverErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Invalid SSE response for non-streaming request",
         );
@@ -779,12 +784,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       } catch {
         log?.warn?.("VERIFICATION", `validation callback failed for ${String(connectionId).slice(0, 8)}`);
       }
-      return createErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
+      return saverErrorResult(HTTP_STATUS.FORBIDDEN, ANTIGRAVITY_VERIFICATION_REQUIRED_MESSAGE);
     }
     if (isAntigravityErrorPayload(responseBody)) {
       trackDoneOnce();
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
+      return saverErrorResult(HTTP_STATUS.BAD_GATEWAY, ANTIGRAVITY_SAFE_ERROR_MESSAGE);
     }
   }
 
@@ -828,7 +833,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     hasLegacyClassifierFunctionCall(responseBody)
     || hasMultipleClassifierAlternatives(responseBody)
   )) {
-    return createErrorResult(
+    return saverErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       CLAUDE_CLASSIFIER_ERROR_MESSAGE,
     );
@@ -847,7 +852,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     } catch (err) {
       if (err instanceof ClaudeClassifierValidationError) {
         reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "classifier-validation" });
-        return createErrorResult(
+        return saverErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           CLAUDE_CLASSIFIER_ERROR_MESSAGE,
           null,
@@ -930,7 +935,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (upstream error in content)` });
     log?.warn?.("CHATCORE", `${provider}/${model} returned HTTP 200 carrying an upstream error — treating as failure. ${upstreamError.reason}`);
     reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "upstream-error-content" });
-    return createErrorResult(
+    return saverErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : upstreamError.reason,
       // A non-retryable upstream error still fails over: another account will not
@@ -947,7 +952,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
     decide("STREAM", "empty", { rid, conn: connPrefix, why: "no-content", lock: true });
     reqSummary("failed", { ...saverFields, rid, conn: connPrefix, route, fmt, sel, status: HTTP_STATUS.BAD_GATEWAY, why: "empty-content" });
-    return createErrorResult(
+    return saverErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       provider === "antigravity" ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : `Empty response content from ${provider}/${model}`,
       Date.now() + EMPTY_CONTENT_COOLDOWN_MS,
@@ -1030,6 +1035,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
           ...(rid ? { [RID_HEADER]: rid } : {}),
+          ...saverTelemetryHeaders(saverMeta),
         },
         providerResponse,
       )

@@ -193,6 +193,35 @@ export async function reauthorizeProviderConnection(id, data = {}) {
   return outcome;
 }
 
+// P-F1: rows are re-decrypted on every read (AES-GCM per row per request,
+// inside the serialized selection queue), yet connection rows change only when
+// a credential is reissued or an operator edits one. Cache the decrypted object
+// keyed on the FULL raw row: any write to any column changes the fingerprint,
+// so every writer — this repo, the proxy-pool snapshot writer, a node delete —
+// invalidates without per-writer hooks. structuredClone on a hit keeps the
+// return value as fresh as a re-decrypt, so callers can mutate freely.
+const decryptedRowCache = new Map();
+const decryptedRowCacheStats = { hits: 0, misses: 0 };
+
+function cachedRowToConn(row) {
+  if (!row) return null;
+  const fingerprint = JSON.stringify(row);
+  const hit = decryptedRowCache.get(row.id);
+  if (hit && hit.fingerprint === fingerprint) {
+    decryptedRowCacheStats.hits += 1;
+    return structuredClone(hit.conn);
+  }
+  decryptedRowCacheStats.misses += 1;
+  const conn = rowToConn(row);
+  decryptedRowCache.set(row.id, { fingerprint, conn });
+  return conn;
+}
+
+// Test-only: observe cache behavior without reaching into the module.
+export function _connectionsCacheStats() {
+  return { ...decryptedRowCacheStats, size: decryptedRowCache.size };
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -201,7 +230,7 @@ export async function getProviderConnections(filter = {}) {
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const rows = db.all(sql, params);
-  const list = rows.map(rowToConn);
+  const list = rows.map(cachedRowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
   return list;
 }
@@ -209,7 +238,7 @@ export async function getProviderConnections(filter = {}) {
 export async function getProviderConnectionById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-  return rowToConn(row);
+  return cachedRowToConn(row);
 }
 
 // Internal sync reorder — must be called INSIDE a transaction

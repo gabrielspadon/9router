@@ -89,7 +89,8 @@ const FOLD_ROLLUP_MS = 60 * 60 * 1000;
 const STORM_WINDOW_MS = 60 * 1000;
 const STORM_LIMIT = 200;
 
-const SINK_MAX_BYTES = Number(process.env.TOKENPROXY_LOG_DECISIONS_MAX_BYTES) || 8 * 1024 * 1024;
+// D-2: 8MB held roughly 3h at 500 req/min; 64MB holds ~24h. The env override stays.
+const SINK_MAX_BYTES = Number(process.env.TOKENPROXY_LOG_DECISIONS_MAX_BYTES) || 64 * 1024 * 1024;
 
 function enabled() {
   const raw = process.env.TOKENPROXY_LOG_DECISIONS;
@@ -119,21 +120,24 @@ function strict() {
  * mocks `logger.js` with a hand-listed export set, so a new export there is a
  * throw at every one of those call sites rather than a new capability.
  *
- * 16 random bits per process, then a 16-bit counter. The counter wraps after
- * 65,536 requests in one process, which at the measured 853 admitted requests
- * per six hours is about 19 days of uptime before one id is reused, and a reuse
- * is harmless because every line is timestamped.
+ * 8 random bits per process, then a 24-bit counter. The counter wraps after
+ * 16,777,216 requests in one process — the old 16-bit counter wrapped after
+ * 65,536, which at 500 requests/min is 131 minutes (D-4); the 24-bit counter
+ * at the same rate is ~23 days of uptime before one id is reused, and a reuse
+ * is harmless because every line is timestamped. The random prefix is 8 bits
+ * (not 16) so the rid stays 8 hex chars: prefix+counter is the fixed 32-bit
+ * id space either way.
  */
 const RID_PREFIX = (() => {
-  const b = new Uint8Array(2);
+  const b = new Uint8Array(1);
   globalThis.crypto.getRandomValues(b);
-  return (((b[0] << 8) | b[1]) >>> 0).toString(16).padStart(4, '0');
+  return b[0].toString(16).padStart(2, '0');
 })();
 let ridCounter = 0;
 
 export function nextRid() {
-  ridCounter = (ridCounter + 1) & 0xffff;
-  return RID_PREFIX + ridCounter.toString(16).padStart(4, '0');
+  ridCounter = (ridCounter + 1) & 0xffffff;
+  return RID_PREFIX + ridCounter.toString(16).padStart(6, '0');
 }
 
 /** The header a front proxy uses to hand its own request id down, so a 503 at
@@ -196,8 +200,10 @@ export function relativeReset(atMs, nowMs = Date.now()) {
   return h > 0 ? `${sign}${h}h${String(m).padStart(2, '0')}m` : `${sign}${m}m`;
 }
 
+// D-7: 'MMdd-hh:mm:ss' — a bare hh:mm:ss from yesterday reads as today.
 function hhmmss(ms) {
-  return new Date(ms).toISOString().slice(11, 19);
+  const iso = new Date(ms).toISOString();
+  return `${iso.slice(5, 7)}${iso.slice(8, 10)}-${iso.slice(11, 19)}`;
 }
 
 // Path folds are machine-generated CLASS.verdict tokens joined by commas —
@@ -224,7 +230,10 @@ function orderedEntries(fields) {
   const seen = new Set();
   const out = [];
   const push = (k) => {
+    // SEC-4: a field key reaches the line verbatim, so it must match the
+    // k=v grammar; anything else (a space, an =) is a log-injection vector.
     if (seen.has(k) || !Object.hasOwn(fields, k)) return;
+    if (!/^[a-z_][a-z0-9_-]{0,15}$/.test(k)) return;
     seen.add(k);
     const v = scalar(fields[k], k);
     if (v !== null) out.push([k, v]);
@@ -307,7 +316,9 @@ export function fold(key, nowMs = Date.now()) {
  *  the fold without adding a fact. */
 function foldKey(cls, verdict, fields) {
   const f = fields || {};
-  return [cls, verdict, f.conn ?? '', f.model ?? '', f.prov ?? '', f.key ?? '', f.why ?? ''].join('\u0000');
+  // D-6: status is part of the fact; a 400->500 transition must not fold
+  // into one rep line.
+  return [cls, verdict, f.conn ?? '', f.model ?? '', f.prov ?? '', f.key ?? '', f.why ?? '', f.status ?? ''].join('\u0000');
 }
 
 // --------------------------------------------------------------- backstop ---
@@ -350,6 +361,12 @@ function flushStorm(nowMs) {
 
 let sinkPath = null;
 let sinkDead = false;
+let sinkDeadAt = 0;
+// Test seam only: disableSink() parks the sink without the D-9 recovery line
+// firing on the next append.
+let sinkDisabled = false;
+// D-9: a dead sink is retried, not permanent — at most one probe per interval.
+const SINK_RETRY_MS = 5 * 60 * 1000;
 
 function sinkFile() {
   if (sinkPath) return sinkPath;
@@ -357,20 +374,38 @@ function sinkFile() {
   return sinkPath;
 }
 
-/** Size-capped with one generation of rollover. A log that can fill a disk is a
- *  worse outage than the one it was written to diagnose. */
-function appendNdjson(record) {
-  if (sinkDead) return;
+/** Size-capped with three generations of rollover (D-2). A log that can fill
+ *  a disk is a worse outage than the one it was written to diagnose. */
+function appendNdjson(record, nowMs = Date.now()) {
+  if (sinkDisabled) return;
+  if (sinkDead && nowMs - sinkDeadAt < SINK_RETRY_MS) return;
   try {
     const file = sinkFile();
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
-    if (size >= SINK_MAX_BYTES) fs.renameSync(file, `${file}.1`);
+    if (size >= SINK_MAX_BYTES) {
+      // D-2: keep .1/.2/.3, oldest dropped — retention is 4x the cap, and the
+      // env override still wins when an operator needs more.
+      fs.rmSync(`${file}.3`, { force: true });
+      for (const g of [2, 1]) {
+        if (fs.existsSync(`${file}.${g}`)) fs.renameSync(`${file}.${g}`, `${file}.${g + 1}`);
+      }
+      fs.renameSync(file, `${file}.1`);
+    }
     fs.appendFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    // SEC-5b: mode applies at creation only; chmod-on-open fixes a pre-existing
+    // file with looser permissions. Best-effort, never throws into the caller.
+    try { fs.chmodSync(file, 0o600); } catch { /* best-effort */ }
+    if (sinkDead) {
+      // D-9: the re-probe append succeeded — the sink is back.
+      sinkDead = false;
+      console.log(formatLine('LOG', 'resumed', { why: 'sink-recovered' }, nowMs));
+    }
   } catch (e) {
     // Fail soft and say so once. A decision log that can throw into a request
     // path has traded the fault it was recording for one of its own.
     sinkDead = true;
+    sinkDeadAt = nowMs;
     console.log(formatLine('LOG', 'sink-failed', { why: 'ndjson-append-threw', err: e?.code || e?.message }));
   }
 }
@@ -382,7 +417,7 @@ function write(cls, verdict, fields, nowMs) {
   // into the dashboard ring buffer, so the decision lines stay visible in the UI
   // that already exists rather than becoming journald-only.
   console.log(line);
-  appendNdjson({ ts: new Date(nowMs).toISOString(), cls, verdict, ...Object.fromEntries(entries) });
+  appendNdjson({ ts: new Date(nowMs).toISOString(), cls, verdict, ...Object.fromEntries(entries) }, nowMs);
   return line;
 }
 
@@ -400,9 +435,14 @@ export function decide(cls, verdict, fields = {}, nowMs = Date.now()) {
   if (!enabled()) return null;
   const known = assertVerdict(cls, verdict);
   if (!known) return write('LOG', 'unknown-verdict', { why: `${cls}.${verdict}`, ...fields }, nowMs);
-  if (!stormGate(cls, nowMs)) return null;
+  // D-8: the occurrence is recorded BEFORE the backstop decides, so a
+  // storm-throttled occurrence still lands in foldState and the post-resume
+  // rep is whole.
   const { emit, rep, first } = fold(foldKey(cls, verdict, fields), nowMs);
+  // D-1: the backstop budget counts LINES, not decide() calls — 300 identical
+  // folded calls emit 9 lines and must not trip the 200/min backstop.
   if (!emit) return null;
+  if (!stormGate(cls, nowMs)) return null;
   // rep=1 is a single event and needs no bookkeeping; anything above it names
   // how many occurrences this line stands for and when the run started.
   const withFold = rep > 1 ? { ...fields, rep, first: hhmmss(first) } : fields;
@@ -511,10 +551,12 @@ export const __decide = {
     storm.throttled = false;
     storm.counts.clear();
     sinkDead = false;
+    sinkDeadAt = 0;
+    sinkDisabled = false;
   },
   foldSize: () => foldState.size,
   pathSize: () => paths.size,
-  disableSink() { sinkDead = true; },
+  disableSink() { sinkDead = true; sinkDisabled = true; },
   FOLD_MAX_KEYS,
   STORM_LIMIT,
 };

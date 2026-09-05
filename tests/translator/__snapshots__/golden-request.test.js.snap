@@ -96,6 +96,9 @@ exports[`GOLDEN request: OpenAI → Claude > reasoning_effort → adaptive outpu
     {
       "content": [
         {
+          "cache_control": {
+            "type": "ephemeral",
+          },
           "text": "hi",
           "type": "text",
         },

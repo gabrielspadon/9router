@@ -54,3 +54,19 @@ describe("applyCloaking billing header determinism", () => {
     expect(applyCloaking(body, "sk-ant-api03-XXXX", "session-1")).toBe(body);
   });
 });
+
+describe("applyCloaking absent-session fallback (F5)", () => {
+  it("derives a stable per-account seed when sessionId is null, for header and user_id", () => {
+    // sessionManager returns a fresh random id per request when it has no
+    // connectionId; the cloaking layer must collapse an absent session to a
+    // stable apiKey-derived seed so neither the billing header nor
+    // metadata.user_id varies per request.
+    const a = applyCloaking(bodyWith("one"), OAT_KEY, null);
+    const b = applyCloaking(bodyWith("two"), OAT_KEY, null);
+    expect(a.system[0].text).toBe(b.system[0].text);
+    expect(a.metadata.user_id).toBe(b.metadata.user_id);
+    // still differs from a real session's header on the same account
+    const c = applyCloaking(bodyWith("one"), OAT_KEY, "session-9");
+    expect(a.system[0].text).not.toBe(c.system[0].text);
+  });
+});

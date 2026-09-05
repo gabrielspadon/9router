@@ -240,3 +240,97 @@ describe("#2620 commit preserves fields outside the OpenAI contract", () => {
     expect(diagnostics.reason).toBe("phantom savings — keeping original (>95% size)");
   });
 });
+
+describe("R-F1: Kiro/Gemini projections never write into caller-shared objects", () => {
+  it("Kiro: the caller's conversationState object is untouched; the body carries the compressed copy", async () => {
+    global.fetch = respond([{ role: "user", content: "u!" }, { role: "assistant", content: "a!" }]);
+    const callerState = {
+      history: [
+        { userInputMessage: { content: `question${PAD}`, userInputMessageContext: { toolResults: [] } } },
+        { assistantResponseMessage: { content: `answer${PAD}` } },
+      ],
+    };
+    const stateBefore = structuredClone(callerState);
+    const body = { conversationState: callerState };
+
+    const stats = await compressWithHeadroom(body, {
+      enabled: true, url: URL_, model: "m", format: "kiro",
+    });
+
+    expect(stats.tokens_saved).toBe(900);
+    expect(callerState).toEqual(stateBefore); // caller's object not mutated
+    expect(body.conversationState).not.toBe(callerState); // private copy committed
+    expect(body.conversationState.history[0].userInputMessage.content).toBe("u!");
+    expect(body.conversationState.history[1].assistantResponseMessage.content).toBe("a!");
+  });
+
+  it("Kiro: on proxy failure the caller's conversationState is still untouched", async () => {
+    global.fetch = vi.fn(async () => new Response("boom", { status: 500 }));
+    const callerState = {
+      history: [{ userInputMessage: { content: `question${PAD}`, userInputMessageContext: { toolResults: [] } } }],
+    };
+    const stateBefore = structuredClone(callerState);
+    const body = { conversationState: callerState };
+
+    const stats = await compressWithHeadroom(body, {
+      enabled: true, url: URL_, model: "m", format: "kiro",
+    });
+
+    expect(stats).toBeNull();
+    expect(callerState).toEqual(stateBefore);
+  });
+
+  it("Gemini: the caller's contents array is untouched; the body carries the compressed copy", async () => {
+    global.fetch = respond([{ role: "user", content: "u!" }]);
+    const callerContents = [{ role: "user", parts: [{ text: `question${PAD}` }] }];
+    const contentsBefore = structuredClone(callerContents);
+    const body = { contents: callerContents };
+
+    await compressWithHeadroom(body, {
+      enabled: true, url: URL_, model: "gemini-2.5-pro", format: "gemini",
+    });
+
+    expect(callerContents).toEqual(contentsBefore);
+    expect(body.contents).not.toBe(callerContents);
+    expect(body.contents[0].parts[0].text).toBe("u!");
+  });
+
+  it("antigravity: the caller's nested request.contents is untouched", async () => {
+    global.fetch = respond([{ role: "user", content: "u!" }]);
+    const callerRequest = { contents: [{ role: "user", parts: [{ text: `question${PAD}` }] }] };
+    const requestBefore = structuredClone(callerRequest);
+    const body = { project: "p", request: callerRequest };
+
+    await compressWithHeadroom(body, {
+      enabled: true, url: URL_, model: "gemini-2.5-pro", format: "antigravity",
+    });
+
+    expect(callerRequest).toEqual(requestBefore);
+    expect(body.request.contents).not.toBe(callerRequest.contents);
+    expect(body.request.contents[0].parts[0].text).toBe("u!");
+  });
+});
+
+// R-F3: hasErrorToolBlock checked part-level is_error/status but not the
+// camelCase isError spelling rtk honours, letting a flagged trace through.
+describe("R-F3: part-level isError is an error trace", () => {
+  it("Claude tool_result part with isError:true skips before fetch", async () => {
+    global.fetch = vi.fn();
+    const body = {
+      messages: [
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", isError: true, content: `stack${PAD}` }] },
+      ],
+    };
+    const before = JSON.stringify(body);
+    const diagnostics = {};
+
+    const stats = await compressWithHeadroom(body, {
+      enabled: true, url: URL_, model: "m", format: "claude", diagnostics,
+    });
+
+    expect(stats).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).toBe(before);
+    expect(diagnostics.reason).toBe("skipped: error tool result present — headroom not applied");
+  });
+});

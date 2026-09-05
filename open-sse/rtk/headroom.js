@@ -408,7 +408,8 @@ function hasErrorToolBlock(body, format) {
         if (part?.type === "tool_result" && (hasClaudeToolResult || message?.role === "tool")) {
           if (part.is_error === true) return true;
         }
-        if ((part?.is_error === true || part?.status === "error") && (part?.type === "tool_result" || message?.role === "tool")) {
+        // R-F3: part-level isError joins is_error/status for parity with rtk's vocabulary.
+        if ((part?.is_error === true || part?.isError === true || part?.status === "error") && (part?.type === "tool_result" || message?.role === "tool")) {
           return true;
         }
       }
@@ -866,6 +867,17 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
     // OpenAI messages for the proxy, then copied back into the original Kiro
     // fields. Keep the provider payload shape intact for Kiro's executor.
     if (format === "kiro") {
+      // R-F1: on the passthrough path with rtk and privacy both off,
+      // chatCore's isolateCompressibleItems never ran, so conversationState is
+      // still the caller's own object — writing through the projection targets
+      // would let an account-fallback retry re-compress our output (#3566
+      // shape). Clone the state the projection targets; on clone refusal the
+      // shared object is a worse result on retry, not a broken one.
+      if (body?.conversationState && typeof body.conversationState === "object") {
+        try {
+          body.conversationState = structuredClone(body.conversationState);
+        } catch { /* as above */ }
+      }
       const projection = collectKiroHeadroomMessages(body);
       if (!projection) {
         setDiagnostic(diagnostics, "Kiro request did not project to messages[]");
@@ -894,6 +906,27 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
     // than on the presence of contents[], so a body that merely looks Gemish is
     // still left alone.
     if (GEMINI_FAMILY_FORMATS.has(format)) {
+      // R-F1: same caller-object hazard as Kiro — and chatCore's isolation
+      // never covered contents[] at all, so this shape was shared even with
+      // rtk/privacy on. Clone the containers the projection targets (contents
+      // plus systemInstruction, top-level or nested under body.request)
+      // before any write-back. A nested request is envelope-copied first:
+      // reassigning keys directly on it would still mutate the caller's own
+      // request object from the passthrough shallow spread.
+      const GEMINI_TARGET_KEYS = ["contents", "systemInstruction", "system_instruction"];
+      try {
+        if (body?.request && typeof body.request === "object") {
+          const requestCopy = { ...body.request };
+          for (const key of GEMINI_TARGET_KEYS) {
+            if (requestCopy[key] != null) requestCopy[key] = structuredClone(requestCopy[key]);
+          }
+          body.request = requestCopy;
+        } else {
+          for (const key of GEMINI_TARGET_KEYS) {
+            if (body?.[key] != null) body[key] = structuredClone(body[key]);
+          }
+        }
+      } catch { /* shared: a worse result on retry, not a broken one */ }
       const projection = collectGeminiHeadroomMessages(body);
       if (!projection) {
         setDiagnostic(diagnostics, `${format} request did not project to messages[]`);

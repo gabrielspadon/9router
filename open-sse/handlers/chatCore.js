@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { detectFormat } from "../services/provider.js";
 import { resolveUpstreamRoute } from "./chatCore/upstreamRoute.js";
 import { translateRequest } from "../translator/index.js";
@@ -47,6 +48,7 @@ import {
   extractRequestConfig,
 } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
+import { withSaverHeaders } from "./chatCore/saverHeaders.js";
 import { clientRequestedStreaming as requestedStreaming } from "./chatCore/streamMode.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import {
@@ -185,36 +187,44 @@ export function stripContinuityFields(body, provider, model, log) {
   return body;
 }
 
-// REQ ce= cache-epoch collector: sid -> { body: serialized final pre-dispatch
-// body, at: ms }. Bounded the same way decide.js bounds its path collector:
-// cap 2048, TTL 30 min, LRU eviction, one trim pass per insert.
+// REQ ce= cache-epoch collector: sid -> { prefix, len, sha, at }. Bounded the
+// same way decide.js bounds its path collector: cap 2048, TTL 30 min, LRU
+// eviction, one trim pass per insert. T-F1: only the first CE_PREFIX_BYTES of
+// each serialized body are retained, plus its full length and sha256 — 2048
+// entries times multi-MB bodies was GB-scale resident memory and an OOM
+// trigger. ce is an instrument: a 64KB prefix floor is sufficient signal, and
+// a prefix exhausted without mismatch reports the prefix length.
 const CE_CAP = 2048;
 const CE_TTL_MS = 30 * 60 * 1000;
+const CE_PREFIX_BYTES = 64 * 1024;
 const ceBodies = new Map();
 
-function commonPrefixBytes(a, b) {
-  const ba = Buffer.from(a, "utf8");
-  const bb = Buffer.from(b, "utf8");
-  const n = Math.min(ba.length, bb.length);
-  let i = 0;
-  while (i < n && ba[i] === bb[i]) i++;
-  return i;
-}
-
 function trackCacheEpoch(sid, serialized) {
+  const whole = Buffer.from(serialized, "utf8");
+  const byteLen = whole.length;
   const now = Date.now();
-  let ce;
+  let out;
   const prev = ceBodies.get(sid);
-  if (prev && now - prev.at <= CE_TTL_MS) ce = commonPrefixBytes(prev.body, serialized);
+  if (prev && now - prev.at <= CE_TTL_MS) {
+    const n = Math.min(prev.prefix.length, byteLen);
+    let i = 0;
+    while (i < n && prev.prefix[i] === whole[i]) i++;
+    out = { ce: i, prevBytes: prev.len, bytes: byteLen };
+  }
   ceBodies.delete(sid);
-  ceBodies.set(sid, { body: serialized, at: now });
+  ceBodies.set(sid, {
+    prefix: Buffer.from(whole.subarray(0, CE_PREFIX_BYTES)),
+    len: byteLen,
+    sha: createHash("sha256").update(whole).digest("hex"),
+    at: now,
+  });
   if (ceBodies.size > CE_CAP) {
     for (const key of ceBodies.keys()) {
       ceBodies.delete(key);
       if (ceBodies.size <= CE_CAP * 0.9) break;
     }
   }
-  return ce;
+  return out;
 }
 
 export async function handleChatCore({
@@ -718,7 +728,12 @@ export async function handleChatCore({
   // the client body outside the two handlers wired for restoration, and a
   // one-directional redaction that leaks aliases is worse than no filter.
   let privacyFilter = null;
+  // T-F3: the privacy filter mutates the body between the rtk and headroom
+  // stage measures; without its own stage those bytes were attributed to
+  // headroom (wrong save= and a false saver-guard).
+  let privacyRan = false;
   if (privacyEnabled && !(providerRequiresStreaming && !clientRequestedStreaming)) {
+    privacyRan = true;
     // Same in-place hazard RTK has (#3566): on passthrough these are the
     // caller's own objects, and an account-fallback retry would hand a fresh
     // filter a body that is already aliased, leaving it with an empty mapping
@@ -735,6 +750,7 @@ export async function handleChatCore({
     if (privacyFilter)
       log?.debug?.("PRIVACY", `pseudonymised ${privacyFilter.size} value(s)`);
   }
+  measureSaverStage("privacy", privacyRan);
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   //
@@ -917,6 +933,39 @@ export async function handleChatCore({
   // growth reported honestly) plus the cache-epoch prefix this request shares
   // with its session's previous final pre-dispatch body. savers off -> silent.
   const saverFields = {};
+  // T-F2: the final pre-dispatch body is serialized ONCE, only when a
+  // consumer needs it (a saver ran, or ce tracking has a sid); the string
+  // feeds the stage ledger's final measure, the ce tracking and the x-tp-*
+  // response headers. With no saver and no sid, nothing is serialized.
+  let finalBodyBytes = null;
+  let compactHint = false;
+  if (saverWillRun || sid) {
+    const finalSerialized = JSON.stringify(translatedBody);
+    finalBodyBytes = Buffer.byteLength(finalSerialized);
+    measureSaverStage("final", true);
+    if (sid) {
+      const tracked = trackCacheEpoch(sid, finalSerialized);
+      if (tracked) {
+        saverFields.ce = tracked.ce;
+        // HEADERS: the compact hint fires only on a known ce that dropped
+        // more than 50% against the session's previous request.
+        if (tracked.prevBytes > 0 && tracked.ce < tracked.prevBytes * 0.5) {
+          compactHint = true;
+        }
+      }
+    }
+  }
+  // HEADERS finding: model-self-sizing response headers, all derived from the
+  // values computed above — zero marginal serialization.
+  const saverMeta = {};
+  if (finalBodyBytes !== null) saverMeta.ctxTokens = Math.round(finalBodyBytes / 4);
+  if (saverStages.length) {
+    saverMeta.saveBytes = Math.round(
+      saverStages.reduce((a, st) => a + st.delta, 0),
+    );
+  }
+  if (saverFields.ce !== undefined) saverMeta.ce = saverFields.ce;
+  if (compactHint) saverMeta.compactHint = true;
   if (saverStages.length) {
     saverFields.save = saverStages
       .map((st) => `${st.stage}:${st.delta}`)
@@ -931,7 +980,9 @@ export async function handleChatCore({
       // The inject stage is exempt: prompt injection ADDS the style text on
       // purpose, and on small bodies that intentional addition trips the
       // threshold — the guard is for compressors that were supposed to shrink.
-      if (st.stage !== "inject" && st.delta > saverEntryBytes * 0.05) {
+      // "final" is exempt with "inject": it is not a saver, it only
+      // attributes post-saver reshaping (cache anchoring) honestly.
+      if (st.stage !== "inject" && st.stage !== "final" && st.delta > saverEntryBytes * 0.05) {
         decide("XFORM", "saver-guard", {
           rid,
           stage: st.stage,
@@ -941,11 +992,6 @@ export async function handleChatCore({
       }
     }
   }
-  if (sid) {
-    const ce = trackCacheEpoch(sid, JSON.stringify(translatedBody));
-    if (ce !== undefined) saverFields.ce = ce;
-  }
-
   // Token-saver aggregate rows, one per saver that ran. Emitted here — after
   // every saver stage and the anchor — so each row carries the whole-body
   // bytesSaved/saveTokEst and the final-body cache epoch (ce), not just the
@@ -1060,7 +1106,7 @@ export async function handleChatCore({
     const sinkError = isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : (error.message || String(error));
     if (callerSignal?.aborted && (isCallerAbortError(error) || error.name === "AbortError")) {
       trackPendingRequest(model, provider, connectionId, false);
-      return createCallerAbortResult();
+      return withSaverHeaders(createCallerAbortResult(), saverMeta);
     }
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
@@ -1092,20 +1138,20 @@ export async function handleChatCore({
     if (error.name === "AbortError") {
       streamController.handleError(isAntigravity ? new Error(ANTIGRAVITY_SAFE_ERROR_MESSAGE) : error);
       req("failed", { rid, conn: connPrefix, status: 499, why: "aborted" });
-      return createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted", null, null, rid);
+      return withSaverHeaders(createErrorResult(499, isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Request aborted", null, null, rid), saverMeta);
     }
     const errMsg = isAntigravity
       ? ANTIGRAVITY_SAFE_ERROR_MESSAGE
       : formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (isBodyReadTimeoutError(error)) {
       req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.GATEWAY_TIMEOUT, why: "body-timeout" });
-      return createErrorResult(
+      return withSaverHeaders(createErrorResult(
         HTTP_STATUS.GATEWAY_TIMEOUT,
         isAntigravity ? ANTIGRAVITY_SAFE_ERROR_MESSAGE : "Upstream response body timed out",
         null,
         null,
         rid,
-      );
+      ), saverMeta);
     }
     if (log?.errorLine) {
       log.errorLine(
@@ -1115,7 +1161,7 @@ export async function handleChatCore({
       );
     }
     req("failed", { rid, conn: connPrefix, status: HTTP_STATUS.BAD_GATEWAY, why: "transport" });
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, null, null, rid);
+    return withSaverHeaders(createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, null, null, rid), saverMeta);
   };
   try {
     const result = await executor.execute({
@@ -1311,6 +1357,7 @@ export async function handleChatCore({
               notifyTerminalVerificationSuccess,
               pxpipe: pxpipeSummary,
               saverFields,
+              saverMeta,
               privacyFilter,
               callerSignal,
               reqTag,
@@ -1434,7 +1481,7 @@ export async function handleChatCore({
     }
     reqLogger.logError(new Error(sinkMessage), finalBody || translatedBody);
     req("failed", { rid, conn: connPrefix, status: safeStatusCode, why: "upstream", ...saverFields });
-    return createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata, rid);
+    return withSaverHeaders(createErrorResult(safeStatusCode, errMsg, resetsAtMs, failureMetadata, rid), saverMeta);
   }
 
   const sharedCtx = {
@@ -1459,6 +1506,7 @@ export async function handleChatCore({
     onEmptyStream,
     pxpipe: pxpipeSummary,
     saverFields,
+    saverMeta,
     privacyFilter,
     callerSignal,
     reqTag,
