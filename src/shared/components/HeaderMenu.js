@@ -72,8 +72,12 @@ export default function HeaderMenu({ onLogout }) {
 
   const close = () => setIsOpen(false);
 
+  // Build identity, baked at app build time (NEXT_PUBLIC_TP_BUILD_SHA), mirroring
+  // the Sidebar footer. Hidden when missing (dev without config) or unknown.
+  const buildSha = process.env.NEXT_PUBLIC_TP_BUILD_SHA;
+
   return (
-    <>
+    <div className="flex items-center gap-2">
       <div className="relative" ref={menuRef}>
         <Button
           variant="ghost" size="icon"
@@ -132,7 +136,16 @@ export default function HeaderMenu({ onLogout }) {
         variant="danger"
         loading={isShuttingDown}
       />
-    </>
+      {buildSha && buildSha !== "unknown" && (
+        <span
+          data-testid="header-build"
+          className="font-mono text-xs text-content-tertiary"
+          title={`Build ${buildSha}`}
+        >
+          build {buildSha}
+        </span>
+      )}
+    </div>
   );
 }
 

@@ -16,6 +16,27 @@ import {
 const TOKEN_SAVER_STATS_REFRESH_MS = 30_000;
 const TOKEN_SAVER_STATS_TIMEOUT_MS = 10_000;
 
+// Per-stage savings ledger (windows.<win>.stages.<saver> on /api/token-saver/stats)
+const STAGE_LABELS = {
+  rtk: "RTK",
+  headroom: "Headroom",
+  inject: "Prompt inject",
+  mem: "Memory prune",
+  schema: "Schema distillation",
+  privacy: "Privacy filter",
+};
+
+const stageLabel = (saver) =>
+  STAGE_LABELS[saver] ?? saver.charAt(0).toUpperCase() + saver.slice(1);
+
+// Signed like the aggregate block: raw toLocaleString under 1 KB, one-decimal KB above.
+const formatStageSavings = (bytesSaved) => {
+  const abs = Math.abs(bytesSaved);
+  const mag =
+    abs >= 1024 ? `${(abs / 1024).toFixed(1)} KB` : abs.toLocaleString();
+  return `${bytesSaved < 0 ? "-" : ""}${mag}`;
+};
+
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [schemaDistillEnabled, setSchemaDistillEnabled] = useState(false);
@@ -1075,6 +1096,65 @@ export default function TokenSaverClient() {
             </div>
           )}
         </section>
+      </Card>
+
+      {/* Per-stage savings ledger: windows.today.stages on /api/token-saver/stats */}
+      <Card id="stage-savings" className="mt-4">
+        <h3 className="text-sm font-semibold text-text-main mb-4">
+          Per-stage savings (today)
+        </h3>
+        {tsStats === undefined ? (
+          <p className="text-sm text-text-muted">Loading…</p>
+        ) : tsStats === null ? (
+          <p className="text-sm text-text-muted">Statistics unavailable</p>
+        ) : Object.keys(tsStats.windows?.today?.stages ?? {}).length === 0 ? (
+          <p className="text-sm text-text-muted">No saver activity yet today.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">
+                  Stage
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">
+                  Requests
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">
+                  Bytes
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(tsStats.windows.today.stages).map(
+                ([saver, row]) => {
+                  const bytesSaved = row?.bytesSaved ?? 0;
+                  return (
+                    <tr
+                      key={saver}
+                      className="border-b border-border last:border-b-0"
+                    >
+                      <td className="px-4 py-3 text-text-main">
+                        {stageLabel(saver)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-text-main metric">
+                        {(row?.requests ?? row?.count ?? 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-right metric">
+                        {bytesSaved > 0 ? (
+                          <span className="text-warning">
+                            +{bytesSaved.toLocaleString()}
+                          </span>
+                        ) : (
+                          formatStageSavings(bytesSaved)
+                        )}
+                      </td>
+                    </tr>
+                  );
+                },
+              )}
+            </tbody>
+          </table>
+        )}
       </Card>
 
       {(toolDisclosureEnabled || toolDisclosureFilterEnabled) && (

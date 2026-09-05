@@ -54,6 +54,7 @@ export const navItems = [
   { href: "/dashboard/statistics", label: "Statistics", icon: "insights", job: "Watch" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage", job: "Watch" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings", job: "Watch" },
+  { href: "/dashboard/context", label: "Context", icon: "monitoring", job: "Watch" },
 ];
 
 // Entries hideable via Settings → Claude Code Minimal Mode. Persisted as
@@ -63,6 +64,7 @@ export const HIDEABLE_NAV_ITEMS = [
   { id: "usage", label: "Usage", href: "/dashboard/usage" },
   { id: "quota", label: "Quota Tracker", href: "/dashboard/quota" },
   { id: "tokenSaver", label: "Token Saver", href: "/dashboard/token-saver" },
+  { id: "context", label: "Context", href: "/dashboard/context" },
   { id: "cliTools", label: "CLI Tools", href: "/dashboard/cli-tools" },
   { id: "mediaProviders", label: "Media Providers" },
   { id: "proxyPools", label: "Proxy Pools", href: "/dashboard/proxy-pools" },

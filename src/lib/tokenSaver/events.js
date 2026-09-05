@@ -178,6 +178,11 @@ function emptyWindow() {
     estTokensSaved: 0,
     imagesGenerated: 0,
     avgMs: 0,
+    // per-stage (per-saver) savings: signed bytesSaved summed per saver;
+    // a row without bytesSaved still counts in requests/applied but adds 0
+    stages: Object.fromEntries(
+      [...SAVERS].map((s) => [s, { requests: 0, applied: 0, bytesSaved: 0 }])
+    ),
   };
 }
 
@@ -185,6 +190,12 @@ function addTo(window, row) {
   window.requests++;
   if (row.applied) window.applied++;
   else window.bypassed++;
+  const stage = window.stages[row.saver];
+  if (stage) {
+    stage.requests++;
+    if (row.applied) stage.applied++;
+    if (Number.isFinite(row.bytesSaved)) stage.bytesSaved += row.bytesSaved;
+  }
   if (row.saver === "rtk") window.charsReduced += row.charsSaved || 0;
   if (row.saver === "headroom") {
     window.headroomRequests++;
