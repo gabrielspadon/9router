@@ -15,6 +15,14 @@ function keywordVec(text) {
   return [0.5, 0.5, 0.5];
 }
 
+// Distinguishes 7 similarity levels (lvl0 nearest the query, lvl6 farthest)
+// so a run of 7 pairs can be driven into an exact reversal.
+function levelVec(text) {
+  const m = String(text).match(/lvl(\d)/);
+  const lvl = m ? Number(m[1]) : 0;
+  return [6 - lvl, lvl];
+}
+
 function embedOk(vecFn = keywordVec) {
   return vi.fn(async (_url, opts) => {
     const body = JSON.parse(opts.body);
@@ -46,7 +54,7 @@ afterEach(() => {
 });
 
 describe("reorderByRelevance", () => {
-  it("orders most relevant turns nearest to the tail boundary", async () => {
+  it("orders most relevant pairs nearest to the tail boundary", async () => {
     const messages = deepFreeze([
       { role: "user", content: "whale song frequency research" },
       { role: "assistant", content: "whale songs carry across ocean basins" },
@@ -69,33 +77,33 @@ describe("reorderByRelevance", () => {
     ]);
     expect(res.messages[4]).toBe(messages[4]);
     expect(res.messages[5]).toBe(messages[5]);
-    expect(res.moved).toBe(4);
+    expect(res.moved).toBe(2);
     expect(res.notes[0].turn).toBe(2);
     expect(res.notes[0].similarity).toBeCloseTo(1, 3);
-    expect(res.notes).toHaveLength(4);
+    expect(res.notes).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const req = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(req.model).toBe("test-embed");
     expect(req.input[0]).toBe(OPTS.query);
-    expect(req.input).toHaveLength(5);
+    expect(req.input).toHaveLength(3);
   });
 
-  it("truncates notes beyond 5 moved entries", async () => {
-    const messages = deepFreeze([
-      { role: "user", content: "whale a" },
-      { role: "assistant", content: "whale b" },
-      { role: "user", content: "whale c" },
-      { role: "assistant", content: "bird a" },
-      { role: "user", content: "bird b" },
-      { role: "assistant", content: "bird c" },
-      { role: "user", content: "bird d" },
-      ...TAIL,
-    ]);
-    vi.stubGlobal("fetch", embedOk());
+  it("truncates notes beyond 5 moved pairs", async () => {
+    const pairs = [];
+    for (let lvl = 0; lvl <= 6; lvl++) {
+      pairs.push(
+        { role: "user", content: `case lvl${lvl} question` },
+        { role: "assistant", content: `case lvl${lvl} answer` }
+      );
+    }
+    const messages = deepFreeze([...pairs, ...TAIL]);
+    vi.stubGlobal("fetch", embedOk(levelVec));
 
-    const res = await reorderByRelevance(messages, OPTS);
+    const res = await reorderByRelevance(messages, { ...OPTS, query: "lvl0 relevance probe" });
 
-    expect(res.moved).toBe(7);
+    // 7 pairs reversed head-to-tail: the middle pair (lvl3) lands back on its
+    // own slot, so 6 of the 7 pairs actually move.
+    expect(res.moved).toBe(6);
     expect(res.notes).toHaveLength(6);
     expect(res.notes[5]).toEqual({ notesTruncated: true });
   });
@@ -119,8 +127,8 @@ describe("reorderByRelevance", () => {
 
     expect(res.error).toBeUndefined();
     expect(res.messages[2]).toBe(pinned);
-    // both whale entries outrank both bird entries, but the pinned entry
-    // prevents bird entries from crossing into the whale segment
+    // both segments are single pairs (length 1), below the >= 2 run
+    // threshold, so the pinned entry leaves both untouched.
     expect(res.messages.slice(0, 2)).toEqual([messages[0], messages[1]]);
     expect(res.messages.slice(3, 5)).toEqual([messages[3], messages[4]]);
     expect(res.moved).toBe(0);
@@ -132,53 +140,70 @@ describe("reorderByRelevance", () => {
       role: "assistant",
       content: [{ type: "tool_use", id: "t1", name: "lookup", input: {} }],
     };
-    const vec = (text) =>
-      text.includes("whale") ? [0.95, 0.05, 0] : [0.02, 0.98, 0];
     const messages = deepFreeze([
-      { role: "assistant", content: "whale song detail" },
-      { role: "user", content: "bird watching notes" },
+      { role: "user", content: "whale song frequency research" },
+      { role: "assistant", content: "whale songs carry across ocean basins" },
+      { role: "user", content: "bird migration routes" },
+      { role: "assistant", content: "birds migrate seasonally" },
       pinned,
-      { role: "user", content: "bird feeding habits" },
-      { role: "assistant", content: "whale migration paths" },
+      { role: "user", content: "whale pod behavior notes" },
+      { role: "assistant", content: "whale pods travel together" },
+      { role: "user", content: "bird nesting habits" },
+      { role: "assistant", content: "birds nest in colonies" },
       ...TAIL,
-    ]);
-    vi.stubGlobal("fetch", embedOk(vec));
-
-    const res = await reorderByRelevance(messages, OPTS);
-
-    expect(res.messages[2]).toBe(pinned);
-    expect(res.messages[0]).toBe(messages[1]);
-    expect(res.messages[1]).toBe(messages[0]);
-    expect(res.messages[3]).toBe(messages[3]);
-    expect(res.messages[4]).toBe(messages[4]);
-    expect(res.moved).toBe(2);
-  });
-
-  it("never moves the protected tail even when it scores highest", async () => {
-    const messages = deepFreeze([
-      { role: "assistant", content: "whale song detail" },
-      { role: "user", content: "bird migration notes" },
-      { role: "user", content: "fish scale composition" },
-      { role: "user", content: "whale song tail question" },
-      { role: "assistant", content: "whale song tail answer" },
     ]);
     vi.stubGlobal("fetch", embedOk());
 
     const res = await reorderByRelevance(messages, OPTS);
 
-    expect(res.messages.slice(3)).toEqual([messages[3], messages[4]]);
-    expect(res.messages.slice(0, 3)).toEqual([
+    expect(res.messages[4]).toBe(pinned);
+    // each segment (2 pairs) is reordered on its own: least relevant first,
+    // most relevant nearest that segment's own end.
+    expect(res.messages.slice(0, 4)).toEqual([
       messages[2],
-      messages[1],
+      messages[3],
       messages[0],
+      messages[1],
     ]);
+    expect(res.messages.slice(5, 9)).toEqual([
+      messages[7],
+      messages[8],
+      messages[5],
+      messages[6],
+    ]);
+    expect(res.messages[9]).toBe(messages[9]);
+    expect(res.messages[10]).toBe(messages[10]);
+    expect(res.moved).toBe(4);
+  });
+
+  it("never moves the protected tail, extending it to keep a split pair whole", async () => {
+    const messages = deepFreeze([
+      { role: "user", content: "whale song frequency research" },
+      { role: "assistant", content: "whale songs carry across ocean basins" },
+      { role: "user", content: "bird migration routes" },
+      { role: "assistant", content: "birds migrate seasonally" },
+      { role: "user", content: "current question" },
+    ]);
+    vi.stubGlobal("fetch", embedOk());
+
+    const res = await reorderByRelevance(messages, OPTS);
+
+    // keepRecentTurns: 2 would naturally split the second pair (its user
+    // half falls in history, its assistant half in the tail); the boundary
+    // moves later so the final live user question is the only protected
+    // entry and both historical pairs stay whole and reorderable.
+    expect(res.messages[4]).toBe(messages[4]);
+    expect(res.messages.slice(0, 2)).toEqual([messages[2], messages[3]]);
+    expect(res.messages.slice(2, 4)).toEqual([messages[0], messages[1]]);
     expect(res.moved).toBe(2);
   });
 
   it("fails open on HTTP 500", async () => {
     const messages = deepFreeze([
-      { role: "user", content: "whale song" },
-      { role: "assistant", content: "bird song" },
+      { role: "user", content: "whale song one" },
+      { role: "assistant", content: "bird song one" },
+      { role: "user", content: "whale song two" },
+      { role: "assistant", content: "bird song two" },
       ...TAIL,
     ]);
     vi.stubGlobal(
@@ -196,8 +221,10 @@ describe("reorderByRelevance", () => {
 
   it("fails open on timeout", async () => {
     const messages = deepFreeze([
-      { role: "user", content: "whale song" },
-      { role: "assistant", content: "bird song" },
+      { role: "user", content: "whale song one" },
+      { role: "assistant", content: "bird song one" },
+      { role: "user", content: "whale song two" },
+      { role: "assistant", content: "bird song two" },
       ...TAIL,
     ]);
     vi.stubGlobal(
@@ -214,8 +241,10 @@ describe("reorderByRelevance", () => {
 
   it("fails open on malformed response", async () => {
     const messages = deepFreeze([
-      { role: "user", content: "whale song" },
-      { role: "assistant", content: "bird song" },
+      { role: "user", content: "whale song one" },
+      { role: "assistant", content: "bird song one" },
+      { role: "user", content: "whale song two" },
+      { role: "assistant", content: "bird song two" },
       ...TAIL,
     ]);
     vi.stubGlobal(
@@ -230,8 +259,10 @@ describe("reorderByRelevance", () => {
 
   it("fails open on zero vectors", async () => {
     const messages = deepFreeze([
-      { role: "user", content: "whale song" },
-      { role: "assistant", content: "bird song" },
+      { role: "user", content: "whale song one" },
+      { role: "assistant", content: "bird song one" },
+      { role: "user", content: "whale song two" },
+      { role: "assistant", content: "bird song two" },
       ...TAIL,
     ]);
     vi.stubGlobal(
@@ -256,7 +287,9 @@ describe("reorderByRelevance", () => {
   it("skips the fetch entirely on full cache hit", async () => {
     const messages = deepFreeze([
       { role: "user", content: "whale song research" },
-      { role: "assistant", content: "bird migration notes" },
+      { role: "assistant", content: "whale notes" },
+      { role: "user", content: "bird migration notes" },
+      { role: "assistant", content: "bird facts" },
       ...TAIL,
     ]);
     const cache = new Map();
@@ -304,5 +337,88 @@ describe("reorderByRelevance", () => {
     expect(res.messages).toEqual([]);
     expect(res.moved).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps roles alternating and every answer next to its original question", async () => {
+    const messages = deepFreeze([
+      { role: "user", content: "whale song frequency research" },
+      { role: "assistant", content: "whale songs carry across ocean basins" },
+      { role: "user", content: "bird migration routes" },
+      { role: "assistant", content: "birds migrate seasonally" },
+      { role: "user", content: "fish scale patterns" },
+      { role: "assistant", content: "fish scales vary by species" },
+      ...TAIL,
+    ]);
+    vi.stubGlobal("fetch", embedOk());
+
+    const res = await reorderByRelevance(messages, OPTS);
+
+    for (let i = 0; i < res.messages.length - 1; i++) {
+      if (res.messages[i].role === "user") {
+        expect(res.messages[i + 1].role).toBe("assistant");
+      }
+    }
+    for (let i = 0; i < messages.length - 1; i++) {
+      if (messages[i].role !== "user" || messages[i + 1].role !== "assistant") continue;
+      const pos = res.messages.indexOf(messages[i]);
+      expect(res.messages[pos + 1]).toBe(messages[i + 1]);
+    }
+  });
+
+  it("replays a memoised order for known pairs and puts a newly appended pair last", async () => {
+    const pairA = [
+      { role: "user", content: "whale song frequency research" },
+      { role: "assistant", content: "whale songs carry across ocean basins" },
+    ];
+    const pairB = [
+      { role: "user", content: "bird migration routes" },
+      { role: "assistant", content: "birds migrate seasonally" },
+    ];
+    const pairC = [
+      { role: "user", content: "fish scale patterns" },
+      { role: "assistant", content: "fish scales vary by species" },
+    ];
+    const memo = {};
+    const cache = new Map();
+    const fetchMock = embedOk();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const messages1 = deepFreeze([...pairA, ...pairB, ...TAIL]);
+    const first = await reorderByRelevance(messages1, {
+      ...OPTS,
+      memo,
+      recompute: true,
+      cache,
+    });
+    expect(first.moved).toBe(2);
+    expect(first.messages.slice(0, 4)).toEqual([
+      messages1[2],
+      messages1[3],
+      messages1[0],
+      messages1[1],
+    ]);
+    const callsAfterFirst = fetchMock.mock.calls.length;
+
+    // A new pair (C) appended right before the tail, with no embedding pass.
+    const messages2 = deepFreeze([...pairA, ...pairB, ...pairC, ...TAIL]);
+    const second = await reorderByRelevance(messages2, {
+      ...OPTS,
+      memo,
+      recompute: false,
+    });
+
+    expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+    expect(second.replayed).toBe(true);
+    // known pairs (A, B) reproduce the first call's order
+    expect(second.messages.slice(0, 4)).toEqual([
+      messages2[2],
+      messages2[3],
+      messages2[0],
+      messages2[1],
+    ]);
+    // the unseen pair (C) is unranked and stays in its last slot
+    expect(second.messages.slice(4, 6)).toEqual([messages2[4], messages2[5]]);
+    expect(second.messages.slice(6)).toEqual([messages2[6], messages2[7]]);
+    expect(second.moved).toBe(2);
   });
 });
